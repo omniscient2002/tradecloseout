@@ -111,7 +111,7 @@ export class ProjectsService {
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
       const res = await client.query(
         `SELECT p.* FROM projects p
-         WHERE p.org_id = $1 AND p.deleted_at IS NULL
+         WHERE p.org_id = $1 AND p.purged_at IS NULL
          ORDER BY p.created_at DESC`,
         [ctx.orgId],
       );
@@ -125,7 +125,7 @@ export class ProjectsService {
   async getProject(ctx: ExecutionContext, projectId: string) {
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
       const res = await client.query(
-        `SELECT * FROM projects WHERE org_id = $1 AND id = $2 AND deleted_at IS NULL`,
+        `SELECT * FROM projects WHERE org_id = $1 AND id = $2 AND purged_at IS NULL`,
         [ctx.orgId, projectId],
       );
       if (!res.rows.length) {

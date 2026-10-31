@@ -34,12 +34,16 @@ export class AuthService {
   /**
    * API-001 POST /auth/otp/request (CB-011: 5/hr rate limit per identifier)
    */
-  async requestOtp(dto: OtpRequestDto): Promise<{ challengeId: string; expiresAt: Date; fallbackChannel?: string }> {
+  async requestOtp(dto: any): Promise<{ challengeId: string; expiresAt: Date; fallbackChannel?: string; debugOtp?: string }> {
+    const identifier = dto.identifier || dto.phoneOrEmail;
+    const channel = dto.channel || (identifier?.includes('@') ? 'EMAIL' : 'SMS');
+    const purpose = dto.purpose || 'LOGIN';
+
     // 1. Sliding window rate limiting: max 5 requests per hour (CB-011)
     const recentRes = await this.db.queryGlobal<any>(
       `SELECT count(*) as count FROM otp_challenges
        WHERE identifier = $1 AND created_at > now() - interval '1 hour'`,
-      [dto.identifier],
+      [identifier],
     );
     if (Number(recentRes[0]?.count || 0) >= 5) {
       throw new ForbiddenException('HOURLY_OTP_LIMIT_EXCEEDED: Maximum 5 OTP requests per hour');
@@ -53,27 +57,44 @@ export class AuthService {
     await this.db.queryGlobal(
       `INSERT INTO otp_challenges (id, channel, identifier, purpose, code_hash, attempts, expires_at)
        VALUES ($1, $2, $3, $4, $5, 0, $6)`,
-      [challengeId, dto.channel, dto.identifier, dto.purpose, codeHash, expiresAt],
+      [challengeId, channel, identifier, purpose, codeHash, expiresAt],
     );
 
-    return { challengeId, expiresAt };
+    console.log(`[Auth] Generated OTP for ${identifier} (${purpose}): ${rawCode}`);
+
+    return {
+      challengeId,
+      expiresAt,
+      fallbackChannel: undefined,
+      ...(process.env.NODE_ENV !== 'production' ? { debugOtp: rawCode } : {}),
+    } as any;
   }
 
   /**
    * API-002 POST /auth/otp/verify (CB-007 RLS & CB-011 attempt limit check)
    */
-  async verifyOtp(dto: OtpVerifyDto): Promise<{
+  async verifyOtp(dto: any): Promise<{
     sessionToken: string;
     csrfToken: string;
     user: any;
     activeOrgId: string | null;
   }> {
-    const challenges = await this.db.queryGlobal<any>(
-      `SELECT * FROM otp_challenges
-       WHERE identifier = $1 AND purpose = $2 AND consumed_at IS NULL AND expires_at > now()
-       ORDER BY created_at DESC LIMIT 1`,
-      [dto.identifier, dto.purpose],
-    );
+    const purpose = dto.purpose || 'LOGIN';
+    let challenges: any[] = [];
+    if (dto.challengeId) {
+      challenges = await this.db.queryGlobal<any>(
+        `SELECT * FROM otp_challenges
+         WHERE id = $1 AND consumed_at IS NULL AND expires_at > now()`,
+        [dto.challengeId],
+      );
+    } else {
+      challenges = await this.db.queryGlobal<any>(
+        `SELECT * FROM otp_challenges
+         WHERE identifier = $1 AND purpose = $2 AND consumed_at IS NULL AND expires_at > now()
+         ORDER BY created_at DESC LIMIT 1`,
+        [dto.identifier || dto.phoneOrEmail, purpose],
+      );
+    }
 
     if (!challenges.length) {
       throw new UnauthorizedException('INVALID_OR_EXPIRED_CHALLENGE');
@@ -105,12 +126,13 @@ export class AuthService {
     );
 
     // Upsert User
-    const channelType = dto.identifier.includes('@') ? 'EMAIL' : 'PHONE';
+    const identifier = dto.identifier || challenge.identifier;
+    const channelType = identifier.includes('@') ? 'EMAIL' : 'PHONE';
     let users = await this.db.queryGlobal<any>(
       `SELECT u.* FROM users u
        JOIN user_identities ui ON ui.user_id = u.id
        WHERE ui.type = $1 AND ui.value = $2 LIMIT 1`,
-      [channelType, dto.identifier],
+      [channelType, identifier],
     );
 
     let userId: string;
@@ -118,17 +140,17 @@ export class AuthService {
 
     if (!users.length) {
       userId = uuidv7();
-      const defaultName = dto.identifier.split('@')[0];
+      const defaultName = identifier.split('@')[0];
       await this.db.queryGlobal(
         `INSERT INTO users (id, name, email_display, phone_display, status)
          VALUES ($1, $2, $3, $4, 'ACTIVE')`,
-        [userId, defaultName, channelType === 'EMAIL' ? dto.identifier : null, channelType === 'PHONE' ? dto.identifier : null],
+        [userId, defaultName, channelType === 'EMAIL' ? identifier : null, channelType === 'PHONE' ? identifier : null],
       );
 
       await this.db.queryGlobal(
         `INSERT INTO user_identities (id, user_id, type, value, verified_at)
          VALUES ($1, $2, $3, $4, now())`,
-        [uuidv7(), userId, channelType, dto.identifier],
+        [uuidv7(), userId, channelType, identifier],
       );
 
       userRecord = { id: userId, name: defaultName, status: 'ACTIVE' };
@@ -146,7 +168,32 @@ export class AuthService {
       return res.rows;
     });
 
-    const activeOrgId = memberships.length > 0 ? memberships[0].org_id : null;
+    let activeOrgId: string | null = null;
+    if (memberships.length > 0) {
+      activeOrgId = memberships[0].org_id;
+    } else {
+      // Auto-provision initial workspace organization for new user
+      const orgId = uuidv7();
+      const orgName = `${userRecord.name || 'Enterprise'} Organization`;
+      await this.db.queryGlobal(
+        `INSERT INTO organisations (id, legal_name, display_name, entity_type, trade, country, state, timezone, status)
+         VALUES ($1, $2, $3, 'PRIVATE_LIMITED', 'HVAC', 'IN', 'Haryana', 'Asia/Kolkata', 'ACTIVE')`,
+        [orgId, orgName, orgName],
+      );
+
+      await this.db.withTenantContext(
+        { orgId, userId, actorType: 'USER', requestId: uuidv7() },
+        async (client) => {
+          await client.query(
+            `INSERT INTO memberships (id, org_id, user_id, role, status)
+             VALUES ($1, $2, $3, 'R-OWNER', 'ACTIVE')`,
+            [uuidv7(), orgId, userId],
+          );
+        },
+      );
+
+      activeOrgId = orgId;
+    }
 
     // Create Session
     const sessionToken = crypto.randomBytes(32).toString('hex');

@@ -25,6 +25,16 @@ export class ChecklistsController {
     return this.checklistsService.listRequirements(req.userContext, projectId);
   }
 
+  @Post('projects/:projectId/requirements')
+  @RequirePermission('document.upload')
+  async createRequirement(
+    @Req() req: any,
+    @Param('projectId') projectId: string,
+    @Body() dto: { key: string; title: string; groupKey?: string; docTypeCode?: string; mandatory?: boolean; assetTag?: string; dueDate?: string },
+  ) {
+    return this.checklistsService.createRequirement(req.userContext, projectId, dto);
+  }
+
   @Post('requirements/:id/waivers')
   @RequirePermission('requirement.waive')
   async requestWaiver(

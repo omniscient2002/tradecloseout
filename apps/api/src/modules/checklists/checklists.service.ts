@@ -158,4 +158,67 @@ export class ChecklistsService {
       return res.rows;
     });
   }
+
+  /**
+   * POST /projects/:projectId/requirements
+   */
+  async createRequirement(
+    ctx: ExecutionContext,
+    projectId: string,
+    dto: {
+      key: string;
+      title: string;
+      groupKey?: string;
+      docTypeCode?: string;
+      mandatory?: boolean;
+      assetTag?: string;
+      dueDate?: string;
+    },
+  ) {
+    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+      // 1. Ensure a snapshot exists for this project
+      let snapRes = await client.query(
+        `SELECT id FROM checklist_snapshots
+         WHERE org_id = $1 AND project_id = $2
+         ORDER BY version_no DESC LIMIT 1`,
+        [ctx.orgId, projectId],
+      );
+      let snapshotId: string;
+      if (!snapRes.rows.length) {
+        snapshotId = uuidv7();
+        await client.query(
+          `INSERT INTO checklist_snapshots (
+            id, org_id, project_id, version_no, status, resolved_payload_json,
+            provenance_json, source_json, checksum, created_by
+          ) VALUES ($1, $2, $3, 1, 'ACTIVE', '{}', '{}', '{}', 'initial', $4)`,
+          [snapshotId, ctx.orgId, projectId, ctx.userId],
+        );
+      } else {
+        snapshotId = snapRes.rows[0].id;
+      }
+
+      // 2. Insert requirement conforming to composite foreign keys
+      const reqId = uuidv7();
+      const insertRes = await client.query(
+        `INSERT INTO requirements (
+          id, org_id, project_id, current_snapshot_id, requirement_key, scope_key,
+          group_key, title, doc_type_key, milestone_key, mandatory, status, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, 'project', $6, $7, $8, 'HANDOVER', $9, 'NOT_STARTED', now(), now())
+        RETURNING *`,
+        [
+          reqId,
+          ctx.orgId,
+          projectId,
+          snapshotId,
+          dto.key,
+          dto.groupKey || 'G1',
+          dto.title,
+          dto.docTypeCode || 'DT-001',
+          dto.mandatory !== false,
+        ],
+      );
+
+      return insertRes.rows[0];
+    });
+  }
 }
