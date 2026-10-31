@@ -10,6 +10,7 @@
     "test": "turbo run test",
     "test:rls": "pnpm --filter @tradecloseout/api test:rls",
     "test:rbac": "pnpm --filter @tradecloseout/api test:rbac",
+    "test:smoke": "ts-node scripts/test-e2e-smoke.ts",
     "verify:traceability": "ts-node scripts/verify-traceability.ts"
   },
   "devDependencies": {
