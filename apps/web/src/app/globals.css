@@ -3,7 +3,189 @@
 @tailwind utilities;
 
 @layer base {
-  body {
-    @apply bg-slate-50 text-slate-900 antialiased;
+  :root {
+    /* L0 - L3 Surfaces & Ink (Sunlight-First Daylight Default) */
+    --background: 210 40% 98%;              /* #F8FAFC - slate-50 */
+    --surface-sunken: 210 40% 96.1%;        /* #F1F5F9 - slate-100 */
+    --foreground: 222.2 47.4% 11.2%;        /* #0F172A - slate-900 (17.4:1) */
+
+    --card: 0 0% 100%;                      /* #FFFFFF */
+    --card-foreground: 222.2 47.4% 11.2%;
+
+    --popover: 0 0% 100%;                   /* #FFFFFF */
+    --popover-foreground: 222.2 47.4% 11.2%;
+
+    --surface-selected: 214 100% 97%;       /* #EFF6FF - blue-50 */
+    --pdf-stage: 217.2 32.6% 17.5%;         /* #1E293B - slate-800 */
+
+    /* Brand & Primary Actions (Blueprint Navy + Mobile Cobalt) */
+    --primary: 209 63% 16%;                 /* #0F2942 */
+    --primary-foreground: 210 40% 98%;      /* #F8FAFC */
+
+    --action-upload: 224.3 76.3% 48%;       /* #1D4ED8 - blue-700 */
+    --action-upload-foreground: 0 0% 100%;
+
+    /* Secondary, Muted & Accent Tokens */
+    --secondary: 210 40% 96.1%;             /* #F1F5F9 - slate-100 */
+    --secondary-foreground: 215.3 25% 26.7%;/* #334155 - slate-700 (10.1:1) */
+
+    --muted: 210 40% 96.1%;                 /* #F1F5F9 - slate-100 */
+    --muted-foreground: 215.4 16.3% 34.5%;  /* #475569 - slate-600 (7.2:1) */
+
+    --accent: 210 40% 96.1%;                /* #F1F5F9 - slate-100 */
+    --accent-foreground: 222.2 47.4% 11.2%;
+
+    /* Destructive, Borders & Outdoor-Legible Inputs */
+    --destructive: 0 72.2% 50.6%;           /* #DC2626 - red-600 */
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 214.3 31.8% 91.4%;            /* #E2E8F0 - slate-200 */
+    --input: 215 20.2% 65.1%;               /* #94A3B8 - slate-400 (3.1:1 UI contrast) */
+    --ring: 221.2 83.2% 53.3%;              /* #2563EB - blue-600 */
+    --radius: 0.5rem;                       /* 8px architectural radius */
+
+    /* Sandboxed Contractor Brand Accent (FR-ORG-007) */
+    --tenant-brand: #0F2942;
+
+    /* 11 Semantic Requirement Status Tokens (11-UI-UX-SPECIFICATION.md §5.1) */
+    --status-not-started-bg: #F1F5F9;
+    --status-not-started-border: #CBD5E1;
+    --status-not-started-fg: #334155;
+
+    --status-requested-bg: #EFF6FF;
+    --status-requested-border: #93C5FD;
+    --status-requested-fg: #1E40AF;
+
+    --status-uploaded-bg: #EEF2FF;
+    --status-uploaded-border: #A5B4FC;
+    --status-uploaded-fg: #3730A3;
+
+    --status-in-review-bg: #FFFBEB;
+    --status-in-review-border: #FCD34D;
+    --status-in-review-fg: #92400E;
+
+    --status-changes-bg: #FFF7ED;
+    --status-changes-border: #FDBA74;
+    --status-changes-fg: #9A3412;
+
+    --status-rejected-bg: #FEF2F2;
+    --status-rejected-border: #FCA5A5;
+    --status-rejected-fg: #991B1B;
+
+    --status-approved-bg: #F0FDF4;
+    --status-approved-border: #86EFAC;
+    --status-approved-fg: #166534;
+
+    --status-external-bg: #ECFDF5;
+    --status-external-border: #34D399;
+    --status-external-fg: #065F46;
+
+    --status-waived-bg: #FAF5FF;
+    --status-waived-border: #D8B4FE;
+    --status-waived-fg: #6B21A8;
+
+    --status-na-bg: #F8FAFC;
+    --status-na-border: #CBD5E1;
+    --status-na-fg: #475569;
+
+    --status-expired-bg: #FFFFFF;
+    --status-expired-border: #DC2626;
+    --status-expired-fg: #B91C1C;
+
+    --status-missing-bg: #FEE2E2;
+    --status-missing-border: #F87171;
+    --status-missing-fg: #7F1D1D;
+  }
+
+  .dark {
+    --background: 222 47% 6%;               /* #090D16 */
+    --surface-sunken: 222 47% 4%;           /* #06090F */
+    --foreground: 210 40% 98%;              /* #F8FAFC */
+
+    --card: 221 39% 11%;                    /* #111827 */
+    --card-foreground: 210 40% 98%;
+
+    --popover: 221 39% 11%;
+    --popover-foreground: 210 40% 98%;
+
+    --surface-selected: 226 57% 21%;        /* #172554 */
+    --pdf-stage: 222.2 84% 4.9%;            /* #020617 */
+
+    --primary: 217.2 91.2% 59.8%;           /* #3B82F6 */
+    --primary-foreground: 0 0% 100%;
+
+    --action-upload: 217.2 91.2% 59.8%;
+    --action-upload-foreground: 0 0% 100%;
+
+    --secondary: 217.2 32.6% 17.5%;         /* #1E293B */
+    --secondary-foreground: 212.7 26.8% 83.9%;
+
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;    /* #94A3B8 */
+
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217.2 32.6% 17.5%;            /* #1E293B */
+    --input: 215.3 25% 26.7%;               /* #334155 */
+    --ring: 217.2 91.2% 59.8%;
+
+    --status-not-started-bg: #1E293B;
+    --status-not-started-border: #334155;
+    --status-not-started-fg: #CBD5E1;
+
+    --status-requested-bg: #172554;
+    --status-requested-border: #1D4ED8;
+    --status-requested-fg: #93C5FD;
+
+    --status-uploaded-bg: #1E1B4B;
+    --status-uploaded-border: #4338CA;
+    --status-uploaded-fg: #A5B4FC;
+
+    --status-in-review-bg: #451A03;
+    --status-in-review-border: #B45309;
+    --status-in-review-fg: #FCD34D;
+
+    --status-changes-bg: #431407;
+    --status-changes-border: #C2410C;
+    --status-changes-fg: #FDBA74;
+
+    --status-rejected-bg: #450A0A;
+    --status-rejected-border: #B91C1C;
+    --status-rejected-fg: #FCA5A5;
+
+    --status-approved-bg: #052E16;
+    --status-approved-border: #15803D;
+    --status-approved-fg: #86EFAC;
+
+    --status-external-bg: #022C22;
+    --status-external-border: #059669;
+    --status-external-fg: #6EE7B7;
+
+    --status-waived-bg: #3B0764;
+    --status-waived-border: #7E22CE;
+    --status-waived-fg: #D8B4FE;
+
+    --status-na-bg: #0F172A;
+    --status-na-border: #334155;
+    --status-na-fg: #94A3B8;
+
+    --status-expired-bg: transparent;
+    --status-expired-border: #F87171;
+    --status-expired-fg: #FCA5A5;
+
+    --status-missing-bg: #450A0A;
+    --status-missing-border: #EF4444;
+    --status-missing-fg: #FECACA;
+  }
+}
+
+@layer utilities {
+  .tabular-nums-tech {
+    font-variant-numeric: tabular-nums slashed-zero;
+    font-feature-settings: "tnum" 1, "zero" 1, "cv02" 1, "cv03" 1, "cv04" 1, "cv11" 1;
   }
 }
