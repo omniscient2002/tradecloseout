@@ -190,7 +190,7 @@ Four steps with progress and skip:
 
 **Layout:** grouped accordion or table. Filters: status, owner, asset, mandatory, due. Search.
 
-**Row:** requirement title, document type, asset tag, status pill, owner avatar, due date, evidence count, quick action (Upload/Review).
+**Row:** requirement title, document type, asset tag, status pill, owner avatar, due date, satisfaction/evidence status, quick action (Upload/Review).
 
 **Bulk actions:** assign owner, request from supplier, mark N/A (permission), export.
 
@@ -214,7 +214,7 @@ Four steps with progress and skip:
 
 **Left:** template tree (groups/items). **Right:** item editor.
 
-**Item fields:** title, description, document type, category, mandatory, evidence count, owner role, reviewer role, due offset, validity, naming pattern, applicability conditions, reuse policy.
+**Item fields:** title, description, document type, category, mandatory, owner role, reviewer role, due offset, validity, naming pattern, applicability conditions, reuse policy.
 
 **Top bar:** resolved preview, validation count, Save draft, Publish/Activate.
 
@@ -232,7 +232,7 @@ Four steps with progress and skip:
 
 **Validation messages:**
 
-- "This file type isn't supported. Use PDF, JPG, PNG, DOCX, XLSX, DWG or ZIP."
+- "This file type isn't supported. Use PDF, JPG, PNG, WebP, DOCX, XLSX, DWG or ZIP (SVG is strictly banned)."
 - "This file is 142 MB. The limit is 100 MB."
 - "This PDF is password-protected. Remove the password and try again."
 - "A file with the same content already exists in this project. Use it instead?"

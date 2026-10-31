@@ -33,7 +33,7 @@ Rules:
 | Database | Managed PostgreSQL, daily backup + PITR | Multi-AZ, read replica |
 | Redis | Managed small | Managed HA |
 | Storage | S3-compatible, private, versioned | Lifecycle policies, replication |
-| PDF | Gotenberg container, **PDF/image input only in MVP** (`09` §12) | Dedicated CPU pool + Office conversion |
+| PDF | **Pure Node.js in worker (`pdf-lib` + `qpdf`, RT-025)**; no Gotenberg container in MVP | Gotenberg container with dedicated CPU pool + Office conversion |
 | CDN/WAF | Cloudflare/cloud-native | Same |
 | Email | SES/Postmark | Same + fallback |
 | Payments | Razorpay | Same |

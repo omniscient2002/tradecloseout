@@ -134,7 +134,7 @@ The product operates on these objects. Canonical definitions are in `README.md` 
 | FR-CFG-011 | Reminder schedules, escalation, naming conventions, folder structure and package layout are configurable. | M | MVP (subset), S (full) |
 | FR-CFG-012 | Language packs are data, not code; English is default, Hindi is V1. | S | V1 |
 | FR-CHK-001 | A Checklist Template contains groups, requirements, applicability rules and default owners. | M | MVP |
-| FR-CHK-002 | Requirement fields include: title, description, document type, category, mandatory flag, evidence count, asset scope (project/asset/asset-category), default owner role, reviewer role, due offset, validity period, naming rule, reuse policy. | M | MVP |
+| FR-CHK-002 | Requirement fields include: title, description, document type, category, mandatory flag, satisfaction rule (single approved evidence version or approved waiver in MVP, RT-005), asset scope (project/asset/asset-category), default owner role, reviewer role, due offset, validity period, naming rule, reuse policy. | M | MVP |
 | FR-CHK-003 | Applicability rules can depend on trade, project type, client type, equipment category, contract clause and custom fields. | S | V1 |
 | FR-CHK-004 | On project activation, a Checklist Snapshot is created and bound to the project; it is immutable. | M | MVP |
 | FR-CHK-005 | The snapshot records template version, resolved configuration, rule evaluations and item-level provenance. | M | MVP |
@@ -221,7 +221,7 @@ The product operates on these objects. Canonical definitions are in `README.md` 
 | FR-REV-003 | Decisions are `APPROVE`, `REQUEST_CHANGES` or `REJECT`; `REQUEST_CHANGES` and `REJECT` require a comment. | M | MVP |
 | FR-REV-004 | Review comments can be general or page-specific (page number + note). | S | V1 |
 | FR-REV-005 | An approval can require one or more sequential/parallel stages per configuration. | S | V1 (MVP: single-stage) |
-| FR-REV-006 | A requirement is satisfied only when all required evidence versions are approved or waived. | M | MVP |
+| FR-REV-006 | A requirement is satisfied when an approved document version is linked or an approved waiver is granted (1:1 satisfaction in MVP, RT-005, FR-CHK-011). | M | MVP |
 | FR-REV-007 | Rejection returns the requirement to `CHANGES_REQUESTED`; the uploader is notified with reasons. | M | MVP |
 | FR-REV-008 | A resubmission creates a new version linked to the prior version and review history. | M | MVP |
 | FR-REV-009 | Reviewers cannot approve their own uploaded document unless an org setting explicitly allows self-approval and records it. | M | MVP |

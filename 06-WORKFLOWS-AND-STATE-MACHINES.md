@@ -124,7 +124,7 @@ stateDiagram-v2
   REQUESTED --> UPLOADED: evidence uploaded
   NOT_STARTED --> UPLOADED: direct upload
   UPLOADED --> IN_REVIEW: submit for review
-  IN_REVIEW --> APPROVED: all evidence approved
+  IN_REVIEW --> APPROVED: evidence approved or waiver granted (RT-005)
   IN_REVIEW --> CHANGES_REQUESTED: changes requested
   IN_REVIEW --> REJECTED: rejected
   CHANGES_REQUESTED --> UPLOADED: new revision
@@ -157,7 +157,7 @@ Notes:
 - `EXPIRING` = approved evidence with `valid_until ≤ now + 30 days`.
 - `EXPIRED` = approved evidence whose `valid_until < now`; such a requirement **blocks or explicitly warns** at package generation (`AUD-P-09`).
 - **Waiver with existing evidence (`AUD-030`):** waiving a requirement does not delete its documents. Linked documents remain in the project and are excluded from the "satisfies" set; the package shows the requirement as `WAIVED` and lists the orphaned evidence in a non-blocking appendix when `package_include_waived_evidence` is on.
-- A requirement with multiple required evidence items stays `IN_REVIEW` until all are approved; partial approval is visible per document but does not satisfy the requirement.
+- In MVP (RT-005, FR-CHK-011), requirement satisfaction is 1:1: exactly one approved document version or approved waiver satisfies the requirement. Multiple evidence items per requirement are deferred to V1.
 - `SUPERSEDED` requirements are retained for history and excluded from progress.
 
 ### 3.7 Document version — file processing
@@ -275,6 +275,40 @@ A submission can have multiple `submission_recipients` (e.g., Main Contractor, P
 
 `TRIAL → ACTIVE → PAST_DUE → SUSPENDED → CANCELLED`; `PAST_DUE → ACTIVE` on payment; `TRIAL → CANCELLED`.
 
+### 3.14 Warranty event (WF-24)
+
+```mermaid
+stateDiagram-v2
+  [*] --> RECORDED: register warranty event
+  RECORDED --> CONFIRMED: OEM confirmation received
+  RECORDED --> DISPUTED: date mismatch / basis dispute
+  DISPUTED --> CONFIRMED: reconciled
+  CONFIRMED --> CLAIMED: warranty claim filed
+```
+
+- `RECORDED` = warranty registration logged against equipment/asset tag with certificate.
+- `CONFIRMED` = OEM or consultant acknowledges warranty start basis (commissioning, handover, or supply).
+- `DISPUTED` = start date conflict flagged (e.g. supply vs handover date gap).
+- `CLAIMED` = defect covered under active warranty claim.
+
+### 3.15 Defect (WF-25)
+
+```mermaid
+stateDiagram-v2
+  [*] --> OPEN: snag/defect logged
+  OPEN --> IN_PROGRESS: assigned to trade/contractor
+  IN_PROGRESS --> RECTIFIED: rectification evidence uploaded
+  RECTIFIED --> CLOSED: verified by QA/QC
+  RECTIFIED --> IN_PROGRESS: re-opened (rectification insufficient)
+  OPEN --> WAIVED: commercial waiver granted
+```
+
+- `OPEN` = punch-list item logged against asset or requirement.
+- `IN_PROGRESS` = contractor acknowledged and working on snag.
+- `RECTIFIED` = contractor submitted completion photo/document.
+- `CLOSED` = QC sign-off; mandatory defects block final package sign-off until `CLOSED` or `WAIVED`.
+- `WAIVED` = client/consultant agreed to take handover with commercial settlement.
+
 ## 4. Workflows
 
 Each workflow lists trigger, actors, preconditions, steps, validations, permissions, states, notifications, failure handling and outcome.
@@ -361,7 +395,7 @@ Each workflow lists trigger, actors, preconditions, steps, validations, permissi
 | Trigger | Project setup, or controlled change request |
 | Actors | PM, Admin, QC, config approver |
 | Preconditions | Project exists; template available; project not closed |
-| Steps | 1. Choose trade template + optional client profile. 2. Preview resolved requirements (inheritance shown). 3. Adjust: add/remove, mandatory flag, owner, reviewer, due offset, evidence count, naming. 4. Resolve applicability rules for assets (or defer asset-scoped items). Asset-category requirements are **instantiated as one requirement row per matching asset** (`scope_key = 'asset:{id}'`) at snapshot creation **and** again whenever a new asset is created (`AUD-002`). 5. Create snapshot. 6. Activate project if draft. |
+| Steps | 1. Choose trade template + optional client profile. 2. Preview resolved requirements (inheritance shown). 3. Adjust: add/remove, mandatory flag, owner, reviewer, due offset, naming. 4. Resolve applicability rules for assets (or defer asset-scoped items). Asset-category requirements are **instantiated as one requirement row per matching asset** (`scope_key = 'asset:{id}'`) at snapshot creation **and** again whenever a new asset is created (`AUD-002`). 5. Create snapshot. 6. Activate project if draft. |
 | Validations | At least 1 mandatory item; every item has type + title; no duplicate keys; due offset ≥0; reviewer role exists; locked platform items cannot be removed. |
 | Permissions | `checklist.manage`; after activation requires change request + approver |
 | States | Snapshot `DRAFT → ACTIVE`; previous `SUPERSEDED` |

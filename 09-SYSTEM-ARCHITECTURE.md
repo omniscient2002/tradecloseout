@@ -42,7 +42,7 @@ flowchart TB
   WORK[Worker pool] --> DB
   WORK --> REDIS
   WORK --> OBJ
-  WORK --> PDF[PDF renderer / Gotenberg]
+  WORK --> PDF[PDF engine: pure-Node in MVP / Gotenberg in V1]
   WORK --> AV[ClamAV]
   WORK --> OCR[OCR engine - V1]
   API --> OBS[Logs / metrics / errors]
@@ -71,8 +71,8 @@ flowchart TB
     S3[(S3-compatible object storage<br/>private buckets)]
   end
   subgraph Processing
-    GOT[Gotenberg<br/>HTML/DOCX → PDF]
-    QPDF[qpdf / pdf-lib<br/>merge, validate, bookmarks]
+    GOT[Gotenberg - V1<br/>HTML/DOCX → PDF]
+    QPDF[qpdf / pdf-lib (MVP)<br/>merge, validate, bookmarks, cover/TOC]
     CLAM[ClamAV]
     TESS[Tesseract OCR]
   end
@@ -109,7 +109,8 @@ flowchart TB
 | PostgreSQL | Source of truth, RLS, audit, search | Vertical + read replica; partition audit |
 | Redis | Queues, short-lived cache, rate limits, locks | Managed instance |
 | Object storage | Files, previews, packages | Provider-managed |
-| Gotenberg | DOCX/XLSX/HTML → PDF; HTML templates | Separate container; CPU-heavy |
+| Pure-Node PDF (MVP) | PDF merge, sanitisation, bookmarks, cover/TOC (RT-025) | In-worker via pdf-lib + qpdf (no Gotenberg container in MVP) |
+| Gotenberg (V1) | DOCX/XLSX/HTML → PDF; HTML templates (deferred to V1, RT-025) | Separate container in V1; CPU-heavy |
 | ClamAV | Malware scanning | Sidecar/worker |
 | Tesseract | OCR (V2) | Worker-only |
 
@@ -250,7 +251,7 @@ flowchart TB
         APPC[API containers]
         WORKC[Worker containers]
         SCHC[Scheduler]
-        GOTC[Gotenberg]
+        GOTC[Gotenberg - V1]
       end
       subgraph PrivateData
         RDS[(RDS PostgreSQL<br/>Multi-AZ in V1)]
@@ -356,7 +357,7 @@ Boundary rules:
 | DB | PostgreSQL 16 | MySQL, MongoDB | RLS, JSONB, constraints, full-text, maturity | Vertical scaling limits |
 | Queue | BullMQ + Redis | SQS, RabbitMQ, Temporal | Simple, retries, scheduling, low ops | Redis durability must be managed |
 | Storage | S3-compatible | Local disk, DB blobs | Durability, signed URLs, scale | Egress cost; eventual consistency edge cases |
-| PDF | Gotenberg + pdf-lib + qpdf | Chromium custom, commercial SDK | Reliable conversion/merge, open source | CPU/memory; container overhead |
+| PDF | Pure Node (pdf-lib + qpdf in MVP, RT-025); Gotenberg in V1 | Chromium custom, commercial SDK | Lightweight, 0 MB extra container in MVP, reliable merge | Office conversion deferred to V1 |
 | AV | ClamAV | Cloud scanner | Self-hosted, no per-file cost | Signature freshness, CPU |
 | OCR | Tesseract (V1) | Cloud OCR, LLM | Cheap, on-prem | Accuracy; not MVP-critical |
 | Auth | Own OTP/magic-link sessions | Auth0, Clerk, Supabase Auth | Cost, India phone OTP control, data residency | Build/maintain security |
@@ -406,7 +407,7 @@ Do not pre-build stages 5–7.
 
 ## 12. MVP input-format decision
 
-**MVP accepts PDF, JPEG, PNG, WebP and DWG. DOCX/XLSX are accepted for storage and download but are NOT converted for preview or for inclusion in generated packages** (`AUD-A-33`, `16` §10 scope-cut list). Rationale:
+**MVP accepts PDF, JPEG, PNG, WebP, DWG, and ZIP (for bulk import). DOCX/XLSX are accepted for storage and download but are NOT converted for preview or for inclusion in generated packages** (`AUD-A-33`, `16` §10 scope-cut list). Rationale:
 
 - Gotenberg/LibreOffice is the most fragile and heaviest dependency in the design.
 - Every Indian closeout deliverable is ultimately a PDF or a scan.

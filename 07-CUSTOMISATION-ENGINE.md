@@ -54,7 +54,7 @@ flowchart LR
 |---|---|---|---|
 | Document types | Code, name, category, mandatory metadata, validity rule, reuse policy, package section, allowed formats | L1–L4 | Partial (L1/L2) |
 | Categories | Document category tree, equipment categories | L0–L4 | Yes |
-| Requirements | Title, description, document type, mandatory flag, evidence count, owner role, reviewer role, due offset, applicability rule | L1–L4 | Yes |
+| Requirements | Title, description, document type, mandatory flag, satisfaction rule (1:1 in MVP, RT-005), owner role, reviewer role, due offset, applicability rule | L1–L4 | Yes |
 | Checklist groups | Group name, order, requirements | L1–L4 | Yes |
 | Custom fields | Field key, label, type (text/number/date/select/boolean), required, options, applies-to entity | L2–L4 | V1 |
 | Approval workflows | Stages, sequential/parallel, approver role/party, SLA, rejection behaviour | L2–L4 | V1 (single-stage MVP) |
@@ -110,13 +110,13 @@ Once an org installs a trade pack, the **org's installed configuration (L2) beco
 
 For an org that has not installed a pack, L1 is used to preview and install. The algorithm below therefore iterates `PLATFORM → ORG → CLIENT → PROJECT` for installed orgs, treating the org payload as already containing the L1 defaults.
 
-### 4.2 Variations and multiple contracts
+### 4.3 Variations and multiple contracts
 
 A project may have a base contract and one or more variation orders (`08` §3.2 `contracts.parent_contract_id`, `variations`). **There is exactly one L3 client profile per project.** Requirement changes arising from variations are expressed as **L4 project overrides** carrying a `provenance` reference to the contract or variation that introduced them. The resolver applies L3 once, then applies each L4 override in ascending `effective_from` order.
 
 This avoids an unbounded multi-L3 resolver while still recording which contract clause drove each requirement.
 
-### 4.3 Algorithm (RT-019, RT-020)
+### 4.4 Algorithm (RT-019, RT-020)
 
 ```
 resolve(scope, is_preview = false):
@@ -149,7 +149,7 @@ resolve(scope, is_preview = false):
   return {payload: result, provenance, conflicts}
 ```
 
-### 4.4 Merge semantics
+### 4.5 Merge semantics
 
 | Type | Default | Notes |
 |---|---|---|
@@ -159,7 +159,7 @@ resolve(scope, is_preview = false):
 | Rule set | Merge by `ruleId`; same ID overrides; different IDs combine | Conflicts detected after merge |
 | Map/object | Deep merge | Recursion follows field policies |
 
-### 4.5 Precedence examples
+### 4.6 Precedence examples
 
 | Field | L1 | L2 | L3 | L4 | Resolved |
 |---|---|---|---|---|---|
