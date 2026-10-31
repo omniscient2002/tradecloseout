@@ -102,7 +102,7 @@ export class ReviewsService {
         // Mark this version APPROVED
         await client.query(
           `UPDATE document_versions
-           SET review_status = 'APPROVED', row_version = row_version + 1
+           SET review_status = 'APPROVED', file_status = 'READY', row_version = row_version + 1
            WHERE org_id = $1 AND id = $2`,
           [ctx.orgId, version.id],
         );
@@ -206,7 +206,7 @@ export class ReviewsService {
       // Mark version APPROVED
       await client.query(
         `UPDATE document_versions
-         SET review_status = 'APPROVED', row_version = row_version + 1
+         SET review_status = 'APPROVED', file_status = 'READY', row_version = row_version + 1
          WHERE org_id = $1 AND id = $2`,
         [ctx.orgId, version.id],
       );

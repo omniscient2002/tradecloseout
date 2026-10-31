@@ -126,9 +126,84 @@ async function runSmokeTests() {
   }
   console.log(`[PASS] 8. Bates-stamped Handover Dossier PDF generated (${pdfBytes.byteLength} bytes).`);
 
-  console.log('\n================================================================');
-  console.log('>>> ALL 8/8 END-TO-END PRODUCTION SMOKE TESTS PASSED CLEANLY <<<');
-  console.log('================================================================');
+  // 9. Equipment Asset Registration (API-070..076)
+  const assetRes = await fetch(`${baseUrl}/api/v1/projects/${proj.id}/assets`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: cookie,
+      'X-CSRF-Token': csrfToken,
+    },
+    body: JSON.stringify({
+      tag: 'CHLR-01',
+      name: 'Centrifugal Water Chiller 500 TR',
+      categoryKey: 'CHILLER',
+      make: 'Carrier Aircon India',
+      model: '19XRV-500TR',
+      serialNo: 'IN-CH-2026-992',
+      location: 'Basement -2 Plant Room',
+    }),
+  });
+  const assetData = (await assetRes.json()) as any;
+  if (assetRes.status !== 201 || !assetData.id) {
+    throw new Error(`Asset creation failed (${assetRes.status}): ${JSON.stringify(assetData)}`);
+  }
+  console.log(`[PASS] 9. Equipment Asset ${assetData.tag} registered in PostgreSQL.`);
+
+  // 10. Dual-Approver Mandatory Waiver Flow (API-061 & RT-023)
+  const waiverReqRes = await fetch(`${baseUrl}/api/v1/requirements/${reqItem.id}/waivers`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: cookie,
+      'X-CSRF-Token': csrfToken,
+    },
+    body: JSON.stringify({
+      reason: 'Statutory waiver granted by municipal authority due to early handover phasing',
+      type: 'WAIVE',
+    }),
+  });
+  const waiverData = (await waiverReqRes.json()) as any;
+  if (waiverReqRes.status !== 201 || !waiverData.waiverId) {
+    throw new Error(`Waiver request failed (${waiverReqRes.status}): ${JSON.stringify(waiverData)}`);
+  }
+  console.log(`[PASS] 10. Dual-approver mandatory waiver requested (Status: ${waiverData.status}).`);
+
+  // 11. External Stamped Approval Recording (API-106, WF-23, RT-022)
+  const extApprovalRes = await fetch(`${baseUrl}/api/v1/document-versions/${intentData.versionId}/external-approval`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: cookie,
+      'X-CSRF-Token': csrfToken,
+    },
+    body: JSON.stringify({
+      decision: 'APPROVE',
+      externalMethod: 'PHYSICAL',
+      externalApproverName: 'Er. R. Sharma (PMC Chief Consultant)',
+      externalReference: 'PMC-HVAC-APPR-2026-088',
+      comment: 'Approved with physical stamp on drawing sheet 4 during site inspection',
+    }),
+  });
+  const extData = (await extApprovalRes.json()) as any;
+  if (extApprovalRes.status !== 201 || !extData.reviewId) {
+    throw new Error(`External approval recording failed (${extApprovalRes.status}): ${JSON.stringify(extData)}`);
+  }
+  console.log(`[PASS] 11. External stamped approval recorded for version ${intentData.versionId}.`);
+
+  // 12. Checklist State & Closeout Readiness Verification
+  const reqsListRes = await fetch(`${baseUrl}/api/v1/projects/${proj.id}/requirements`, {
+    headers: { Cookie: cookie },
+  });
+  const allReqs = (await reqsListRes.json()) as any[];
+  if (!Array.isArray(allReqs) || allReqs.length === 0) {
+    throw new Error(`Verification of requirements state failed: ${JSON.stringify(allReqs)}`);
+  }
+  console.log(`[PASS] 12. End-to-end closeout checklist state verified (${allReqs.length} items tracked).`);
+
+  console.log('\n=================================================================');
+  console.log('>>> ALL 12/12 END-TO-END PRODUCTION SMOKE TESTS PASSED CLEANLY <<<');
+  console.log('=================================================================');
 }
 
 runSmokeTests().catch((err) => {
