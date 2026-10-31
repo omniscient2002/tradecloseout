@@ -526,10 +526,14 @@ export default function TradeCloseoutEnterpriseApp() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [activeDrawerReq, setActiveDrawerReq] = useState<RequirementItem | null>(null);
+  const [filterAssetOnly, setFilterAssetOnly] = useState(false);
+  const [filterGroupOnly, setFilterGroupOnly] = useState<string | null>(null);
 
-  // Mobile/Field Upload Sheet State (SCR-023)
+  // Modals & Drawers
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [uploadTargetReq, setUploadTargetReq] = useState<RequirementItem | null>(null);
+  const [auditModalOpen, setAuditModalOpen] = useState(false);
+  const [billingModalOpen, setBillingModalOpen] = useState(false);
 
   // PDF Reviewer State (SCR-025 / SCR-027)
   const [decisionMode, setDecisionMode] = useState<"in_app" | "external">("in_app");
@@ -547,6 +551,9 @@ export default function TradeCloseoutEnterpriseApp() {
   // Filtered requirements
   const filteredReqs = useMemo(() => {
     return requirements.filter((r) => {
+      if (filterAssetOnly && !r.assetTag) return false;
+      if (filterGroupOnly && r.groupKey !== filterGroupOnly) return false;
+
       const matchesStatus =
         statusFilter === "ALL"
           ? true
@@ -567,7 +574,7 @@ export default function TradeCloseoutEnterpriseApp() {
 
       return matchesStatus && matchesSearch;
     });
-  }, [requirements, statusFilter, searchQuery]);
+  }, [requirements, statusFilter, searchQuery, filterAssetOnly, filterGroupOnly]);
 
   // Grouped requirements for SCR-014
   const groupedReqs = useMemo(() => {
@@ -683,13 +690,6 @@ export default function TradeCloseoutEnterpriseApp() {
                 icon: PackageCheck,
                 badge: "v2",
               },
-              {
-                id: "supplier",
-                label: "Supplier Link Portal",
-                icon: ExternalLink,
-                badge: "Guest",
-                badgeColor: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
-              },
             ].map((item) => {
               const Icon = item.icon;
               const active = activeTab === item.id;
@@ -732,15 +732,42 @@ export default function TradeCloseoutEnterpriseApp() {
           <div className="px-2.5 py-2 border-t border-slate-800/80 space-y-0.5">
             {!sidebarCollapsed && (
               <div className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                Registers & Governance
+                Registers & Shortcuts
               </div>
             )}
             {[
-              { label: "Equipment Register (42)", icon: Cpu, action: () => setActiveTab("checklist") },
-              { label: "Supplier & Party Directory", icon: Building2, action: () => setActiveTab("supplier") },
-              { label: "HVAC Template Packs", icon: Layers, action: () => setActiveTab("checklist") },
-              { label: "Immutable Audit Trail", icon: ShieldCheck, action: () => setActiveTab("overview") },
-              { label: "Billing, GST & TDS", icon: CreditCard, action: () => setActiveTab("overview") },
+              {
+                label: "Equipment Register (42)",
+                icon: Cpu,
+                action: () => {
+                  setFilterAssetOnly(true);
+                  setFilterGroupOnly(null);
+                  setStatusFilter("ALL");
+                  setSearchQuery("");
+                  setActiveTab("checklist");
+                },
+              },
+              {
+                label: "Statutory Approvals (8)",
+                icon: ShieldCheck,
+                action: () => {
+                  setFilterGroupOnly("G1");
+                  setFilterAssetOnly(false);
+                  setStatusFilter("ALL");
+                  setSearchQuery("");
+                  setActiveTab("checklist");
+                },
+              },
+              {
+                label: "Immutable Audit Trail",
+                icon: Layers,
+                action: () => setAuditModalOpen(true),
+              },
+              {
+                label: "Billing, GST & TDS",
+                icon: CreditCard,
+                action: () => setBillingModalOpen(true),
+              },
             ].map((item, idx) => {
               const Icon = item.icon;
               return (
@@ -754,6 +781,33 @@ export default function TradeCloseoutEnterpriseApp() {
                 </button>
               );
             })}
+          </div>
+
+          {/* External Portals Section */}
+          <div className="px-2.5 py-2 border-t border-slate-800/80 space-y-0.5">
+            {!sidebarCollapsed && (
+              <div className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                External Portals
+              </div>
+            )}
+            <button
+              onClick={() => setActiveTab("supplier")}
+              className={`group flex w-full items-center justify-between rounded-md px-2.5 py-2 text-xs font-medium transition-colors ${
+                activeTab === "supplier"
+                  ? "bg-blue-600 text-white shadow-sm"
+                  : "text-slate-300 hover:bg-slate-800/70 hover:text-white"
+              }`}
+            >
+              <div className="flex items-center gap-2.5 truncate">
+                <ExternalLink className="h-4 w-4 shrink-0 text-emerald-400 group-hover:text-white" />
+                {!sidebarCollapsed && <span className="truncate">Supplier Guest Link</span>}
+              </div>
+              {!sidebarCollapsed && (
+                <span className="ml-2 rounded-full px-1.5 py-0.5 text-[10px] font-semibold border bg-emerald-500/20 text-emerald-300 border-emerald-500/30">
+                  OTP Sim
+                </span>
+              )}
+            </button>
           </div>
         </div>
 
@@ -787,16 +841,14 @@ export default function TradeCloseoutEnterpriseApp() {
       <div className="flex flex-1 flex-col min-w-0 overflow-hidden">
         {/* TOP CONTEXTUAL COMMAND BAR */}
         <header className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-5 z-20">
-          {/* Left: Breadcrumbs & Active Project Switcher */}
-          <div className="flex items-center gap-2 text-xs">
-            <span className="text-slate-500 font-medium">Projects</span>
-            <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
+          {/* Left: Clean Project Switcher */}
+          <div className="flex items-center gap-2.5 text-xs">
+            <span className="text-slate-400 font-medium">Workspace</span>
+            <ChevronRight className="h-3.5 w-3.5 text-slate-300" />
             <div className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 font-medium text-slate-900">
-              <span className="font-mono text-[11px] font-semibold text-blue-700">
-                PRJ-024
-              </span>
-              <span className="text-slate-300">|</span>
-              <span>Skyview Commercial Towers (Package A - HVAC)</span>
+              <span className="font-mono text-[11px] font-bold text-blue-700">PRJ-024</span>
+              <span className="text-slate-300">/</span>
+              <span className="font-semibold text-slate-800">Skyview Commercial Towers</span>
               <ChevronDown className="h-3.5 w-3.5 text-slate-500" />
             </div>
             <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
@@ -832,7 +884,7 @@ export default function TradeCloseoutEnterpriseApp() {
               className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[#0F2942] px-3 text-xs font-medium text-white shadow-sm hover:bg-[#163A5F] transition-colors"
             >
               <UploadCloud className="h-3.5 w-3.5" />
-              <span>Upload Evidence</span>
+              <span>Upload Document</span>
             </button>
 
             <button className="relative rounded-md border border-slate-200 p-1.5 text-slate-600 hover:bg-slate-100">
@@ -850,104 +902,50 @@ export default function TradeCloseoutEnterpriseApp() {
               </div>
               <div className="hidden lg:block leading-tight">
                 <div className="text-xs font-semibold text-slate-900">Anil Pillai</div>
-                <div className="text-[10px] text-slate-500">Projects Head</div>
+                <div className="text-[10px] text-slate-500">Projects Head · Apex MEP</div>
               </div>
             </div>
           </div>
         </header>
-
-        {/* SECONDARY WORKSPACE TAB BAR */}
-        <div className="flex h-10 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-5">
-          <nav className="flex items-center gap-6 -mb-px">
-            {[
-              { id: "overview", label: "Project Overview", icon: LayoutDashboard },
-              {
-                id: "checklist",
-                label: "Compliance Checklist",
-                icon: ClipboardCheck,
-                count: requirements.length,
-              },
-              {
-                id: "viewer",
-                label: "Document Review Workbench",
-                icon: Eye,
-                count: requirements.filter((r) => r.status === "IN_REVIEW").length,
-                alert: true,
-              },
-              { id: "package", label: "Handover Dossier & Submissions", icon: PackageCheck },
-              { id: "supplier", label: "Supplier Portal View", icon: ExternalLink },
-            ].map((t) => {
-              const Icon = t.icon;
-              const isActive = activeTab === t.id;
-              return (
-                <button
-                  key={t.id}
-                  onClick={() => setActiveTab(t.id as typeof activeTab)}
-                  className={`flex items-center gap-2 border-b-2 py-2.5 text-xs font-medium transition-colors ${
-                    isActive
-                      ? "border-[#0F2942] text-[#0F2942] font-semibold"
-                      : "border-transparent text-slate-600 hover:border-slate-300 hover:text-slate-900"
-                  }`}
-                >
-                  <Icon className="h-3.5 w-3.5" />
-                  <span>{t.label}</span>
-                  {t.count !== undefined && (
-                    <span
-                      className={`rounded-full px-1.5 py-0.2 text-[10px] font-mono font-semibold ${
-                        t.alert
-                          ? "bg-amber-100 text-amber-900 border border-amber-300"
-                          : "bg-slate-100 text-slate-700"
-                      }`}
-                    >
-                      {t.count}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </nav>
-
-          <div className="hidden xl:flex items-center gap-4 text-[11px] text-slate-500">
-            <span>
-              Snapshot: <strong className="font-mono text-slate-700">v2 (Locked)</strong>
-            </span>
-            <span>·</span>
-            <span>
-              Client: <strong className="text-slate-700">DLF CyberCity Developers</strong>
-            </span>
-            <span>·</span>
-            <span>
-              PMC: <strong className="text-slate-700">Meinhardt Singapore</strong>
-            </span>
-          </div>
-        </div>
 
         {/* =================================================================== */}
         {/* VIEW 1: PROJECT OVERVIEW (SCR-013) - FULL DENSITY BENTO GRID        */}
         {/* =================================================================== */}
         {activeTab === "overview" && (
           <main className="flex-1 overflow-y-auto p-5 space-y-5">
-            {/* Hero Readiness & Contract Header Card */}
+            {/* Unified Project Dossier & Contract Briefing Card */}
             <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-xs">
               <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 border-b border-slate-100 pb-4">
                 <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-800 border border-slate-300">
-                      PRJ-024
-                    </span>
-                    <h1 className="text-lg font-semibold tracking-tight text-slate-900">
-                      Skyview Commercial Towers — Package A (HVAC High-Side & Low-Side)
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <h1 className="text-lg font-bold tracking-tight text-slate-900">
+                      Package A: HVAC High-Side & Low-Side Works
                     </h1>
+                    <span className="rounded bg-blue-50 px-2 py-0.5 font-mono text-xs font-semibold text-blue-700 border border-blue-200">
+                      Baseline v2 (Locked)
+                    </span>
                   </div>
-                  <p className="mt-1 text-xs text-slate-600">
-                    Contract Ref:{" "}
-                    <span className="font-mono font-medium text-slate-800">
-                      DLF/CYB/MEP/2025-08
-                    </span>{" "}
-                    · Main Contractor:{" "}
-                    <span className="font-medium text-slate-800">L&T Construction</span> ·
-                    Location: <span className="font-medium text-slate-800">Gurugram, HR</span>
-                  </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600">
+                    <span>
+                      Contract Ref: <strong className="font-mono text-slate-800">DLF/CYB/MEP/2025-08</strong>
+                    </span>
+                    <span className="text-slate-300">·</span>
+                    <span>
+                      Client: <strong className="text-slate-800">DLF CyberCity Developers Ltd</strong>
+                    </span>
+                    <span className="text-slate-300">·</span>
+                    <span>
+                      PMC: <strong className="text-slate-800">Meinhardt Singapore</strong>
+                    </span>
+                    <span className="text-slate-300">·</span>
+                    <span>
+                      EPC Contractor: <strong className="text-slate-800">L&T Construction</strong>
+                    </span>
+                    <span className="text-slate-300">·</span>
+                    <span>
+                      Site: <strong className="text-slate-800">Sector 29, Gurugram, HR</strong>
+                    </span>
+                  </div>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2.5">
@@ -1390,6 +1388,29 @@ export default function TradeCloseoutEnterpriseApp() {
         {activeTab === "checklist" && (
           <div className="flex flex-1 min-h-0 overflow-hidden relative">
             <div className="flex-1 flex flex-col min-w-0 overflow-hidden p-5">
+              {/* Active Filter Scope Pill */}
+              {(filterAssetOnly || filterGroupOnly) && (
+                <div className="mb-3 flex items-center justify-between rounded-lg bg-blue-50 border border-blue-200 px-4 py-2.5 text-xs text-blue-900 shadow-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-blue-950">Active Scope:</span>
+                    <span>
+                      {filterAssetOnly
+                        ? "Showing 42 Equipment-Tagged Package Assets (CHLR, AHU, PMP, FD)"
+                        : "Showing Group 01: Statutory Approvals & CFO Fire NOCs"}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setFilterAssetOnly(false);
+                      setFilterGroupOnly(null);
+                    }}
+                    className="font-semibold text-blue-700 hover:text-blue-950 underline"
+                  >
+                    Clear Filter
+                  </button>
+                </div>
+              )}
+
               {/* Filter & Facet Command Bar */}
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-t-lg border border-slate-200 bg-white px-4 py-3">
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -2833,6 +2854,185 @@ export default function TradeCloseoutEnterpriseApp() {
                 className="w-full rounded-md bg-[#0F2942] py-2.5 text-xs font-semibold text-white hover:bg-[#163A5F]"
               >
                 Upload & Submit for Review
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AUDIT TRAIL MODAL */}
+      {auditModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
+          <div className="w-full max-w-xl rounded-xl border border-slate-200 bg-white shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-5 py-3.5">
+              <div className="flex items-center gap-2">
+                <History className="h-4 w-4 text-blue-700" />
+                <h3 className="text-sm font-bold text-slate-900">
+                  Cryptographic Chain of Custody (SHA-256)
+                </h3>
+              </div>
+              <button
+                onClick={() => setAuditModalOpen(false)}
+                className="rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4 text-xs">
+              <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 space-y-1">
+                <div className="flex justify-between text-slate-600">
+                  <span>Genesis Hash:</span>
+                  <span className="font-mono text-[11px] text-slate-800">
+                    000000000019d6689c085ae165831e934ff763ae...
+                  </span>
+                </div>
+                <div className="flex justify-between text-slate-600">
+                  <span>Current Chain Tip:</span>
+                  <span className="font-mono text-[11px] text-emerald-700 font-semibold">
+                    #4e01c278b9a10ef2a89341b5... (Verified)
+                  </span>
+                </div>
+                <div className="flex justify-between text-slate-600">
+                  <span>Legal Compliance:</span>
+                  <span className="font-medium text-slate-800">
+                    Section 65B Indian Evidence Act 1872
+                  </span>
+                </div>
+              </div>
+              <div className="divide-y divide-slate-100 max-h-72 overflow-y-auto space-y-2 pr-1">
+                {[
+                  {
+                    actor: "Carrier Aircon India (Guest)",
+                    action: "authenticated via OTP on Supplier Upload Link",
+                    time: "1 Nov 2026, 00:24 IST",
+                    hash: "4e01c278b9a1",
+                  },
+                  {
+                    actor: "Vikram Sengupta (Meinhardt PMC)",
+                    action: "stamped External Approval on REQ-HVAC-011 (As-Built Layout)",
+                    time: "31 Oct 2026, 17:40 IST",
+                    hash: "7a12d933e104",
+                  },
+                  {
+                    actor: "Amit Verma (Site Eng)",
+                    action: "uploaded Revision R2 for REQ-HVAC-033 (CHLR-01 Pressure Test)",
+                    time: "31 Oct 2026, 14:15 IST",
+                    hash: "9f2c8b0021ae",
+                  },
+                  {
+                    actor: "Fatima Shaikh (Senior PM)",
+                    action: "approved Commercial Waiver W-002 for BMS points schedule",
+                    time: "30 Oct 2026, 11:30 IST",
+                    hash: "3d881ab49c21",
+                  },
+                  {
+                    actor: "Anil Pillai (Projects Head)",
+                    action: "compiled Handover Dossier Volume 1 (Pages 1–114 stamped)",
+                    time: "29 Oct 2026, 16:00 IST",
+                    hash: "1b90fe432d88",
+                  },
+                ].map((ev, i) => (
+                  <div key={i} className="pt-2 flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-semibold text-slate-900">{ev.actor}</div>
+                      <div className="text-slate-600 mt-0.5">{ev.action}</div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">{ev.time}</div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className="font-mono text-[10px] bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 text-slate-700">
+                        #{ev.hash}
+                      </span>
+                      <div className="text-[10px] text-emerald-600 font-semibold mt-1">
+                        ● Valid
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="border-t border-slate-200 bg-slate-50 px-5 py-3 flex justify-end">
+              <button
+                onClick={() => setAuditModalOpen(false)}
+                className="rounded-md bg-slate-900 px-4 py-1.5 text-xs font-semibold text-white hover:bg-slate-800"
+              >
+                Close Audit Inspector
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BILLING & TDS MODAL */}
+      {billingModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
+          <div className="w-full max-w-xl rounded-xl border border-slate-200 bg-white shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-5 py-3.5">
+              <div className="flex items-center gap-2">
+                <CreditCard className="h-4 w-4 text-blue-700" />
+                <h3 className="text-sm font-bold text-slate-900">
+                  Rule 46 GST & Section 194J TDS Accounting
+                </h3>
+              </div>
+              <button
+                onClick={() => setBillingModalOpen(false)}
+                className="rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-1">
+                  <div className="text-[10px] font-semibold text-slate-500 uppercase">
+                    Current Subscription
+                  </div>
+                  <div className="text-base font-extrabold text-slate-900">
+                    ₹24,999{" "}
+                    <span className="text-[10px] font-normal text-slate-500">
+                      / project / yr
+                    </span>
+                  </div>
+                  <div className="text-slate-600">Enterprise Growth Tier (11 / 15 active)</div>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-1">
+                  <div className="text-[10px] font-semibold text-slate-500 uppercase">
+                    GST SAC Code
+                  </div>
+                  <div className="text-base font-mono font-bold text-slate-900">SAC 998315</div>
+                  <div className="text-slate-600">18% GST (9% CGST + 9% SGST)</div>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3.5 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-amber-900">
+                    Section 194J TDS Withholding (10%)
+                  </span>
+                  <span className="rounded bg-amber-200/80 px-2 py-0.5 text-[10px] font-bold text-amber-900">
+                    ACTION REQUIRED
+                  </span>
+                </div>
+                <p className="text-slate-700">
+                  DLF CyberCity Developers deducted ₹2,500 under Section 194J on invoice
+                  INV-2026-089. Upload quarterly Form 16A PDF from TRACES portal to mark this
+                  deduction as reconciled.
+                </p>
+                <div className="pt-1 flex items-center justify-between">
+                  <span className="font-mono text-slate-600 text-[11px]">
+                    Pending: Form 16A (Q3 FY26)
+                  </span>
+                  <button className="rounded bg-amber-800 px-3 py-1 text-[11px] font-semibold text-white hover:bg-amber-900">
+                    Upload Form 16A
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div className="border-t border-slate-200 bg-slate-50 px-5 py-3 flex justify-end">
+              <button
+                onClick={() => setBillingModalOpen(false)}
+                className="rounded-md bg-slate-900 px-4 py-1.5 text-xs font-semibold text-white hover:bg-slate-800"
+              >
+                Close Billing Sheet
               </button>
             </div>
           </div>
