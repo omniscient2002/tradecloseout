@@ -1,0 +1,22 @@
+{
+  "name": "tradecloseout",
+  "version": "0.2.1",
+  "private": true,
+  "packageManager": "pnpm@12.4.1",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "test:rls": "pnpm --filter @tradecloseout/api test:rls",
+    "test:rbac": "pnpm --filter @tradecloseout/api test:rbac",
+    "verify:traceability": "ts-node scripts/verify-traceability.ts"
+  },
+  "devDependencies": {
+    "turbo": "^2.4.4",
+    "typescript": "^5.8.2",
+    "@types/node": "^22.13.9",
+    "ts-node": "^10.9.2",
+    "fast-glob": "^3.3.3"
+  }
+}

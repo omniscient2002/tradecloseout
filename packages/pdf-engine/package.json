@@ -1,0 +1,21 @@
+{
+  "name": "@tradecloseout/pdf-engine",
+  "version": "0.2.1",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc -w"
+  },
+  "dependencies": {
+    "pdf-lib": "^1.17.1",
+    "pdfmake": "^0.2.18",
+    "archiver": "^7.0.1",
+    "@tradecloseout/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/pdfmake": "^0.2.11",
+    "@types/archiver": "^6.0.3",
+    "typescript": "^5.8.2"
+  }
+}
