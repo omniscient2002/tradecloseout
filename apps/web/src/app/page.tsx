@@ -3,10 +3,7 @@
 import React, { useState, useMemo } from "react";
 import {
   LayoutDashboard,
-  FolderKanban,
   ClipboardCheck,
-  Cpu,
-  FileText,
   Eye,
   PackageCheck,
   Building2,
@@ -22,7 +19,6 @@ import {
   AlertTriangle,
   Clock,
   FileEdit,
-  XCircle,
   ShieldOff,
   Stamp,
   Send,
@@ -40,24 +36,21 @@ import {
   ZoomIn,
   ZoomOut,
   Maximize2,
-  MapPin,
   Smartphone,
-  Monitor,
-  ArrowUpRight,
-  RefreshCw,
-  FileSpreadsheet,
   Layers,
   History,
-  MessageSquare,
-  CornerDownRight,
-  Phone,
-  HelpCircle,
   PanelLeftClose,
   PanelLeft,
+  FileText,
+  FolderPlus,
+  Inbox,
+  FileCheck2,
+  EyeOff,
+  Cpu,
 } from "lucide-react";
 
 /* -------------------------------------------------------------------------- */
-/* TYPES & AUTHORITATIVE STATUS SYSTEM (11-UI-UX-SPECIFICATION.md §5.1)       */
+/* TYPES                                                                      */
 /* -------------------------------------------------------------------------- */
 
 type ReqStatus =
@@ -94,6 +87,30 @@ interface RequirementItem {
   pageCount?: number;
   sha256?: string;
   reviewerRole: string;
+}
+
+interface ProjectItem {
+  id: string;
+  code: string;
+  name: string;
+  contractRef: string;
+  clientName: string;
+  pmcName: string;
+  contractorName: string;
+  tradeName: string;
+  location: string;
+  targetHandoverDate: string;
+  status: string;
+  retentionPercent: number;
+  contractValueInr: number;
+}
+
+interface AuditEventItem {
+  id: string;
+  actor: string;
+  action: string;
+  time: string;
+  hash: string;
 }
 
 const STATUS_META: Record<
@@ -189,314 +206,16 @@ const STATUS_META: Record<
   },
 };
 
-/* -------------------------------------------------------------------------- */
-/* REALISTIC INDIAN COMMERCIAL HVAC DATASET (PRJ-024 SKYVIEW TOWERS)          */
-/* -------------------------------------------------------------------------- */
-
-const INITIAL_REQUIREMENTS: RequirementItem[] = [
-  {
-    id: "req-1",
-    key: "REQ-HVAC-001",
-    groupKey: "G1",
-    groupTitle: "01. Commercial, Contractual & Statutory NOCs",
-    title: "Chief Fire Officer Statutory Fire & Smoke Damper NOC",
-    docTypeCode: "DT-086",
-    docTypeName: "Fire NOC / Certificate",
-    mandatory: true,
-    assetTag: null,
-    assetName: "Project-wide",
-    status: "MISSING",
-    ownerName: "Anil Pillai",
-    ownerRole: "Project Manager",
-    dueDate: "27 Oct 2026",
-    isOverdue: true,
-    revision: null,
-    updatedAt: "4d overdue",
-    reviewerRole: "Client / PMC",
-  },
-  {
-    id: "req-2",
-    key: "REQ-HVAC-002",
-    groupKey: "G1",
-    groupTitle: "01. Commercial, Contractual & Statutory NOCs",
-    title: "Workmen Compensation & CAR Insurance Endorsement Policy",
-    docTypeCode: "DT-004",
-    docTypeName: "Insurance Certificate",
-    mandatory: true,
-    assetTag: null,
-    assetName: "Project-wide",
-    status: "EXPIRED",
-    ownerName: "Fatima Shaikh",
-    ownerRole: "Document Controller",
-    dueDate: "15 Oct 2026",
-    isOverdue: true,
-    revision: "R1",
-    updatedAt: "Expired 16d ago",
-    pageCount: 12,
-    sha256: "8f4a2e...91c0",
-    reviewerRole: "Main Contractor",
-  },
-  {
-    id: "req-3",
-    key: "REQ-HVAC-003",
-    groupKey: "G1",
-    groupTitle: "01. Commercial, Contractual & Statutory NOCs",
-    title: "Performance Bank Guarantee (5% Contract Value - HDFC Bank)",
-    docTypeCode: "DT-003",
-    docTypeName: "Bank Guarantee",
-    mandatory: true,
-    assetTag: null,
-    assetName: "Project-wide",
-    status: "APPROVED",
-    ownerName: "Anil Pillai",
-    ownerRole: "Project Manager",
-    dueDate: "01 Sep 2026",
-    revision: "R0",
-    updatedAt: "12 Sep 2026",
-    pageCount: 6,
-    sha256: "3c91b4...7e21",
-    reviewerRole: "Client Representative",
-  },
-  {
-    id: "req-4",
-    key: "REQ-HVAC-011",
-    groupKey: "G2",
-    groupTitle: "02. As-Built Drawings & Technical Submittals",
-    title: "Basement-2 Chiller Plant Room Coordinated As-Built Layout & Sections",
-    docTypeCode: "DT-011",
-    docTypeName: "As-Built Drawing",
-    mandatory: true,
-    assetTag: "CHLR-01",
-    assetName: "Carrier 650 TR Water-Cooled Chiller #1",
-    status: "APPROVED_EXTERNAL",
-    ownerName: "Meera Deshmukh",
-    ownerRole: "Senior Design Eng",
-    dueDate: "20 Oct 2026",
-    revision: "R3",
-    updatedAt: "25 Oct 2026",
-    pageCount: 4,
-    sha256: "7a12d9...44b8",
-    reviewerRole: "MEP Consultant",
-  },
-  {
-    id: "req-5",
-    key: "REQ-HVAC-012",
-    groupKey: "G2",
-    groupTitle: "02. As-Built Drawings & Technical Submittals",
-    title: "Typical Floor (L1–L18) VAV & Supply Ducting As-Built Redline Set",
-    docTypeCode: "DT-011",
-    docTypeName: "As-Built Drawing",
-    mandatory: true,
-    assetTag: "AHU-FL08",
-    assetName: "Floor 08 Double-Skin AHU (24,000 CFM)",
-    status: "CHANGES_REQUESTED",
-    ownerName: "Meera Deshmukh",
-    ownerRole: "Senior Design Eng",
-    dueDate: "29 Oct 2026",
-    isOverdue: true,
-    revision: "R2",
-    updatedAt: "Yesterday",
-    pageCount: 18,
-    sha256: "1d55e0...89a2",
-    reviewerRole: "MEP Consultant",
-  },
-  {
-    id: "req-6",
-    key: "REQ-HVAC-018",
-    groupKey: "G4",
-    groupTitle: "04. Procurement, Factory Tests (FAT) & Calibration",
-    title: "Centrifugal Chiller Factory Acceptance Test & Run Curve (AHRI 550/590)",
-    docTypeCode: "DT-022",
-    docTypeName: "Factory Acceptance Test",
-    mandatory: true,
-    assetTag: "CHLR-01",
-    assetName: "Carrier 650 TR Water-Cooled Chiller #1",
-    status: "REQUESTED",
-    ownerName: "Carrier Aircon India",
-    ownerRole: "OEM Supplier",
-    isExternalSupplier: true,
-    dueDate: "05 Nov 2026",
-    revision: null,
-    updatedAt: "Link opened 3h ago",
-    reviewerRole: "MEP Consultant",
-  },
-  {
-    id: "req-7",
-    key: "REQ-HVAC-019",
-    groupKey: "G4",
-    groupTitle: "04. Procurement, Factory Tests (FAT) & Calibration",
-    title: "NABL Traceable Pressure Gauge & Anemometer Calibration Certificates",
-    docTypeCode: "DT-025",
-    docTypeName: "Calibration Certificate",
-    mandatory: true,
-    assetTag: null,
-    assetName: "Testing Instruments Batch",
-    status: "APPROVED",
-    ownerName: "Sunil Rao",
-    ownerRole: "QC Lead",
-    dueDate: "10 Oct 2026",
-    revision: "R0",
-    updatedAt: "09 Oct 2026",
-    pageCount: 9,
-    sha256: "5e82f1...02d4",
-    reviewerRole: "QC Lead",
-  },
-  {
-    id: "req-8",
-    key: "REQ-HVAC-033",
-    groupKey: "G8",
-    groupTitle: "08. Installation, Hydrostatic Testing & TAB Commissioning",
-    title: "Chilled Water Header & Riser Hydrostatic Pressure Test Report (10.5 Bar)",
-    docTypeCode: "DT-033",
-    docTypeName: "Pressure Test Report",
-    mandatory: true,
-    assetTag: "CHLR-01",
-    assetName: "Carrier 650 TR Water-Cooled Chiller #1",
-    status: "IN_REVIEW",
-    ownerName: "Amit Verma",
-    ownerRole: "Site Engineer",
-    dueDate: "02 Nov 2026",
-    revision: "R2",
-    updatedAt: "2h ago",
-    pageCount: 48,
-    sha256: "9f2c8b...31e7",
-    reviewerRole: "MEP Consultant",
-  },
-  {
-    id: "req-9",
-    key: "REQ-HVAC-034",
-    groupKey: "G8",
-    groupTitle: "08. Installation, Hydrostatic Testing & TAB Commissioning",
-    title: "Supply & Return GI Ductwork Class-B Air Leakage Test Dossier",
-    docTypeCode: "DT-035",
-    docTypeName: "Duct Leakage Report",
-    mandatory: true,
-    assetTag: "AHU-FL08",
-    assetName: "Floor 08 Double-Skin AHU (24,000 CFM)",
-    status: "IN_REVIEW",
-    ownerName: "Amit Verma",
-    ownerRole: "Site Engineer",
-    dueDate: "03 Nov 2026",
-    revision: "R1",
-    updatedAt: "5h ago",
-    pageCount: 22,
-    sha256: "6b09c3...11f5",
-    reviewerRole: "MEP Consultant",
-  },
-  {
-    id: "req-10",
-    key: "REQ-HVAC-039",
-    groupKey: "G8",
-    groupTitle: "08. Installation, Hydrostatic Testing & TAB Commissioning",
-    title: "Motorised Fire & Smoke Damper Drop-Test & BMS Actuation Log (42 Units)",
-    docTypeCode: "DT-039",
-    docTypeName: "Fire Damper Test",
-    mandatory: true,
-    assetTag: "FD-Z01",
-    assetName: "Zone 1-4 Motorized Fire Dampers",
-    status: "IN_REVIEW",
-    ownerName: "SmartControls India",
-    ownerRole: "BMS Subcontractor",
-    isExternalSupplier: true,
-    dueDate: "04 Nov 2026",
-    revision: "R0",
-    updatedAt: "1d ago",
-    pageCount: 34,
-    sha256: "4a77d2...60c8",
-    reviewerRole: "MEP Consultant",
-  },
-  {
-    id: "req-11",
-    key: "REQ-HVAC-050",
-    groupKey: "G8",
-    groupTitle: "08. Installation, Hydrostatic Testing & TAB Commissioning",
-    title: "NEBB-Standard Air & Hydronic Testing, Adjusting & Balancing (TAB) Report",
-    docTypeCode: "DT-050",
-    docTypeName: "TAB Report",
-    mandatory: true,
-    assetTag: null,
-    assetName: "Complete Building Air/Water Loop",
-    status: "APPROVED",
-    ownerName: "Sunil Rao",
-    ownerRole: "QC Lead",
-    dueDate: "24 Oct 2026",
-    revision: "R1",
-    updatedAt: "26 Oct 2026",
-    pageCount: 64,
-    sha256: "2f18a9...93d1",
-    reviewerRole: "MEP Consultant",
-  },
-  {
-    id: "req-12",
-    key: "REQ-HVAC-058",
-    groupKey: "G9",
-    groupTitle: "09. Handover Documentation, O&M Manuals & Warranties",
-    title: "Project-Specific Chiller Plant Operation & Preventive Maintenance Manual",
-    docTypeCode: "DT-058",
-    docTypeName: "O&M Manual",
-    mandatory: true,
-    assetTag: "CHLR-01",
-    assetName: "Carrier 650 TR Water-Cooled Chiller #1",
-    status: "APPROVED",
-    ownerName: "Fatima Shaikh",
-    ownerRole: "Document Controller",
-    dueDate: "25 Oct 2026",
-    revision: "R2",
-    updatedAt: "28 Oct 2026",
-    pageCount: 142,
-    sha256: "0c44e8...55b9",
-    reviewerRole: "MEP Consultant",
-  },
-  {
-    id: "req-13",
-    key: "REQ-HVAC-026",
-    groupKey: "G9",
-    groupTitle: "09. Handover Documentation, O&M Manuals & Warranties",
-    title: "5-Year Compressor & 12-Month Comprehensive OEM Warranty Certificate",
-    docTypeCode: "DT-026",
-    docTypeName: "Warranty Certificate",
-    mandatory: true,
-    assetTag: "CHLR-01",
-    assetName: "Carrier 650 TR Water-Cooled Chiller #1",
-    status: "APPROVED_EXTERNAL",
-    ownerName: "Carrier Aircon India",
-    ownerRole: "OEM Supplier",
-    isExternalSupplier: true,
-    dueDate: "28 Oct 2026",
-    revision: "R0",
-    updatedAt: "29 Oct 2026",
-    pageCount: 4,
-    sha256: "9b11c7...20a3",
-    reviewerRole: "Client Representative",
-  },
-  {
-    id: "req-14",
-    key: "REQ-HVAC-052",
-    groupKey: "G9",
-    groupTitle: "09. Handover Documentation, O&M Manuals & Warranties",
-    title: "Third-Party Acoustic & Octave-Band Vibration Isolation Verification",
-    docTypeCode: "DT-052",
-    docTypeName: "Noise & Vibration Report",
-    mandatory: false,
-    assetTag: "CT-01",
-    assetName: " Paharpur Induced-Draft Cooling Tower",
-    status: "WAIVED",
-    ownerName: "Sunil Rao",
-    ownerRole: "QC Lead",
-    dueDate: "20 Oct 2026",
-    revision: null,
-    updatedAt: "Waived by PMC",
-    reviewerRole: "MEP Consultant",
-  },
-];
-
-/* -------------------------------------------------------------------------- */
-/* REUSABLE STATUS PILL COMPONENT                                             */
-/* -------------------------------------------------------------------------- */
-
-function StatusPill({ status, compact = false }: { status: ReqStatus; compact?: boolean }) {
-  const cfg = STATUS_META[status];
+function StatusPill({
+  status,
+  compact = false,
+}: {
+  status: ReqStatus;
+  compact?: boolean;
+}) {
+  const cfg = STATUS_META[status] || STATUS_META.NOT_STARTED;
   const Icon = cfg.icon;
+
   return (
     <span
       className={`inline-flex items-center gap-1.5 rounded-full border leading-none tracking-tight select-none transition-all ${
@@ -519,8 +238,13 @@ export default function TradeCloseoutEnterpriseApp() {
   >("overview");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
-  // Interactive Checklist State
-  const [requirements, setRequirements] = useState<RequirementItem[]>(INITIAL_REQUIREMENTS);
+  // Dynamic Data Stores (Initialized 100% empty - no demo data)
+  const [projects, setProjects] = useState<ProjectItem[]>([]);
+  const [activeProject, setActiveProject] = useState<ProjectItem | null>(null);
+  const [requirements, setRequirements] = useState<RequirementItem[]>([]);
+  const [auditEvents, setAuditEvents] = useState<AuditEventItem[]>([]);
+
+  // Checklist filters
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -529,26 +253,58 @@ export default function TradeCloseoutEnterpriseApp() {
   const [filterAssetOnly, setFilterAssetOnly] = useState(false);
   const [filterGroupOnly, setFilterGroupOnly] = useState<string | null>(null);
 
-  // Modals & Drawers
+  // Modals
+  const [newProjectModalOpen, setNewProjectModalOpen] = useState(false);
+  const [newReqModalOpen, setNewReqModalOpen] = useState(false);
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [uploadTargetReq, setUploadTargetReq] = useState<RequirementItem | null>(null);
   const [auditModalOpen, setAuditModalOpen] = useState(false);
   const [billingModalOpen, setBillingModalOpen] = useState(false);
 
-  // PDF Reviewer State (SCR-025 / SCR-027)
+  // PDF Viewer State
+  const [selectedReviewReq, setSelectedReviewReq] = useState<RequirementItem | null>(null);
   const [decisionMode, setDecisionMode] = useState<"in_app" | "external">("in_app");
   const [reviewComment, setReviewComment] = useState("");
-  const [pdfZoom, setPdfZoom] = useState(115);
-  const [extApproverName, setExtApproverName] = useState("Vikram Sengupta (Meinhardt PMC)");
+  const [pdfZoom, setPdfZoom] = useState(100);
+  const [extApproverName, setExtApproverName] = useState("");
   const [extMethod, setExtMethod] = useState("STAMPED_PDF");
-  const [extRef, setExtRef] = useState("TRN-MEIN-HVAC-2026-089");
+  const [extRef, setExtRef] = useState("");
   const [reviewBanner, setReviewBanner] = useState<string | null>(null);
 
-  // Supplier Portal State (SCR-034)
-  const [supplierViewport, setSupplierViewport] = useState<"desktop" | "mobile">("desktop");
-  const [supplierUploaded, setSupplierUploaded] = useState(false);
+  // Handover Dossier State
+  const [dossierInitialized, setDossierInitialized] = useState(false);
 
-  // Filtered requirements
+  // Dynamic Metrics Computed Strictly from State
+  const totalReqs = requirements.length;
+  const approvedInApp = requirements.filter((r) => r.status === "APPROVED").length;
+  const approvedExternal = requirements.filter(
+    (r) => r.status === "APPROVED_EXTERNAL"
+  ).length;
+  const waived = requirements.filter((r) => r.status === "WAIVED").length;
+  const inReview = requirements.filter((r) => r.status === "IN_REVIEW").length;
+  const missingExpired = requirements.filter(
+    (r) => r.status === "MISSING" || r.status === "EXPIRED"
+  ).length;
+  const satisfiedCount = approvedInApp + approvedExternal + waived;
+  const satisfactionPct =
+    totalReqs > 0 ? ((satisfiedCount / totalReqs) * 100).toFixed(1) : "0.0";
+
+  const assetsTagged = requirements.filter((r) => r.assetTag !== null).length;
+  const uniqueAssets = Array.from(
+    new Set(requirements.map((r) => r.assetTag).filter(Boolean))
+  );
+
+  const blockers = requirements.filter(
+    (r) =>
+      r.mandatory &&
+      (r.status === "MISSING" ||
+        r.status === "EXPIRED" ||
+        r.status === "CHANGES_REQUESTED")
+  );
+
+  const reviewQueue = requirements.filter((r) => r.status === "IN_REVIEW");
+
+  // Filtered requirements for Checklist
   const filteredReqs = useMemo(() => {
     return requirements.filter((r) => {
       if (filterAssetOnly && !r.assetTag) return false;
@@ -576,7 +332,7 @@ export default function TradeCloseoutEnterpriseApp() {
     });
   }, [requirements, statusFilter, searchQuery, filterAssetOnly, filterGroupOnly]);
 
-  // Grouped requirements for SCR-014
+  // Grouped requirements
   const groupedReqs = useMemo(() => {
     const map: Record<string, { title: string; items: RequirementItem[] }> = {};
     for (const req of filteredReqs) {
@@ -594,29 +350,90 @@ export default function TradeCloseoutEnterpriseApp() {
     );
   };
 
-  const handleApproveCurrentDoc = () => {
+  const handleApproveCurrentDoc = (reqToApprove: RequirementItem) => {
     setRequirements((prev) =>
       prev.map((r) =>
-        r.key === "REQ-HVAC-033"
+        r.id === reqToApprove.id
           ? {
               ...r,
-              status: decisionMode === "external" ? "APPROVED_EXTERNAL" : "APPROVED",
+              status: "APPROVED",
               updatedAt: "Just now",
             }
           : r
       )
     );
-    setReviewBanner(
-      decisionMode === "external"
-        ? "External approval recorded (Method: Stamped PDF · Ref: TRN-MEIN-HVAC-2026-089). Requirement REQ-HVAC-033 is now satisfied."
-        : "Document Version R2 approved in-app. Requirement REQ-HVAC-033 is now satisfied."
+    setAuditEvents((prev) => [
+      {
+        id: String(Date.now()),
+        actor: "Authorized Reviewer",
+        action: `approved ${reqToApprove.key} (${reqToApprove.title})`,
+        time: "Just now",
+        hash: Math.random().toString(16).substring(2, 8),
+      },
+      ...prev,
+    ]);
+    setReviewBanner(`Approved ${reqToApprove.key}. Milestone status updated.`);
+    setTimeout(() => setReviewBanner(null), 4000);
+  };
+
+  const handleExternalApproveDoc = (reqToApprove: RequirementItem) => {
+    setRequirements((prev) =>
+      prev.map((r) =>
+        r.id === reqToApprove.id
+          ? {
+              ...r,
+              status: "APPROVED_EXTERNAL",
+              updatedAt: "Just now",
+            }
+          : r
+      )
     );
+    setAuditEvents((prev) => [
+      {
+        id: String(Date.now()),
+        actor: extApproverName || "External Authority",
+        action: `stamped External Approval on ${reqToApprove.key} (Ref: ${extRef || "N/A"})`,
+        time: "Just now",
+        hash: Math.random().toString(16).substring(2, 8),
+      },
+      ...prev,
+    ]);
+    setReviewBanner(
+      `External stamp recorded for ${reqToApprove.key} (Ref: ${extRef || "N/A"}).`
+    );
+    setTimeout(() => setReviewBanner(null), 4000);
+  };
+
+  const handleRejectDoc = (reqToReject: RequirementItem) => {
+    setRequirements((prev) =>
+      prev.map((r) =>
+        r.id === reqToReject.id
+          ? {
+              ...r,
+              status: "CHANGES_REQUESTED",
+              updatedAt: "Just now",
+            }
+          : r
+      )
+    );
+    setAuditEvents((prev) => [
+      {
+        id: String(Date.now()),
+        actor: "Reviewer",
+        action: `requested revisions on ${reqToReject.key}: "${reviewComment || "Corrections required"}"`,
+        time: "Just now",
+        hash: Math.random().toString(16).substring(2, 8),
+      },
+      ...prev,
+    ]);
+    setReviewBanner(`Changes requested on ${reqToReject.key}. Owner notified.`);
+    setTimeout(() => setReviewBanner(null), 4000);
   };
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#F8FAFC] text-[#0F172A] antialiased selection:bg-blue-600 selection:text-white font-sans">
       {/* ===================================================================== */}
-      {/* 1. LEFT ENTERPRISE NAVIGATION RAIL (11-UI-UX-SPECIFICATION.md §2.1)   */}
+      {/* 1. INDUSTRIAL NAVIGATION RAIL                                         */}
       {/* ===================================================================== */}
       <aside
         className={`${
@@ -624,7 +441,7 @@ export default function TradeCloseoutEnterpriseApp() {
         } flex flex-col justify-between border-r border-slate-800 bg-[#0B1120] text-slate-300 transition-all duration-200 shrink-0 select-none z-30`}
       >
         <div>
-          {/* Brand Header */}
+          {/* Header Brand */}
           <div className="flex h-14 items-center justify-between px-3.5 border-b border-slate-800/80">
             <div className="flex items-center gap-2.5 overflow-hidden">
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white font-bold text-sm shadow-inner">
@@ -636,11 +453,10 @@ export default function TradeCloseoutEnterpriseApp() {
                     <span className="font-semibold text-sm tracking-tight text-white">
                       TradeCloseout
                     </span>
-                    <span className="rounded bg-blue-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-blue-300 border border-blue-400/20">
-                      INDIA
-                    </span>
                   </div>
-                  <p className="text-[11px] text-slate-400 truncate">Apex MEP Contractors</p>
+                  <p className="text-[11px] text-slate-400 truncate">
+                    {activeProject ? activeProject.tradeName || "Digital Handover" : "Platform"}
+                  </p>
                 </div>
               )}
             </div>
@@ -675,20 +491,23 @@ export default function TradeCloseoutEnterpriseApp() {
                 id: "checklist",
                 label: "Compliance Checklist",
                 icon: ClipboardCheck,
-                badge: "77",
+                badge: String(totalReqs),
               },
               {
                 id: "viewer",
                 label: "Review Workbench",
                 icon: Eye,
-                badge: "4",
-                badgeColor: "bg-amber-500/20 text-amber-300 border-amber-500/30",
+                badge: String(inReview),
+                badgeColor:
+                  inReview > 0
+                    ? "bg-amber-500/20 text-amber-300 border-amber-500/30"
+                    : "bg-slate-800 text-slate-400 border-slate-700",
               },
               {
                 id: "package",
                 label: "Handover Dossier",
                 icon: PackageCheck,
-                badge: "v2",
+                badge: dossierInitialized ? "v1" : "0",
               },
             ].map((item) => {
               const Icon = item.icon;
@@ -728,7 +547,7 @@ export default function TradeCloseoutEnterpriseApp() {
             })}
           </div>
 
-          {/* Directory & Governance Nav */}
+          {/* Registers & Shortcuts */}
           <div className="px-2.5 py-2 border-t border-slate-800/80 space-y-0.5">
             {!sidebarCollapsed && (
               <div className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
@@ -737,7 +556,7 @@ export default function TradeCloseoutEnterpriseApp() {
             )}
             {[
               {
-                label: "Equipment Register (42)",
+                label: `Equipment Register (${uniqueAssets.length})`,
                 icon: Cpu,
                 action: () => {
                   setFilterAssetOnly(true);
@@ -748,7 +567,7 @@ export default function TradeCloseoutEnterpriseApp() {
                 },
               },
               {
-                label: "Statutory Approvals (8)",
+                label: "Statutory Approvals",
                 icon: ShieldCheck,
                 action: () => {
                   setFilterGroupOnly("G1");
@@ -759,12 +578,12 @@ export default function TradeCloseoutEnterpriseApp() {
                 },
               },
               {
-                label: "Immutable Audit Trail",
+                label: `Immutable Audit Trail (${auditEvents.length})`,
                 icon: Layers,
                 action: () => setAuditModalOpen(true),
               },
               {
-                label: "Billing, GST & TDS",
+                label: "Billing & Subscriptions",
                 icon: CreditCard,
                 action: () => setBillingModalOpen(true),
               },
@@ -783,7 +602,7 @@ export default function TradeCloseoutEnterpriseApp() {
             })}
           </div>
 
-          {/* External Portals Section */}
+          {/* External Portals */}
           <div className="px-2.5 py-2 border-t border-slate-800/80 space-y-0.5">
             {!sidebarCollapsed && (
               <div className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
@@ -804,27 +623,30 @@ export default function TradeCloseoutEnterpriseApp() {
               </div>
               {!sidebarCollapsed && (
                 <span className="ml-2 rounded-full px-1.5 py-0.5 text-[10px] font-semibold border bg-emerald-500/20 text-emerald-300 border-emerald-500/30">
-                  OTP Sim
+                  Guest
                 </span>
               )}
             </button>
           </div>
         </div>
 
-        {/* Bottom Storage & India Region Status */}
+        {/* Bottom Storage Status */}
         <div className="border-t border-slate-800 p-3">
           {!sidebarCollapsed ? (
             <div className="rounded-lg bg-slate-900/90 p-2.5 border border-slate-800">
               <div className="flex items-center justify-between text-[11px]">
-                <span className="font-medium text-slate-300">Growth Plan · INR</span>
-                <span className="text-emerald-400 font-mono text-[10px]">● ap-south-1</span>
+                <span className="font-medium text-slate-300">Active Workspace</span>
+                <span className="text-emerald-400 font-mono text-[10px]">● Online</span>
               </div>
               <div className="mt-2 h-1.5 w-full rounded-full bg-slate-800 overflow-hidden">
-                <div className="h-full w-[38%] bg-blue-500 rounded-full" />
+                <div
+                  className="h-full bg-blue-500 rounded-full"
+                  style={{ width: `${projects.length > 0 ? "10%" : "0%"}` }}
+                />
               </div>
               <div className="mt-1.5 flex justify-between text-[10px] text-slate-400 font-mono">
-                <span>38.4 GB / 100 GB</span>
-                <span>11 / 15 Projects</span>
+                <span>0 MB / 100 GB</span>
+                <span>{projects.length} / 15 Projects</span>
               </div>
             </div>
           ) : (
@@ -841,23 +663,38 @@ export default function TradeCloseoutEnterpriseApp() {
       <div className="flex flex-1 flex-col min-w-0 overflow-hidden">
         {/* TOP CONTEXTUAL COMMAND BAR */}
         <header className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-5 z-20">
-          {/* Left: Clean Project Switcher */}
+          {/* Left: Clean Project Selector */}
           <div className="flex items-center gap-2.5 text-xs">
             <span className="text-slate-400 font-medium">Workspace</span>
             <ChevronRight className="h-3.5 w-3.5 text-slate-300" />
-            <div className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 font-medium text-slate-900">
-              <span className="font-mono text-[11px] font-bold text-blue-700">PRJ-024</span>
-              <span className="text-slate-300">/</span>
-              <span className="font-semibold text-slate-800">Skyview Commercial Towers</span>
-              <ChevronDown className="h-3.5 w-3.5 text-slate-500" />
-            </div>
-            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
-              Handover Active
-            </span>
+            {activeProject ? (
+              <div className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 font-medium text-slate-900">
+                <span className="font-mono text-[11px] font-bold text-blue-700">
+                  {activeProject.code}
+                </span>
+                <span className="text-slate-300">/</span>
+                <span className="font-semibold text-slate-800">{activeProject.name}</span>
+                <ChevronDown className="h-3.5 w-3.5 text-slate-500" />
+              </div>
+            ) : (
+              <button
+                onClick={() => setNewProjectModalOpen(true)}
+                className="flex items-center gap-1.5 rounded-md border border-dashed border-slate-300 bg-slate-50 px-2.5 py-1 font-medium text-slate-600 hover:border-blue-500 hover:text-blue-700 hover:bg-blue-50/50 transition-colors"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <span>Select or Create Project</span>
+              </button>
+            )}
+
+            {activeProject && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
+                {activeProject.status || "Active"}
+              </span>
+            )}
           </div>
 
-          {/* Right: Global Search (Cmd+K), Primary Upload Action, Profile */}
+          {/* Right: Global Search, Add Actions, Profile */}
           <div className="flex items-center gap-3">
             <div className="relative hidden md:flex items-center">
               <Search className="absolute left-2.5 h-3.5 w-3.5 text-slate-400" />
@@ -868,7 +705,7 @@ export default function TradeCloseoutEnterpriseApp() {
                   setSearchQuery(e.target.value);
                   if (activeTab !== "checklist") setActiveTab("checklist");
                 }}
-                placeholder="Search tag (CHLR-01), doc, requirement..."
+                placeholder="Search requirement, tag, doc..."
                 className="h-8 w-64 rounded-md border border-slate-300 bg-slate-50/70 pl-8 pr-12 text-xs text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600/20"
               />
               <kbd className="pointer-events-none absolute right-2 rounded border border-slate-200 bg-white px-1.5 py-0.5 font-mono text-[10px] text-slate-400">
@@ -878,8 +715,12 @@ export default function TradeCloseoutEnterpriseApp() {
 
             <button
               onClick={() => {
-                setUploadTargetReq(requirements[0]);
-                setUploadModalOpen(true);
+                if (requirements.length === 0) {
+                  setNewReqModalOpen(true);
+                } else {
+                  setUploadTargetReq(requirements[0]);
+                  setUploadModalOpen(true);
+                }
               }}
               className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[#0F2942] px-3 text-xs font-medium text-white shadow-sm hover:bg-[#163A5F] transition-colors"
             >
@@ -889,444 +730,491 @@ export default function TradeCloseoutEnterpriseApp() {
 
             <button className="relative rounded-md border border-slate-200 p-1.5 text-slate-600 hover:bg-slate-100">
               <Bell className="h-4 w-4" />
-              <span className="absolute -top-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-red-600 text-[9px] font-bold text-white">
-                3
-              </span>
             </button>
 
             <div className="h-5 w-[1px] bg-slate-200" />
 
             <div className="flex items-center gap-2">
-              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 text-[11px] font-semibold text-white">
-                AP
+              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-800 text-[11px] font-semibold text-white">
+                U
               </div>
               <div className="hidden lg:block leading-tight">
-                <div className="text-xs font-semibold text-slate-900">Anil Pillai</div>
-                <div className="text-[10px] text-slate-500">Projects Head · Apex MEP</div>
+                <div className="text-xs font-semibold text-slate-900">User Account</div>
+                <div className="text-[10px] text-slate-500">Project Lead</div>
               </div>
             </div>
           </div>
         </header>
 
+        {/* Global Banner Notification */}
+        {reviewBanner && (
+          <div className="bg-emerald-600 text-white px-5 py-2 text-xs font-semibold flex items-center justify-between shadow-sm z-10">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4" />
+              <span>{reviewBanner}</span>
+            </div>
+            <button onClick={() => setReviewBanner(null)} className="opacity-80 hover:opacity-100">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
+
         {/* =================================================================== */}
-        {/* VIEW 1: PROJECT OVERVIEW (SCR-013) - FULL DENSITY BENTO GRID        */}
+        {/* VIEW 1: PROJECT OVERVIEW (SCR-013)                                  */}
         {/* =================================================================== */}
         {activeTab === "overview" && (
           <main className="flex-1 overflow-y-auto p-5 space-y-5">
-            {/* Unified Project Dossier & Contract Briefing Card */}
-            <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-xs">
-              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 border-b border-slate-100 pb-4">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2.5">
-                    <h1 className="text-lg font-bold tracking-tight text-slate-900">
-                      Package A: HVAC High-Side & Low-Side Works
-                    </h1>
-                    <span className="rounded bg-blue-50 px-2 py-0.5 font-mono text-xs font-semibold text-blue-700 border border-blue-200">
-                      Baseline v2 (Locked)
-                    </span>
+            {/* Project Dossier Card or Empty State */}
+            {activeProject ? (
+              <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-xs">
+                <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 border-b border-slate-100 pb-4">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <h1 className="text-lg font-bold tracking-tight text-slate-900">
+                        {activeProject.name}
+                      </h1>
+                      <span className="rounded bg-blue-50 px-2 py-0.5 font-mono text-xs font-semibold text-blue-700 border border-blue-200">
+                        {activeProject.code}
+                      </span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600">
+                      <span>
+                        Contract Ref:{" "}
+                        <strong className="font-mono text-slate-800">
+                          {activeProject.contractRef || "—"}
+                        </strong>
+                      </span>
+                      <span className="text-slate-300">·</span>
+                      <span>
+                        Client:{" "}
+                        <strong className="text-slate-800">
+                          {activeProject.clientName || "—"}
+                        </strong>
+                      </span>
+                      <span className="text-slate-300">·</span>
+                      <span>
+                        PMC:{" "}
+                        <strong className="text-slate-800">
+                          {activeProject.pmcName || "—"}
+                        </strong>
+                      </span>
+                      <span className="text-slate-300">·</span>
+                      <span>
+                        EPC Contractor:{" "}
+                        <strong className="text-slate-800">
+                          {activeProject.contractorName || "—"}
+                        </strong>
+                      </span>
+                      <span className="text-slate-300">·</span>
+                      <span>
+                        Location:{" "}
+                        <strong className="text-slate-800">
+                          {activeProject.location || "—"}
+                        </strong>
+                      </span>
+                    </div>
                   </div>
-                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600">
-                    <span>
-                      Contract Ref: <strong className="font-mono text-slate-800">DLF/CYB/MEP/2025-08</strong>
-                    </span>
-                    <span className="text-slate-300">·</span>
-                    <span>
-                      Client: <strong className="text-slate-800">DLF CyberCity Developers Ltd</strong>
-                    </span>
-                    <span className="text-slate-300">·</span>
-                    <span>
-                      PMC: <strong className="text-slate-800">Meinhardt Singapore</strong>
-                    </span>
-                    <span className="text-slate-300">·</span>
-                    <span>
-                      EPC Contractor: <strong className="text-slate-800">L&T Construction</strong>
-                    </span>
-                    <span className="text-slate-300">·</span>
-                    <span>
-                      Site: <strong className="text-slate-800">Sector 29, Gurugram, HR</strong>
-                    </span>
+
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    {activeProject.targetHandoverDate && (
+                      <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50/80 px-3 py-1.5 text-xs font-medium text-amber-900">
+                        <Clock className="h-3.5 w-3.5 text-amber-700" />
+                        <span>Target Handover: </span>
+                        <strong className="font-mono">{activeProject.targetHandoverDate}</strong>
+                      </div>
+                    )}
+                    <button
+                      onClick={() => setActiveTab("package")}
+                      className="inline-flex items-center gap-1.5 rounded-md bg-[#0F2942] px-3.5 py-1.5 text-xs font-medium text-white hover:bg-[#163A5F] transition-colors"
+                    >
+                      <PackageCheck className="h-3.5 w-3.5" />
+                      <span>Assemble Handover Dossier</span>
+                    </button>
                   </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2.5">
-                  <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50/80 px-3 py-1.5 text-xs font-medium text-amber-900">
-                    <Clock className="h-3.5 w-3.5 text-amber-700" />
-                    <span>Target Handover: </span>
-                    <strong className="font-mono">18 Nov 2026 (17 days)</strong>
+                {/* Contractual Readiness Bar */}
+                <div className="mt-4">
+                  <div className="flex items-baseline justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold uppercase tracking-wider text-slate-600">
+                        Contractual Closeout Readiness
+                      </span>
+                      <span className="text-[11px] text-slate-400">
+                        (Click any segment to filter checklist)
+                      </span>
+                    </div>
+                    <div className="font-mono text-sm font-bold text-slate-900">
+                      {satisfiedCount} / {totalReqs} Applicable Satisfied{" "}
+                      <span className="text-emerald-700">({satisfactionPct}%)</span>
+                    </div>
                   </div>
+
+                  <div className="flex h-3 w-full overflow-hidden rounded-full bg-slate-100 p-0.5 gap-0.5 border border-slate-200">
+                    {totalReqs > 0 ? (
+                      <>
+                        <button
+                          onClick={() => {
+                            setStatusFilter("APPROVED");
+                            setActiveTab("checklist");
+                          }}
+                          style={{ width: `${(approvedInApp / totalReqs) * 100}%` }}
+                          className="h-full bg-emerald-600 hover:opacity-90 transition-opacity rounded-l-full"
+                          title={`Approved In-App: ${approvedInApp}`}
+                        />
+                        <button
+                          onClick={() => {
+                            setStatusFilter("APPROVED_EXTERNAL");
+                            setActiveTab("checklist");
+                          }}
+                          style={{ width: `${(approvedExternal / totalReqs) * 100}%` }}
+                          className="h-full bg-teal-600 hover:opacity-90 transition-opacity"
+                          title={`Approved External (Stamped): ${approvedExternal}`}
+                        />
+                        <button
+                          onClick={() => {
+                            setStatusFilter("WAIVED");
+                            setActiveTab("checklist");
+                          }}
+                          style={{ width: `${(waived / totalReqs) * 100}%` }}
+                          className="h-full bg-purple-600 hover:opacity-90 transition-opacity"
+                          title={`Waived: ${waived}`}
+                        />
+                        <button
+                          onClick={() => {
+                            setStatusFilter("IN_REVIEW");
+                            setActiveTab("checklist");
+                          }}
+                          style={{ width: `${(inReview / totalReqs) * 100}%` }}
+                          className="h-full bg-amber-500 hover:opacity-90 transition-opacity"
+                          title={`Waiting for Review: ${inReview}`}
+                        />
+                        <button
+                          onClick={() => {
+                            setStatusFilter("MISSING_EXPIRED");
+                            setActiveTab("checklist");
+                          }}
+                          style={{ width: `${(missingExpired / totalReqs) * 100}%` }}
+                          className="h-full bg-red-600 hover:opacity-90 transition-opacity rounded-r-full"
+                          title={`Missing / Expired: ${missingExpired}`}
+                        />
+                      </>
+                    ) : (
+                      <div className="h-full w-full bg-slate-200 rounded-full" />
+                    )}
+                  </div>
+
+                  {/* Legend */}
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-4 text-xs">
+                    <div className="flex flex-wrap items-center gap-5">
+                      <button
+                        onClick={() => {
+                          setStatusFilter("APPROVED");
+                          setActiveTab("checklist");
+                        }}
+                        className="flex items-center gap-1.5 text-slate-700 hover:text-slate-900 font-medium"
+                      >
+                        <span className="h-2.5 w-2.5 rounded-full bg-emerald-600" />
+                        <span>Approved In-App</span>
+                        <strong className="font-mono text-slate-900">{approvedInApp}</strong>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setStatusFilter("APPROVED_EXTERNAL");
+                          setActiveTab("checklist");
+                        }}
+                        className="flex items-center gap-1.5 text-slate-700 hover:text-slate-900 font-medium"
+                      >
+                        <span className="h-2.5 w-2.5 rounded-full bg-teal-600" />
+                        <span>Approved (External Stamp)</span>
+                        <strong className="font-mono text-slate-900">{approvedExternal}</strong>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setStatusFilter("WAIVED");
+                          setActiveTab("checklist");
+                        }}
+                        className="flex items-center gap-1.5 text-slate-700 hover:text-slate-900 font-medium"
+                      >
+                        <span className="h-2.5 w-2.5 rounded-full bg-purple-600" />
+                        <span>Waived</span>
+                        <strong className="font-mono text-slate-900">{waived}</strong>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setStatusFilter("IN_REVIEW");
+                          setActiveTab("checklist");
+                        }}
+                        className="flex items-center gap-1.5 text-slate-700 hover:text-slate-900 font-medium"
+                      >
+                        <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+                        <span>Waiting for Review</span>
+                        <strong className="font-mono text-slate-900">{inReview}</strong>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setStatusFilter("MISSING_EXPIRED");
+                          setActiveTab("checklist");
+                        }}
+                        className="flex items-center gap-1.5 text-slate-700 hover:text-slate-900 font-medium"
+                      >
+                        <span className="h-2.5 w-2.5 rounded-full bg-red-600" />
+                        <span>Blocking / Expired</span>
+                        <strong className="font-mono text-slate-900">{missingExpired}</strong>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* No Active Project State */
+              <div className="rounded-xl border-2 border-dashed border-slate-300 bg-white p-8 text-center shadow-xs">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+                  <FolderPlus className="h-7 w-7" />
+                </div>
+                <h2 className="mt-4 text-base font-bold text-slate-900">
+                  No Active Project Selected
+                </h2>
+                <p className="mx-auto mt-1 max-w-md text-xs text-slate-500 leading-relaxed">
+                  Create a new project to start tracking closeout milestones, equipment
+                  registers, compliance checklists, and digital handover dossiers.
+                </p>
+                <div className="mt-5 flex justify-center gap-3">
                   <button
-                    onClick={() => setActiveTab("package")}
-                    className="inline-flex items-center gap-1.5 rounded-md bg-[#0F2942] px-3.5 py-1.5 text-xs font-medium text-white hover:bg-[#163A5F] transition-colors"
+                    onClick={() => setNewProjectModalOpen(true)}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 transition-colors"
                   >
-                    <PackageCheck className="h-3.5 w-3.5" />
-                    <span>Assemble Handover Dossier</span>
+                    <Plus className="h-4 w-4" />
+                    <span>Create New Project</span>
+                  </button>
+                  <button
+                    onClick={() => setNewReqModalOpen(true)}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    <Plus className="h-4 w-4" />
+                    <span>Add Requirement Directly</span>
                   </button>
                 </div>
               </div>
+            )}
 
-              {/* Interactive Multi-Segment Readiness Bar */}
-              <div className="mt-4">
-                <div className="flex items-baseline justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-semibold uppercase tracking-wider text-slate-600">
-                      Contractual Closeout Readiness
-                    </span>
-                    <span className="text-[11px] text-slate-400">
-                      (Click any segment to filter checklist)
-                    </span>
-                  </div>
-                  <div className="font-mono text-sm font-bold text-slate-900">
-                    71 / 77 Applicable Satisfied{" "}
-                    <span className="text-emerald-700">(92.2%)</span>
-                  </div>
-                </div>
-
-                <div className="flex h-3 w-full overflow-hidden rounded-full bg-slate-100 p-0.5 gap-0.5 border border-slate-200">
-                  <button
-                    onClick={() => {
-                      setStatusFilter("APPROVED");
-                      setActiveTab("checklist");
-                    }}
-                    style={{ width: "74%" }}
-                    className="h-full bg-emerald-600 hover:opacity-90 transition-opacity rounded-l-full"
-                    title="Approved In-App: 57"
-                  />
-                  <button
-                    onClick={() => {
-                      setStatusFilter("APPROVED_EXTERNAL");
-                      setActiveTab("checklist");
-                    }}
-                    style={{ width: "11.7%" }}
-                    className="h-full bg-teal-600 hover:opacity-90 transition-opacity"
-                    title="Approved External (Stamped): 9"
-                  />
-                  <button
-                    onClick={() => {
-                      setStatusFilter("WAIVED");
-                      setActiveTab("checklist");
-                    }}
-                    style={{ width: "6.5%" }}
-                    className="h-full bg-purple-600 hover:opacity-90 transition-opacity"
-                    title="Waived with Approval: 5"
-                  />
-                  <button
-                    onClick={() => {
-                      setStatusFilter("IN_REVIEW");
-                      setActiveTab("checklist");
-                    }}
-                    style={{ width: "5.2%" }}
-                    className="h-full bg-amber-500 hover:opacity-90 transition-opacity"
-                    title="Waiting for Review: 4"
-                  />
-                  <button
-                    onClick={() => {
-                      setStatusFilter("MISSING_EXPIRED");
-                      setActiveTab("checklist");
-                    }}
-                    style={{ width: "2.6%" }}
-                    className="h-full bg-red-600 hover:opacity-90 transition-opacity rounded-r-full"
-                    title="Missing / Expired Blockers: 2"
-                  />
-                </div>
-
-                {/* Segment Legend */}
-                <div className="mt-3 flex flex-wrap items-center justify-between gap-4 text-xs">
-                  <div className="flex flex-wrap items-center gap-5">
-                    <button
-                      onClick={() => {
-                        setStatusFilter("APPROVED");
-                        setActiveTab("checklist");
-                      }}
-                      className="flex items-center gap-1.5 text-slate-700 hover:text-slate-900"
-                    >
-                      <span className="h-2.5 w-2.5 rounded-xs bg-emerald-600" />
-                      <span>Approved In-App</span>
-                      <strong className="font-mono text-slate-900">57</strong>
-                    </button>
-                    <button
-                      onClick={() => {
-                        setStatusFilter("APPROVED_EXTERNAL");
-                        setActiveTab("checklist");
-                      }}
-                      className="flex items-center gap-1.5 text-slate-700 hover:text-slate-900"
-                    >
-                      <span className="h-2.5 w-2.5 rounded-xs bg-teal-600" />
-                      <span>Approved (External Stamp)</span>
-                      <strong className="font-mono text-slate-900">9</strong>
-                    </button>
-                    <button
-                      onClick={() => {
-                        setStatusFilter("WAIVED");
-                        setActiveTab("checklist");
-                      }}
-                      className="flex items-center gap-1.5 text-slate-700 hover:text-slate-900"
-                    >
-                      <span className="h-2.5 w-2.5 rounded-xs bg-purple-600" />
-                      <span>Waived</span>
-                      <strong className="font-mono text-slate-900">5</strong>
-                    </button>
-                    <button
-                      onClick={() => {
-                        setStatusFilter("IN_REVIEW");
-                        setActiveTab("checklist");
-                      }}
-                      className="flex items-center gap-1.5 text-amber-800 font-medium hover:underline"
-                    >
-                      <span className="h-2.5 w-2.5 rounded-xs bg-amber-500" />
-                      <span>Waiting for Review</span>
-                      <strong className="font-mono">4</strong>
-                    </button>
-                    <button
-                      onClick={() => {
-                        setStatusFilter("MISSING_EXPIRED");
-                        setActiveTab("checklist");
-                      }}
-                      className="flex items-center gap-1.5 text-red-700 font-semibold hover:underline"
-                    >
-                      <span className="h-2.5 w-2.5 rounded-xs bg-red-600" />
-                      <span>Blocking / Expired</span>
-                      <strong className="font-mono">2</strong>
-                    </button>
-                  </div>
-
-                  <span className="text-[11px] text-slate-500 font-mono">
-                    Last snapshot verification: Today, 00:42 IST
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* 4 Executive KPI Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+            {/* 4 Executive KPI Bento Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Card 1: Retention Money Gated */}
               <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-xs">
-                <div className="flex items-center justify-between text-xs font-medium text-slate-500">
+                <div className="flex items-center justify-between text-xs text-slate-500 font-medium">
                   <span>Retention Money Gated</span>
                   <CreditCard className="h-4 w-4 text-slate-400" />
                 </div>
                 <div className="mt-2 flex items-baseline gap-2">
                   <span className="font-mono text-2xl font-bold tracking-tight text-slate-900">
-                    ₹75,00,000
+                    ₹0
                   </span>
-                  <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] font-medium text-slate-700">
-                    5.0% of ₹15.0 Cr
+                  <span className="text-[11px] font-medium text-slate-500">
+                    0.0% of contract
                   </span>
                 </div>
-                <p className="mt-1.5 text-[11px] text-slate-500">
-                  2 mandatory blockers remaining before final bill release.
+                <p className="mt-1 text-[11px] text-slate-500">
+                  {missingExpired} mandatory blockers remaining
                 </p>
               </div>
 
-              <div
-                onClick={() => setActiveTab("viewer")}
-                className="cursor-pointer rounded-lg border border-amber-300 bg-white p-4 shadow-xs hover:border-amber-400 transition-colors"
-              >
-                <div className="flex items-center justify-between text-xs font-medium text-amber-900">
+              {/* Card 2: Actionable Review Queue */}
+              <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-xs">
+                <div className="flex items-center justify-between text-xs text-slate-500 font-medium">
                   <span>Actionable Review Queue</span>
-                  <Clock className="h-4 w-4 text-amber-600" />
+                  <Clock className="h-4 w-4 text-amber-500" />
                 </div>
                 <div className="mt-2 flex items-baseline gap-2">
-                  <span className="font-mono text-2xl font-bold tracking-tight text-amber-800">
-                    4 Pending
+                  <span className="font-mono text-2xl font-bold tracking-tight text-slate-900">
+                    {inReview}
                   </span>
-                  <span className="text-xs font-medium text-emerald-700">
-                    Avg SLA: 3.2 hrs
-                  </span>
+                  <span className="text-xs font-semibold text-amber-600">Pending</span>
+                  <span className="text-[11px] text-slate-400">Avg SLA: —</span>
                 </div>
-                <p className="mt-1.5 text-[11px] text-slate-600 flex items-center justify-between">
-                  <span>Includes Chiller Hydrostatic Test (R2)</span>
-                  <span className="font-semibold text-blue-700">Inspect →</span>
-                </p>
+                <div className="mt-1 flex items-center justify-between text-[11px]">
+                  <span className="text-slate-500 truncate">
+                    {inReview > 0 ? `${inReview} awaiting inspection` : "Review queue is clear"}
+                  </span>
+                  <button
+                    onClick={() => setActiveTab("viewer")}
+                    className="font-medium text-blue-600 hover:text-blue-800"
+                  >
+                    Inspect →
+                  </button>
+                </div>
               </div>
 
+              {/* Card 3: Installed Asset Coverage */}
               <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-xs">
-                <div className="flex items-center justify-between text-xs font-medium text-slate-500">
+                <div className="flex items-center justify-between text-xs text-slate-500 font-medium">
                   <span>Installed Asset Coverage</span>
                   <Cpu className="h-4 w-4 text-slate-400" />
                 </div>
                 <div className="mt-2 flex items-baseline gap-2">
                   <span className="font-mono text-2xl font-bold tracking-tight text-slate-900">
-                    39 / 42
+                    {assetsTagged} / {totalReqs}
                   </span>
-                  <span className="rounded bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 font-mono text-[11px] font-medium text-emerald-800">
-                    92.8% Tagged
+                  <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700">
+                    {totalReqs > 0 ? `${((assetsTagged / totalReqs) * 100).toFixed(0)}%` : "0%"} Tagged
                   </span>
                 </div>
-                <p className="mt-1.5 text-[11px] text-slate-500">
-                  3 Assets awaiting OEM FAT or redline drawing sign-off.
+                <p className="mt-1 text-[11px] text-slate-500">
+                  {uniqueAssets.length} unique equipment tags registered
                 </p>
               </div>
 
+              {/* Card 4: DLP & Warranty Horizon */}
               <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-xs">
-                <div className="flex items-center justify-between text-xs font-medium text-slate-500">
+                <div className="flex items-center justify-between text-xs text-slate-500 font-medium">
                   <span>DLP & Warranty Horizon</span>
                   <ShieldCheck className="h-4 w-4 text-slate-400" />
                 </div>
                 <div className="mt-2 flex items-baseline gap-2">
                   <span className="font-mono text-2xl font-bold tracking-tight text-slate-900">
-                    12 Months
+                    —
                   </span>
-                  <span className="text-xs text-slate-500 font-medium">Basis: Handover</span>
+                  <span className="text-[11px] text-slate-500">Basis: Handover</span>
                 </div>
-                <p className="mt-1.5 text-[11px] text-slate-500">
-                  0 warranty basis conflicts · 2 open minor snags.
+                <p className="mt-1 text-[11px] text-slate-500">
+                  0 warranty basis conflicts recorded
                 </p>
               </div>
             </div>
 
-            {/* Two-Column Operational Split: Blockers (Left) & Asset Matrix + Activity (Right) */}
+            {/* 2-Column Split: Blockers vs Asset & Audit Stream */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-              {/* Left 7 Columns: Needs Immediate Attention (Blockers & Overdue) */}
-              <div className="lg:col-span-7 rounded-lg border border-slate-200 bg-white shadow-xs flex flex-col">
+              {/* Left Column (7 cols): Readiness Blockers */}
+              <div className="lg:col-span-7 rounded-lg border border-slate-200 bg-white shadow-xs">
                 <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
                   <div className="flex items-center gap-2">
                     <AlertTriangle className="h-4 w-4 text-red-600" />
                     <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-800">
-                      Readiness Blockers & Supplier Chasers (4)
+                      Readiness Blockers & Action Items ({blockers.length})
                     </h2>
                   </div>
                   <button
                     onClick={() => setActiveTab("checklist")}
-                    className="text-xs font-medium text-blue-700 hover:underline"
+                    className="text-xs font-semibold text-blue-600 hover:text-blue-800"
                   >
                     Open Full Checklist →
                   </button>
                 </div>
 
-                <div className="divide-y divide-slate-200">
-                  {requirements
-                    .filter((r) =>
-                      ["MISSING", "EXPIRED", "CHANGES_REQUESTED", "REQUESTED"].includes(
-                        r.status
-                      )
-                    )
-                    .map((item) => (
-                      <div
-                        key={item.id}
-                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 hover:bg-slate-50/80 transition-colors"
-                      >
-                        <div className="min-w-0 space-y-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="font-mono text-[11px] font-semibold text-slate-700">
-                              {item.key}
-                            </span>
-                            {item.mandatory && (
-                              <span className="rounded bg-red-50 border border-red-200 px-1.5 py-0.2 text-[10px] font-semibold text-red-700">
-                                Mandatory
+                <div className="p-4">
+                  {blockers.length > 0 ? (
+                    <div className="divide-y divide-slate-100">
+                      {blockers.map((req) => (
+                        <div key={req.id} className="py-3 flex items-center justify-between gap-4">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-xs font-bold text-slate-800">
+                                {req.key}
                               </span>
-                            )}
-                            <span className="rounded bg-slate-100 px-1.5 py-0.2 font-mono text-[10px] text-slate-600">
-                              {item.docTypeCode}
-                            </span>
-                            {item.assetTag && (
-                              <span className="rounded bg-blue-50 border border-blue-200 px-1.5 py-0.2 font-mono text-[10px] font-medium text-blue-800">
-                                {item.assetTag}
+                              <span className="rounded bg-slate-100 px-1.5 py-0.2 font-mono text-[10px] text-slate-600">
+                                {req.docTypeCode}
                               </span>
-                            )}
+                              {req.assetTag && (
+                                <span className="rounded bg-blue-50 px-1.5 py-0.2 font-mono text-[10px] font-semibold text-blue-700">
+                                  {req.assetTag}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs font-medium text-slate-900 truncate mt-0.5">
+                              {req.title}
+                            </div>
+                            <div className="text-[11px] text-slate-500 mt-0.5">
+                              Owner: {req.ownerName} · Due: {req.dueDate || "Not set"}
+                            </div>
                           </div>
-                          <p className="text-xs font-medium text-slate-900 truncate">
-                            {item.title}
-                          </p>
-                          <div className="flex items-center gap-3 text-[11px] text-slate-500">
-                            <span>
-                              Owner: <strong className="text-slate-700">{item.ownerName}</strong>
-                            </span>
-                            <span>·</span>
-                            <span
-                              className={
-                                item.isOverdue
-                                  ? "text-red-700 font-semibold font-mono"
-                                  : "font-mono"
-                              }
-                            >
-                              Due: {item.dueDate}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2 shrink-0">
-                          <StatusPill status={item.status} compact />
-                          {item.isExternalSupplier ? (
-                            <button
-                              onClick={() => setActiveTab("supplier")}
-                              className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                            >
-                              <Send className="h-3 w-3 text-emerald-600" />
-                              <span>WhatsApp Link</span>
-                            </button>
-                          ) : (
+                          <div className="flex items-center gap-2 shrink-0">
+                            <StatusPill status={req.status} compact />
                             <button
                               onClick={() => {
-                                setUploadTargetReq(item);
+                                setUploadTargetReq(req);
                                 setUploadModalOpen(true);
                               }}
-                              className="inline-flex items-center gap-1 rounded bg-[#0F2942] px-2.5 py-1 text-xs font-medium text-white hover:bg-[#163A5F]"
+                              className="rounded bg-slate-900 px-2.5 py-1 text-xs font-semibold text-white hover:bg-slate-800"
                             >
-                              <UploadCloud className="h-3 w-3" />
-                              <span>Upload</span>
+                              Upload
                             </button>
-                          )}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="py-8 text-center">
+                      <CheckCircle2 className="mx-auto h-8 w-8 text-emerald-500" />
+                      <p className="mt-2 text-xs font-semibold text-slate-800">
+                        No Blocking Requirements
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-slate-500">
+                        {totalReqs === 0
+                          ? "No requirements configured yet. Click '+ Add Requirement' to begin."
+                          : "All mandatory closeout requirements are satisfied or in review."}
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* Right 5 Columns: Equipment Coverage Matrix & Immutable Audit Log */}
+              {/* Right Column (5 cols): Equipment Category Readiness & Audit Stream */}
               <div className="lg:col-span-5 space-y-5">
-                {/* Equipment Matrix */}
+                {/* Equipment Category Readiness */}
                 <div className="rounded-lg border border-slate-200 bg-white shadow-xs">
                   <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
                     <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-800">
-                      Equipment Category Readiness (42 Assets)
+                      Equipment Category Readiness
                     </h2>
-                    <span className="font-mono text-[11px] text-slate-500">
-                      Asset-Scoped Docs
+                    <span className="text-[11px] text-slate-500">
+                      {uniqueAssets.length} Assets Registered
                     </span>
                   </div>
-                  <div className="p-4 space-y-3">
-                    {[
-                      {
-                        cat: "Water-Cooled Centrifugal Chillers (CHLR-01..03)",
-                        done: 17,
-                        total: 18,
-                        pct: 94,
-                      },
-                      {
-                        cat: "Double-Skin Floor AHUs (AHU-FL01..14)",
-                        done: 40,
-                        total: 42,
-                        pct: 95,
-                      },
-                      {
-                        cat: "Primary & Secondary Hydronic Pumps (PMP-01..08)",
-                        done: 24,
-                        total: 24,
-                        pct: 100,
-                      },
-                      {
-                        cat: "Motorised Fire & Smoke Dampers (FD-Z01..17)",
-                        done: 16,
-                        total: 17,
-                        pct: 94,
-                      },
-                    ].map((row, idx) => (
-                      <div key={idx} className="space-y-1">
-                        <div className="flex justify-between text-xs">
-                          <span className="font-medium text-slate-800">{row.cat}</span>
-                          <span className="font-mono text-slate-600">
-                            {row.done}/{row.total} ({row.pct}%)
-                          </span>
-                        </div>
-                        <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
-                          <div
-                            style={{ width: `${row.pct}%` }}
-                            className={`h-full rounded-full ${
-                              row.pct === 100 ? "bg-emerald-600" : "bg-blue-600"
-                            }`}
-                          />
-                        </div>
+                  <div className="p-4">
+                    {uniqueAssets.length > 0 ? (
+                      <div className="space-y-3">
+                        {uniqueAssets.map((tag, i) => {
+                          const tagReqs = requirements.filter((r) => r.assetTag === tag);
+                          const tagSatisfied = tagReqs.filter(
+                            (r) =>
+                              r.status === "APPROVED" ||
+                              r.status === "APPROVED_EXTERNAL" ||
+                              r.status === "WAIVED"
+                          ).length;
+                          const pct =
+                            tagReqs.length > 0
+                              ? Math.round((tagSatisfied / tagReqs.length) * 100)
+                              : 0;
+
+                          return (
+                            <div key={i} className="space-y-1">
+                              <div className="flex justify-between text-xs">
+                                <span className="font-semibold text-slate-800">{tag}</span>
+                                <span className="font-mono text-slate-500">
+                                  {tagSatisfied}/{tagReqs.length} ({pct}%)
+                                </span>
+                              </div>
+                              <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+                                <div
+                                  style={{ width: `${pct}%` }}
+                                  className="h-full rounded-full bg-blue-600"
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
-                    ))}
+                    ) : (
+                      <div className="py-6 text-center">
+                        <Cpu className="mx-auto h-7 w-7 text-slate-400" />
+                        <p className="mt-2 text-xs font-semibold text-slate-700">
+                          No Assets Tagged
+                        </p>
+                        <p className="mt-0.5 text-[11px] text-slate-500">
+                          Tag requirements with equipment IDs to track asset closeout.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1336,45 +1224,44 @@ export default function TradeCloseoutEnterpriseApp() {
                     <div className="flex items-center gap-1.5">
                       <History className="h-3.5 w-3.5 text-slate-500" />
                       <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-800">
-                        Recent Audit Trail (Hash-Chained)
+                        Recent Audit Trail
                       </h2>
                     </div>
                     <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] text-slate-600">
                       SHA-256 Verified
                     </span>
                   </div>
-                  <div className="divide-y divide-slate-100 px-4 py-2 text-xs">
-                    {[
-                      {
-                        actor: "Amit Verma (Site Eng)",
-                        action: "uploaded Revision R2 for REQ-HVAC-033 (CHLR-01 Pressure Test)",
-                        time: "2h ago",
-                        hash: "9f2c8b",
-                      },
-                      {
-                        actor: "Vikram Sengupta (Meinhardt PMC)",
-                        action: "stamped External Approval on REQ-HVAC-011 (As-Built Layout)",
-                        time: "Yesterday",
-                        hash: "7a12d9",
-                      },
-                      {
-                        actor: "Carrier Aircon India (Guest)",
-                        action: "authenticated via OTP on Supplier Upload Link",
-                        time: "Yesterday",
-                        hash: "4e01c2",
-                      },
-                    ].map((ev, i) => (
-                      <div key={i} className="py-2 flex items-start justify-between gap-2">
-                        <div>
-                          <span className="font-semibold text-slate-900">{ev.actor}</span>{" "}
-                          <span className="text-slate-600">{ev.action}</span>
-                          <div className="text-[10px] text-slate-400 mt-0.5">{ev.time}</div>
-                        </div>
-                        <span className="font-mono text-[10px] text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200">
-                          #{ev.hash}
-                        </span>
+                  <div className="p-4">
+                    {auditEvents.length > 0 ? (
+                      <div className="divide-y divide-slate-100 text-xs">
+                        {auditEvents.slice(0, 5).map((ev) => (
+                          <div
+                            key={ev.id}
+                            className="py-2 flex items-start justify-between gap-2"
+                          >
+                            <div>
+                              <span className="font-semibold text-slate-900">{ev.actor}</span>{" "}
+                              <span className="text-slate-600">{ev.action}</span>
+                              <div className="text-[10px] text-slate-400 mt-0.5">{ev.time}</div>
+                            </div>
+                            <span className="font-mono text-[10px] text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200">
+                              #{ev.hash}
+                            </span>
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    ) : (
+                      <div className="py-6 text-center">
+                        <History className="mx-auto h-7 w-7 text-slate-400" />
+                        <p className="mt-2 text-xs font-semibold text-slate-700">
+                          No Audit Events Recorded
+                        </p>
+                        <p className="mt-0.5 text-[11px] text-slate-500">
+                          Cryptographic transactions will appear as documents and reviews are
+                          processed.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1383,7 +1270,7 @@ export default function TradeCloseoutEnterpriseApp() {
         )}
 
         {/* =================================================================== */}
-        {/* VIEW 2: COMPLIANCE CHECKLIST GRID (SCR-014) + SLIDE-OVER (SCR-015)  */}
+        {/* VIEW 2: COMPLIANCE CHECKLIST GRID (SCR-014)                          */}
         {/* =================================================================== */}
         {activeTab === "checklist" && (
           <div className="flex flex-1 min-h-0 overflow-hidden relative">
@@ -1395,8 +1282,8 @@ export default function TradeCloseoutEnterpriseApp() {
                     <span className="font-bold text-blue-950">Active Scope:</span>
                     <span>
                       {filterAssetOnly
-                        ? "Showing 42 Equipment-Tagged Package Assets (CHLR, AHU, PMP, FD)"
-                        : "Showing Group 01: Statutory Approvals & CFO Fire NOCs"}
+                        ? "Filtered to Equipment-Tagged Requirements"
+                        : "Filtered to Group: " + filterGroupOnly}
                     </span>
                   </div>
                   <button
@@ -1415,38 +1302,32 @@ export default function TradeCloseoutEnterpriseApp() {
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-t-lg border border-slate-200 bg-white px-4 py-3">
                 <div className="flex flex-wrap items-center gap-1.5">
                   {[
-                    { id: "ALL", label: "All Items", count: requirements.length },
+                    { id: "ALL", label: "All Items", count: totalReqs },
                     {
                       id: "MISSING_EXPIRED",
                       label: "Missing / Expired",
-                      count: requirements.filter(
-                        (r) => r.status === "MISSING" || r.status === "EXPIRED"
-                      ).length,
+                      count: missingExpired,
                       danger: true,
                     },
                     {
                       id: "IN_REVIEW",
                       label: "Waiting for Review",
-                      count: requirements.filter((r) => r.status === "IN_REVIEW").length,
+                      count: inReview,
                     },
                     {
                       id: "CHANGES_REQUESTED",
                       label: "Changes Requested",
-                      count: requirements.filter((r) => r.status === "CHANGES_REQUESTED")
-                        .length,
+                      count: requirements.filter((r) => r.status === "CHANGES_REQUESTED").length,
                     },
                     {
                       id: "APPROVED_ALL",
                       label: "Approved (All)",
-                      count: requirements.filter(
-                        (r) =>
-                          r.status === "APPROVED" || r.status === "APPROVED_EXTERNAL"
-                      ).length,
+                      count: approvedInApp + approvedExternal,
                     },
                     {
                       id: "WAIVED",
                       label: "Waived",
-                      count: requirements.filter((r) => r.status === "WAIVED").length,
+                      count: waived,
                     },
                   ].map((pill) => {
                     const active = statusFilter === pill.id;
@@ -1469,7 +1350,9 @@ export default function TradeCloseoutEnterpriseApp() {
                           className={`rounded-full px-1.5 text-[10px] font-mono font-semibold ${
                             active
                               ? "bg-white/20 text-white"
-                              : "bg-white text-slate-700 border border-slate-200"
+                              : pill.danger && pill.count > 0
+                              ? "bg-red-200/80 text-red-900"
+                              : "bg-slate-200 text-slate-700"
                           }`}
                         >
                           {pill.count}
@@ -1480,1284 +1363,421 @@ export default function TradeCloseoutEnterpriseApp() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <div className="relative">
-                    <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-400" />
-                    <input
-                      type="text"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Filter by key, asset tag (CHLR-01), owner..."
-                      className="h-7 w-64 rounded-md border border-slate-300 bg-white pl-8 pr-3 text-xs placeholder:text-slate-400 focus:border-blue-600 focus:outline-none"
-                    />
-                  </div>
-                  <button className="inline-flex h-7 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
-                    <FileSpreadsheet className="h-3.5 w-3.5 text-slate-500" />
-                    <span>Export Register</span>
+                  <button
+                    onClick={() => setNewReqModalOpen(true)}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 shadow-xs"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    <span>Add Requirement</span>
                   </button>
                 </div>
               </div>
 
-              {/* High-Density Data Grid */}
-              <div className="flex-1 overflow-y-auto border-x border-b border-slate-200 bg-white rounded-b-lg shadow-xs">
-                <table className="w-full border-collapse text-left">
-                  <thead className="sticky top-0 z-10 bg-slate-100/95 backdrop-blur-xs border-b border-slate-200 text-[11px] font-semibold uppercase tracking-wider text-slate-600">
-                    <tr>
-                      <th className="w-9 py-2.5 pl-4">
-                        <input
-                          type="checkbox"
-                          checked={
-                            selectedIds.length > 0 &&
-                            selectedIds.length === filteredReqs.length
-                          }
-                          onChange={(e) =>
-                            setSelectedIds(
-                              e.target.checked ? filteredReqs.map((r) => r.id) : []
-                            )
-                          }
-                          className="rounded border-slate-300"
-                        />
-                      </th>
-                      <th className="py-2.5 px-3">Requirement Key & Deliverable</th>
-                      <th className="py-2.5 px-3 w-36">Equipment Scope</th>
-                      <th className="py-2.5 px-3 w-44">Status</th>
-                      <th className="py-2.5 px-3 w-44">Owner / Assignee</th>
-                      <th className="py-2.5 px-3 w-28">Revision</th>
-                      <th className="py-2.5 px-3 w-32">Due Date</th>
-                      <th className="py-2.5 pr-4 text-right w-36">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200 text-xs">
-                    {groupedReqs.map(([groupKey, group]) => {
-                      const isCollapsed = collapsedGroups[groupKey];
-                      const approvedCount = group.items.filter(
-                        (i) =>
-                          i.status === "APPROVED" ||
-                          i.status === "APPROVED_EXTERNAL" ||
-                          i.status === "WAIVED"
-                      ).length;
-
-                      return (
-                        <React.Fragment key={groupKey}>
-                          {/* Group Accordion Header */}
-                          <tr
-                            onClick={() =>
-                              setCollapsedGroups((p) => ({
-                                ...p,
-                                [groupKey]: !p[groupKey],
-                              }))
+              {/* Data Grid or Empty State */}
+              <div className="flex-1 overflow-y-auto border-x border-b border-slate-200 bg-white">
+                {filteredReqs.length > 0 ? (
+                  <table className="w-full border-collapse text-left text-xs">
+                    <thead className="sticky top-0 z-10 bg-slate-100 text-slate-700 font-semibold border-b border-slate-200">
+                      <tr>
+                        <th className="py-2.5 px-3 w-10">
+                          <input
+                            type="checkbox"
+                            checked={
+                              selectedIds.length === filteredReqs.length &&
+                              filteredReqs.length > 0
                             }
-                            className="cursor-pointer bg-slate-50/90 hover:bg-slate-100/80 transition-colors select-none"
-                          >
-                            <td colSpan={8} className="py-2 px-4">
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2 font-semibold text-slate-800">
+                            onChange={() => {
+                              if (selectedIds.length === filteredReqs.length) {
+                                setSelectedIds([]);
+                              } else {
+                                setSelectedIds(filteredReqs.map((r) => r.id));
+                              }
+                            }}
+                            className="rounded border-slate-300"
+                          />
+                        </th>
+                        <th className="py-2.5 px-3 w-28 font-mono">Code</th>
+                        <th className="py-2.5 px-3">Title & Requirement Scope</th>
+                        <th className="py-2.5 px-3 w-32">Asset Tag</th>
+                        <th className="py-2.5 px-3 w-40">Status</th>
+                        <th className="py-2.5 px-3 w-32">Owner</th>
+                        <th className="py-2.5 px-3 w-24">Due Date</th>
+                        <th className="py-2.5 px-3 w-20 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {groupedReqs.map(([groupKey, group]) => {
+                        const isCollapsed = collapsedGroups[groupKey];
+                        return (
+                          <React.Fragment key={groupKey}>
+                            <tr
+                              onClick={() =>
+                                setCollapsedGroups((prev) => ({
+                                  ...prev,
+                                  [groupKey]: !prev[groupKey],
+                                }))
+                              }
+                              className="bg-slate-50/80 hover:bg-slate-100/80 cursor-pointer font-semibold text-slate-800"
+                            >
+                              <td colSpan={8} className="py-2 px-3">
+                                <div className="flex items-center gap-2">
                                   {isCollapsed ? (
                                     <ChevronRight className="h-4 w-4 text-slate-500" />
                                   ) : (
                                     <ChevronDown className="h-4 w-4 text-slate-500" />
                                   )}
                                   <span>{group.title}</span>
+                                  <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-mono text-slate-700">
+                                    {group.items.length}
+                                  </span>
                                 </div>
-                                <span className="rounded-full bg-white border border-slate-200 px-2 py-0.5 font-mono text-[11px] font-medium text-slate-600">
-                                  {approvedCount} / {group.items.length} Satisfied
-                                </span>
-                              </div>
-                            </td>
-                          </tr>
-
-                          {/* Requirement Rows */}
-                          {!isCollapsed &&
-                            group.items.map((req) => {
-                              const isSelected = selectedIds.includes(req.id);
-                              const isDrawerActive = activeDrawerReq?.id === req.id;
-                              return (
+                              </td>
+                            </tr>
+                            {!isCollapsed &&
+                              group.items.map((req) => (
                                 <tr
                                   key={req.id}
-                                  onClick={() => setActiveDrawerReq(req)}
-                                  className={`cursor-pointer transition-colors ${
-                                    isSelected || isDrawerActive
-                                      ? "bg-blue-50/70"
-                                      : "hover:bg-slate-50"
-                                  }`}
+                                  className="hover:bg-slate-50/60 transition-colors"
                                 >
-                                  <td
-                                    className="py-2.5 pl-4"
-                                    onClick={(e) => e.stopPropagation()}
-                                  >
+                                  <td className="py-2 px-3">
                                     <input
                                       type="checkbox"
-                                      checked={isSelected}
+                                      checked={selectedIds.includes(req.id)}
                                       onChange={() => toggleSelectRow(req.id)}
                                       className="rounded border-slate-300"
                                     />
                                   </td>
-                                  <td className="py-2.5 px-3">
-                                    <div className="flex items-center gap-1.5">
-                                      <span className="font-mono text-[11px] font-semibold text-slate-700">
-                                        {req.key}
-                                      </span>
-                                      {req.mandatory && (
-                                        <span className="rounded bg-red-50 border border-red-200 px-1 py-0.2 text-[9px] font-bold uppercase text-red-700">
-                                          Req
-                                        </span>
-                                      )}
-                                      <span className="rounded bg-slate-100 px-1.5 py-0.2 font-mono text-[10px] text-slate-600">
-                                        {req.docTypeCode}
-                                      </span>
-                                    </div>
-                                    <div className="mt-0.5 font-medium text-slate-900">
-                                      {req.title}
+                                  <td className="py-2 px-3 font-mono font-bold text-slate-800">
+                                    {req.key}
+                                  </td>
+                                  <td className="py-2 px-3">
+                                    <div className="font-medium text-slate-900">{req.title}</div>
+                                    <div className="text-[11px] text-slate-500">
+                                      {req.docTypeCode} · {req.docTypeName}
                                     </div>
                                   </td>
-                                  <td className="py-2.5 px-3">
+                                  <td className="py-2 px-3">
                                     {req.assetTag ? (
-                                      <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 border border-slate-300 px-2 py-0.5 font-mono text-[11px] font-semibold text-slate-800">
-                                        <Cpu className="h-3 w-3 text-blue-600" />
+                                      <span className="rounded bg-blue-50 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-blue-700 border border-blue-200">
                                         {req.assetTag}
                                       </span>
                                     ) : (
-                                      <span className="text-[11px] text-slate-500">
-                                        Project-wide
+                                      <span className="text-slate-400 font-mono text-[11px]">
+                                        —
                                       </span>
                                     )}
                                   </td>
-                                  <td className="py-2.5 px-3">
+                                  <td className="py-2 px-3">
                                     <StatusPill status={req.status} compact />
                                   </td>
-                                  <td className="py-2.5 px-3">
-                                    <div className="flex items-center gap-2">
-                                      <div
-                                        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold ${
-                                          req.isExternalSupplier
-                                            ? "bg-amber-100 text-amber-900 border border-amber-300"
-                                            : "bg-slate-200 text-slate-800"
-                                        }`}
-                                      >
-                                        {req.ownerName
-                                          .split(" ")
-                                          .map((n) => n[0])
-                                          .join("")
-                                          .slice(0, 2)}
-                                      </div>
-                                      <div className="truncate">
-                                        <div className="font-medium text-slate-800 truncate">
-                                          {req.ownerName}
-                                        </div>
-                                        <div className="text-[10px] text-slate-500">
-                                          {req.ownerRole}
-                                        </div>
-                                      </div>
+                                  <td className="py-2 px-3 text-slate-700">
+                                    <div>{req.ownerName}</div>
+                                    <div className="text-[10px] text-slate-400">
+                                      {req.ownerRole}
                                     </div>
                                   </td>
-                                  <td className="py-2.5 px-3 font-mono">
-                                    {req.revision ? (
-                                      <span className="rounded bg-slate-100 border border-slate-200 px-1.5 py-0.5 text-[11px] font-semibold text-slate-800">
-                                        {req.revision}
-                                      </span>
-                                    ) : (
-                                      <span className="text-slate-400">—</span>
-                                    )}
+                                  <td className="py-2 px-3 font-mono text-slate-600">
+                                    {req.dueDate || "—"}
                                   </td>
-                                  <td className="py-2.5 px-3 font-mono text-[11px]">
-                                    <div
-                                      className={
-                                        req.isOverdue
-                                          ? "text-red-700 font-semibold"
-                                          : "text-slate-700"
-                                      }
+                                  <td className="py-2 px-3 text-right">
+                                    <button
+                                      onClick={() => {
+                                        setUploadTargetReq(req);
+                                        setUploadModalOpen(true);
+                                      }}
+                                      className="rounded bg-slate-900 px-2.5 py-1 text-xs font-semibold text-white hover:bg-slate-800"
                                     >
-                                      {req.dueDate}
-                                    </div>
-                                    <div className="text-[10px] text-slate-400 font-sans">
-                                      {req.updatedAt}
-                                    </div>
-                                  </td>
-                                  <td
-                                    className="py-2.5 pr-4 text-right"
-                                    onClick={(e) => e.stopPropagation()}
-                                  >
-                                    {req.status === "IN_REVIEW" ? (
-                                      <button
-                                        onClick={() => setActiveTab("viewer")}
-                                        className="inline-flex items-center gap-1 rounded-md border border-amber-400 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-100"
-                                      >
-                                        <Eye className="h-3 w-3" />
-                                        <span>Review {req.revision}</span>
-                                      </button>
-                                    ) : req.status === "APPROVED" ||
-                                      req.status === "APPROVED_EXTERNAL" ? (
-                                      <button
-                                        onClick={() => setActiveTab("viewer")}
-                                        className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                                      >
-                                        <FileText className="h-3 w-3 text-slate-500" />
-                                        <span>Inspect {req.revision}</span>
-                                      </button>
-                                    ) : (
-                                      <button
-                                        onClick={() => {
-                                          setUploadTargetReq(req);
-                                          setUploadModalOpen(true);
-                                        }}
-                                        className="inline-flex items-center gap-1 rounded-md bg-[#0F2942] px-2.5 py-1 text-xs font-medium text-white hover:bg-[#163A5F]"
-                                      >
-                                        <UploadCloud className="h-3 w-3" />
-                                        <span>Upload</span>
-                                      </button>
-                                    )}
+                                      Upload
+                                    </button>
                                   </td>
                                 </tr>
-                              );
-                            })}
-                        </React.Fragment>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                              ))}
+                          </React.Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                ) : (
+                  /* Empty State */
+                  <div className="py-16 text-center">
+                    <ClipboardCheck className="mx-auto h-12 w-12 text-slate-300" />
+                    <h3 className="mt-3 text-sm font-bold text-slate-800">
+                      Checklist is Empty
+                    </h3>
+                    <p className="mx-auto mt-1 max-w-sm text-xs text-slate-500 leading-relaxed">
+                      No requirements found matching your criteria. Add your first closeout
+                      requirement to begin tracking documentation and signoffs.
+                    </p>
+                    <div className="mt-5">
+                      <button
+                        onClick={() => setNewReqModalOpen(true)}
+                        className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-700"
+                      >
+                        <Plus className="h-4 w-4" />
+                        <span>Add First Requirement</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
-
-              {/* Floating Dark-Glass Bulk Action Dock */}
-              {selectedIds.length > 0 && (
-                <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 rounded-xl bg-slate-900/95 px-4 py-2.5 text-xs text-white shadow-2xl border border-slate-700 backdrop-blur-md">
-                  <span className="font-mono font-semibold text-blue-400">
-                    {selectedIds.length} selected
-                  </span>
-                  <div className="h-4 w-[1px] bg-slate-700" />
-                  <button className="hover:text-blue-300 font-medium">Reassign Owner</button>
-                  <button
-                    onClick={() => setActiveTab("supplier")}
-                    className="hover:text-emerald-300 font-medium"
-                  >
-                    Generate Supplier Link
-                  </button>
-                  <button className="hover:text-purple-300 font-medium">
-                    Request Waiver (2-Step)
-                  </button>
-                  <button
-                    onClick={() => setSelectedIds([])}
-                    className="ml-2 rounded bg-slate-800 px-2 py-1 text-[11px] text-slate-300 hover:bg-slate-700"
-                  >
-                    Clear
-                  </button>
-                </div>
-              )}
             </div>
-
-            {/* =============================================================== */}
-            {/* SLIDE-OVER REQUIREMENT DETAIL DRAWER (SCR-015)                  */}
-            {/* =============================================================== */}
-            {activeDrawerReq && (
-              <div className="w-96 shrink-0 border-l border-slate-200 bg-white flex flex-col justify-between overflow-y-auto shadow-xl z-20">
-                <div className="p-4 space-y-4">
-                  <div className="flex items-start justify-between border-b border-slate-100 pb-3">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs font-bold text-blue-700">
-                          {activeDrawerReq.key}
-                        </span>
-                        <StatusPill status={activeDrawerReq.status} compact />
-                      </div>
-                      <h3 className="mt-1.5 text-sm font-semibold text-slate-900">
-                        {activeDrawerReq.title}
-                      </h3>
-                    </div>
-                    <button
-                      onClick={() => setActiveDrawerReq(null)}
-                      className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-
-                  {/* Metadata Grid */}
-                  <div className="grid grid-cols-2 gap-3 rounded-lg bg-slate-50 p-3 border border-slate-200 text-xs">
-                    <div>
-                      <div className="text-[10px] uppercase text-slate-400 font-semibold">
-                        Document Type
-                      </div>
-                      <div className="mt-0.5 font-medium text-slate-800">
-                        {activeDrawerReq.docTypeCode} · {activeDrawerReq.docTypeName}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] uppercase text-slate-400 font-semibold">
-                        Asset Link
-                      </div>
-                      <div className="mt-0.5 font-mono font-semibold text-slate-800">
-                        {activeDrawerReq.assetTag || "Project-wide"}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] uppercase text-slate-400 font-semibold">
-                        Required Reviewer
-                      </div>
-                      <div className="mt-0.5 font-medium text-slate-800">
-                        {activeDrawerReq.reviewerRole}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] uppercase text-slate-400 font-semibold">
-                        Due Date
-                      </div>
-                      <div className="mt-0.5 font-mono font-medium text-slate-800">
-                        {activeDrawerReq.dueDate}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Naming Convention Hint */}
-                  <div className="rounded-md border border-slate-200 p-2.5 text-[11px]">
-                    <div className="font-semibold text-slate-700">
-                      Enforced Naming Pattern:
-                    </div>
-                    <div className="mt-1 font-mono text-[11px] text-blue-800 bg-blue-50/60 px-2 py-1 rounded break-all">
-                      PRJ-024-HVAC-{activeDrawerReq.docTypeCode}-
-                      {activeDrawerReq.assetTag || "GEN"}-{activeDrawerReq.revision || "R0"}
-                      -20261031.pdf
-                    </div>
-                  </div>
-
-                  {/* Version & Review Lineage */}
-                  <div>
-                    <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">
-                      Evidence & Revision Lineage
-                    </h4>
-                    {activeDrawerReq.revision ? (
-                      <div className="space-y-2">
-                        <div className="rounded-md border border-slate-200 p-2.5 text-xs">
-                          <div className="flex items-center justify-between">
-                            <span className="font-mono font-bold text-slate-900">
-                              Version {activeDrawerReq.revision} (Current)
-                            </span>
-                            <span className="font-mono text-[10px] text-slate-500">
-                              {activeDrawerReq.pageCount || 12} pp · PDF
-                            </span>
-                          </div>
-                          <div className="mt-1 text-[11px] text-slate-600">
-                            Uploaded by {activeDrawerReq.ownerName} ·{" "}
-                            {activeDrawerReq.updatedAt}
-                          </div>
-                          <div className="mt-1.5 font-mono text-[10px] text-slate-400">
-                            SHA-256: {activeDrawerReq.sha256 || "9f2c8b...31e7"}
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="rounded-md border border-dashed border-slate-300 p-4 text-center text-xs text-slate-500">
-                        No evidence version uploaded yet.
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Drawer Footer Actions */}
-                <div className="border-t border-slate-200 p-4 bg-slate-50 flex flex-col gap-2">
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      onClick={() => {
-                        setUploadTargetReq(activeDrawerReq);
-                        setUploadModalOpen(true);
-                      }}
-                      className="flex items-center justify-center gap-1.5 rounded-md bg-[#0F2942] py-2 text-xs font-medium text-white hover:bg-[#163A5F]"
-                    >
-                      <UploadCloud className="h-3.5 w-3.5" />
-                      <span>Upload Revision</span>
-                    </button>
-                    <button
-                      onClick={() => setActiveTab("viewer")}
-                      className="flex items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white py-2 text-xs font-medium text-slate-800 hover:bg-slate-100"
-                    >
-                      <Eye className="h-3.5 w-3.5" />
-                      <span>Open Viewer</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         )}
 
         {/* =================================================================== */}
-        {/* VIEW 3: SPLIT-PANE PDF INSPECTION WORKBENCH (SCR-025 & SCR-027)     */}
+        {/* VIEW 3: DOCUMENT REVIEW WORKBENCH (SCR-025 / SCR-027)               */}
         {/* =================================================================== */}
         {activeTab === "viewer" && (
           <div className="flex flex-1 min-h-0 overflow-hidden">
-            {/* LEFT PANE: Thumbnail Rail + Dark CAD/PDF Stage */}
-            <div className="flex flex-1 min-w-0 bg-[#0F172A] text-slate-200 overflow-hidden">
-              {/* Thumbnail Strip */}
-              <div className="w-24 shrink-0 border-r border-slate-800 bg-[#0B1120] p-2.5 overflow-y-auto space-y-2.5 select-none hidden sm:block">
-                <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 px-1">
-                  48 Pages
-                </div>
-                {[1, 2, 11, 12, 13, 14].map((pg) => (
-                  <div
-                    key={pg}
-                    className={`cursor-pointer rounded border p-1 transition-all ${
-                      pg === 12
-                        ? "border-blue-500 bg-blue-500/10 ring-1 ring-blue-500"
-                        : "border-slate-800 bg-slate-900/60 hover:border-slate-700"
-                    }`}
-                  >
-                    <div className="aspect-[1/1.35] w-full rounded-xs bg-white p-1.5 text-[5px] text-slate-400 flex flex-col justify-between">
-                      <div className="h-1 w-2/3 bg-slate-300" />
-                      <div className="space-y-0.5">
-                        <div className="h-0.5 w-full bg-slate-200" />
-                        <div className="h-0.5 w-4/5 bg-slate-200" />
-                      </div>
-                      {pg === 12 && (
-                        <div className="self-end h-2 w-2 rounded-full bg-orange-500" />
-                      )}
-                    </div>
-                    <div className="mt-1 text-center font-mono text-[10px] text-slate-400">
-                      p. {pg}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Center Dark Inspection Canvas */}
-              <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-                {/* Floating Viewer HUD Toolbar */}
-                <div className="flex h-11 shrink-0 items-center justify-between border-b border-slate-800 bg-slate-900/90 px-4 text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="rounded bg-blue-500/20 border border-blue-400/30 px-2 py-0.5 font-mono text-[11px] font-semibold text-blue-300">
-                      REQ-HVAC-033
-                    </span>
-                    <span className="font-medium text-white truncate max-w-md">
-                      PRJ-024-HVAC-DT033-CHLR-01-R2-20261031.pdf
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <div className="flex items-center rounded-md border border-slate-700 bg-slate-800 px-2 py-1 font-mono text-[11px]">
-                      <span>Page 12 / 48</span>
-                    </div>
-                    <div className="flex items-center rounded-md border border-slate-700 bg-slate-800">
-                      <button
-                        onClick={() => setPdfZoom((z) => Math.max(80, z - 15))}
-                        className="px-2 py-1 hover:bg-slate-700"
-                      >
-                        <ZoomOut className="h-3.5 w-3.5" />
-                      </button>
-                      <span className="px-2 font-mono text-[11px]">{pdfZoom}%</span>
-                      <button
-                        onClick={() => setPdfZoom((z) => Math.min(160, z + 15))}
-                        className="px-2 py-1 hover:bg-slate-700"
-                      >
-                        <ZoomIn className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                    <button className="inline-flex items-center gap-1 rounded-md border border-orange-500/40 bg-orange-500/10 px-2.5 py-1 text-xs font-medium text-orange-300 hover:bg-orange-500/20">
-                      <MapPin className="h-3.5 w-3.5 text-orange-400" />
-                      <span>Drop Page Pin</span>
-                    </button>
-                    <button className="rounded-md border border-slate-700 bg-slate-800 p-1.5 hover:bg-slate-700">
-                      <Download className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Realistic Engineering PDF Sheet Stage */}
-                <div className="flex-1 overflow-auto p-6 flex justify-center items-start">
-                  <div
-                    style={{ width: `${(pdfZoom / 100) * 680}px` }}
-                    className="relative rounded-xs bg-white text-slate-900 shadow-2xl border border-slate-400 p-8 transition-all"
-                  >
-                    {/* Engineering Title Block Header */}
-                    <div className="flex items-start justify-between border-2 border-slate-900 p-3">
-                      <div>
-                        <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
-                          CARRIER AIR CONDITIONING & REFRIGERATION LTD · QUALITY ASSURANCE
+            {/* Left CAD Stage */}
+            <div className="flex flex-1 min-w-0 bg-[#0F172A] text-slate-200 overflow-hidden flex-col items-center justify-center p-8">
+              {selectedReviewReq || reviewQueue.length > 0 ? (
+                (() => {
+                  const currentReq = selectedReviewReq || reviewQueue[0];
+                  return (
+                    <div className="w-full max-w-2xl bg-white text-slate-900 rounded-lg shadow-2xl p-8 border border-slate-700 space-y-6">
+                      <div className="flex items-center justify-between border-b pb-4">
+                        <div>
+                          <span className="font-mono text-xs font-bold text-blue-600">
+                            {currentReq.key}
+                          </span>
+                          <h2 className="text-base font-bold text-slate-900 mt-0.5">
+                            {currentReq.title}
+                          </h2>
+                          <p className="text-xs text-slate-500">
+                            Submitted Revision {currentReq.revision || "R1"} · Owner:{" "}
+                            {currentReq.ownerName}
+                          </p>
                         </div>
-                        <h2 className="mt-1 text-base font-bold tracking-tight text-slate-900">
-                          HYDROSTATIC PIPING & SHELL PRESSURE TEST CERTIFICATE
-                        </h2>
-                        <div className="mt-0.5 font-mono text-[11px] text-slate-600">
-                          Standard: ASME B31.5 / ISHRAE HVAC Code · Cert No:
-                          CARR-2026-CHLR-4401
+                        <StatusPill status={currentReq.status} />
+                      </div>
+
+                      <div className="rounded-lg bg-slate-50 border p-4 space-y-2 text-xs">
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">Document Type:</span>
+                          <span className="font-medium text-slate-800">
+                            {currentReq.docTypeCode} — {currentReq.docTypeName}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">Associated Asset:</span>
+                          <span className="font-mono font-medium text-slate-800">
+                            {currentReq.assetTag || "Project-wide"}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">Last Updated:</span>
+                          <span className="text-slate-800">{currentReq.updatedAt}</span>
                         </div>
                       </div>
-                      <div className="text-right font-mono text-[10px] border-l border-slate-300 pl-3">
-                        <div>PROJECT: SKYVIEW TOWERS</div>
-                        <div>TAG: CHLR-01 (650 TR)</div>
-                        <div>REV: R2 · 31 OCT 2026</div>
-                      </div>
-                    </div>
 
-                    {/* Equipment & Test Instrument Metadata Table */}
-                    <div className="mt-4 grid grid-cols-4 border border-slate-800 text-[11px]">
-                      <div className="border-b border-r border-slate-300 bg-slate-100 p-2 font-semibold">
-                        Equipment Tag
-                      </div>
-                      <div className="border-b border-r border-slate-300 p-2 font-mono font-bold">
-                        CHLR-01 (Basement-2)
-                      </div>
-                      <div className="border-b border-r border-slate-300 bg-slate-100 p-2 font-semibold">
-                        Serial Number
-                      </div>
-                      <div className="border-b border-slate-300 p-2 font-mono">
-                        19XR-2026-88412IN
-                      </div>
-
-                      <div className="border-b border-r border-slate-300 bg-slate-100 p-2 font-semibold">
-                        Working Pressure
-                      </div>
-                      <div className="border-b border-r border-slate-300 p-2 font-mono">
-                        6.8 Bar (g)
-                      </div>
-                      <div className="border-b border-r border-slate-300 bg-slate-100 p-2 font-semibold">
-                        Hydro Test Pressure
-                      </div>
-                      <div className="border-b border-slate-300 p-2 font-mono font-bold text-blue-800">
-                        10.5 Bar (g) (1.5x)
-                      </div>
-
-                      <div className="border-r border-slate-300 bg-slate-100 p-2 font-semibold">
-                        Master Gauge ID
-                      </div>
-                      <div className="border-r border-slate-300 p-2 font-mono">
-                        PG-NABL-409 (WIKA)
-                      </div>
-                      <div className="border-r border-slate-300 bg-slate-100 p-2 font-semibold">
-                        Calibration Valid Till
-                      </div>
-                      <div className="p-2 font-mono text-emerald-700 font-semibold">
-                        14 Aug 2027 (NABL)
-                      </div>
-                    </div>
-
-                    {/* Hourly Pressure Hold Log Table */}
-                    <div className="mt-5">
-                      <div className="text-xs font-bold uppercase tracking-wider text-slate-800 mb-1.5">
-                        4.0-Hour Continuous Hydrostatic Hold Log
-                      </div>
-                      <table className="w-full border border-slate-800 text-[11px] font-mono">
-                        <thead className="bg-slate-100 border-b border-slate-800">
-                          <tr>
-                            <th className="p-1.5 border-r border-slate-300 text-left">
-                              Time (IST)
-                            </th>
-                            <th className="p-1.5 border-r border-slate-300 text-left">
-                              Gauge #1 (Supply)
-                            </th>
-                            <th className="p-1.5 border-r border-slate-300 text-left">
-                              Gauge #2 (Return)
-                            </th>
-                            <th className="p-1.5 border-r border-slate-300 text-left">
-                              Water Temp
-                            </th>
-                            <th className="p-1.5 text-left">Weld / Flange Inspection</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-200">
-                          <tr>
-                            <td className="p-1.5 border-r border-slate-300">10:00 hrs</td>
-                            <td className="p-1.5 border-r border-slate-300">10.52 Bar</td>
-                            <td className="p-1.5 border-r border-slate-300">10.50 Bar</td>
-                            <td className="p-1.5 border-r border-slate-300">26.4 °C</td>
-                            <td className="p-1.5 text-emerald-700 font-semibold">
-                              Zero Weeping / Dry
-                            </td>
-                          </tr>
-                          <tr>
-                            <td className="p-1.5 border-r border-slate-300">12:00 hrs</td>
-                            <td className="p-1.5 border-r border-slate-300">10.51 Bar</td>
-                            <td className="p-1.5 border-r border-slate-300">10.50 Bar</td>
-                            <td className="p-1.5 border-r border-slate-300">26.8 °C</td>
-                            <td className="p-1.5 text-emerald-700 font-semibold">
-                              Zero Drop Observed
-                            </td>
-                          </tr>
-                          <tr className="bg-amber-50/70">
-                            <td className="p-1.5 border-r border-slate-300">14:00 hrs</td>
-                            <td className="p-1.5 border-r border-slate-300">10.51 Bar</td>
-                            <td className="p-1.5 border-r border-slate-300">10.49 Bar</td>
-                            <td className="p-1.5 border-r border-slate-300">27.1 °C</td>
-                            <td className="p-1.5 text-emerald-700 font-semibold">
-                              PASS — Depressurised Safely
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-
-                      {/* Interactive Pin #1 on the PDF Canvas */}
-                      <div
-                        className="absolute right-16 top-72 flex h-6 w-6 cursor-pointer items-center justify-center rounded-full bg-orange-500 text-xs font-bold text-white shadow-lg ring-4 ring-orange-500/30"
-                        title="Pin #1 by Sunil Rao (QC)"
-                      >
-                        1
-                      </div>
-                    </div>
-
-                    {/* Stamp & Sign-off Block */}
-                    <div className="mt-6 flex items-center justify-between border-t border-slate-300 pt-4">
-                      <div className="text-[10px] text-slate-600 space-y-0.5">
-                        <div className="font-bold text-slate-900">
-                          Tested By (Apex MEP Site QC):
-                        </div>
-                        <div>Amit Verma · B.Tech Mech · 31 Oct 2026</div>
-                      </div>
-
-                      <div className="rotate-[-2deg] rounded border-2 border-emerald-700 bg-emerald-50/60 px-3 py-1.5 text-center font-mono text-[10px] font-bold text-emerald-800">
-                        <div>WITNESSED & VERIFIED ON SITE</div>
-                        <div>VIKRAM SENGUPTA · MEINHARDT PMC</div>
-                        <div>25-OCT-2026 · REG #MN-8821</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* RIGHT PANE: Verification, Comments & High-Contrast Decision Dock (SCR-027) */}
-            <div className="w-[410px] shrink-0 border-l border-slate-200 bg-white flex flex-col justify-between overflow-y-auto">
-              <div className="p-4 space-y-4">
-                {reviewBanner && (
-                  <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-xs text-emerald-900 flex items-start gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
-                    <div>{reviewBanner}</div>
-                  </div>
-                )}
-
-                {/* Version Switcher & Lineage */}
-                <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-sm font-bold text-slate-900">
-                        Revision R2
-                      </span>
-                      <StatusPill
-                        status={
-                          requirements.find((r) => r.key === "REQ-HVAC-033")?.status ||
-                          "IN_REVIEW"
-                        }
-                        compact
-                      />
-                    </div>
-                    <p className="mt-0.5 text-[11px] text-slate-500">
-                      Supersedes R1 · Uploaded by Amit Verma 2h ago
-                    </p>
-                  </div>
-                  <select className="rounded border border-slate-300 bg-slate-50 px-2 py-1 font-mono text-xs text-slate-800">
-                    <option>R2 (Current)</option>
-                    <option>R1 (Superseded)</option>
-                  </select>
-                </div>
-
-                {/* Automated Verification Checks (WF-11) */}
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                    Automated Pipeline Verification (WF-11)
-                  </div>
-                  <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
-                    <div className="flex items-center gap-1.5 text-emerald-800 font-medium">
-                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-                      <span>PDF/A Valid (48 pp)</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-emerald-800 font-medium">
-                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-                      <span>ClamAV Scan Clean</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-emerald-800 font-medium">
-                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-                      <span>0 Active JS Scripts</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-emerald-800 font-medium">
-                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-                      <span>NABL ID Verified</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Page Pins & Internal/External Comments */}
-                <div className="space-y-2.5">
-                  <div className="flex items-center justify-between text-xs font-semibold text-slate-800">
-                    <span>Review Annotations & Notes (2)</span>
-                    <span className="text-[11px] text-slate-400">Page-linked</span>
-                  </div>
-
-                  <div className="rounded-lg border border-orange-200 bg-orange-50/70 p-3 text-xs space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="inline-flex items-center gap-1 font-semibold text-orange-900">
-                        <span className="flex h-4 w-4 items-center justify-center rounded-full bg-orange-500 text-[10px] font-bold text-white">
-                          1
-                        </span>
-                        Page 12 · Gauge Calibration Check
-                      </span>
-                      <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-800">
-                        External
-                      </span>
-                    </div>
-                    <p className="text-slate-700">
-                      Master gauge WIKA PG-NABL-409 certificate is attached on annexure
-                      page 39. Hold pressure verified at 10.5 Bar.
-                    </p>
-                    <div className="text-[10px] text-slate-500">
-                      Sunil Rao (QC Lead) · 1h ago
-                    </div>
-                  </div>
-
-                  <div className="rounded-lg border border-slate-200 bg-slate-100/80 p-3 text-xs space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-slate-800">
-                        Anil Pillai (Projects Head)
-                      </span>
-                      <span className="inline-flex items-center gap-1 rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-medium text-slate-700">
-                        <Lock className="h-2.5 w-2.5" />
-                        Internal Only
-                      </span>
-                    </div>
-                    <p className="text-slate-600">
-                      Approve this immediately so we can lock Package v2 for DLF billing
-                      milestone.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* STICKY BOTTOM DECISION DOCK (SCR-027) - HIGH CONTRAST & LEGIBLE */}
-              <div className="border-t border-slate-200 bg-slate-50 p-4 space-y-3">
-                {/* Mode Segmented Control */}
-                <div className="grid grid-cols-2 rounded-lg bg-slate-200/80 p-1 text-xs font-semibold">
-                  <button
-                    onClick={() => setDecisionMode("in_app")}
-                    className={`rounded-md py-1.5 transition-all ${
-                      decisionMode === "in_app"
-                        ? "bg-white text-slate-900 shadow-xs"
-                        : "text-slate-600 hover:text-slate-900"
-                    }`}
-                  >
-                    In-App Decision
-                  </button>
-                  <button
-                    onClick={() => setDecisionMode("external")}
-                    className={`rounded-md py-1.5 transition-all flex items-center justify-center gap-1 ${
-                      decisionMode === "external"
-                        ? "bg-white text-teal-900 shadow-xs"
-                        : "text-slate-600 hover:text-slate-900"
-                    }`}
-                  >
-                    <Stamp className="h-3.5 w-3.5" />
-                    <span>External Approval</span>
-                  </button>
-                </div>
-
-                {decisionMode === "in_app" ? (
-                  <>
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                        Review Remarks{" "}
-                        <span className="font-normal text-slate-500">
-                          (Required for Changes / Reject, min 10 chars)
-                        </span>
-                      </label>
-                      <textarea
-                        rows={2}
-                        value={reviewComment}
-                        onChange={(e) => setReviewComment(e.target.value)}
-                        placeholder="Add technical review note or page reference..."
-                        className="w-full rounded-md border border-slate-300 bg-white p-2 text-xs text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:outline-none"
-                      />
-                    </div>
-
-                    {/* High-Contrast Action Buttons */}
-                    <div className="grid grid-cols-3 gap-2">
-                      <button
-                        onClick={handleApproveCurrentDoc}
-                        className="flex items-center justify-center gap-1 rounded-md bg-emerald-700 py-2 px-2 text-xs font-semibold text-white shadow-xs hover:bg-emerald-800 transition-colors"
-                      >
-                        <Check className="h-3.5 w-3.5 stroke-[2.5]" />
-                        <span>Approve</span>
-                      </button>
-                      <button
-                        onClick={() =>
-                          setReviewBanner(
-                            "Changes requested on R2. Uploader Amit Verma has been notified via WhatsApp & Email."
-                          )
-                        }
-                        className="flex items-center justify-center gap-1 rounded-md bg-orange-600 py-2 px-2 text-xs font-semibold text-white shadow-xs hover:bg-orange-700 transition-colors"
-                      >
-                        <FileEdit className="h-3.5 w-3.5" />
-                        <span>Changes</span>
-                      </button>
-                      <button
-                        onClick={() =>
-                          setReviewBanner("Document Version R2 rejected and returned.")
-                        }
-                        className="flex items-center justify-center gap-1 rounded-md bg-red-600 py-2 px-2 text-xs font-semibold text-white shadow-xs hover:bg-red-700 transition-colors"
-                      >
-                        <X className="h-3.5 w-3.5 stroke-[2.5]" />
-                        <span>Reject</span>
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <div className="space-y-2.5 text-xs">
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="block text-[11px] font-semibold text-slate-700">
-                          External Approver
+                      {/* Review Actions */}
+                      <div className="space-y-3 pt-2">
+                        <label className="block text-xs font-semibold text-slate-700">
+                          Review Comments / Corrective Actions
                         </label>
-                        <input
-                          type="text"
-                          value={extApproverName}
-                          onChange={(e) => setExtApproverName(e.target.value)}
-                          className="mt-1 w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-xs"
+                        <textarea
+                          rows={3}
+                          value={reviewComment}
+                          onChange={(e) => setReviewComment(e.target.value)}
+                          placeholder="Enter technical comments, code compliance notes, or punch list items..."
+                          className="w-full rounded-md border border-slate-300 p-2.5 text-xs focus:border-blue-600 focus:outline-none"
                         />
-                      </div>
-                      <div>
-                        <label className="block text-[11px] font-semibold text-slate-700">
-                          Approval Method
-                        </label>
-                        <select
-                          value={extMethod}
-                          onChange={(e) => setExtMethod(e.target.value)}
-                          className="mt-1 w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-xs"
-                        >
-                          <option value="STAMPED_PDF">Stamped Physical PDF</option>
-                          <option value="PORTAL">Aconex / Asite Transmittal</option>
-                          <option value="EMAIL">Consultant Email Sign-off</option>
-                        </select>
+
+                        <div className="flex items-center gap-3 pt-2">
+                          <button
+                            onClick={() => handleApproveCurrentDoc(currentReq)}
+                            className="flex-1 rounded-md bg-emerald-600 py-2.5 text-xs font-bold text-white hover:bg-emerald-700 shadow-sm"
+                          >
+                            Approve In-App
+                          </button>
+                          <button
+                            onClick={() => handleExternalApproveDoc(currentReq)}
+                            className="flex-1 rounded-md bg-teal-600 py-2.5 text-xs font-bold text-white hover:bg-teal-700 shadow-sm"
+                          >
+                            Stamp External Approval
+                          </button>
+                          <button
+                            onClick={() => handleRejectDoc(currentReq)}
+                            className="flex-1 rounded-md bg-orange-600 py-2.5 text-xs font-bold text-white hover:bg-orange-700 shadow-sm"
+                          >
+                            Request Changes
+                          </button>
+                        </div>
                       </div>
                     </div>
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-700">
-                        Transmittal / Reference Number
-                      </label>
-                      <input
-                        type="text"
-                        value={extRef}
-                        onChange={(e) => setExtRef(e.target.value)}
-                        className="mt-1 w-full rounded border border-slate-300 bg-white px-2 py-1.5 font-mono text-xs"
-                      />
-                    </div>
+                  );
+                })()
+              ) : (
+                /* Empty Review Stage */
+                <div className="text-center space-y-3">
+                  <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-slate-800 text-slate-400">
+                    <FileCheck2 className="h-8 w-8" />
+                  </div>
+                  <h3 className="text-base font-bold text-white">Review Queue is Empty</h3>
+                  <p className="max-w-md text-xs text-slate-400 leading-relaxed">
+                    There are 0 documents awaiting inspection or approval sign-off. When evidence
+                    is uploaded for checklist items, it will appear here for CAD inspection and
+                    stamping.
+                  </p>
+                  <div className="pt-2">
                     <button
-                      onClick={handleApproveCurrentDoc}
-                      className="w-full flex items-center justify-center gap-1.5 rounded-md bg-teal-700 py-2 text-xs font-semibold text-white shadow-xs hover:bg-teal-800 transition-colors"
+                      onClick={() => setActiveTab("checklist")}
+                      className="rounded-md bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700"
                     >
-                      <Stamp className="h-3.5 w-3.5" />
-                      <span>Record External Approval & Satisfy Requirement</span>
+                      Open Compliance Checklist
                     </button>
                   </div>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           </div>
         )}
 
         {/* =================================================================== */}
-        {/* VIEW 4: HANDOVER DOSSIER STUDIO (SCR-028 & SCR-057)                 */}
+        {/* VIEW 4: HANDOVER DOSSIER STUDIO (SCR-028)                           */}
         {/* =================================================================== */}
         {activeTab === "package" && (
-          <main className="flex-1 overflow-y-auto p-5 space-y-5">
-            {/* Stepper & Readiness Gate Banner */}
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-xs">
-              <div className="flex flex-wrap items-center gap-6 text-xs">
-                {[
-                  { step: 1, label: "Scope & Preview (SCR-057)", done: true },
-                  { step: 2, label: "Readiness Gate (2 Exceptions)", active: true },
-                  { step: 3, label: "CPWD / PMC Section Order", done: false },
-                  { step: 4, label: "Multi-Party Submission", done: false },
-                ].map((s) => (
-                  <div key={s.step} className="flex items-center gap-2">
-                    <span
-                      className={`flex h-6 w-6 items-center justify-center rounded-full font-mono text-[11px] font-bold ${
-                        s.done
-                          ? "bg-emerald-600 text-white"
-                          : s.active
-                          ? "bg-[#0F2942] text-white ring-4 ring-blue-100"
-                          : "bg-slate-100 text-slate-500 border border-slate-300"
-                      }`}
-                    >
-                      {s.done ? "✓" : s.step}
-                    </span>
-                    <span
-                      className={
-                        s.active
-                          ? "font-semibold text-slate-900"
-                          : "font-medium text-slate-600"
-                      }
-                    >
-                      {s.label}
-                    </span>
-                  </div>
-                ))}
+          <main className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="rounded-xl border border-slate-200 bg-white p-8 text-center shadow-xs">
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+                <PackageCheck className="h-8 w-8" />
               </div>
+              <h2 className="mt-4 text-base font-bold text-slate-900">
+                Digital Handover Dossier Studio
+              </h2>
+              <p className="mx-auto mt-1 max-w-md text-xs text-slate-500 leading-relaxed">
+                Compile approved project documents into an indexed, Bates-stamped digital handover
+                dossier compliant with Indian public works and MEP closeout standards.
+              </p>
 
-              <div className="flex items-center gap-2.5">
-                <span className="font-mono text-xs font-semibold text-slate-700">
-                  71 Docs · 482 Pages · 184.2 MB
-                </span>
-                <button className="inline-flex items-center gap-1.5 rounded-md bg-[#0F2942] px-3.5 py-2 text-xs font-semibold text-white shadow-xs hover:bg-[#163A5F]">
-                  <Download className="h-3.5 w-3.5" />
-                  <span>Download Merged PDF + Manifest ZIP</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Split View: Left Section Breakdown | Right Live A4 Cover & Recipients */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-              {/* Left 7 Columns: 13 Contractual Sections with Page Ranges */}
-              <div className="lg:col-span-7 rounded-lg border border-slate-200 bg-white shadow-xs overflow-hidden">
-                <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
-                  <div>
-                    <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-800">
-                      Compiled Dossier Index (13 Contractual Sections)
-                    </h2>
-                    <p className="text-[11px] text-slate-500">
-                      Bookmarked PDF/A with automatic page-range numbering and SHA-256
-                      manifest
-                    </p>
+              {dossierInitialized ? (
+                <div className="mt-6 max-w-xl mx-auto rounded-lg border border-slate-200 bg-slate-50 p-4 text-left space-y-3 text-xs">
+                  <div className="flex justify-between font-bold text-slate-800">
+                    <span>Dossier Volume 1: Statutory & Technical Handover</span>
+                    <span className="text-emerald-700">Ready to Compile</span>
                   </div>
-                  <span className="rounded bg-emerald-50 border border-emerald-200 px-2 py-0.5 font-mono text-[11px] font-semibold text-emerald-800">
-                    Snapshot Checksum: #8b3e19f0
-                  </span>
+                  <p className="text-slate-600">
+                    Includes {satisfiedCount} approved document versions with pure-Node Bates page
+                    numbering and cryptographic SHA-256 manifest.
+                  </p>
+                  <button className="w-full rounded-md bg-[#0F2942] py-2 text-xs font-semibold text-white hover:bg-[#163A5F]">
+                    Download Bates-Stamped Handover PDF
+                  </button>
                 </div>
-
-                <div className="divide-y divide-slate-200 text-xs">
-                  {[
-                    {
-                      sec: "Section 01 · Cover, Signature Block & Master Approval Register",
-                      docs: "Generated Cover + CPWD/PMC Stamp Grid + 77-Item Index",
-                      pages: "pp. 001–008",
-                      count: "8 Pages",
-                      status: "READY",
-                    },
-                    {
-                      sec: "Section 02 · Completion Certificate & Client Handover Sign-Offs",
-                      docs: "DT-062 Provisional Completion, DT-063 Handover Transmittal",
-                      pages: "pp. 009–018",
-                      count: "10 Pages",
-                      status: "READY",
-                    },
-                    {
-                      sec: "Section 05 · Coordinated As-Built Drawings & Equipment Schedules",
-                      docs: "Plant Room Layout (R3), Riser Schematic (R2), Chiller Schedule",
-                      pages: "pp. 019–086",
-                      count: "68 Pages",
-                      status: "READY",
-                    },
-                    {
-                      sec: "Section 07 · OEM Technical Datasheets, O&M Manuals & Spares",
-                      docs: "Carrier 19XR O&M Manual (142 pp), Paharpur CT Manual, Spares List",
-                      pages: "pp. 087–294",
-                      count: "208 Pages",
-                      status: "READY",
-                    },
-                    {
-                      sec: "Section 08 · Installation, Hydrostatic, Duct Leakage & TAB Reports",
-                      docs: "CHLR-01 Pressure Test (10.5 Bar), NEBB TAB Report, Fire Damper Log",
-                      pages: "pp. 295–438",
-                      count: "144 Pages",
-                      status: "READY",
-                    },
-                    {
-                      sec: "Section 10 · OEM Warranties, Guarantee Undertakings & Waivers",
-                      docs: "5-Year Compressor Warranty, 12-Month DLP Undertaking, 5 Waivers",
-                      pages: "pp. 439–482",
-                      count: "44 Pages",
-                      status: "READY",
-                    },
-                  ].map((s, idx) => (
-                    <div
-                      key={idx}
-                      className="flex items-center justify-between px-4 py-3 hover:bg-slate-50"
-                    >
-                      <div className="space-y-0.5">
-                        <div className="font-semibold text-slate-900">{s.sec}</div>
-                        <div className="text-[11px] text-slate-500">{s.docs}</div>
-                      </div>
-                      <div className="text-right font-mono shrink-0">
-                        <div className="text-xs font-semibold text-slate-800">
-                          {s.pages}
-                        </div>
-                        <div className="text-[10px] text-slate-500">{s.count}</div>
-                      </div>
-                    </div>
-                  ))}
+              ) : (
+                <div className="mt-6">
+                  <button
+                    onClick={() => {
+                      setDossierInitialized(true);
+                      setAuditEvents((prev) => [
+                        {
+                          id: String(Date.now()),
+                          actor: "User",
+                          action: "initialized Digital Handover Dossier structure",
+                          time: "Just now",
+                          hash: Math.random().toString(16).substring(2, 8),
+                        },
+                        ...prev,
+                      ]);
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-700"
+                  >
+                    <Plus className="h-4 w-4" />
+                    <span>Initialize Handover Package</span>
+                  </button>
                 </div>
-              </div>
-
-              {/* Right 5 Columns: Live Executive Cover Preview & Multi-Recipient Status */}
-              <div className="lg:col-span-5 space-y-5">
-                {/* Multi-Recipient Submission Tracker (FR-HND-019) */}
-                <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-xs">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-800">
-                    Multi-Recipient Submission Register (FR-HND-019)
-                  </h3>
-                  <div className="mt-3 space-y-2.5 text-xs">
-                    {[
-                      {
-                        party: "Meinhardt Singapore (MEP Consultant)",
-                        role: "Technical Review",
-                        state: "Accepted (66/71)",
-                        badge: "bg-emerald-50 text-emerald-800 border-emerald-200",
-                      },
-                      {
-                        party: "L&T Construction (Main Contractor)",
-                        role: "Dossier Transmittal",
-                        state: "Acknowledged",
-                        badge: "bg-blue-50 text-blue-800 border-blue-200",
-                      },
-                      {
-                        party: "DLF CyberCity Developers (Client)",
-                        role: "Final Bill & Retention Release",
-                        state: "Pending 2 Items",
-                        badge: "bg-amber-50 text-amber-800 border-amber-200",
-                      },
-                    ].map((rec, i) => (
-                      <div
-                        key={i}
-                        className="flex items-center justify-between rounded-md border border-slate-200 p-2.5"
-                      >
-                        <div>
-                          <div className="font-semibold text-slate-900">{rec.party}</div>
-                          <div className="text-[11px] text-slate-500">{rec.role}</div>
-                        </div>
-                        <span
-                          className={`rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${rec.badge}`}
-                        >
-                          {rec.state}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Live A4 Dossier Cover & Stamp Preview */}
-                <div className="rounded-lg border border-slate-300 bg-slate-800 p-4 shadow-xs">
-                  <div className="flex items-center justify-between text-[11px] text-slate-300 mb-3">
-                    <span className="font-semibold uppercase tracking-wider">
-                      Generated A4 Cover & Signature Block Preview
-                    </span>
-                    <span className="font-mono text-slate-400">Page 001 of 482</span>
-                  </div>
-                  <div className="rounded-xs bg-white p-5 text-slate-900 shadow-lg border border-slate-300 space-y-4">
-                    <div className="h-2 w-full bg-[#0F2942]" />
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <div className="text-[10px] font-bold uppercase text-blue-800">
-                          APEX MEP CONTRACTORS PVT LTD
-                        </div>
-                        <div className="text-sm font-bold text-slate-900 mt-0.5">
-                          FINAL HVAC HANDOVER & O&M DOSSIER
-                        </div>
-                      </div>
-                      <span className="font-mono text-[10px] bg-slate-100 px-1.5 py-0.5 rounded border">
-                        PACKAGE v2
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-2 border border-slate-300 p-2 text-[9px]">
-                      <div className="border-r border-slate-200 pr-2">
-                        <div className="font-bold text-slate-500">PREPARED BY</div>
-                        <div className="mt-3 font-semibold text-slate-800">
-                          Apex MEP Signatory
-                        </div>
-                      </div>
-                      <div className="border-r border-slate-200 pr-2">
-                        <div className="font-bold text-slate-500">REVIEWED BY (PMC)</div>
-                        <div className="mt-3 font-semibold text-slate-800">
-                          Meinhardt Stamp
-                        </div>
-                      </div>
-                      <div>
-                        <div className="font-bold text-slate-500">CLIENT ACCEPTANCE</div>
-                        <div className="mt-3 font-semibold text-slate-800">
-                          DLF Authorised
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="border-t border-slate-200 pt-2 flex justify-between font-mono text-[9px] text-slate-400">
-                      <span>SNAPSHOT SHA256: 8B3E19F0...44A1</span>
-                      <span>31 OCT 2026 IST</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              )}
             </div>
           </main>
         )}
 
         {/* =================================================================== */}
-        {/* VIEW 5: SCOPED SUPPLIER GUEST PORTAL (SCR-034)                      */}
+        {/* VIEW 5: SUPPLIER GUEST LINK SIMULATOR (SCR-034)                     */}
         {/* =================================================================== */}
         {activeTab === "supplier" && (
-          <main className="flex-1 overflow-y-auto bg-slate-200/70 p-5 flex flex-col items-center">
-            {/* Simulator Frame Switcher */}
-            <div className="mb-4 flex items-center justify-between w-full max-w-3xl rounded-lg bg-slate-900 px-4 py-2 text-xs text-slate-200 shadow-md">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="h-4 w-4 text-emerald-400" />
-                <span>
-                  <strong>Scoped Guest Portal Preview</strong> — Zero internal navigation
-                  exposed to external supplier (`SCR-034`)
+          <main className="flex-1 overflow-y-auto p-6 flex items-center justify-center bg-slate-100/60">
+            <div className="w-full max-w-lg rounded-xl border border-slate-200 bg-white p-6 shadow-xl space-y-5">
+              <div className="border-b pb-4">
+                <span className="rounded bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
+                  GUEST UPLOAD PORTAL
                 </span>
+                <h2 className="text-base font-bold text-slate-900 mt-2">
+                  External Supplier Evidence Submission
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Secure OTP-authenticated portal for external vendors and testing agencies.
+                </p>
               </div>
-              <div className="flex items-center gap-1 rounded bg-slate-800 p-0.5">
+
+              <div className="space-y-4 text-xs">
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">
+                    Select Requirement to Upload
+                  </label>
+                  <select
+                    className="w-full rounded border border-slate-300 p-2 text-xs bg-white"
+                    onChange={(e) => {
+                      const found = requirements.find((r) => r.id === e.target.value);
+                      if (found) setUploadTargetReq(found);
+                    }}
+                  >
+                    {requirements.length > 0 ? (
+                      requirements.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.key}: {r.title}
+                        </option>
+                      ))
+                    ) : (
+                      <option>No requirements created yet</option>
+                    )}
+                  </select>
+                </div>
+
+                <div className="rounded-lg border-2 border-dashed border-slate-300 p-6 text-center hover:border-blue-500 transition-colors cursor-pointer bg-slate-50">
+                  <UploadCloud className="mx-auto h-8 w-8 text-slate-400" />
+                  <p className="mt-2 font-semibold text-slate-700 text-xs">
+                    Choose PDF or ZIP to Upload
+                  </p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">
+                    Max file size 100MB · Pure-Node sanitisation & ClamAV virus scanning
+                  </p>
+                </div>
+
                 <button
-                  onClick={() => setSupplierViewport("desktop")}
-                  className={`flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium ${
-                    supplierViewport === "desktop"
-                      ? "bg-blue-600 text-white"
-                      : "text-slate-400 hover:text-white"
-                  }`}
+                  onClick={() => {
+                    if (requirements.length > 0) {
+                      const target = uploadTargetReq || requirements[0];
+                      setRequirements((prev) =>
+                        prev.map((r) =>
+                          r.id === target.id
+                            ? {
+                                ...r,
+                                status: "IN_REVIEW",
+                                updatedAt: "Just now",
+                              }
+                            : r
+                        )
+                      );
+                      setAuditEvents((prev) => [
+                        {
+                          id: String(Date.now()),
+                          actor: "External Supplier (Guest)",
+                          action: `uploaded document for ${target.key} via Guest Upload Link`,
+                          time: "Just now",
+                          hash: Math.random().toString(16).substring(2, 8),
+                        },
+                        ...prev,
+                      ]);
+                      setReviewBanner(`Document submitted for ${target.key}. Review queue updated.`);
+                      setTimeout(() => setReviewBanner(null), 4000);
+                      setActiveTab("viewer");
+                    }
+                  }}
+                  className="w-full rounded-md bg-blue-600 py-2.5 text-xs font-semibold text-white hover:bg-blue-700 shadow-sm"
                 >
-                  <Monitor className="h-3 w-3" />
-                  <span>Desktop</span>
+                  Submit Document as Supplier
                 </button>
-                <button
-                  onClick={() => setSupplierViewport("mobile")}
-                  className={`flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium ${
-                    supplierViewport === "mobile"
-                      ? "bg-blue-600 text-white"
-                      : "text-slate-400 hover:text-white"
-                  }`}
-                >
-                  <Smartphone className="h-3 w-3" />
-                  <span>360px Field Phone</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Isolated External Supplier Frame */}
-            <div
-              className={`${
-                supplierViewport === "mobile" ? "w-[375px]" : "w-full max-w-2xl"
-              } rounded-xl border border-slate-300 bg-white shadow-xl overflow-hidden transition-all`}
-            >
-              {/* 4px Tenant Brand Top Bar (FR-ORG-007) */}
-              <div className="h-1.5 w-full bg-[#0F2942]" />
-
-              {/* Guest Header */}
-              <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-5 py-3.5">
-                <div className="flex items-center gap-2.5">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-[#0F2942] text-xs font-bold text-white">
-                    AM
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold text-slate-900">
-                      Apex MEP Contractors Pvt Ltd
-                    </div>
-                    <div className="text-[11px] text-slate-500">
-                      Project: Skyview Commercial Towers (PRJ-024)
-                    </div>
-                  </div>
-                </div>
-                <span className="rounded-full bg-amber-50 border border-amber-300 px-2.5 py-0.5 text-[10px] font-semibold text-amber-900">
-                  External Supplier Link · OTP Verified
-                </span>
-              </div>
-
-              <div className="p-5 space-y-4">
-                <div className="flex items-center justify-between text-xs">
-                  <div>
-                    <span className="text-slate-500">Assigned Vendor: </span>
-                    <strong className="text-slate-900">
-                      Carrier Air Conditioning India Pvt Ltd
-                    </strong>
-                  </div>
-                  <span className="font-mono text-[11px] text-slate-500">
-                    Link expires: 28 Nov 2026
-                  </span>
-                </div>
-
-                {/* Assigned Requirement Upload Card */}
-                <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-4 shadow-2xs">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="rounded bg-slate-100 border border-slate-300 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-slate-800">
-                          REQ-HVAC-018
-                        </span>
-                        <span className="rounded bg-blue-50 border border-blue-200 px-1.5 py-0.5 font-mono text-[11px] font-medium text-blue-800">
-                          Tag: CHLR-01
-                        </span>
-                      </div>
-                      <h3 className="mt-1.5 text-sm font-semibold text-slate-900">
-                        Centrifugal Chiller Factory Acceptance Test & Run Curve (AHRI
-                        550/590)
-                      </h3>
-                    </div>
-                    <span className="shrink-0 rounded bg-amber-50 border border-amber-200 px-2 py-0.5 font-mono text-[11px] font-semibold text-amber-900">
-                      Due: 05 Nov 2026
-                    </span>
-                  </div>
-
-                  {!supplierUploaded ? (
-                    <>
-                      {/* Sunlight-Contrast Dropzone */}
-                      <div
-                        onClick={() => setSupplierUploaded(true)}
-                        className="cursor-pointer rounded-lg border-2 border-dashed border-blue-600 bg-blue-50/40 p-6 text-center hover:bg-blue-50/80 transition-colors"
-                      >
-                        <UploadCloud className="mx-auto h-7 w-7 text-blue-700" />
-                        <div className="mt-2 text-xs font-semibold text-slate-900">
-                          Tap to Select PDF or Take Photo of Signed Test Certificate
-                        </div>
-                        <div className="mt-0.5 text-[11px] text-slate-500">
-                          PDF, JPG, PNG up to 100 MB · Resumable on 4G
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3 text-xs">
-                        <div>
-                          <label className="block text-[11px] font-semibold text-slate-700">
-                            Revision Code (Required)
-                          </label>
-                          <input
-                            type="text"
-                            defaultValue="R0"
-                            className="mt-1 w-full rounded-md border border-slate-400 px-2.5 py-1.5 font-mono text-xs"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[11px] font-semibold text-slate-700">
-                            Certificate Issue Date (Required)
-                          </label>
-                          <input
-                            type="text"
-                            defaultValue="31 Oct 2026"
-                            className="mt-1 w-full rounded-md border border-slate-400 px-2.5 py-1.5 font-mono text-xs"
-                          />
-                        </div>
-                      </div>
-
-                      <button
-                        onClick={() => setSupplierUploaded(true)}
-                        className="w-full rounded-md bg-[#1D4ED8] py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-blue-800 transition-colors"
-                      >
-                        Upload & Submit Certificate to Apex MEP
-                      </button>
-                    </>
-                  ) : (
-                    <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-4 text-xs text-emerald-950 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="inline-flex items-center gap-1.5 font-bold text-emerald-900">
-                          <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                          Uploaded Successfully · Waiting for Apex MEP Review
-                        </span>
-                        <button
-                          onClick={() => setSupplierUploaded(false)}
-                          className="text-[11px] font-semibold text-emerald-800 underline"
-                        >
-                          Replace File
-                        </button>
-                      </div>
-                      <div className="font-mono text-[11px] text-emerald-800">
-                        File: CARRIER-CHLR01-FAT-AHRI-R0.pdf · SHA-256 Verified
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Direct WhatsApp Assistance Footer */}
-                <div className="flex items-center justify-between border-t border-slate-100 pt-3 text-[11px] text-slate-500">
-                  <span>Need help with equipment serial numbers?</span>
-                  <span className="font-semibold text-blue-700 cursor-pointer hover:underline">
-                    WhatsApp Procurement (Meera: +91 98200 XXXXX)
-                  </span>
-                </div>
               </div>
             </div>
           </main>
@@ -2765,28 +1785,260 @@ export default function TradeCloseoutEnterpriseApp() {
       </div>
 
       {/* ===================================================================== */}
-      {/* 3. FAST 3-TAP MOBILE/FIELD UPLOAD MODAL (SCR-023)                     */}
+      {/* MODAL: CREATE NEW PROJECT                                             */}
+      {/* ===================================================================== */}
+      {newProjectModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
+          <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
+              <h3 className="text-xs font-bold text-slate-900">Create New Project</h3>
+              <button
+                onClick={() => setNewProjectModalOpen(false)}
+                className="rounded p-1 text-slate-400 hover:bg-slate-200"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const form = e.target as HTMLFormElement;
+                const fd = new FormData(form);
+                const newProj: ProjectItem = {
+                  id: "prj-" + Date.now(),
+                  code: (fd.get("code") as string) || "PRJ-001",
+                  name: (fd.get("name") as string) || "New Project",
+                  contractRef: (fd.get("contractRef") as string) || "",
+                  clientName: (fd.get("clientName") as string) || "",
+                  pmcName: (fd.get("pmcName") as string) || "",
+                  contractorName: (fd.get("contractorName") as string) || "",
+                  tradeName: (fd.get("tradeName") as string) || "MEP Closeout",
+                  location: (fd.get("location") as string) || "",
+                  targetHandoverDate: (fd.get("targetHandoverDate") as string) || "",
+                  status: "Handover Active",
+                  retentionPercent: 5.0,
+                  contractValueInr: 0,
+                };
+                setProjects((prev) => [...prev, newProj]);
+                setActiveProject(newProj);
+                setNewProjectModalOpen(false);
+              }}
+              className="p-4 space-y-3 text-xs"
+            >
+              <div>
+                <label className="block font-semibold text-slate-700">Project Code</label>
+                <input
+                  name="code"
+                  defaultValue="PRJ-001"
+                  required
+                  className="mt-1 w-full rounded border border-slate-300 p-2 font-mono text-xs"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700">Project Name</label>
+                <input
+                  name="name"
+                  placeholder="e.g. Commercial Complex Phase 1"
+                  required
+                  className="mt-1 w-full rounded border border-slate-300 p-2 text-xs"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-semibold text-slate-700">Contract Ref</label>
+                  <input
+                    name="contractRef"
+                    placeholder="e.g. CON-2026-01"
+                    className="mt-1 w-full rounded border border-slate-300 p-2 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700">Client / Developer</label>
+                  <input
+                    name="clientName"
+                    placeholder="Client Name"
+                    className="mt-1 w-full rounded border border-slate-300 p-2 text-xs"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-semibold text-slate-700">Location</label>
+                  <input
+                    name="location"
+                    placeholder="e.g. Gurugram, HR"
+                    className="mt-1 w-full rounded border border-slate-300 p-2 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700">Target Handover</label>
+                  <input
+                    name="targetHandoverDate"
+                    placeholder="e.g. 15 Dec 2026"
+                    className="mt-1 w-full rounded border border-slate-300 p-2 text-xs"
+                  />
+                </div>
+              </div>
+              <button
+                type="submit"
+                className="w-full rounded-md bg-blue-600 py-2.5 text-xs font-semibold text-white hover:bg-blue-700 shadow-sm"
+              >
+                Create Project
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ===================================================================== */}
+      {/* MODAL: ADD REQUIREMENT                                                */}
+      {/* ===================================================================== */}
+      {newReqModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
+          <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
+              <h3 className="text-xs font-bold text-slate-900">Add Checklist Requirement</h3>
+              <button
+                onClick={() => setNewReqModalOpen(false)}
+                className="rounded p-1 text-slate-400 hover:bg-slate-200"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const form = e.target as HTMLFormElement;
+                const fd = new FormData(form);
+                const newReq: RequirementItem = {
+                  id: "req-" + Date.now(),
+                  key: (fd.get("key") as string) || "REQ-001",
+                  title: (fd.get("title") as string) || "New Closeout Requirement",
+                  groupKey: (fd.get("groupKey") as string) || "G1",
+                  groupTitle: (fd.get("groupTitle") as string) || "01. General Requirements",
+                  docTypeCode: (fd.get("docTypeCode") as string) || "DT-001",
+                  docTypeName: "Statutory / Engineering Document",
+                  mandatory: fd.get("mandatory") === "on",
+                  assetTag: (fd.get("assetTag") as string) || null,
+                  assetName: null,
+                  status: "MISSING",
+                  ownerName: (fd.get("ownerName") as string) || "Unassigned",
+                  ownerRole: "Engineer",
+                  dueDate: (fd.get("dueDate") as string) || "",
+                  revision: null,
+                  updatedAt: "Just now",
+                  reviewerRole: "PMC Engineer",
+                };
+                setRequirements((prev) => [...prev, newReq]);
+                setNewReqModalOpen(false);
+                setAuditEvents((prev) => [
+                  {
+                    id: String(Date.now()),
+                    actor: "User",
+                    action: `created requirement ${newReq.key}: ${newReq.title}`,
+                    time: "Just now",
+                    hash: Math.random().toString(16).substring(2, 8),
+                  },
+                  ...prev,
+                ]);
+              }}
+              className="p-4 space-y-3 text-xs"
+            >
+              <div>
+                <label className="block font-semibold text-slate-700">Requirement Key</label>
+                <input
+                  name="key"
+                  defaultValue={`REQ-${totalReqs + 1 < 10 ? "00" : "0"}${totalReqs + 1}`}
+                  required
+                  className="mt-1 w-full rounded border border-slate-300 p-2 font-mono text-xs"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700">Requirement Title</label>
+                <input
+                  name="title"
+                  placeholder="e.g. Chief Fire Officer NOC or TAB Balancing Report"
+                  required
+                  className="mt-1 w-full rounded border border-slate-300 p-2 text-xs"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-semibold text-slate-700">Doc Type Code</label>
+                  <input
+                    name="docTypeCode"
+                    defaultValue="DT-001"
+                    className="mt-1 w-full rounded border border-slate-300 p-2 font-mono text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700">Asset Tag (Optional)</label>
+                  <input
+                    name="assetTag"
+                    placeholder="e.g. CHLR-01"
+                    className="mt-1 w-full rounded border border-slate-300 p-2 font-mono text-xs"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-semibold text-slate-700">Owner Name</label>
+                  <input
+                    name="ownerName"
+                    placeholder="Assignee Name"
+                    className="mt-1 w-full rounded border border-slate-300 p-2 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700">Due Date</label>
+                  <input
+                    name="dueDate"
+                    placeholder="e.g. 15 Nov 2026"
+                    className="mt-1 w-full rounded border border-slate-300 p-2 text-xs"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  name="mandatory"
+                  defaultChecked
+                  id="mandatory"
+                  className="rounded border-slate-300"
+                />
+                <label htmlFor="mandatory" className="font-medium text-slate-800">
+                  Mandatory for milestone signoff (Gated)
+                </label>
+              </div>
+              <button
+                type="submit"
+                className="w-full rounded-md bg-blue-600 py-2.5 text-xs font-semibold text-white hover:bg-blue-700 shadow-sm"
+              >
+                Add Requirement
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ===================================================================== */}
+      {/* MODAL: UPLOAD EVIDENCE                                                */}
       {/* ===================================================================== */}
       {uploadModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
           <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-2xl overflow-hidden">
             <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
               <div>
-                <div className="flex items-center gap-1.5">
-                  <span className="font-mono text-xs font-bold text-blue-700">
-                    {uploadTargetReq?.key || "REQ-HVAC-001"}
-                  </span>
-                  <span className="rounded bg-slate-200 px-1.5 py-0.2 font-mono text-[10px] font-semibold text-slate-700">
-                    {uploadTargetReq?.assetTag || "Project-wide"}
-                  </span>
-                </div>
-                <h3 className="text-xs font-semibold text-slate-900 mt-0.5 truncate max-w-xs">
+                <span className="font-mono text-xs font-bold text-blue-700">
+                  {uploadTargetReq?.key || "Document Upload"}
+                </span>
+                <h3 className="text-xs font-semibold text-slate-900 truncate max-w-xs">
                   {uploadTargetReq?.title || "Upload Requirement Evidence"}
                 </h3>
               </div>
               <button
                 onClick={() => setUploadModalOpen(false)}
-                className="rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+                className="rounded p-1 text-slate-400 hover:bg-slate-200"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -2794,7 +2046,7 @@ export default function TradeCloseoutEnterpriseApp() {
 
             <div className="p-4 space-y-4 text-xs">
               <div className="grid grid-cols-2 gap-2.5">
-                <button className="flex flex-col items-center justify-center gap-1.5 rounded-lg bg-[#1D4ED8] p-4 text-white font-semibold shadow-xs hover:bg-blue-800">
+                <button className="flex flex-col items-center justify-center gap-1.5 rounded-lg bg-blue-600 p-4 text-white font-semibold shadow-xs hover:bg-blue-700">
                   <Smartphone className="h-5 w-5" />
                   <span>Take Site Photo</span>
                 </button>
@@ -2821,15 +2073,10 @@ export default function TradeCloseoutEnterpriseApp() {
                   </label>
                   <input
                     type="text"
-                    defaultValue="31 Oct 2026"
+                    defaultValue="Today"
                     className="mt-1 w-full rounded border border-slate-400 px-2.5 py-1.5 font-mono text-xs"
                   />
                 </div>
-              </div>
-
-              <div className="flex items-center justify-between text-[11px] text-slate-500 bg-slate-50 px-3 py-2 rounded border border-slate-200">
-                <span>✓ Draft metadata saved to localStorage</span>
-                <span className="font-mono">Max 100 MB · S3 Multipart</span>
               </div>
 
               <button
@@ -2848,6 +2095,16 @@ export default function TradeCloseoutEnterpriseApp() {
                           : r
                       )
                     );
+                    setAuditEvents((prev) => [
+                      {
+                        id: String(Date.now()),
+                        actor: "User",
+                        action: `uploaded Revision R1 for ${uploadTargetReq.key}`,
+                        time: "Just now",
+                        hash: Math.random().toString(16).substring(2, 8),
+                      },
+                      ...prev,
+                    ]);
                   }
                   setUploadModalOpen(false);
                 }}
@@ -2860,7 +2117,9 @@ export default function TradeCloseoutEnterpriseApp() {
         </div>
       )}
 
-      {/* AUDIT TRAIL MODAL */}
+      {/* ===================================================================== */}
+      {/* MODAL: AUDIT TRAIL                                                    */}
+      {/* ===================================================================== */}
       {auditModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
           <div className="w-full max-w-xl rounded-xl border border-slate-200 bg-white shadow-2xl overflow-hidden">
@@ -2873,96 +2132,55 @@ export default function TradeCloseoutEnterpriseApp() {
               </div>
               <button
                 onClick={() => setAuditModalOpen(false)}
-                className="rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+                className="rounded p-1 text-slate-400 hover:bg-slate-200"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
             <div className="p-5 space-y-4 text-xs">
-              <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 space-y-1">
-                <div className="flex justify-between text-slate-600">
-                  <span>Genesis Hash:</span>
-                  <span className="font-mono text-[11px] text-slate-800">
-                    000000000019d6689c085ae165831e934ff763ae...
-                  </span>
-                </div>
-                <div className="flex justify-between text-slate-600">
-                  <span>Current Chain Tip:</span>
-                  <span className="font-mono text-[11px] text-emerald-700 font-semibold">
-                    #4e01c278b9a10ef2a89341b5... (Verified)
-                  </span>
-                </div>
-                <div className="flex justify-between text-slate-600">
-                  <span>Legal Compliance:</span>
-                  <span className="font-medium text-slate-800">
-                    Section 65B Indian Evidence Act 1872
-                  </span>
-                </div>
-              </div>
-              <div className="divide-y divide-slate-100 max-h-72 overflow-y-auto space-y-2 pr-1">
-                {[
-                  {
-                    actor: "Carrier Aircon India (Guest)",
-                    action: "authenticated via OTP on Supplier Upload Link",
-                    time: "1 Nov 2026, 00:24 IST",
-                    hash: "4e01c278b9a1",
-                  },
-                  {
-                    actor: "Vikram Sengupta (Meinhardt PMC)",
-                    action: "stamped External Approval on REQ-HVAC-011 (As-Built Layout)",
-                    time: "31 Oct 2026, 17:40 IST",
-                    hash: "7a12d933e104",
-                  },
-                  {
-                    actor: "Amit Verma (Site Eng)",
-                    action: "uploaded Revision R2 for REQ-HVAC-033 (CHLR-01 Pressure Test)",
-                    time: "31 Oct 2026, 14:15 IST",
-                    hash: "9f2c8b0021ae",
-                  },
-                  {
-                    actor: "Fatima Shaikh (Senior PM)",
-                    action: "approved Commercial Waiver W-002 for BMS points schedule",
-                    time: "30 Oct 2026, 11:30 IST",
-                    hash: "3d881ab49c21",
-                  },
-                  {
-                    actor: "Anil Pillai (Projects Head)",
-                    action: "compiled Handover Dossier Volume 1 (Pages 1–114 stamped)",
-                    time: "29 Oct 2026, 16:00 IST",
-                    hash: "1b90fe432d88",
-                  },
-                ].map((ev, i) => (
-                  <div key={i} className="pt-2 flex items-start justify-between gap-3">
-                    <div>
-                      <div className="font-semibold text-slate-900">{ev.actor}</div>
-                      <div className="text-slate-600 mt-0.5">{ev.action}</div>
-                      <div className="text-[10px] text-slate-400 mt-0.5">{ev.time}</div>
-                    </div>
-                    <div className="text-right shrink-0">
+              {auditEvents.length > 0 ? (
+                <div className="divide-y divide-slate-100 max-h-72 overflow-y-auto space-y-2 pr-1">
+                  {auditEvents.map((ev) => (
+                    <div key={ev.id} className="pt-2 flex items-start justify-between gap-3">
+                      <div>
+                        <div className="font-semibold text-slate-900">{ev.actor}</div>
+                        <div className="text-slate-600 mt-0.5">{ev.action}</div>
+                        <div className="text-[10px] text-slate-400 mt-0.5">{ev.time}</div>
+                      </div>
                       <span className="font-mono text-[10px] bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 text-slate-700">
                         #{ev.hash}
                       </span>
-                      <div className="text-[10px] text-emerald-600 font-semibold mt-1">
-                        ● Valid
-                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="py-8 text-center">
+                  <History className="mx-auto h-8 w-8 text-slate-300" />
+                  <p className="mt-2 text-xs font-semibold text-slate-700">
+                    No Audit Transactions Recorded
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-slate-400">
+                    Actions performed on requirements, uploads, and approvals will generate
+                    tamper-evident SHA-256 entries.
+                  </p>
+                </div>
+              )}
             </div>
             <div className="border-t border-slate-200 bg-slate-50 px-5 py-3 flex justify-end">
               <button
                 onClick={() => setAuditModalOpen(false)}
                 className="rounded-md bg-slate-900 px-4 py-1.5 text-xs font-semibold text-white hover:bg-slate-800"
               >
-                Close Audit Inspector
+                Close
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* BILLING & TDS MODAL */}
+      {/* ===================================================================== */}
+      {/* MODAL: BILLING & SUBSCRIPTIONS                                        */}
+      {/* ===================================================================== */}
       {billingModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
           <div className="w-full max-w-xl rounded-xl border border-slate-200 bg-white shadow-2xl overflow-hidden">
@@ -2970,12 +2188,12 @@ export default function TradeCloseoutEnterpriseApp() {
               <div className="flex items-center gap-2">
                 <CreditCard className="h-4 w-4 text-blue-700" />
                 <h3 className="text-sm font-bold text-slate-900">
-                  Rule 46 GST & Section 194J TDS Accounting
+                  Billing, Subscriptions & GST Accounting
                 </h3>
               </div>
               <button
                 onClick={() => setBillingModalOpen(false)}
-                className="rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+                className="rounded p-1 text-slate-400 hover:bg-slate-200"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -2984,47 +2202,26 @@ export default function TradeCloseoutEnterpriseApp() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-1">
                   <div className="text-[10px] font-semibold text-slate-500 uppercase">
-                    Current Subscription
+                    Current Plan
                   </div>
-                  <div className="text-base font-extrabold text-slate-900">
-                    ₹24,999{" "}
-                    <span className="text-[10px] font-normal text-slate-500">
-                      / project / yr
-                    </span>
+                  <div className="text-base font-extrabold text-slate-900">Enterprise Growth</div>
+                  <div className="text-slate-600">
+                    {projects.length} of 15 project slots utilized
                   </div>
-                  <div className="text-slate-600">Enterprise Growth Tier (11 / 15 active)</div>
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-1">
                   <div className="text-[10px] font-semibold text-slate-500 uppercase">
-                    GST SAC Code
+                    Statutory SAC
                   </div>
                   <div className="text-base font-mono font-bold text-slate-900">SAC 998315</div>
                   <div className="text-slate-600">18% GST (9% CGST + 9% SGST)</div>
                 </div>
               </div>
 
-              <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3.5 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold text-amber-900">
-                    Section 194J TDS Withholding (10%)
-                  </span>
-                  <span className="rounded bg-amber-200/80 px-2 py-0.5 text-[10px] font-bold text-amber-900">
-                    ACTION REQUIRED
-                  </span>
-                </div>
-                <p className="text-slate-700">
-                  DLF CyberCity Developers deducted ₹2,500 under Section 194J on invoice
-                  INV-2026-089. Upload quarterly Form 16A PDF from TRACES portal to mark this
-                  deduction as reconciled.
+              <div className="rounded-lg border border-slate-200 p-4 text-center">
+                <p className="text-xs text-slate-600">
+                  No statutory billing disputes or pending Section 194J TDS deductions.
                 </p>
-                <div className="pt-1 flex items-center justify-between">
-                  <span className="font-mono text-slate-600 text-[11px]">
-                    Pending: Form 16A (Q3 FY26)
-                  </span>
-                  <button className="rounded bg-amber-800 px-3 py-1 text-[11px] font-semibold text-white hover:bg-amber-900">
-                    Upload Form 16A
-                  </button>
-                </div>
               </div>
             </div>
             <div className="border-t border-slate-200 bg-slate-50 px-5 py-3 flex justify-end">
@@ -3032,7 +2229,7 @@ export default function TradeCloseoutEnterpriseApp() {
                 onClick={() => setBillingModalOpen(false)}
                 className="rounded-md bg-slate-900 px-4 py-1.5 text-xs font-semibold text-white hover:bg-slate-800"
               >
-                Close Billing Sheet
+                Close
               </button>
             </div>
           </div>
