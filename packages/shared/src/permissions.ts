@@ -126,23 +126,34 @@ export function hasPermission(
   ctx: PermissionEvaluationContext,
   permission: string,
 ): { allowed: boolean; scope: PermissionScope } {
-  const orgGrant = ctx.orgRole ? ORG_ROLE_PERMISSIONS[ctx.orgRole]?.[permission] : undefined;
-  const projGrant = ctx.projectRole ? PROJECT_ROLE_PERMISSIONS[ctx.projectRole]?.[permission] : undefined;
-  const isGuestGranted = ctx.guestCapabilities?.includes(permission);
-
   if (permission === 'document.download' && ctx.orgRole === 'R-DOC' && ctx.docControllerOrgWideDownload) {
     return { allowed: true, scope: 'A' };
   }
 
-  // Additive capabilities: union
-  if (orgGrant === 'Y' || projGrant === 'Y' || isGuestGranted) {
+  const orgGrant = ctx.orgRole ? ORG_ROLE_PERMISSIONS[ctx.orgRole]?.[permission] : undefined;
+  const projGrant = ctx.projectRole ? PROJECT_ROLE_PERMISSIONS[ctx.projectRole]?.[permission] : undefined;
+  const isGuestGranted = ctx.guestCapabilities?.includes(permission);
+
+  if (!orgGrant && !projGrant && !isGuestGranted) {
+    return { allowed: false, scope: 'S' };
+  }
+
+  // Owner and Admin retain full org-wide capabilities
+  if (ctx.orgRole === 'R-OWNER' || ctx.orgRole === 'R-ADMIN') {
+    return { allowed: true, scope: orgGrant || 'Y' };
+  }
+
+  // If user has a project role on this project, use project grant or org grant
+  if (projGrant) {
+    return { allowed: true, scope: projGrant };
+  }
+
+  if (orgGrant) {
+    return { allowed: true, scope: orgGrant };
+  }
+
+  if (isGuestGranted) {
     return { allowed: true, scope: 'Y' };
-  }
-  if (orgGrant === 'A' || projGrant === 'A') {
-    return { allowed: true, scope: 'A' };
-  }
-  if (orgGrant === 'S' || projGrant === 'S') {
-    return { allowed: true, scope: 'S' };
   }
 
   return { allowed: false, scope: 'S' };

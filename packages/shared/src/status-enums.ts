@@ -42,13 +42,13 @@ export enum DocumentStatus {
 }
 
 export enum FileVersionStatus {
-  PENDING = 'PENDING',
+  PENDING_UPLOAD = 'PENDING_UPLOAD',
   UPLOADING = 'UPLOADING',
   PROCESSING = 'PROCESSING',
   READY = 'READY',
   QUARANTINED = 'QUARANTINED',
   FAILED = 'FAILED',
-  DELETED = 'DELETED',
+  ARCHIVED = 'ARCHIVED',
 }
 
 export enum VersionReviewStatus {

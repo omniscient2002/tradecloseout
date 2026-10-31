@@ -711,7 +711,7 @@ CREATE TABLE handover_packages (
   project_id         UUID NOT NULL,
   version_no         INTEGER NOT NULL,
   status             TEXT NOT NULL DEFAULT 'DRAFT'
-                       CHECK (status IN ('DRAFT','QUEUED','GENERATING','READY','FAILED','SUBMITTED','ACCEPTED','REJECTED','SUPERSEDED')),
+                       CHECK (status IN ('DRAFT','QUEUED','GENERATING','READY','FAILED','SUBMITTED','PARTIALLY_ACCEPTED','ACCEPTED','REJECTED','SUPERSEDED')),
   scope_json         JSONB NOT NULL DEFAULT '{}'::jsonb,
   snapshot_id        UUID NOT NULL,
   snapshot_checksum  TEXT NOT NULL,
@@ -789,6 +789,7 @@ CREATE TABLE submissions (
   row_version     INTEGER NOT NULL DEFAULT 1,
   created_by      UUID NOT NULL REFERENCES users(id),
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (org_id, project_id, id),
   FOREIGN KEY (org_id, project_id) REFERENCES projects(org_id, id) ON DELETE CASCADE,
   FOREIGN KEY (org_id, project_id, package_id) REFERENCES handover_packages(org_id, project_id, id)
@@ -1070,6 +1071,39 @@ BEGIN
   END LOOP;
 END
 $$;
+
+-- Refined RLS policies for bootstrap and user/guest access (CB-007)
+DROP POLICY IF EXISTS memberships_tenant_isolation ON memberships;
+CREATE POLICY memberships_tenant_isolation ON memberships
+  USING (
+    org_id = NULLIF(current_setting('app.current_org', true), '')::uuid
+    OR user_id = NULLIF(current_setting('app.current_user', true), '')::uuid
+  )
+  WITH CHECK (
+    org_id = NULLIF(current_setting('app.current_org', true), '')::uuid
+  );
+
+DROP POLICY IF EXISTS guest_grants_tenant_isolation ON guest_grants;
+CREATE POLICY guest_grants_tenant_isolation ON guest_grants
+  USING (
+    org_id = NULLIF(current_setting('app.current_org', true), '')::uuid
+    OR token_hash = NULLIF(current_setting('app.current_token_hash', true), '')
+  )
+  WITH CHECK (
+    org_id = NULLIF(current_setting('app.current_org', true), '')::uuid
+    OR token_hash = NULLIF(current_setting('app.current_token_hash', true), '')
+  );
+
+DROP POLICY IF EXISTS invitations_tenant_isolation ON invitations;
+CREATE POLICY invitations_tenant_isolation ON invitations
+  USING (
+    org_id = NULLIF(current_setting('app.current_org', true), '')::uuid
+    OR token_hash = NULLIF(current_setting('app.current_token_hash', true), '')
+  )
+  WITH CHECK (
+    org_id = NULLIF(current_setting('app.current_org', true), '')::uuid
+    OR token_hash = NULLIF(current_setting('app.current_token_hash', true), '')
+  );
 
 -- Prevent customer updates/deletes on append-only audit_events
 REVOKE UPDATE, DELETE ON audit_events FROM tc_app;

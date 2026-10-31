@@ -1,5 +1,5 @@
 // apps/api/src/modules/auth/auth.service.ts
-// Auth & Session Management (API-001..009B, RT-002)
+// Auth & Session Management (API-001..009B, RT-002, CB-007, CB-011)
 
 import {
   Injectable,
@@ -32,9 +32,19 @@ export class AuthService {
   }
 
   /**
-   * API-001 POST /auth/otp/request
+   * API-001 POST /auth/otp/request (CB-011: 5/hr rate limit per identifier)
    */
   async requestOtp(dto: OtpRequestDto): Promise<{ challengeId: string; expiresAt: Date; fallbackChannel?: string }> {
+    // 1. Sliding window rate limiting: max 5 requests per hour (CB-011)
+    const recentRes = await this.db.queryGlobal<any>(
+      `SELECT count(*) as count FROM otp_challenges
+       WHERE identifier = $1 AND created_at > now() - interval '1 hour'`,
+      [dto.identifier],
+    );
+    if (Number(recentRes[0]?.count || 0) >= 5) {
+      throw new ForbiddenException('HOURLY_OTP_LIMIT_EXCEEDED: Maximum 5 OTP requests per hour');
+    }
+
     const rawCode = crypto.randomInt(100000, 999999).toString();
     const codeHash = this.hashSecret(rawCode);
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
@@ -50,7 +60,7 @@ export class AuthService {
   }
 
   /**
-   * API-002 POST /auth/otp/verify
+   * API-002 POST /auth/otp/verify (CB-007 RLS & CB-011 attempt limit check)
    */
   async verifyOtp(dto: OtpVerifyDto): Promise<{
     sessionToken: string;
@@ -70,13 +80,21 @@ export class AuthService {
     }
 
     const challenge = challenges[0];
+
+    // Check attempts limit before verifying code (CB-011)
+    if (challenge.attempts >= 5) {
+      throw new ForbiddenException('MAX_ATTEMPTS_EXCEEDED: Maximum 5 verification attempts reached');
+    }
+
     const incomingHash = this.hashSecret(dto.code);
 
     if (challenge.code_hash !== incomingHash) {
-      await this.db.queryGlobal(
-        `UPDATE otp_challenges SET attempts = attempts + 1 WHERE id = $1`,
-        [challenge.id],
-      );
+      if (challenge.attempts < 5) {
+        await this.db.queryGlobal(
+          `UPDATE otp_challenges SET attempts = attempts + 1 WHERE id = $1`,
+          [challenge.id],
+        );
+      }
       throw new UnauthorizedException('INVALID_OTP_CODE');
     }
 
@@ -119,11 +137,14 @@ export class AuthService {
       userRecord = users[0];
     }
 
-    // Resolve Active Org (RT-002: nullable for pre-onboarding)
-    const memberships = await this.db.queryGlobal<any>(
-      `SELECT org_id FROM memberships WHERE user_id = $1 AND status = 'ACTIVE' ORDER BY joined_at DESC LIMIT 1`,
-      [userId],
-    );
+    // Resolve Active Org with withUserContext to satisfy memberships RLS (CB-007, RT-002)
+    const memberships = await this.db.withUserContext(userId, async (client) => {
+      const res = await client.query(
+        `SELECT org_id FROM memberships WHERE user_id = $1 AND status = 'ACTIVE' ORDER BY joined_at DESC LIMIT 1`,
+        [userId],
+      );
+      return res.rows;
+    });
 
     const activeOrgId = memberships.length > 0 ? memberships[0].org_id : null;
 
@@ -150,26 +171,32 @@ export class AuthService {
   }
 
   /**
-   * API-009A GET /auth/orgs
+   * API-009A GET /auth/orgs (CB-007 user context RLS)
    */
   async getUserOrgs(userId: string): Promise<any[]> {
-    return this.db.queryGlobal<any>(
-      `SELECT o.id as "orgId", o.display_name as "displayName", o.legal_name as "legalName", m.role
-       FROM memberships m
-       JOIN organisations o ON o.id = m.org_id
-       WHERE m.user_id = $1 AND m.status = 'ACTIVE' AND o.status = 'ACTIVE'`,
-      [userId],
-    );
+    return this.db.withUserContext(userId, async (client) => {
+      const res = await client.query(
+        `SELECT o.id as "orgId", o.display_name as "displayName", o.legal_name as "legalName", m.role
+         FROM memberships m
+         JOIN organisations o ON o.id = m.org_id
+         WHERE m.user_id = $1 AND m.status = 'ACTIVE' AND o.status = 'ACTIVE'`,
+        [userId],
+      );
+      return res.rows;
+    });
   }
 
   /**
-   * API-009B POST /auth/switch-org
+   * API-009B POST /auth/switch-org (CB-007 user context RLS)
    */
   async switchOrg(userId: string, sessionId: string, targetOrgId: string): Promise<{ activeOrgId: string; csrfToken: string }> {
-    const membership = await this.db.queryGlobal<any>(
-      `SELECT * FROM memberships WHERE user_id = $1 AND org_id = $2 AND status = 'ACTIVE'`,
-      [userId, targetOrgId],
-    );
+    const membership = await this.db.withUserContext(userId, async (client) => {
+      const res = await client.query(
+        `SELECT * FROM memberships WHERE user_id = $1 AND org_id = $2 AND status = 'ACTIVE'`,
+        [userId, targetOrgId],
+      );
+      return res.rows;
+    });
 
     if (!membership.length) {
       throw new ForbiddenException('NOT_A_MEMBER_OF_ORGANISATION');
@@ -192,15 +219,28 @@ export class AuthService {
   async getSessionByToken(token: string): Promise<any | null> {
     const tokenHash = this.hashSecret(token);
     const sessions = await this.db.queryGlobal<any>(
-      `SELECT s.*, u.name as user_name, u.email_display, u.phone_display,
-              m.role as org_role
+      `SELECT s.*, u.name as user_name, u.email_display, u.phone_display
        FROM sessions s
        JOIN users u ON u.id = s.user_id
-       LEFT JOIN memberships m ON m.org_id = s.active_org_id AND m.user_id = s.user_id AND m.status = 'ACTIVE'
        WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > now() LIMIT 1`,
       [tokenHash],
     );
 
-    return sessions.length ? sessions[0] : null;
+    if (!sessions.length) return null;
+    const session = sessions[0];
+
+    // If active org set, fetch role using user context
+    if (session.active_org_id) {
+      const roleRes = await this.db.withUserContext(session.user_id, async (client) => {
+        const res = await client.query(
+          `SELECT role FROM memberships WHERE org_id = $1 AND user_id = $2 AND status = 'ACTIVE'`,
+          [session.active_org_id, session.user_id],
+        );
+        return res.rows;
+      });
+      session.org_role = roleRes.length ? roleRes[0].role : null;
+    }
+
+    return session;
   }
 }

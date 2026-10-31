@@ -1,17 +1,17 @@
 // apps/api/src/modules/packages/packages.service.ts
-// Multi-recipient submission aggregation & package management (RT-007)
+// Multi-recipient submission aggregation & package management (RT-007, CB-006)
 
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PoolClient } from 'pg';
 import { TenantDbService, ExecutionContext } from '../../database/tenant-db.service';
-import { SubmissionRecipientDecision, SubmissionStatus, PackageStatus } from '@tradecloseout/shared';
+import { SubmissionStatus, PackageStatus } from '@tradecloseout/shared';
 
 @Injectable()
 export class PackagesService {
   constructor(private readonly db: TenantDbService) {}
 
   /**
-   * API-117 POST /submissions/:id/recipients/:recipientId/decision (RT-007)
+   * API-117 POST /submissions/:id/recipients/:recipientId/decision (RT-007, CB-006)
    */
   async recordRecipientDecision(
     ctx: ExecutionContext,
@@ -21,13 +21,14 @@ export class PackagesService {
     comment?: string,
   ) {
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
-      // 1. Update recipient record
+      // 1. Update recipient record with status, decision, remarks, and decided_at (CB-006)
+      const recipientStatus = decision === 'REJECT' ? 'REJECTED' : decision === 'ACCEPT_WITH_EXCEPTIONS' ? 'ACCEPTED_WITH_EXCEPTIONS' : 'ACCEPTED';
       const updateRes = await client.query(
         `UPDATE submission_recipients
-         SET decision = $1, decided_at = now()
-         WHERE org_id = $2 AND submission_id = $3 AND id = $4
+         SET status = $1, decision = $2, remarks = $3, decided_at = now()
+         WHERE org_id = $4 AND submission_id = $5 AND id = $6
          RETURNING *`,
-        [decision, ctx.orgId, submissionId, recipientId],
+        [recipientStatus, decision, comment || null, ctx.orgId, submissionId, recipientId],
       );
 
       if (!updateRes.rows.length) {
@@ -67,10 +68,11 @@ export class PackagesService {
         nextPackageStatus = PackageStatus.SUBMITTED;
       }
 
-      // 3. Update submission status
+      // 3. Update submission status with updated_at (CB-006)
       const subRes = await client.query(
         `UPDATE submissions
-         SET status = $1, decided_at = CASE WHEN $1 IN ('ACCEPTED', 'REJECTED') THEN now() ELSE decided_at END,
+         SET status = $1,
+             decided_at = CASE WHEN $1 IN ('ACCEPTED', 'REJECTED') THEN now() ELSE decided_at END,
              updated_at = now()
          WHERE org_id = $2 AND id = $3
          RETURNING package_id`,

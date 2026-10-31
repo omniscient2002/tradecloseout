@@ -1,5 +1,5 @@
 // packages/pdf-engine/src/package-builder.ts
-// Pure-Node PDF Handover Package Compilation Pipeline (RT-006, RT-025, RT-034)
+// Pure-Node PDF Handover Package Compilation Pipeline (RT-006, RT-025, RT-034, CB-013)
 
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import * as fs from 'node:fs/promises';
@@ -37,13 +37,18 @@ export interface CompiledPackageResult {
   }>;
 }
 
+function sanitizeText(str: string): string {
+  if (!str) return '';
+  return str.replace(/[^\x20-\x7E]/g, ' ').trim();
+}
+
 export class PackageBuilder {
   /**
-   * Generates a pure-Node front matter PDF containing Cover Page and Table of Contents Index.
+   * Generates front matter PDF containing Cover Page and Table of Contents Index with actual page numbers.
    */
   static async generateFrontMatterPdf(
     meta: PackageMetadata,
-    items: PackageItemInput[],
+    itemsWithPages: Array<PackageItemInput & { pageStart: number; pageEnd: number }>,
   ): Promise<Uint8Array> {
     const doc = await PDFDocument.create();
     const font = await doc.embedFont(StandardFonts.Helvetica);
@@ -61,7 +66,7 @@ export class PackageBuilder {
       color: rgb(0.1, 0.2, 0.4),
     });
 
-    coverPage.drawText(`Project: ${meta.projectCode} — ${meta.projectName}`, {
+    coverPage.drawText(sanitizeText(`Project: ${meta.projectCode} — ${meta.projectName}`), {
       x: 50,
       y: height - 170,
       size: 14,
@@ -69,7 +74,7 @@ export class PackageBuilder {
       color: rgb(0.2, 0.2, 0.2),
     });
 
-    coverPage.drawText(`Client: ${meta.clientName}`, {
+    coverPage.drawText(sanitizeText(`Client: ${meta.clientName}`), {
       x: 50,
       y: height - 200,
       size: 12,
@@ -77,7 +82,7 @@ export class PackageBuilder {
       color: rgb(0.3, 0.3, 0.3),
     });
 
-    coverPage.drawText(`Main Contractor / Subcontractor: ${meta.contractorName}`, {
+    coverPage.drawText(sanitizeText(`Main Contractor: ${meta.contractorName}`), {
       x: 50,
       y: height - 220,
       size: 12,
@@ -112,11 +117,11 @@ export class PackageBuilder {
     });
 
     let currentY = height - 120;
-    indexPage.drawText('Item #', { x: 50, y: currentY, size: 10, font: fontBold });
-    indexPage.drawText('Document Type & Title', { x: 100, y: currentY, size: 10, font: fontBold });
+    indexPage.drawText('#', { x: 50, y: currentY, size: 10, font: fontBold });
+    indexPage.drawText('Document Type & Title', { x: 80, y: currentY, size: 10, font: fontBold });
     indexPage.drawText('Rev', { x: 380, y: currentY, size: 10, font: fontBold });
-    indexPage.drawText('Date', { x: 430, y: currentY, size: 10, font: fontBold });
-    indexPage.drawText('Page', { x: 500, y: currentY, size: 10, font: fontBold });
+    indexPage.drawText('Date', { x: 420, y: currentY, size: 10, font: fontBold });
+    indexPage.drawText('Page(s)', { x: 480, y: currentY, size: 10, font: fontBold });
 
     currentY -= 15;
     indexPage.drawLine({
@@ -127,14 +132,16 @@ export class PackageBuilder {
     });
 
     currentY -= 20;
-    items.forEach((item, index) => {
+    itemsWithPages.forEach((item, index) => {
       if (currentY > 70) {
         indexPage.drawText(`${index + 1}`, { x: 50, y: currentY, size: 9, font });
-        const truncatedTitle = item.documentTitle.length > 40 ? item.documentTitle.substring(0, 37) + '...' : item.documentTitle;
-        indexPage.drawText(`${truncatedTitle}`, { x: 100, y: currentY, size: 9, font });
-        indexPage.drawText(item.revisionCode, { x: 380, y: currentY, size: 9, font });
-        indexPage.drawText(item.issueDate, { x: 430, y: currentY, size: 9, font });
-        indexPage.drawText('...', { x: 500, y: currentY, size: 9, font }); // Page number placeholder
+        const cleanTitle = sanitizeText(item.documentTitle);
+        const truncatedTitle = cleanTitle.length > 45 ? cleanTitle.substring(0, 42) + '...' : cleanTitle;
+        indexPage.drawText(truncatedTitle, { x: 80, y: currentY, size: 9, font });
+        indexPage.drawText(sanitizeText(item.revisionCode), { x: 380, y: currentY, size: 9, font });
+        indexPage.drawText(item.issueDate || '', { x: 420, y: currentY, size: 9, font });
+        const pageRange = item.pageStart === item.pageEnd ? `${item.pageStart}` : `${item.pageStart}-${item.pageEnd}`;
+        indexPage.drawText(pageRange, { x: 480, y: currentY, size: 9, font });
         currentY -= 18;
       }
     });
@@ -151,51 +158,79 @@ export class PackageBuilder {
     outputPdfPath: string,
     outputZipPath: string,
   ): Promise<CompiledPackageResult> {
-    const masterDoc = await PDFDocument.create();
-    const frontMatterBytes = await this.generateFrontMatterPdf(meta, items);
+    const sortedItems = [...items].sort((a, b) => a.sortOrder - b.sortOrder);
+
+    // 1. First pass: load and inspect item documents to determine accurate page counts
+    const loadedItemDocs: Array<{ item: PackageItemInput; doc: PDFDocument | null; pageCount: number }> = [];
+    for (const item of sortedItems) {
+      try {
+        const itemBytes = await fs.readFile(item.filePath);
+        const itemDoc = await PDFDocument.load(itemBytes);
+        loadedItemDocs.push({ item, doc: itemDoc, pageCount: itemDoc.getPageCount() });
+      } catch {
+        // Missing or non-PDF placeholder page count = 1
+        loadedItemDocs.push({ item, doc: null, pageCount: 1 });
+      }
+    }
+
+    // 2. Compute accurate starting and ending page numbers
+    const frontMatterPageCount = 2; // 1 Cover + 1 Table of Contents
+    let runningPage = frontMatterPageCount + 1;
+    const itemsWithPages: Array<PackageItemInput & { pageStart: number; pageEnd: number }> = [];
+
+    for (const entry of loadedItemDocs) {
+      const pageStart = runningPage;
+      const pageEnd = runningPage + entry.pageCount - 1;
+      itemsWithPages.push({
+        ...entry.item,
+        pageStart,
+        pageEnd,
+      });
+      runningPage += entry.pageCount;
+    }
+
+    // 3. Generate front matter with exact page ranges
+    const frontMatterBytes = await this.generateFrontMatterPdf(meta, itemsWithPages);
     const frontMatterDoc = await PDFDocument.load(frontMatterBytes);
 
+    const masterDoc = await PDFDocument.create();
+
+    // Copy front matter pages
     const copiedFrontPages = await masterDoc.copyPages(frontMatterDoc, frontMatterDoc.getPageIndices());
     for (const page of copiedFrontPages) {
       masterDoc.addPage(page);
     }
 
-    const itemPageRanges: Array<{ itemId: string; pageStart: number; pageEnd: number }> = [];
-
-    // Sort items by sortOrder
-    const sortedItems = [...items].sort((a, b) => a.sortOrder - b.sortOrder);
-
-    for (const item of sortedItems) {
-      try {
-        const itemBytes = await fs.readFile(item.filePath);
-        const itemDoc = await PDFDocument.load(itemBytes);
-        const pageCount = itemDoc.getPageCount();
-
-        const pageStart = masterDoc.getPageCount() + 1;
-        const copiedPages = await masterDoc.copyPages(itemDoc, itemDoc.getPageIndices());
+    // Copy all item pages into masterDoc
+    for (const entry of loadedItemDocs) {
+      if (entry.doc) {
+        const copiedPages = await masterDoc.copyPages(entry.doc, entry.doc.getPageIndices());
         for (const page of copiedPages) {
           masterDoc.addPage(page);
         }
-        const pageEnd = masterDoc.getPageCount();
-
-        itemPageRanges.push({
-          itemId: item.itemId,
-          pageStart,
-          pageEnd,
-        });
-      } catch {
-        // If an item file cannot be loaded, note range as single-page missing placeholder
+      } else {
         const placeholderPage = masterDoc.addPage([595.28, 841.89]);
         const font = await masterDoc.embedFont(StandardFonts.Helvetica);
-        placeholderPage.drawText(`Document: ${item.documentTitle} [Evidence Attached in ZIP Archive]`, {
-          x: 50,
-          y: 750,
-          size: 12,
-          font,
-        });
-        const pageNum = masterDoc.getPageCount();
-        itemPageRanges.push({ itemId: item.itemId, pageStart: pageNum, pageEnd: pageNum });
+        placeholderPage.drawText(
+          sanitizeText(`Document: ${entry.item.documentTitle} [Evidence Attached in ZIP Archive]`),
+          { x: 50, y: 750, size: 12, font },
+        );
       }
+    }
+
+    // 4. Bates Stamp running page numbers on bottom right
+    const font = await masterDoc.embedFont(StandardFonts.Helvetica);
+    const totalPages = masterDoc.getPageCount();
+    for (let i = 0; i < totalPages; i++) {
+      const page = masterDoc.getPage(i);
+      const { width } = page.getSize();
+      page.drawText(`Page ${i + 1} of ${totalPages}`, {
+        x: width - 110,
+        y: 25,
+        size: 9,
+        font,
+        color: rgb(0.4, 0.4, 0.4),
+      });
     }
 
     // Save final merged PDF
@@ -213,8 +248,19 @@ export class PackageBuilder {
       archive.pipe(output);
       archive.file(outputPdfPath, { name: `${meta.projectCode}_Handover_Compiled.pdf` });
 
-      // Add manifest.json
-      const manifestJson = JSON.stringify({ meta, items: itemPageRanges }, null, 2);
+      const manifestJson = JSON.stringify(
+        {
+          meta,
+          items: itemsWithPages.map((i) => ({
+            itemId: i.itemId,
+            documentTitle: i.documentTitle,
+            pageStart: i.pageStart,
+            pageEnd: i.pageEnd,
+          })),
+        },
+        null,
+        2,
+      );
       archive.append(manifestJson, { name: 'manifest.json' });
 
       archive.finalize();
@@ -223,8 +269,12 @@ export class PackageBuilder {
     return {
       mergedPdfPath: outputPdfPath,
       zipPath: outputZipPath,
-      totalPages: masterDoc.getPageCount(),
-      items: itemPageRanges,
+      totalPages,
+      items: itemsWithPages.map((i) => ({
+        itemId: i.itemId,
+        pageStart: i.pageStart,
+        pageEnd: i.pageEnd,
+      })),
     };
   }
 }

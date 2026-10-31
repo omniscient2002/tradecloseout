@@ -1,5 +1,5 @@
 // apps/api/src/database/tenant-db.service.ts
-// Spike 1 & RT-005: Forced RLS Transaction Context Wrapper
+// Spike 1 & RT-005: Forced RLS Transaction Context Wrapper (CB-007)
 
 import { Injectable, ForbiddenException } from '@nestjs/common';
 import { Pool, PoolClient } from 'pg';
@@ -50,6 +50,50 @@ export class TenantDbService {
       await client.query("SELECT set_config('app.current_user', $1, true)", [ctx.userId]);
       await client.query("SELECT set_config('app.actor_type', $1, true)", [ctx.actorType]);
 
+      const result = await fn(client);
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Executes database operations in user-scoped context (for memberships lookup across orgs, CB-007).
+   */
+  async withUserContext<T>(
+    userId: string,
+    fn: (client: PoolClient) => Promise<T>,
+  ): Promise<T> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query("SELECT set_config('app.current_user', $1, true)", [userId]);
+      const result = await fn(client);
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Executes database operations in token-scoped context (for guest grant token verification, CB-007).
+   */
+  async withTokenContext<T>(
+    tokenHash: string,
+    fn: (client: PoolClient) => Promise<T>,
+  ): Promise<T> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query("SELECT set_config('app.current_token_hash', $1, true)", [tokenHash]);
       const result = await fn(client);
       await client.query('COMMIT');
       return result;

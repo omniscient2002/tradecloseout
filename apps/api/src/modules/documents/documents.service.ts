@@ -1,5 +1,5 @@
 // apps/api/src/modules/documents/documents.service.ts
-// Document upload intents, multipart refresh & bulk import (RT-001, RT-006, RT-012)
+// Document upload intents, multipart refresh & bulk import (RT-001, RT-006, RT-012, CB-003)
 
 import {
   Injectable,
@@ -27,12 +27,20 @@ export class DocumentsService {
   constructor(private readonly db: TenantDbService) {}
 
   /**
-   * API-082 POST /projects/:id/documents/upload-intents (RT-006: SVG banned)
+   * API-082 POST /projects/:id/documents/upload-intents (RT-006: SVG banned, CB-003 schema conformance)
    */
   async createUploadIntent(
     ctx: ExecutionContext,
     projectId: string,
-    dto: { mimeType: string; sizeBytes: number; fileName: string; requirementId?: string },
+    dto: {
+      mimeType: string;
+      sizeBytes: number;
+      fileName: string;
+      categoryKey?: string;
+      docTypeKey?: string;
+      revisionCode?: string;
+      requirementId?: string;
+    },
   ) {
     // 1. Strict SVG Ban (RT-006)
     if (dto.mimeType === 'image/svg+xml' || dto.fileName.toLowerCase().endsWith('.svg')) {
@@ -52,35 +60,59 @@ export class DocumentsService {
       const isMultipart = dto.sizeBytes > 10 * 1024 * 1024; // > 10 MB
       const s3UploadId = isMultipart ? `s3_up_${uuidv7()}` : null;
 
-      // Insert storage_objects
+      // 1. Insert storage_objects strictly matching schema
       await client.query(
-        `INSERT INTO storage_objects (id, org_id, bucket, object_key, s3_upload_id, mime, size_bytes, status)
-         VALUES ($1, $2, 'tradecloseout-storage', $3, $4, $5, $6, $7)`,
-        [storageObjectId, ctx.orgId, objectKey, s3UploadId, dto.mimeType, dto.sizeBytes, FileVersionStatus.PENDING],
+        `INSERT INTO storage_objects (
+          id, org_id, provider, bucket, object_key, s3_upload_id, mime, size_bytes, status, created_by
+        ) VALUES ($1, $2, 'S3', 'tradecloseout-storage', $3, $4, $5, $6, 'PENDING', $7)`,
+        [storageObjectId, ctx.orgId, objectKey, s3UploadId, dto.mimeType, dto.sizeBytes, ctx.userId],
       );
 
-      // Insert documents
+      // 2. Insert documents with category_key NOT NULL (CB-003)
       await client.query(
-        `INSERT INTO documents (id, org_id, project_id, title, doc_type_key, created_by)
-         VALUES ($1, $2, $3, $4, 'DT-001', $5)`,
-        [documentId, ctx.orgId, projectId, dto.fileName, ctx.userId],
-      );
-
-      // Insert document_versions
-      await client.query(
-        `INSERT INTO document_versions (
-          id, org_id, project_id, document_id, version_no, revision_code,
-          storage_object_id, original_filename, file_size_bytes, mime_type,
-          file_status, uploaded_by
-        ) VALUES ($1, $2, $3, $4, 1, 'R0', $5, $6, $7, $8, $9, $10)`,
+        `INSERT INTO documents (
+          id, org_id, project_id, title, doc_type_key, category_key, created_by
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
         [
-          versionId, ctx.orgId, projectId, documentId,
-          storageObjectId, dto.fileName, dto.sizeBytes, dto.mimeType,
-          FileVersionStatus.PENDING, ctx.userId,
+          documentId,
+          ctx.orgId,
+          projectId,
+          dto.fileName,
+          dto.docTypeKey || 'DT-001',
+          dto.categoryKey || 'HANDOVER_DOCS',
+          ctx.userId,
         ],
       );
 
-      // Generate presigned part URLs
+      // 3. Insert document_versions with object_id, issue_date and PENDING_UPLOAD (CB-003)
+      await client.query(
+        `INSERT INTO document_versions (
+          id, org_id, project_id, document_id, version_no, revision_code,
+          object_id, file_status, review_status, issue_date, uploaded_by
+        ) VALUES ($1, $2, $3, $4, 1, $5, $6, $7, 'NOT_SUBMITTED', CURRENT_DATE, $8)`,
+        [
+          versionId,
+          ctx.orgId,
+          projectId,
+          documentId,
+          dto.revisionCode || 'R0',
+          storageObjectId,
+          FileVersionStatus.PENDING_UPLOAD,
+          ctx.userId,
+        ],
+      );
+
+      // Link to requirement if specified
+      if (dto.requirementId) {
+        await client.query(
+          `INSERT INTO document_requirements (id, org_id, project_id, document_id, requirement_id)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (document_id, requirement_id) DO NOTHING`,
+          [uuidv7(), ctx.orgId, projectId, documentId, dto.requirementId],
+        );
+      }
+
+      // Generate presigned URLs
       const parts = isMultipart
         ? [
             { partNumber: 1, uploadUrl: `https://s3.ap-south-1.amazonaws.com/${objectKey}?partNumber=1&uploadId=${s3UploadId}` },
@@ -100,14 +132,15 @@ export class DocumentsService {
   }
 
   /**
-   * API-082A POST /document-versions/:id/refresh-upload-urls (RT-012)
+   * API-082A POST /document-versions/:id/refresh-upload-urls (RT-012, CB-003 join fix)
    */
   async refreshUploadUrls(ctx: ExecutionContext, versionId: string) {
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+      // Join on so.id = dv.object_id (CB-003)
       const verRes = await client.query(
         `SELECT dv.*, so.object_key, so.s3_upload_id
          FROM document_versions dv
-         JOIN storage_objects so ON so.id = dv.storage_object_id
+         JOIN storage_objects so ON so.id = dv.object_id
          WHERE dv.org_id = $1 AND dv.id = $2`,
         [ctx.orgId, versionId],
       );
@@ -121,7 +154,6 @@ export class DocumentsService {
         throw new BadRequestException('NOT_A_MULTIPART_UPLOAD');
       }
 
-      // Return refreshed part URLs
       const refreshedParts = [
         { partNumber: 1, uploadUrl: `https://s3.ap-south-1.amazonaws.com/${ver.object_key}?partNumber=1&uploadId=${ver.s3_upload_id}&refreshed=true` },
         { partNumber: 2, uploadUrl: `https://s3.ap-south-1.amazonaws.com/${ver.object_key}?partNumber=2&uploadId=${ver.s3_upload_id}&refreshed=true` },
@@ -146,9 +178,9 @@ export class DocumentsService {
 
       // Storage object for zip
       await client.query(
-        `INSERT INTO storage_objects (id, org_id, bucket, object_key, mime, size_bytes, status)
-         VALUES ($1, $2, 'tradecloseout-storage', $3, 'application/zip', 0, 'PENDING')`,
-        [zipStorageId, ctx.orgId, `orgs/${ctx.orgId}/bulk/${jobId}.zip`],
+        `INSERT INTO storage_objects (id, org_id, bucket, object_key, mime, size_bytes, status, created_by)
+         VALUES ($1, $2, 'tradecloseout-storage', $3, 'application/zip', 0, 'PENDING', $4)`,
+        [zipStorageId, ctx.orgId, `orgs/${ctx.orgId}/bulk/${jobId}.zip`, ctx.userId],
       );
 
       // Bulk import job
@@ -182,29 +214,37 @@ export class DocumentsService {
 
       const updatedRes = await client.query(
         `UPDATE bulk_import_jobs
-         SET status = $1, dry_run_report_json = $2
+         SET status = $1, dry_run_report_json = $2, updated_at = now()
          WHERE org_id = $3 AND id = $4
          RETURNING *`,
         [BulkImportStatus.DRY_RUN_READY, JSON.stringify(report), ctx.orgId, jobId],
       );
+
+      if (!updatedRes.rows.length) {
+        throw new NotFoundException('BULK_IMPORT_JOB_NOT_FOUND');
+      }
 
       return updatedRes.rows[0];
     });
   }
 
   /**
-   * API-097 POST /bulk-imports/:id/commit (RT-001)
+   * API-097 POST /bulk-imports/:id/commit (RT-001, CB-003 schema conformance)
    */
   async commitBulkImport(ctx: ExecutionContext, jobId: string) {
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
       const outcome = { importedDocuments: 5, failedDocuments: 0 };
       const updatedRes = await client.query(
         `UPDATE bulk_import_jobs
-         SET status = $1, outcome_report_json = $2, completed_at = now()
+         SET status = $1, outcome_report_json = $2, updated_at = now()
          WHERE org_id = $3 AND id = $4
          RETURNING *`,
         [BulkImportStatus.COMPLETED, JSON.stringify(outcome), ctx.orgId, jobId],
       );
+
+      if (!updatedRes.rows.length) {
+        throw new NotFoundException('BULK_IMPORT_JOB_NOT_FOUND');
+      }
 
       return updatedRes.rows[0];
     });
