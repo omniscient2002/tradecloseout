@@ -3,8 +3,10 @@
 
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PoolClient } from 'pg';
+import { uuidv7 } from 'uuidv7';
 import { TenantDbService, ExecutionContext } from '../../database/tenant-db.service';
 import { SubmissionStatus, PackageStatus } from '@tradecloseout/shared';
+import { PackageBuilder, PackageMetadata } from '@tradecloseout/pdf-engine';
 
 @Injectable()
 export class PackagesService {
@@ -94,6 +96,51 @@ export class PackagesService {
         packageStatus: nextPackageStatus,
         decision,
       };
+    });
+  }
+
+  /**
+   * Generates pure-Node front matter and TOC PDF for Handover Dossier
+   */
+  async generateDossierPdf(ctx: ExecutionContext, projectId: string): Promise<Uint8Array> {
+    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+      const projRes = await client.query(
+        `SELECT * FROM projects WHERE org_id = $1 AND id = $2 AND purged_at IS NULL`,
+        [ctx.orgId, projectId],
+      );
+      if (!projRes.rows.length) {
+        throw new NotFoundException('PROJECT_NOT_FOUND');
+      }
+      const proj = projRes.rows[0];
+
+      const reqRes = await client.query(
+        `SELECT * FROM requirements WHERE org_id = $1 AND project_id = $2 AND superseded_at IS NULL ORDER BY created_at ASC`,
+        [ctx.orgId, projectId],
+      );
+
+      const itemsWithPages = reqRes.rows.map((r, idx) => ({
+        itemId: r.id,
+        documentTitle: r.title,
+        docTypeKey: r.doc_type_key || 'DT-001',
+        revisionCode: 'R1',
+        issueDate: new Date().toISOString().split('T')[0],
+        filePath: '',
+        sortOrder: idx + 1,
+        pageStart: idx * 2 + 3,
+        pageEnd: idx * 2 + 4,
+      }));
+
+      const meta: PackageMetadata = {
+        packageId: uuidv7(),
+        packageTitle: 'Statutory & Technical Handover Dossier',
+        projectCode: proj.code,
+        projectName: proj.name,
+        clientName: proj.site_json?.client_name || 'Project Authority',
+        contractorName: proj.site_json?.contractor_name || 'Main MEP Contractor',
+        generatedAt: new Date(),
+      };
+
+      return PackageBuilder.generateFrontMatterPdf(meta, itemsWithPages);
     });
   }
 }

@@ -173,4 +173,71 @@ export const api = {
       );
     },
   },
+
+  documents: {
+    async createUploadIntent(
+      projectId: string,
+      data: { mimeType: string; sizeBytes: number; fileName: string; requirementId?: string }
+    ) {
+      return request<{
+        documentId: string;
+        versionId: string;
+        uploadMode: string;
+        presignedUrl?: string;
+        parts?: Array<{ partNumber: number; presignedUrl: string }>;
+      }>(`/api/v1/projects/${projectId}/documents/upload-intents`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+    },
+    async refreshUploadUrls(versionId: string) {
+      return request<any>(`/api/v1/document-versions/${versionId}/refresh-upload-urls`, {
+        method: 'POST',
+      });
+    },
+  },
+
+  reviews: {
+    async decideReview(
+      reviewId: string,
+      data: { decision: 'APPROVE' | 'REQUEST_CHANGES' | 'REJECT'; comment?: string; isOverride?: boolean }
+    ) {
+      return request<any>(`/api/v1/reviews/${reviewId}/decisions`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+    },
+    async recordExternalApproval(
+      versionId: string,
+      data: {
+        decision: 'APPROVE';
+        externalMethod: 'STAMPED_PDF' | 'EMAIL' | 'PORTAL' | 'PHYSICAL';
+        externalApproverName: string;
+        externalApproverRole?: string;
+        externalReference?: string;
+        comment?: string;
+      }
+    ) {
+      return request<any>(`/api/v1/document-versions/${versionId}/external-approval`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+    },
+  },
+
+  packages: {
+    async recordRecipientDecision(
+      submissionId: string,
+      recipientId: string,
+      data: { decision: 'ACCEPT' | 'ACCEPT_WITH_EXCEPTIONS' | 'REJECT'; comment?: string }
+    ) {
+      return request<any>(
+        `/api/v1/submissions/${submissionId}/recipients/${recipientId}/decision`,
+        {
+          method: 'POST',
+          body: JSON.stringify(data),
+        }
+      );
+    },
+  },
 };
