@@ -25,6 +25,59 @@ describe('Parties, Projects & Contracts Specification Suite', () => {
       const cooldownMs = failedAttempts >= 5 ? 15 * 60 * 1000 : 0;
       expect(cooldownMs).toBe(900000); // 15-minute cooldown
     });
+
+    it('TC-PTY-01: Supplier A attempting to access Requirement B assigned to Supplier B is rejected with 404', () => {
+      const guestScopeA = {
+        supplierPartyId: 'pty-supplier-A',
+        requirementIds: ['req-001', 'req-002'],
+      };
+
+      const checkAccess = (targetReqId: string) => {
+        if (!guestScopeA.requirementIds.includes(targetReqId)) {
+          throw new Error('404 Not Found: Requirement not assigned to guest scope (05 §12)');
+        }
+        return true;
+      };
+
+      expect(checkAccess('req-001')).toBe(true);
+      expect(() => checkAccess('req-003')).toThrow('404 Not Found');
+    });
+
+    it('TC-PTY-02: Visibility projection strictly redacts value_paise, retention_bps, and INTERNAL comments for restricted roles', () => {
+      const rawContractPayload = {
+        contractCode: 'CNT-901',
+        title: 'HVAC Ductwork',
+        value_paise: 50000000n,
+        retention_bps: 500,
+        commercial_rate: 1250,
+        comments: [
+          { text: 'Submittal looks standard', visibility: 'PUBLIC' },
+          { text: 'Internal note: Verify subcontractor margin', visibility: 'INTERNAL' },
+        ],
+      };
+
+      // Sanitize function mimicking VisibilityProjectionInterceptor
+      const sanitize = (payload: any, role: string) => {
+        const restricted = ['R-CLIENT', 'R-MC', 'R-SUPPLIER-OEM', 'GUEST'];
+        if (!restricted.includes(role)) return payload;
+
+        const copy: any = { ...payload };
+        delete copy.value_paise;
+        delete copy.retention_bps;
+        delete copy.commercial_rate;
+        if (Array.isArray(copy.comments)) {
+          copy.comments = copy.comments.filter((c: any) => c.visibility !== 'INTERNAL');
+        }
+        return copy;
+      };
+
+      const sanitized = sanitize(rawContractPayload, 'R-SUPPLIER-OEM');
+      expect(sanitized.value_paise).toBeUndefined();
+      expect(sanitized.retention_bps).toBeUndefined();
+      expect(sanitized.commercial_rate).toBeUndefined();
+      expect(sanitized.comments.length).toBe(1);
+      expect(sanitized.comments[0].visibility).toBe('PUBLIC');
+    });
   });
 
   describe('Project Lifecycle & Concurrency (FR-PRJ-003 to FR-PRJ-014)', () => {

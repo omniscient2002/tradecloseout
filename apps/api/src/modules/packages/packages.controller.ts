@@ -12,7 +12,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Response } from 'express';
-import { PackagesService } from './packages.service';
+import { PackagesService, CreatePackageDto, SubmitPackageDto } from './packages.service';
 import { SessionAuthGuard } from '../../common/guards/session-auth.guard';
 import { PermissionGuard, RequirePermission } from '../../common/guards/permission.guard';
 
@@ -20,6 +20,38 @@ import { PermissionGuard, RequirePermission } from '../../common/guards/permissi
 @UseGuards(SessionAuthGuard, PermissionGuard)
 export class PackagesController {
   constructor(private readonly packagesService: PackagesService) {}
+
+  @Get('projects/:projectId/packages/readiness')
+  @RequirePermission('document.read')
+  async checkReadiness(@Req() req: any, @Param('projectId') projectId: string) {
+    return this.packagesService.checkReadiness(req.userContext, projectId);
+  }
+
+  @Post('projects/:projectId/packages')
+  @RequirePermission('package.compile')
+  async createDraftPackage(
+    @Req() req: any,
+    @Param('projectId') projectId: string,
+    @Body() dto: CreatePackageDto,
+  ) {
+    return this.packagesService.createDraftPackage(req.userContext, projectId, dto);
+  }
+
+  @Get('packages/:id')
+  @RequirePermission('document.read')
+  async getPackage(@Req() req: any, @Param('id') id: string) {
+    return this.packagesService.getPackage(req.userContext, id);
+  }
+
+  @Post('packages/:id/submit')
+  @RequirePermission('package.submit')
+  async submitPackage(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: SubmitPackageDto,
+  ) {
+    return this.packagesService.submitPackage(req.userContext, id, dto);
+  }
 
   @Get('projects/:projectId/dossier/pdf')
   @RequirePermission('document.read')

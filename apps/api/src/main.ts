@@ -2,12 +2,14 @@ import { NestFactory } from '@nestjs/core';
 import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { ProblemJsonExceptionFilter } from './common/filters/problem-json.filter';
+import { VisibilityProjectionInterceptor } from './common/interceptors/visibility-projection.interceptor';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   app.use(cookieParser());
   app.useGlobalFilters(new ProblemJsonExceptionFilter());
+  app.useGlobalInterceptors(new VisibilityProjectionInterceptor());
   app.enableCors({
     origin: process.env.FRONTEND_URL || 'http://localhost:3000',
     credentials: true,

@@ -1,15 +1,29 @@
 // apps/api/src/modules/parties/parties.service.ts
-// Guest grant OTP, SMS pumping protection & rate limits (API-028A/B, RT-014, CB-007, CB-011)
+// Guest grants, Supplier upload links, OTP & rate limits (API-024..029, RT-014, CB-007, FR-DOC-032, AUD-P-15)
 
 import {
   Injectable,
   NotFoundException,
   ForbiddenException,
   UnauthorizedException,
+  BadRequestException,
 } from '@nestjs/common';
 import * as crypto from 'node:crypto';
+import { PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
-import { TenantDbService } from '../../database/tenant-db.service';
+import { TenantDbService, ExecutionContext } from '../../database/tenant-db.service';
+
+export interface CreateGuestGrantDto {
+  partyId?: string;
+  grantType?: 'SUPPLIER' | 'CONSULTANT' | 'CLIENT' | 'AUDITOR';
+  role?: string;
+  capabilities?: string[];
+  scopeJson?: Record<string, any>;
+  otpRequired?: boolean;
+  phone?: string;
+  email?: string;
+  expiresInDays?: number;
+}
 
 @Injectable()
 export class PartiesService {
@@ -17,6 +31,134 @@ export class PartiesService {
 
   private hashSecret(secret: string): string {
     return crypto.createHash('sha256').update(secret).digest('hex');
+  }
+
+  /**
+   * API-024 POST /projects/:projectId/guest-grants
+   * Issues a scoped guest grant with a raw secret token (hash stored in DB).
+   */
+  async createGuestGrant(ctx: ExecutionContext, projectId: string, dto: CreateGuestGrantDto) {
+    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+      const rawToken = crypto.randomBytes(32).toString('hex');
+      const tokenHash = this.hashSecret(rawToken);
+      const grantId = uuidv7();
+
+      const days = dto.expiresInDays && dto.expiresInDays > 0 ? dto.expiresInDays : 7;
+      const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+
+      const res = await client.query(
+        `INSERT INTO guest_grants (
+          id, org_id, project_id, party_id, grant_type, role,
+          capabilities, scope_json, otp_required, target_phone_e164, target_email,
+          token_hash, status, expires_at, created_by
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'ACTIVE', $13, $14)
+        RETURNING *`,
+        [
+          grantId,
+          ctx.orgId,
+          projectId,
+          dto.partyId || null,
+          dto.grantType || 'SUPPLIER',
+          dto.role || 'R-SUPPLIER-OEM',
+          dto.capabilities || ['REQUIREMENT_UPLOAD', 'DOCUMENT_VIEW'],
+          JSON.stringify(dto.scopeJson || {}),
+          dto.otpRequired ?? true,
+          dto.phone || null,
+          dto.email || null,
+          tokenHash,
+          expiresAt,
+          ctx.userId,
+        ],
+      );
+
+      return {
+        grantId,
+        token: rawToken,
+        link: `/guest/${rawToken}`,
+        expiresAt,
+        role: dto.role || 'R-SUPPLIER-OEM',
+        capabilities: res.rows[0].capabilities,
+        scope: dto.scopeJson || {},
+      };
+    });
+  }
+
+  /**
+   * API-025 POST /guest-grants/:id/revoke
+   * Revokes a guest grant within 60s and terminates any active sessions.
+   */
+  async revokeGuestGrant(ctx: ExecutionContext, grantId: string) {
+    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+      const grantRes = await client.query(
+        `UPDATE guest_grants
+            SET status = 'REVOKED', revoked_at = now()
+          WHERE org_id = $1 AND id = $2 AND status = 'ACTIVE'
+          RETURNING id`,
+        [ctx.orgId, grantId],
+      );
+      if (!grantRes.rows.length) {
+        throw new NotFoundException('GUEST_GRANT_NOT_FOUND_OR_ALREADY_REVOKED');
+      }
+
+      // Revoke any active guest sessions linked to this grant
+      await client.query(
+        `UPDATE sessions SET revoked_at = now() WHERE active_org_id = $1 AND guest_grant_id = $2`,
+        [ctx.orgId, grantId],
+      );
+
+      return { grantId, status: 'REVOKED' };
+    });
+  }
+
+  /**
+   * API-026 POST /projects/:projectId/supplier-upload-links
+   * Creates a single-use or scoped supplier upload link (FR-DOC-032, AUD-P-15).
+   */
+  async createSupplierUploadLink(
+    ctx: ExecutionContext,
+    projectId: string,
+    dto: {
+      supplierPartyId: string;
+      requirementIds: string[];
+      phone?: string;
+      email?: string;
+      expiresInDays?: number;
+    },
+  ) {
+    if (!dto.requirementIds || dto.requirementIds.length === 0) {
+      throw new BadRequestException('At least one requirementId must be assigned to the upload link');
+    }
+
+    return this.createGuestGrant(ctx, projectId, {
+      partyId: dto.supplierPartyId,
+      grantType: 'SUPPLIER',
+      role: 'R-SUPPLIER-OEM',
+      capabilities: ['REQUIREMENT_UPLOAD', 'DOCUMENT_VIEW'],
+      scopeJson: {
+        projectId,
+        supplierPartyId: dto.supplierPartyId,
+        requirementIds: dto.requirementIds,
+      },
+      phone: dto.phone,
+      email: dto.email,
+      expiresInDays: dto.expiresInDays || 14,
+    });
+  }
+
+  /**
+   * Enforces TC-PTY-01: Verifies that a guest session only accesses requirements in its scope.
+   */
+  async validateSupplierRequirementAccess(
+    guestScope: { requirementIds?: string[]; projectId?: string },
+    targetRequirementId: string,
+  ) {
+    if (!guestScope || !guestScope.requirementIds || !guestScope.requirementIds.includes(targetRequirementId)) {
+      throw new NotFoundException({
+        code: 'REQUIREMENT_NOT_FOUND',
+        title: 'Requirement not found in guest scope',
+        detail: 'The requested requirement is not assigned to this guest session (TC-PTY-01).',
+      });
+    }
   }
 
   /**
