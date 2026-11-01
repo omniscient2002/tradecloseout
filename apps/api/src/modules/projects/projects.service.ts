@@ -37,6 +37,7 @@ export class ProjectsService {
       targetHandoverDate?: string;
       contractValuePaise?: bigint;
       siteJson?: Record<string, unknown>;
+      settingsJson?: Record<string, unknown>;
     },
   ) {
     const parsedCode = ProjectCodeSchema.safeParse(input.code);
@@ -51,10 +52,15 @@ export class ProjectsService {
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
       const projectId = uuidv7();
 
+      const settingsJson = {
+        ...(input.settingsJson ?? {}),
+        contract_value_paise: input.contractValuePaise ? input.contractValuePaise.toString() : null,
+      };
+
       await client.query(
         `INSERT INTO projects
           (id, org_id, code, name, client_party_id, mc_party_id, consultant_party_id,
-           status, site_json, start_date, target_handover_date, contract_value_paise, created_by)
+           status, site_json, start_date, target_handover_date, settings_json, created_by)
          VALUES ($1, $2, $3, $4, $5, $6, $7, 'DRAFT', $8, $9, $10, $11, $12)`,
         [
           projectId,
@@ -67,7 +73,7 @@ export class ProjectsService {
           JSON.stringify(input.siteJson ?? {}),
           input.startDate ?? null,
           input.targetHandoverDate ?? null,
-          input.contractValuePaise ? input.contractValuePaise.toString() : null,
+          JSON.stringify(settingsJson),
           ctx.userId,
         ],
       );

@@ -319,8 +319,8 @@ export class ChecklistsService {
           await client.query(
             `INSERT INTO waivers
               (id, org_id, project_id, requirement_id, type, reason, evidence_object_id,
-               approved_by, status)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+               requested_by, approved_by, status)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8, $9)`,
             [
               waiverId,
               ctx.orgId,
@@ -415,12 +415,59 @@ export class ChecklistsService {
     reason: string,
     type: 'WAIVE' | 'NOT_APPLICABLE' = 'WAIVE',
   ) {
-    const { rows } = await this.pool.query(
-      `SELECT project_id FROM requirements WHERE org_id = $1 AND id = $2 LIMIT 1`,
-      [ctx.orgId, requirementId],
-    );
-    if (!rows.length) throw new NotFoundException('REQUIREMENT_NOT_FOUND');
-    return this.waiveRequirement(ctx, rows[0].project_id, requirementId, { type, reason });
+    if (!reason || reason.trim().length < 5) {
+      throw new UnprocessableEntityException({
+        code: 'VALIDATION_FAILED',
+        detail: 'A clear reason is required to waive or mark a requirement not applicable.',
+      });
+    }
+
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+      const { rows } = await client.query(
+        `SELECT id, project_id, mandatory, status, row_version
+           FROM requirements
+          WHERE org_id = $1 AND id = $2
+          FOR UPDATE`,
+        [ctx.orgId, requirementId],
+      );
+
+      if (rows.length === 0) {
+        throw new NotFoundException({ code: 'NOT_FOUND', detail: 'Requirement not found.' });
+      }
+      const req = rows[0];
+      const projectId = req.project_id;
+
+      const waiverId = uuidv7();
+      await client.query(
+        `INSERT INTO waivers
+          (id, org_id, project_id, requirement_id, type, reason, requested_by, approved_by, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8)`,
+        [
+          waiverId,
+          ctx.orgId,
+          projectId,
+          requirementId,
+          type,
+          reason.trim(),
+          ctx.userId,
+          WaiverStatus.PENDING_SECOND_APPROVAL,
+        ],
+      );
+
+      await client.query(
+        `UPDATE requirements
+            SET status = $4, row_version = row_version + 1, updated_at = now()
+          WHERE org_id = $1 AND project_id = $2 AND id = $3`,
+        [ctx.orgId, projectId, requirementId, RequirementStatus.PENDING_WAIVER],
+      );
+
+      return {
+        waiverId,
+        requirementId,
+        status: WaiverStatus.PENDING_SECOND_APPROVAL,
+        requirementStatus: RequirementStatus.PENDING_WAIVER,
+      };
+    });
   }
 
   /**
