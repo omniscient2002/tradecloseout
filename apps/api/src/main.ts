@@ -1,13 +1,13 @@
 import { NestFactory } from '@nestjs/core';
 import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
-import { ProblemDetailsFilter } from './common/filters/problem-details.filter';
+import { ProblemJsonExceptionFilter } from './common/filters/problem-json.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   app.use(cookieParser());
-  app.useGlobalFilters(new ProblemDetailsFilter());
+  app.useGlobalFilters(new ProblemJsonExceptionFilter());
   app.enableCors({
     origin: process.env.FRONTEND_URL || 'http://localhost:3000',
     credentials: true,

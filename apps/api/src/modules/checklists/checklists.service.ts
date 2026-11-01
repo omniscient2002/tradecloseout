@@ -1,5 +1,5 @@
 // apps/api/src/modules/checklists/checklists.service.ts
-// Dual-approver mandatory waivers & requirements lifecycle (RT-023, CB-004)
+// Dual-approver mandatory waivers, requirements lifecycle & controlled change requests (RT-023, WF-06, WF-20, FR-CHK-010, CB-004)
 
 import {
   Injectable,
@@ -8,6 +8,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { PoolClient } from 'pg';
+import { createHash } from 'crypto';
 import { uuidv7 } from 'uuidv7';
 import { TenantDbService, ExecutionContext } from '../../database/tenant-db.service';
 import { RequirementStatus, WaiverStatus } from '@tradecloseout/shared';
@@ -155,7 +156,14 @@ export class ChecklistsService {
          ORDER BY milestone_key ASC, title ASC`,
         [ctx.orgId, projectId],
       );
-      return res.rows;
+
+      // FR-CHK-010: a requirement with due_at IS NULL is never derived as MISSING
+      return res.rows.map((row) => {
+        if (!row.due_at && row.status === 'MISSING') {
+          return { ...row, status: 'NOT_STARTED' };
+        }
+        return row;
+      });
     });
   }
 
@@ -219,6 +227,150 @@ export class ChecklistsService {
       );
 
       return insertRes.rows[0];
+    });
+  }
+
+  /**
+   * API-056: POST /projects/:projectId/snapshots (WF-06 Snapshot Creation)
+   */
+  async createSnapshot(ctx: ExecutionContext, projectId: string, dto?: { comment?: string }) {
+    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+      // Find latest version_no
+      const latestRes = await client.query(
+        `SELECT version_no FROM checklist_snapshots
+          WHERE org_id = $1 AND project_id = $2
+          ORDER BY version_no DESC LIMIT 1`,
+        [ctx.orgId, projectId],
+      );
+
+      const nextVersion = (latestRes.rows[0]?.version_no ?? 0) + 1;
+      const snapshotId = uuidv7();
+
+      // Collect current active requirements
+      const reqsRes = await client.query(
+        `SELECT id, requirement_key, title, group_key, doc_type_key, mandatory, milestone_key, scope_key
+           FROM requirements
+          WHERE org_id = $1 AND project_id = $2 AND superseded_at IS NULL`,
+        [ctx.orgId, projectId],
+      );
+
+      const payload = { requirements: reqsRes.rows, comment: dto?.comment || null };
+      const checksum = createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+
+      // Supersede older snapshots
+      await client.query(
+        `UPDATE checklist_snapshots
+            SET status = 'SUPERSEDED', updated_at = now()
+          WHERE org_id = $1 AND project_id = $2 AND status = 'ACTIVE'`,
+        [ctx.orgId, projectId],
+      );
+
+      // Insert new snapshot
+      const snapRes = await client.query(
+        `INSERT INTO checklist_snapshots (
+          id, org_id, project_id, version_no, status, resolved_payload_json,
+          provenance_json, source_json, checksum, created_by
+        ) VALUES ($1, $2, $3, $4, 'ACTIVE', $5, '{}', '{}', $6, $7)
+        RETURNING *`,
+        [snapshotId, ctx.orgId, projectId, nextVersion, JSON.stringify(payload), checksum, ctx.userId],
+      );
+
+      // Point requirements to this snapshot
+      await client.query(
+        `UPDATE requirements SET current_snapshot_id = $1 WHERE org_id = $2 AND project_id = $3`,
+        [snapshotId, ctx.orgId, projectId],
+      );
+
+      return snapRes.rows[0];
+    });
+  }
+
+  /**
+   * API-063: POST /projects/:projectId/requirements/:id/change-requests (WF-20)
+   */
+  async requestChange(
+    ctx: ExecutionContext,
+    projectId: string,
+    requirementId: string,
+    dto: { changeType: 'ADD' | 'REMOVE' | 'MODIFY'; reason: string; deltaJson?: any },
+  ) {
+    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+      const crId = uuidv7();
+      const res = await client.query(
+        `INSERT INTO requirement_change_requests (
+          id, org_id, project_id, requirement_id, change_type, reason,
+          delta_json, status, requested_by
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'PENDING', $8)
+        RETURNING *`,
+        [
+          crId,
+          ctx.orgId,
+          projectId,
+          requirementId,
+          dto.changeType,
+          dto.reason,
+          dto.deltaJson ? JSON.stringify(dto.deltaJson) : null,
+          ctx.userId,
+        ],
+      );
+      return res.rows[0];
+    });
+  }
+
+  /**
+   * API-064: GET /projects/:projectId/change-requests (WF-20)
+   */
+  async listChangeRequests(ctx: ExecutionContext, projectId: string) {
+    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+      const res = await client.query(
+        `SELECT cr.*, u.name AS requester_name
+           FROM requirement_change_requests cr
+           JOIN users u ON u.id = cr.requested_by
+          WHERE cr.org_id = $1 AND cr.project_id = $2
+          ORDER BY cr.created_at DESC`,
+        [ctx.orgId, projectId],
+      );
+      return res.rows;
+    });
+  }
+
+  /**
+   * API-065: POST /change-requests/:id/decide (WF-20)
+   */
+  async decideChangeRequest(
+    ctx: ExecutionContext,
+    changeRequestId: string,
+    dto: { decision: 'APPROVED' | 'REJECTED'; comment?: string },
+  ) {
+    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+      const crRes = await client.query(
+        `SELECT * FROM requirement_change_requests WHERE org_id = $1 AND id = $2 FOR UPDATE`,
+        [ctx.orgId, changeRequestId],
+      );
+      if (!crRes.rows.length) throw new NotFoundException('CHANGE_REQUEST_NOT_FOUND');
+      const cr = crRes.rows[0];
+
+      if (cr.status !== 'PENDING') {
+        throw new ConflictException('CHANGE_REQUEST_ALREADY_DECIDED');
+      }
+
+      const res = await client.query(
+        `UPDATE requirement_change_requests
+            SET status = $1, decided_by = $2, decided_at = now(), updated_at = now()
+          WHERE org_id = $3 AND id = $4
+          RETURNING *`,
+        [dto.decision, ctx.userId, ctx.orgId, changeRequestId],
+      );
+
+      // If approved, apply modification to requirement
+      if (dto.decision === 'APPROVED' && cr.change_type === 'REMOVE' && cr.requirement_id) {
+        await client.query(
+          `UPDATE requirements SET superseded_at = now(), updated_at = now() WHERE org_id = $1 AND id = $2`,
+          [ctx.orgId, cr.requirement_id],
+        );
+      }
+
+      return res.rows[0];
     });
   }
 }

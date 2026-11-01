@@ -6,7 +6,7 @@ import { AuthController } from './auth.controller';
 import { TenantDbService } from '../../database/tenant-db.service';
 
 @Module({
-  controllers: [AuthController],
+  controllers: [],
   providers: [AuthService, TenantDbService],
   exports: [AuthService],
 })
