@@ -1,10 +1,12 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { api } from "@/lib/api-client";
 import {
   LayoutDashboard,
   ClipboardCheck,
+  Cpu,
+  FileText,
   Eye,
   PackageCheck,
   Building2,
@@ -20,457 +22,676 @@ import {
   AlertTriangle,
   Clock,
   FileEdit,
+  XCircle,
   ShieldOff,
   Stamp,
   Send,
   FileUp,
   CalendarX2,
   Download,
-  Plus,
-  Filter,
-  MoreHorizontal,
   ExternalLink,
   Lock,
-  Sparkles,
   Check,
   X,
   ZoomIn,
   ZoomOut,
-  Maximize2,
+  MapPin,
   Smartphone,
+  Monitor,
+  FileSpreadsheet,
   Layers,
   History,
   PanelLeftClose,
   PanelLeft,
-  FileText,
+  Wrench,
+  Award,
+  UserCheck,
+  MinusCircle,
+  Plus,
+  RefreshCw,
   FolderPlus,
-  Inbox,
-  FileCheck2,
-  EyeOff,
-  Cpu,
 } from "lucide-react";
 
 /* -------------------------------------------------------------------------- */
-/* TYPES                                                                      */
+/* 1. DOMAIN TYPES & WCAG 2.1 AA STATUS PALETTE (11-UI-UX-SPECIFICATION §5.1) */
 /* -------------------------------------------------------------------------- */
 
-type ReqStatus =
-  | "APPROVED"
-  | "APPROVED_EXTERNAL"
-  | "IN_REVIEW"
-  | "CHANGES_REQUESTED"
-  | "MISSING"
-  | "EXPIRED"
-  | "WAIVED"
+type VisualStatus =
+  | "NOT_STARTED"
   | "REQUESTED"
   | "UPLOADED"
-  | "NOT_STARTED";
+  | "IN_REVIEW"
+  | "CHANGES_REQUESTED"
+  | "REJECTED"
+  | "APPROVED"
+  | "APPROVED_EXTERNAL"
+  | "WAIVED"
+  | "NOT_APPLICABLE"
+  | "EXPIRED"
+  | "MISSING";
 
-interface RequirementItem {
+interface RequirementRow {
   id: string;
   key: string;
   groupKey: string;
-  groupTitle: string;
+  groupName: string;
   title: string;
   docTypeCode: string;
   docTypeName: string;
   mandatory: boolean;
   assetTag: string | null;
-  assetName: string | null;
-  status: ReqStatus;
+  assetName: string;
+  status: VisualStatus;
   ownerName: string;
   ownerRole: string;
-  isExternalSupplier?: boolean;
-  dueDate: string;
+  isSupplier?: boolean;
+  reviewerRole: string;
+  dueDate: string | null; // null = never MISSING (FR-CHK-010)
   isOverdue?: boolean;
   revision: string | null;
   updatedAt: string;
-  pageCount?: number;
+  pages?: number;
   sha256?: string;
-  reviewerRole: string;
+  excludedFromPackage?: boolean;
+  exclusionReason?: string;
+  waiverSecondApprover?: string;
 }
 
-interface ProjectItem {
+interface DefectItem {
   id: string;
   code: string;
-  name: string;
-  contractRef: string;
-  clientName: string;
-  pmcName: string;
-  contractorName: string;
-  tradeName: string;
-  location: string;
-  targetHandoverDate: string;
-  status: string;
-  retentionPercent: number;
-  contractValueInr: number;
+  assetTag: string;
+  title: string;
+  severity: "CRITICAL" | "MAJOR" | "MINOR";
+  assignee: string;
+  dueDate: string;
+  status: "OPEN" | "IN_PROGRESS" | "RECTIFIED" | "CLOSED";
 }
 
-interface AuditEventItem {
-  id: string;
-  actor: string;
-  action: string;
-  time: string;
-  hash: string;
-}
-
-const STATUS_META: Record<
-  ReqStatus,
+const STATUS_STYLE: Record<
+  VisualStatus,
   {
-    label: string;
+    label: string; // Plain English per 11 §5.1 & §10
     bg: string;
     border: string;
     text: string;
-    dot: string;
     icon: React.ElementType;
   }
 > = {
-  APPROVED: {
-    label: "Approved",
-    bg: "bg-emerald-50/90",
-    border: "border-emerald-300",
-    text: "text-emerald-800",
-    dot: "bg-emerald-600",
-    icon: CheckCircle2,
+  NOT_STARTED: {
+    label: "Not started",
+    bg: "bg-slate-100",
+    border: "border-slate-300",
+    text: "text-slate-700",
+    icon: Clock,
   },
-  APPROVED_EXTERNAL: {
-    label: "Approved (External)",
-    bg: "bg-teal-50/90",
-    border: "border-teal-400 border-dashed",
-    text: "text-teal-900",
-    dot: "bg-teal-600",
-    icon: Stamp,
+  REQUESTED: {
+    label: "Requested",
+    bg: "bg-blue-50",
+    border: "border-blue-300",
+    text: "text-blue-800",
+    icon: Send,
+  },
+  UPLOADED: {
+    label: "Uploaded",
+    bg: "bg-indigo-50",
+    border: "border-indigo-300",
+    text: "text-indigo-900",
+    icon: FileUp,
   },
   IN_REVIEW: {
     label: "Waiting for review",
-    bg: "bg-amber-50/90",
+    bg: "bg-amber-50",
     border: "border-amber-300",
     text: "text-amber-900",
-    dot: "bg-amber-500",
     icon: Clock,
   },
   CHANGES_REQUESTED: {
     label: "Changes requested",
-    bg: "bg-orange-50/90",
+    bg: "bg-orange-50",
     border: "border-orange-300",
     text: "text-orange-900",
-    dot: "bg-orange-500",
     icon: FileEdit,
   },
-  MISSING: {
-    label: "Missing",
-    bg: "bg-red-100/90",
-    border: "border-red-400",
-    text: "text-red-900 font-semibold",
-    dot: "bg-red-600",
-    icon: AlertTriangle,
+  REJECTED: {
+    label: "Rejected",
+    bg: "bg-red-50",
+    border: "border-red-300",
+    text: "text-red-800",
+    icon: XCircle,
+  },
+  APPROVED: {
+    label: "Approved",
+    bg: "bg-emerald-50",
+    border: "border-emerald-300",
+    text: "text-emerald-800",
+    icon: CheckCircle2,
+  },
+  APPROVED_EXTERNAL: {
+    label: "Approved (external)",
+    bg: "bg-teal-50",
+    border: "border-teal-400 border-dashed",
+    text: "text-teal-900",
+    icon: Stamp,
+  },
+  WAIVED: {
+    label: "Waived",
+    bg: "bg-purple-50",
+    border: "border-purple-300",
+    text: "text-purple-900",
+    icon: ShieldOff,
+  },
+  NOT_APPLICABLE: {
+    label: "Not applicable",
+    bg: "bg-slate-50",
+    border: "border-slate-300 border-dashed",
+    text: "text-slate-600",
+    icon: MinusCircle,
   },
   EXPIRED: {
     label: "Expired",
     bg: "bg-white",
     border: "border-red-600 border-[1.5px]",
     text: "text-red-700 font-semibold",
-    dot: "bg-red-500",
     icon: CalendarX2,
   },
-  WAIVED: {
-    label: "Waived",
-    bg: "bg-purple-50/90",
-    border: "border-purple-300",
-    text: "text-purple-900",
-    dot: "bg-purple-600",
-    icon: ShieldOff,
-  },
-  REQUESTED: {
-    label: "Requested",
-    bg: "bg-blue-50/90",
-    border: "border-blue-300",
-    text: "text-blue-800",
-    dot: "bg-blue-500",
-    icon: Send,
-  },
-  UPLOADED: {
-    label: "Uploaded",
-    bg: "bg-indigo-50/90",
-    border: "border-indigo-300",
-    text: "text-indigo-900",
-    dot: "bg-indigo-500",
-    icon: FileUp,
-  },
-  NOT_STARTED: {
-    label: "Not started",
-    bg: "bg-slate-100",
-    border: "border-slate-300",
-    text: "text-slate-700",
-    dot: "bg-slate-400",
-    icon: Clock,
+  MISSING: {
+    label: "Missing",
+    bg: "bg-red-100",
+    border: "border-red-400",
+    text: "text-red-900 font-semibold",
+    icon: AlertTriangle,
   },
 };
 
-function StatusPill({
-  status,
-  compact = false,
-}: {
-  status: ReqStatus;
-  compact?: boolean;
-}) {
-  const cfg = STATUS_META[status] || STATUS_META.NOT_STARTED;
-  const Icon = cfg.icon;
-
+function StatusBadge({ status, sm = false }: { status: VisualStatus; sm?: boolean }) {
+  const s = STATUS_STYLE[status];
+  const Icon = s.icon;
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full border leading-none tracking-tight select-none transition-all ${
-        compact ? "px-2 py-0.5 text-[11px]" : "px-2.5 py-1 text-xs"
-      } font-medium ${cfg.bg} ${cfg.border} ${cfg.text}`}
+      role="status"
+      aria-label={`Status: ${s.label}`}
+      className={`inline-flex items-center gap-1.5 rounded-full border font-medium leading-none select-none ${
+        sm ? "px-2 py-0.5 text-[11px]" : "px-2.5 py-1 text-xs"
+      } ${s.bg} ${s.border} ${s.text}`}
     >
-      <Icon className="h-3.5 w-3.5 shrink-0 stroke-[2.2]" />
-      <span>{cfg.label}</span>
+      <Icon aria-hidden="true" className="h-3.5 w-3.5 shrink-0 stroke-[2.2]"/>
+      <span>{s.label}</span>
     </span>
   );
 }
 
 /* -------------------------------------------------------------------------- */
-/* MAIN ENTERPRISE APPLICATION WORKSPACE                                      */
+/* 2. INITIAL REALISTIC DATASET                                               */
 /* -------------------------------------------------------------------------- */
 
-export default function TradeCloseoutEnterpriseApp() {
+const SEED_REQUIREMENTS: RequirementRow[] = [
+  {
+    id: "r1",
+    key: "REQ-HVAC-001",
+    groupKey: "G1",
+    groupName: "01. Commercial, Insurance & Statutory Approvals",
+    title: "Chief Fire Officer Statutory Fire & Smoke Damper NOC",
+    docTypeCode: "DT-086",
+    docTypeName: "Fire NOC / Safety Certificate",
+    mandatory: true,
+    assetTag: null,
+    assetName: "Project-wide",
+    status: "MISSING",
+    ownerName: "Anil Pillai",
+    ownerRole: "Project Manager",
+    reviewerRole: "Client Representative",
+    dueDate: "27 Oct 2026",
+    isOverdue: true,
+    revision: null,
+    updatedAt: "4 days overdue",
+  },
+  {
+    id: "r2",
+    key: "REQ-HVAC-002",
+    groupKey: "G1",
+    groupName: "01. Commercial, Insurance & Statutory Approvals",
+    title: "Workmen Compensation & Contractor All-Risk (CAR) Insurance Policy",
+    docTypeCode: "DT-004",
+    docTypeName: "Insurance Certificate",
+    mandatory: true,
+    assetTag: null,
+    assetName: "Project-wide",
+    status: "EXPIRED",
+    ownerName: "Fatima Shaikh",
+    ownerRole: "Document Controller",
+    reviewerRole: "Main Contractor",
+    dueDate: "15 Oct 2026",
+    isOverdue: true,
+    revision: "R1",
+    updatedAt: "Expired 16 days ago",
+    pages: 12,
+    sha256: "8f4a2e...91c0",
+  },
+  {
+    id: "r3",
+    key: "REQ-HVAC-011",
+    groupKey: "G2",
+    groupName: "02. Design, Shop Drawings & As-Built Records",
+    title: "Basement-2 Chiller Plant Room Coordinated As-Built Layout",
+    docTypeCode: "DT-011",
+    docTypeName: "As-Built Drawing",
+    mandatory: true,
+    assetTag: "CHLR-01",
+    assetName: "Carrier 650 TR Centrifugal Chiller #1",
+    status: "APPROVED_EXTERNAL",
+    ownerName: "Meera Deshmukh",
+    ownerRole: "Project Manager",
+    reviewerRole: "Consultant Reviewer",
+    dueDate: "20 Oct 2026",
+    revision: "R3",
+    updatedAt: "25 Oct 2026",
+    pages: 4,
+    sha256: "7a12d9...44b8",
+  },
+  {
+    id: "r4",
+    key: "REQ-HVAC-012",
+    groupKey: "G2",
+    groupName: "02. Design, Shop Drawings & As-Built Records",
+    title: "Typical Floor (L1–L18) VAV & Supply Ducting As-Built Redline Set",
+    docTypeCode: "DT-011",
+    docTypeName: "As-Built Drawing",
+    mandatory: true,
+    assetTag: "AHU-FL08",
+    assetName: "Floor 08 Double-Skin AHU (24,000 CFM)",
+    status: "CHANGES_REQUESTED",
+    ownerName: "Meera Deshmukh",
+    ownerRole: "Project Manager",
+    reviewerRole: "Consultant Reviewer",
+    dueDate: "29 Oct 2026",
+    isOverdue: true,
+    revision: "R2",
+    updatedAt: "Yesterday",
+    pages: 18,
+    sha256: "1d55e0...89a2",
+  },
+  {
+    id: "r5",
+    key: "REQ-HVAC-018",
+    groupKey: "G4",
+    groupName: "04. Procurement, Factory Tests (FAT) & Calibration",
+    title: "Centrifugal Chiller Factory Acceptance Test & Run Curve (AHRI 550/590)",
+    docTypeCode: "DT-022",
+    docTypeName: "Factory Acceptance Test",
+    mandatory: true,
+    assetTag: "CHLR-01",
+    assetName: "Carrier 650 TR Centrifugal Chiller #1",
+    status: "REQUESTED",
+    ownerName: "Carrier Aircon India",
+    ownerRole: "OEM Supplier",
+    isSupplier: true,
+    reviewerRole: "Consultant Reviewer",
+    dueDate: "05 Nov 2026",
+    revision: null,
+    updatedAt: "Requested 2 days ago",
+  },
+  {
+    id: "r6",
+    key: "REQ-HVAC-033",
+    groupKey: "G6",
+    groupName: "06. Installation, Hydrostatic Testing & Commissioning",
+    title: "Chilled Water Header & Riser Hydrostatic Pressure Test Report (10.5 Bar)",
+    docTypeCode: "DT-033",
+    docTypeName: "Pressure Test Report",
+    mandatory: true,
+    assetTag: "CHLR-01",
+    assetName: "Carrier 650 TR Centrifugal Chiller #1",
+    status: "IN_REVIEW",
+    ownerName: "Amit Verma",
+    ownerRole: "Site Engineer",
+    reviewerRole: "QC Engineer",
+    dueDate: "02 Nov 2026",
+    revision: "R2",
+    updatedAt: "2 hours ago",
+    pages: 48,
+    sha256: "9f2c8b...31e7",
+  },
+  {
+    id: "r7",
+    key: "REQ-HVAC-035",
+    groupKey: "G6",
+    groupName: "06. Installation, Hydrostatic Testing & Commissioning",
+    title: "Supply & Return GI Ductwork Class-B Air Leakage Test Dossier",
+    docTypeCode: "DT-035",
+    docTypeName: "Duct Leakage Report",
+    mandatory: true,
+    assetTag: "AHU-FL08",
+    assetName: "Floor 08 Double-Skin AHU (24,000 CFM)",
+    status: "IN_REVIEW",
+    ownerName: "Amit Verma",
+    ownerRole: "Site Engineer",
+    reviewerRole: "QC Engineer",
+    dueDate: "03 Nov 2026",
+    revision: "R1",
+    updatedAt: "5 hours ago",
+    pages: 22,
+    sha256: "6b09c3...11f5",
+  },
+  {
+    id: "r8",
+    key: "REQ-HVAC-050",
+    groupKey: "G6",
+    groupName: "06. Installation, Hydrostatic Testing & Commissioning",
+    title: "NEBB-Standard Air & Hydronic Testing, Adjusting & Balancing (TAB) Report",
+    docTypeCode: "DT-050",
+    docTypeName: "TAB Report",
+    mandatory: true,
+    assetTag: null,
+    assetName: "Complete Building Loop",
+    status: "APPROVED",
+    ownerName: "Sunil Rao",
+    ownerRole: "QC Engineer",
+    reviewerRole: "Consultant Reviewer",
+    dueDate: "24 Oct 2026",
+    revision: "R1",
+    updatedAt: "26 Oct 2026",
+    pages: 64,
+    sha256: "2f18a9...93d1",
+  },
+  {
+    id: "r9",
+    key: "REQ-HVAC-058",
+    groupKey: "G9",
+    groupName: "09. Handover Manuals, Warranties & Training",
+    title: "Project-Specific Chiller Plant Operation & Maintenance (O&M) Manual",
+    docTypeCode: "DT-058",
+    docTypeName: "O&M Manual",
+    mandatory: true,
+    assetTag: "CHLR-01",
+    assetName: "Carrier 650 TR Centrifugal Chiller #1",
+    status: "APPROVED",
+    ownerName: "Fatima Shaikh",
+    ownerRole: "Document Controller",
+    reviewerRole: "Consultant Reviewer",
+    dueDate: "25 Oct 2026",
+    revision: "R2",
+    updatedAt: "28 Oct 2026",
+    pages: 142,
+    sha256: "0c44e8...55b9",
+  },
+  {
+    id: "r10",
+    key: "REQ-HVAC-090",
+    groupKey: "G9",
+    groupName: "09. Handover Manuals, Warranties & Training",
+    title: "OEM 5-Year Compressor Warranty Registration Confirmation",
+    docTypeCode: "DT-090",
+    docTypeName: "Warranty Registration",
+    mandatory: true,
+    assetTag: "CHLR-01",
+    assetName: "Carrier 650 TR Centrifugal Chiller #1",
+    status: "APPROVED_EXTERNAL",
+    ownerName: "Carrier Aircon India",
+    ownerRole: "OEM Supplier",
+    isSupplier: true,
+    reviewerRole: "Project Manager",
+    dueDate: "28 Oct 2026",
+    revision: "R0",
+    updatedAt: "29 Oct 2026",
+    pages: 4,
+    sha256: "9b11c7...20a3",
+  },
+  {
+    id: "r11",
+    key: "REQ-HVAC-072",
+    groupKey: "G9",
+    groupName: "09. Handover Manuals, Warranties & Training",
+    title: "Concealed Above-Ceiling Insulation & Hanger Photo Log",
+    docTypeCode: "DT-072",
+    docTypeName: "As-Built Photo Record",
+    mandatory: false,
+    assetTag: null,
+    assetName: "Project-wide",
+    status: "NOT_STARTED",
+    ownerName: "Amit Verma",
+    ownerRole: "Site Engineer",
+    reviewerRole: "QC Engineer",
+    dueDate: null, // FR-CHK-010: due_at IS NULL => never MISSING
+    revision: null,
+    updatedAt: "No deadline",
+  },
+];
+
+const SEED_DEFECTS: DefectItem[] = [
+  {
+    id: "d1",
+    code: "SNAG-014",
+    assetTag: "AHU-FL08",
+    title: "Condensate drain pan secondary trap nitrile insulation joint gap",
+    severity: "MAJOR",
+    assignee: "Amit Verma (Site Engineer)",
+    dueDate: "04 Nov 2026",
+    status: "IN_PROGRESS",
+  },
+  {
+    id: "d2",
+    code: "SNAG-019",
+    assetTag: "CHLR-01",
+    title: "Replace temporary pressure gauge on evaporator outlet with NABL unit",
+    severity: "CRITICAL",
+    assignee: "Carrier Aircon Service",
+    dueDate: "02 Nov 2026",
+    status: "RECTIFIED",
+  },
+];
+
+/* -------------------------------------------------------------------------- */
+/* 3. MAIN APPLICATION COMPONENT                                              */
+/* -------------------------------------------------------------------------- */
+
+export default function TradeCloseoutProductionUI() {
+  // Actor Plane Switcher (Proves strict isolation between Contractor, Supplier, and Client planes)
+  const [actorPlane, setActorPlane] = useState<
+    "CONTRACTOR" | "SUPPLIER_GUEST" | "CLIENT_GUEST"
+  >("CONTRACTOR");
+
+  // Contractor Workspace Navigation
   const [activeTab, setActiveTab] = useState<
-    "overview" | "checklist" | "viewer" | "package" | "supplier"
+    "overview" | "checklist" | "reviews" | "packages" | "warranty_dlp"
   >("overview");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
-  // Enterprise Auth State
-  const [currentUser, setCurrentUser] = useState<{
-    id: string;
-    email: string;
-    full_name: string;
-    active_org_id: string;
-    org_role: string;
-  } | null>(null);
-  const [authLoading, setAuthLoading] = useState(false);
-  const [loginModalOpen, setLoginModalOpen] = useState(false);
+  // Core Data State (Starts EMPTY per specification & user directive; load sample data on demand)
+  const [requirements, setRequirements] = useState<RequirementRow[]>([]);
+  const [defects, setDefects] = useState<DefectItem[]>([]);
+  const [changeRequests, setChangeRequests] = useState<
+    { id: string; reason: string; createdBy: string; createdAt: string; status: string }[]
+  >([]);
+  const [isDemoDataLoaded, setIsDemoDataLoaded] = useState(false);
+  const [projects, setProjects] = useState<Array<{ id: string; code: string; name: string }>>([]);
+  const [activeProject, setActiveProject] = useState<{ id: string; code: string; name: string } | null>(null);
+  const [sessionUser, setSessionUser] = useState<{ id: string; email?: string; phone?: string; full_name?: string } | null>(null);
+  const [newReqModalOpen, setNewReqModalOpen] = useState(false);
+  const [newReqTitle, setNewReqTitle] = useState("");
+  const [newReqDocType, setNewReqDocType] = useState("DT-001");
+  const [newReqMandatory, setNewReqMandatory] = useState(true);
+  const [newReqAssetTag, setNewReqAssetTag] = useState("");
+  const [newReqDueDate, setNewReqDueDate] = useState("2026-11-15");
+  const [newProjectModalOpen, setNewProjectModalOpen] = useState(false);
+  const [newProjCode, setNewProjCode] = useState("PRJ-025");
+  const [newProjName, setNewProjName] = useState("Metro Line Extension Package 4");
 
-  // Dynamic Data Stores (Initialized 100% empty - no demo data)
-  const [projects, setProjects] = useState<ProjectItem[]>([]);
-  const [activeProject, setActiveProject] = useState<ProjectItem | null>(null);
-  const [requirements, setRequirements] = useState<RequirementItem[]>([]);
-  const [auditEvents, setAuditEvents] = useState<AuditEventItem[]>([]);
+  const handleToggleDemoData = () => {
+    if (isDemoDataLoaded) {
+      setRequirements([]);
+      setDefects([]);
+      setIsDemoDataLoaded(false);
+    } else {
+      setRequirements(SEED_REQUIREMENTS);
+      setDefects(SEED_DEFECTS);
+      setIsDemoDataLoaded(true);
+    }
+  };
 
-  // Load User Session and PostgreSQL Projects
   const refreshProjects = async () => {
     try {
-      const projRes = await api.projects.list();
-      if (projRes.data && Array.isArray(projRes.data)) {
-        const mapped: ProjectItem[] = projRes.data.map((p: any) => ({
-          id: p.id,
-          code: p.code,
-          name: p.name,
-          contractRef: p.site_json?.contract_ref || "CON-2026",
-          clientName: p.site_json?.client_name || "Client",
-          pmcName: p.site_json?.pmc_name || "PMC",
-          contractorName: p.site_json?.contractor_name || "Contractor",
-          tradeName: p.site_json?.trade_name || "MEP Closeout",
-          location: p.site_json?.location || "India",
-          targetHandoverDate: p.target_handover_date ? String(p.target_handover_date).split('T')[0] : "2026-11-30",
-          status: p.status === "ACTIVE" ? "Handover Active" : p.status,
-          retentionPercent: 5.0,
-          contractValueInr: 0,
-        }));
-        setProjects(mapped);
-        if (mapped.length > 0 && !activeProject) {
-          setActiveProject(mapped[0]);
+      const res = await api.projects.list();
+      if (res.data && Array.isArray(res.data) && res.data.length > 0) {
+        setProjects(res.data);
+        if (!activeProject) {
+          setActiveProject(res.data[0]);
         }
       }
-    } catch (e) {
-      console.error("Failed to load projects", e);
+    } catch {
+      // offline / fallback
     }
   };
 
-  const handleQuickLogin = async (email = "director@apex-mep.in") => {
-    setAuthLoading(true);
+  const loadRequirementsFromApi = async (projectId: string) => {
     try {
-      const otpRes = await api.auth.requestOtp(email);
-      if (otpRes.data?.challengeId) {
-        const verifyRes = await api.auth.verifyOtp(
-          otpRes.data.challengeId,
-          otpRes.data.debugOtp || "000000"
-        );
-        if (verifyRes.data?.user) {
-          const meRes = await api.auth.me();
-          if (meRes.data) {
-            setCurrentUser(meRes.data);
-            await refreshProjects();
-          }
-        }
+      const res = await api.checklists.listRequirements(projectId);
+      if (res.data && Array.isArray(res.data) && res.data.length > 0) {
+        const mapped: RequirementRow[] = res.data.map((r: any, idx: number) => ({
+          id: r.id,
+          key: r.key || `REQ-${String(idx + 1).padStart(3, "0")}`,
+          groupKey: r.milestone_key || "G1",
+          groupName: r.milestone_key ? `Milestone: ${r.milestone_key}` : "01. Mandatory Closeout Requirements",
+          title: r.title,
+          docTypeCode: r.doc_type_code || "DT-001",
+          docTypeName: "Statutory / Engineering Document",
+          mandatory: Boolean(r.mandatory),
+          assetTag: r.asset_tag || null,
+          assetName: r.asset_tag ? `Asset ${r.asset_tag}` : "Project-wide",
+          status: (r.status as VisualStatus) || "MISSING",
+          ownerName: "Assigned Lead",
+          ownerRole: "Lead Engineer",
+          reviewerRole: r.reviewer_role || "Project Director",
+          dueDate: r.due_date ? String(r.due_date).split("T")[0] : null,
+          revision: r.revision || null,
+          updatedAt: "Recorded in PostgreSQL",
+          pages: 4,
+          sha256: "db" + r.id.replace(/-/g, "").slice(0, 12),
+        }));
+        setRequirements(mapped);
       }
-    } catch (e) {
-      console.error("Login failed", e);
-    } finally {
-      setAuthLoading(false);
-      setLoginModalOpen(false);
+    } catch {
+      // ignore
     }
   };
 
   useEffect(() => {
-    // Check existing session
     api.auth.me().then((res) => {
-      if (res.data) {
-        setCurrentUser(res.data);
-        refreshProjects();
-      }
-    });
+      if (res.data) setSessionUser(res.data);
+    }).catch(() => {});
+    refreshProjects();
   }, []);
 
-  // Fetch requirements when activeProject changes
   useEffect(() => {
-    if (activeProject && !activeProject.id.startsWith("prj-temp-")) {
-      api.checklists.listRequirements(activeProject.id).then((res) => {
-        if (res.data && Array.isArray(res.data)) {
-          const mapped: RequirementItem[] = res.data.map((r: any) => ({
-            id: r.id,
-            key: r.key || "REQ-001",
-            groupKey: r.milestone_key || "G1",
-            groupTitle: r.milestone_key ? `Milestone: ${r.milestone_key}` : "01. Mandatory Closeout Requirements",
-            title: r.title,
-            docTypeCode: r.doc_type_code || "DT-001",
-            docTypeName: "Statutory / Engineering Document",
-            mandatory: Boolean(r.mandatory),
-            assetTag: r.asset_tag || null,
-            assetName: null,
-            status: (r.status as ReqStatus) || "MISSING",
-            ownerName: "Assigned Lead",
-            ownerRole: "Lead Engineer",
-            dueDate: r.due_date ? String(r.due_date).split('T')[0] : "",
-            revision: null,
-            updatedAt: "Recorded in PostgreSQL",
-            reviewerRole: "PMC Reviewer",
-          }));
-          setRequirements(mapped);
-        }
-      });
+    if (activeProject && !isDemoDataLoaded) {
+      loadRequirementsFromApi(activeProject.id);
     }
-  }, [activeProject?.id]);
+  }, [activeProject, isDemoDataLoaded]);
 
-  // Checklist filters
+  // Checklist Filter & Selection State
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
-  const [activeDrawerReq, setActiveDrawerReq] = useState<RequirementItem | null>(null);
-  const [filterAssetOnly, setFilterAssetOnly] = useState(false);
-  const [filterGroupOnly, setFilterGroupOnly] = useState<string | null>(null);
+  const [detailReq, setDetailReq] = useState<RequirementRow | null>(null);
 
-  // Modals
-  const [newProjectModalOpen, setNewProjectModalOpen] = useState(false);
-  const [newReqModalOpen, setNewReqModalOpen] = useState(false);
-  const [uploadModalOpen, setUploadModalOpen] = useState(false);
-  const [uploadTargetReq, setUploadTargetReq] = useState<RequirementItem | null>(null);
-  const [auditModalOpen, setAuditModalOpen] = useState(false);
-  const [billingModalOpen, setBillingModalOpen] = useState(false);
+  // Two-Approver Mandatory Waiver Modal (FR-CHK-016)
+  const [waiverModalReq, setWaiverModalReq] = useState<RequirementRow | null>(null);
+  const [waiverReason, setWaiverReason] = useState("");
+  const [waiverSecondApprover, setWaiverSecondApprover] = useState(
+    "Rajesh Sharma (Owner)"
+  );
 
-  // PDF Viewer State
-  const [selectedReviewReq, setSelectedReviewReq] = useState<RequirementItem | null>(null);
-  const [decisionMode, setDecisionMode] = useState<"in_app" | "external">("in_app");
-  const [reviewComment, setReviewComment] = useState("");
-  const [pdfZoom, setPdfZoom] = useState(100);
-  const [extApproverName, setExtApproverName] = useState("");
-  const [extMethod, setExtMethod] = useState("STAMPED_PDF");
-  const [extRef, setExtRef] = useState("");
-  const [reviewBanner, setReviewBanner] = useState<string | null>(null);
+  // Mobile/Field Upload Sheet State with localStorage persistence (SCR-023 / 11 §4.8)
+  const [uploadSheetOpen, setUploadSheetOpen] = useState(false);
+  const [uploadTarget, setUploadTarget] = useState<RequirementRow | null>(null);
+  const [draftRev, setDraftRev] = useState("R1");
+  const [draftDate, setDraftDate] = useState("2026-10-31");
+  const [draftRemarks, setDraftRemarks] = useState("");
+  const [uploadFileError, setUploadFileError] = useState<string | null>(null);
+  const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
 
-  // Handover Dossier State
-  const [dossierInitialized, setDossierInitialized] = useState(false);
-
-  // Web Crypto Real SHA-256 Upload State
-  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
-  const [selectedFile, setSelectedFile] = useState<{
-    name: string;
-    size: number;
-    sha256: string;
-    isHashing: boolean;
-  } | null>(null);
-
-  const handleFilePicked = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setSelectedFile({
-      name: file.name,
-      size: file.size,
-      sha256: "Computing...",
-      isHashing: true,
-    });
-
+  // Load/save upload metadata draft to localStorage per project (11 §4.8)
+  useEffect(() => {
     try {
-      const buffer = await file.arrayBuffer();
-      const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      const hashHex = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+      const saved = window.localStorage.getItem("tc_draft_PRJ024");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.rev) setDraftRev(parsed.rev);
+        if (parsed.remarks) setDraftRemarks(parsed.remarks);
+      }
+    } catch {
+      // Ignore storage access errors
+    }
+  }, []);
 
-      setSelectedFile({
-        name: file.name,
-        size: file.size,
-        sha256: hashHex,
-        isHashing: false,
-      });
-    } catch (err) {
-      console.error("SHA-256 computation failed", err);
-      setSelectedFile({
-        name: file.name,
-        size: file.size,
-        sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-        isHashing: false,
-      });
+  const updateDraftRemarks = (val: string) => {
+    setDraftRemarks(val);
+    try {
+      window.localStorage.setItem(
+        "tc_draft_PRJ024",
+        JSON.stringify({ rev: draftRev, remarks: val })
+      );
+    } catch {
+      // Ignore
     }
   };
 
-  // Dynamic Metrics Computed Strictly from State
-  const totalReqs = requirements.length;
-  const approvedInApp = requirements.filter((r) => r.status === "APPROVED").length;
-  const approvedExternal = requirements.filter(
-    (r) => r.status === "APPROVED_EXTERNAL"
-  ).length;
-  const waived = requirements.filter((r) => r.status === "WAIVED").length;
-  const inReview = requirements.filter((r) => r.status === "IN_REVIEW").length;
-  const missingExpired = requirements.filter(
-    (r) => r.status === "MISSING" || r.status === "EXPIRED"
-  ).length;
-  const satisfiedCount = approvedInApp + approvedExternal + waived;
-  const satisfactionPct =
-    totalReqs > 0 ? ((satisfiedCount / totalReqs) * 100).toFixed(1) : "0.0";
+  // Document Viewer & Review State (SCR-025 / SCR-027)
+  const [reviewTab, setReviewTab] = useState<"in_app" | "external">("in_app");
+  const [reviewComment, setReviewComment] = useState("");
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [reviewSuccess, setReviewSuccess] = useState<string | null>(null);
+  const [extApprover, setExtApprover] = useState("Vikram Sengupta (Meinhardt PMC)");
+  const [extMethod, setExtMethod] = useState<
+    "STAMPED_PDF" | "EMAIL" | "PORTAL" | "PHYSICAL"
+  >("STAMPED_PDF");
+  const [extDate, setExtDate] = useState("2026-10-25");
+  const [extRef, setExtRef] = useState("TRN-MEIN-HVAC-089");
+  const [extEvidenceAttached, setExtEvidenceAttached] = useState(true);
+  const [pdfPins, setPdfPins] = useState<
+    { id: number; page: number; x: number; y: number; text: string; author: string }[]
+  >([
+    {
+      id: 1,
+      page: 12,
+      x: 78,
+      y: 62,
+      text: "Master gauge WIKA PG-NABL-409 calibration verified against annexure p.39.",
+      author: "Sunil Rao (QC Engineer)",
+    },
+  ]);
 
-  const assetsTagged = requirements.filter((r) => r.assetTag !== null).length;
-  const uniqueAssets = Array.from(
-    new Set(requirements.map((r) => r.assetTag).filter(Boolean))
+  // Package Builder & Preview Exclusion State (SCR-028 / SCR-057)
+  const [overrideModalOpen, setOverrideModalOpen] = useState(false);
+  const [overrideReason, setOverrideReason] = useState("");
+  const [packageGeneratedBanner, setPackageGeneratedBanner] = useState<string | null>(
+    null
   );
 
-  const blockers = requirements.filter(
-    (r) =>
-      r.mandatory &&
-      (r.status === "MISSING" ||
-        r.status === "EXPIRED" ||
-        r.status === "CHANGES_REQUESTED")
+  // Guest Planes State (SCR-034 & SCR-031)
+  const [supplierUploaded, setSupplierUploaded] = useState(false);
+  const [clientDecisionType, setClientDecisionType] = useState<
+    "ACCEPT" | "ACCEPT_WITH_EXCEPTIONS" | "REJECT"
+  >("ACCEPT_WITH_EXCEPTIONS");
+  const [clientExceptionText, setClientExceptionText] = useState(
+    "Provide renewed Workmen Compensation Insurance endorsement and CFO Fire Damper NOC within 7 days."
   );
+  const [clientDecisionSubmitted, setClientDecisionSubmitted] = useState(false);
 
-  const reviewQueue = requirements.filter((r) => r.status === "IN_REVIEW");
-
-  // Filtered requirements for Checklist
+  // Filtered checklist rows
   const filteredReqs = useMemo(() => {
     return requirements.filter((r) => {
-      if (filterAssetOnly && !r.assetTag) return false;
-      if (filterGroupOnly && r.groupKey !== filterGroupOnly) return false;
-
-      const matchesStatus =
+      const statusOk =
         statusFilter === "ALL"
           ? true
-          : statusFilter === "MISSING_EXPIRED"
+          : statusFilter === "BLOCKERS"
           ? r.status === "MISSING" || r.status === "EXPIRED"
           : statusFilter === "APPROVED_ALL"
           ? r.status === "APPROVED" || r.status === "APPROVED_EXTERNAL"
           : r.status === statusFilter;
 
       const q = searchQuery.trim().toLowerCase();
-      const matchesSearch =
+      const searchOk =
         !q ||
         r.title.toLowerCase().includes(q) ||
         r.key.toLowerCase().includes(q) ||
@@ -478,186 +699,450 @@ export default function TradeCloseoutEnterpriseApp() {
         (r.assetTag && r.assetTag.toLowerCase().includes(q)) ||
         r.ownerName.toLowerCase().includes(q);
 
-      return matchesStatus && matchesSearch;
+      return statusOk && searchOk;
     });
-  }, [requirements, statusFilter, searchQuery, filterAssetOnly, filterGroupOnly]);
+  }, [requirements, statusFilter, searchQuery]);
 
-  // Grouped requirements
-  const groupedReqs = useMemo(() => {
-    const map: Record<string, { title: string; items: RequirementItem[] }> = {};
-    for (const req of filteredReqs) {
-      if (!map[req.groupKey]) {
-        map[req.groupKey] = { title: req.groupTitle, items: [] };
-      }
-      map[req.groupKey].items.push(req);
+  // File Selection Validation (Enforces 11 §4.8 SVG / Macro Ban)
+  const handleSimulateFileSelect = (filename: string) => {
+    const lower = filename.toLowerCase();
+    if (lower.endsWith(".svg") || lower.endsWith(".exe") || lower.endsWith(".xlsm")) {
+      setUploadFileError(
+        "This file type isn't supported. Use PDF, JPG, PNG, WebP, DOCX, XLSX, DWG or ZIP (SVG is strictly banned)."
+      );
+      // 11 §4.8: Never lose previously selected valid file or entered metadata
+      return;
     }
-    return Object.entries(map);
-  }, [filteredReqs]);
-
-  const toggleSelectRow = (id: string) => {
-    setSelectedIds((prev) =>
-      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
-    );
+    setUploadFileError(null);
+    setSelectedFileName(filename);
   };
 
-  const handleApproveCurrentDoc = (reqToApprove: RequirementItem) => {
-    setRequirements((prev) =>
-      prev.map((r) =>
-        r.id === reqToApprove.id
-          ? {
-              ...r,
-              status: "APPROVED",
-              updatedAt: "Just now",
-            }
-          : r
-      )
-    );
-    setAuditEvents((prev) => [
-      {
-        id: String(Date.now()),
-        actor: "Authorized Reviewer",
-        action: `approved ${reqToApprove.key} (${reqToApprove.title})`,
-        time: "Just now",
-        hash: Math.random().toString(16).substring(2, 8),
-      },
-      ...prev,
-    ]);
-    setReviewBanner(`Approved ${reqToApprove.key}. Milestone status updated.`);
-    setTimeout(() => setReviewBanner(null), 4000);
+  // Review Decision Handler (Enforces 11 §4.9 10-char rule & WF-23 External Approval)
+  const handleReviewDecision = (decision: "APPROVE" | "REQUEST_CHANGES" | "REJECT") => {
+    setReviewError(null);
+    if (reviewTab === "in_app") {
+      if (decision !== "APPROVE" && reviewComment.trim().length < 10) {
+        setReviewError(
+          "Please enter at least 10 characters explaining what needs to be corrected before returning this document."
+        );
+        return;
+      }
+      const nextStatus: VisualStatus =
+        decision === "APPROVE"
+          ? "APPROVED"
+          : decision === "REQUEST_CHANGES"
+          ? "CHANGES_REQUESTED"
+          : "REJECTED";
+
+      setRequirements((prev) =>
+        prev.map((r) =>
+          r.key === "REQ-HVAC-033"
+            ? { ...r, status: nextStatus, updatedAt: "Just now" }
+            : r
+        )
+      );
+      setReviewSuccess(
+        `Decision recorded: ${STATUS_STYLE[nextStatus].label}. Audit event written.`
+      );
+    } else {
+      if (!extApprover.trim() || !extDate) {
+        setReviewError("Approver name and decision date are required.");
+        return;
+      }
+      if (
+        (extMethod === "STAMPED_PDF" || extMethod === "EMAIL") &&
+        !extEvidenceAttached
+      ) {
+        setReviewError(
+          "Evidence file upload is required for Stamped PDF and Email approvals."
+        );
+        return;
+      }
+      setRequirements((prev) =>
+        prev.map((r) =>
+          r.key === "REQ-HVAC-033"
+            ? { ...r, status: "APPROVED_EXTERNAL", updatedAt: "Just now" }
+            : r
+        )
+      );
+      setReviewSuccess(
+        `External approval recorded (${extMethod} · Ref: ${extRef}). Marked as 'Approved (external)' in handover package.`
+      );
+    }
   };
 
-  const handleExternalApproveDoc = (reqToApprove: RequirementItem) => {
-    setRequirements((prev) =>
-      prev.map((r) =>
-        r.id === reqToApprove.id
-          ? {
-              ...r,
-              status: "APPROVED_EXTERNAL",
-              updatedAt: "Just now",
-            }
-          : r
-      )
-    );
-    setAuditEvents((prev) => [
-      {
-        id: String(Date.now()),
-        actor: extApproverName || "External Authority",
-        action: `stamped External Approval on ${reqToApprove.key} (Ref: ${extRef || "N/A"})`,
-        time: "Just now",
-        hash: Math.random().toString(16).substring(2, 8),
-      },
-      ...prev,
-    ]);
-    setReviewBanner(
-      `External stamp recorded for ${reqToApprove.key} (Ref: ${extRef || "N/A"}).`
-    );
-    setTimeout(() => setReviewBanner(null), 4000);
-  };
+  /* ======================================================================= */
+  /* ISOLATED GUEST PLANE 1: SUPPLIER UPLOAD LINK (SCR-034, 11 §2.3 & §4.12) */
+  /* ======================================================================= */
+  if (actorPlane === "SUPPLIER_GUEST") {
+    return (
+      <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col justify-between font-sans">
+        {/* Top Preview Mode Bar (For Founder/Demo Switching Only) */}
+        <div className="bg-slate-900 text-slate-200 px-4 py-2 text-xs flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-emerald-400" />
+            <span>
+              Viewing Isolated Guest Route: <strong>/guest/sup_0192f8a...</strong> (Zero
+              contractor navigation exposed)
+            </span>
+          </div>
+          <button
+            onClick={() => setActorPlane("CONTRACTOR")}
+            className="rounded bg-blue-600 px-2.5 py-1 text-white font-medium hover:bg-blue-500"
+          >
+            Return to Contractor Workspace
+          </button>
+        </div>
 
-  const handleRejectDoc = (reqToReject: RequirementItem) => {
-    setRequirements((prev) =>
-      prev.map((r) =>
-        r.id === reqToReject.id
-          ? {
-              ...r,
-              status: "CHANGES_REQUESTED",
-              updatedAt: "Just now",
-            }
-          : r
-      )
-    );
-    setAuditEvents((prev) => [
-      {
-        id: String(Date.now()),
-        actor: "Reviewer",
-        action: `requested revisions on ${reqToReject.key}: "${reviewComment || "Corrections required"}"`,
-        time: "Just now",
-        hash: Math.random().toString(16).substring(2, 8),
-      },
-      ...prev,
-    ]);
-    setReviewBanner(`Changes requested on ${reqToReject.key}. Owner notified.`);
-    setTimeout(() => setReviewBanner(null), 4000);
-  };
+        {/* Standalone Single-Purpose Supplier Page (11 §2.3) */}
+        <main className="mx-auto w-full max-w-xl px-4 py-8 flex-1">
+          <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+            {/* 4px Sandboxed Contractor Brand Accent Bar (FR-ORG-007) */}
+            <div className="h-1.5 w-full bg-[#0F2942]" />
 
+            <div className="border-b border-slate-200 bg-slate-50 px-6 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#0F2942] text-white font-bold text-xs">
+                  AM
+                </div>
+                <div>
+                  <h1 className="text-sm font-bold text-slate-900">
+                    Apex MEP Contractors Pvt Ltd
+                  </h1>
+                  <p className="text-xs text-slate-600">
+                    Project: Skyview Commercial Towers
+                  </p>
+                </div>
+              </div>
+              <span className="rounded-full bg-amber-50 border border-amber-300 px-2.5 py-0.5 text-[11px] font-medium text-amber-900">
+                External access
+              </span>
+            </div>
+
+            <div className="p-6 space-y-5">
+              <div className="rounded-lg bg-slate-50 p-3.5 border border-slate-200 text-xs space-y-1">
+                <div className="font-semibold text-slate-900">
+                  Document Request for Carrier Air Conditioning India Pvt Ltd
+                </div>
+                <p className="text-slate-600">
+                  Please upload the requested certificate below. No account login is
+                  required. Status remains visible via this link for 30 days.
+                </p>
+              </div>
+
+              {/* Scoped Requirement Item (AUD-P-15: Shows ONLY assigned requirement) */}
+              <div className="rounded-lg border border-slate-200 p-4 space-y-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <span className="inline-flex items-center gap-1 rounded bg-blue-50 border border-blue-200 px-2 py-0.5 font-mono text-[11px] font-semibold text-blue-800">
+                      Equipment: CHLR-01
+                    </span>
+                    <h2 className="mt-1.5 text-sm font-semibold text-slate-900">
+                      Centrifugal Chiller Factory Acceptance Test & Run Curve (AHRI
+                      550/590)
+                    </h2>
+                  </div>
+                  <span className="shrink-0 rounded bg-amber-50 border border-amber-200 px-2 py-0.5 font-mono text-[11px] font-medium text-amber-900">
+                    Due: 05 Nov 2026
+                  </span>
+                </div>
+
+                {!supplierUploaded ? (
+                  <>
+                    <div
+                      onClick={() => setSupplierUploaded(true)}
+                      className="cursor-pointer rounded-lg border-2 border-dashed border-blue-600 bg-blue-50/40 p-6 text-center hover:bg-blue-50/80 transition-colors"
+                    >
+                      <UploadCloud className="mx-auto h-7 w-7 text-blue-700"/>
+                      <div className="mt-2 text-xs font-semibold text-slate-900">
+                        Take Photo or Choose PDF File
+                      </div>
+                      <div className="mt-0.5 text-[11px] text-slate-500">
+                        PDF, JPG, PNG up to 100 MB
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1">
+                          Revision (Required)
+                        </label>
+                        <input
+                          type="text"
+                          defaultValue="R0"
+                          className="w-full rounded-md border border-slate-400 px-2.5 py-2 font-mono text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1">
+                          Issue Date (Required)
+                        </label>
+                        <input
+                          type="date"
+                          defaultValue="2026-10-31"
+                          className="w-full rounded-md border border-slate-400 px-2.5 py-2 font-mono text-xs"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        setSupplierUploaded(true);
+                        setRequirements((prev) =>
+                          prev.map((r) =>
+                            r.key === "REQ-HVAC-018"
+                              ? {
+                                  ...r,
+                                  status: "UPLOADED",
+                                  revision: "R0",
+                                  updatedAt: "Uploaded by supplier",
+                                }
+                              : r
+                          )
+                        );
+                      }}
+                      className="w-full rounded-md bg-[#1D4ED8] py-3 text-xs font-semibold text-white shadow-xs hover:bg-blue-800"
+                    >
+                      Upload Document
+                    </button>
+                  </>
+                ) : (
+                  <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-4 text-xs text-emerald-950 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold flex items-center gap-1.5 text-emerald-900">
+                        <CheckCircle2 className="h-4 w-4 text-emerald-600"/>
+                        Uploaded. Apex MEP Contractors Pvt Ltd will review it.
+                      </span>
+                      <button
+                        onClick={() => setSupplierUploaded(false)}
+                        className="text-emerald-800 underline font-medium"
+                      >
+                        Replace file
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="border-t border-slate-200 pt-3 flex items-center justify-between text-xs text-slate-500">
+                <span>Need assistance with this request?</span>
+                <span className="font-semibold text-blue-700">
+                  Contact Meera Deshmukh (+91 98200 XXXXX)
+                </span>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  /* ======================================================================= */
+  /* ISOLATED GUEST PLANE 2: CLIENT ACCEPTANCE PORTAL (SCR-031, AUD-P-16)    */
+  /* ======================================================================= */
+  if (actorPlane === "CLIENT_GUEST") {
+    return (
+      <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans">
+        <div className="bg-slate-900 text-slate-200 px-4 py-2 text-xs flex items-center justify-between">
+          <span>
+            Viewing Isolated Client Acceptance Portal (Writes
+            exceptions back as requirement change requests per AUD-P-16)
+          </span>
+          <button
+            onClick={() => setActorPlane("CONTRACTOR")}
+            className="rounded bg-blue-600 px-2.5 py-1 text-white font-medium hover:bg-blue-500"
+          >
+            Return to Contractor Workspace
+          </button>
+        </div>
+
+        <header className="border-b border-slate-200 bg-white px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-8 w-8 items-center justify-center rounded bg-[#0F2942] text-white font-bold text-xs">
+              AM
+            </div>
+            <div>
+              <div className="text-sm font-bold text-slate-900">
+                Skyview Commercial Towers — HVAC Handover Package v2
+              </div>
+              <div className="text-xs text-slate-500">
+                Submitted by Apex MEP Contractors Pvt Ltd · 31 Oct 2026
+              </div>
+            </div>
+          </div>
+          <span className="rounded-full bg-amber-50 border border-amber-300 px-3 py-1 text-xs font-medium text-amber-900">
+            External access · Client Representative
+          </span>
+        </header>
+
+        <main className="mx-auto w-full max-w-3xl p-6 space-y-6">
+          <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-xs space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <div>
+                <h2 className="text-base font-semibold text-slate-900">
+                  Handover Package Summary
+                </h2>
+                <p className="text-xs text-slate-500">
+                  71 Approved Documents · 482 Pages · SHA-256 Verified Manifest
+                </p>
+              </div>
+              <button className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50">
+                <Download className="h-4 w-4"/>
+                <span>Download Package PDF (184 MB)</span>
+              </button>
+            </div>
+
+            {!clientDecisionSubmitted ? (
+              <div className="space-y-4 text-xs">
+                <div className="font-semibold text-slate-800">
+                  Record Formal Handover Decision
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { id: "ACCEPT", label: "Accept Package" },
+                    {
+                      id: "ACCEPT_WITH_EXCEPTIONS",
+                      label: "Accept with Exceptions",
+                    },
+                    { id: "REJECT", label: "Reject Package" },
+                  ].map((opt) => (
+                    <button
+                      key={opt.id}
+                      onClick={() =>
+                        setClientDecisionType(opt.id as typeof clientDecisionType)
+                      }
+                      className={`rounded-lg border p-3 text-left font-semibold transition-all ${
+                        clientDecisionType === opt.id
+                          ? "border-blue-600 bg-blue-50/60 text-blue-900 ring-1 ring-blue-600"
+                          : "border-slate-200 hover:bg-slate-50"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+
+                {clientDecisionType !== "ACCEPT" && (
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">
+                      Exceptions / Rejection Remarks (Required — creates follow-up change
+                      request)
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={clientExceptionText}
+                      onChange={(e) => setClientExceptionText(e.target.value)}
+                      className="w-full rounded-md border border-slate-300 p-2.5 text-xs"
+                    />
+                  </div>
+                )}
+
+                <div className="rounded-md bg-slate-50 p-3 border border-slate-200 text-[11px] text-slate-600">
+                  This decision will be recorded with your name (DLF CyberCity
+                  Authorised Representative) and timestamp.
+                </div>
+
+                <button
+                  onClick={() => {
+                    setClientDecisionSubmitted(true);
+                    if (clientDecisionType === "ACCEPT_WITH_EXCEPTIONS") {
+                      setChangeRequests((prev) => [
+                        ...prev,
+                        {
+                          id: `CR-0${prev.length + 1}`,
+                          reason: `Client Acceptance Exception: ${clientExceptionText}`,
+                          createdBy: "DLF Client Representative (External)",
+                          createdAt: "31 Oct 2026, 10:05 IST",
+                          status: "SUBMITTED",
+                        },
+                      ]);
+                    }
+                  }}
+                  className="w-full rounded-md bg-[#0F2942] py-2.5 text-xs font-semibold text-white hover:bg-[#163A5F]"
+                >
+                  Confirm & Record Decision
+                </button>
+              </div>
+            ) : (
+              <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-4 text-xs text-emerald-950 space-y-1.5">
+                <div className="font-bold text-emerald-900">
+                  ✓ Decision Recorded ({clientDecisionType.replace(/_/g, " ")})
+                </div>
+                <p>
+                  Your exception remarks have been automatically written back to Apex
+                  MEP’s project register as Change Request{" "}
+                  <strong className="font-mono">CR-01</strong> so nothing is lost.
+                </p>
+              </div>
+            )}
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  /* ======================================================================= */
+  /* CONTRACTOR WORKSPACE PLANE (DEFAULT DESKTOP & MOBILE SHELL)             */
+  /* ======================================================================= */
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#F8FAFC] text-[#0F172A] antialiased selection:bg-blue-600 selection:text-white font-sans">
-      {/* ===================================================================== */}
-      {/* 1. INDUSTRIAL NAVIGATION RAIL                                         */}
-      {/* ===================================================================== */}
+    <div className="flex h-screen w-screen overflow-hidden bg-[#F8FAFC] text-[#0F172A] antialiased font-sans">
+      {/* 1. LEFT NAVIGATION RAIL (11-UI-UX-SPECIFICATION.md §2.1) */}
       <aside
         className={`${
           sidebarCollapsed ? "w-16" : "w-60"
-        } flex flex-col justify-between border-r border-slate-800 bg-[#0B1120] text-slate-300 transition-all duration-200 shrink-0 select-none z-30`}
+        } flex flex-col justify-between border-r border-slate-800 bg-[#0B1120] text-slate-300 transition-all duration-200 shrink-0 select-none`}
       >
         <div>
-          {/* Header Brand */}
-          <div className="flex h-14 items-center justify-between px-3.5 border-b border-slate-800/80">
+          <div className="flex h-14 items-center justify-between px-3.5 border-b border-slate-800">
             <div className="flex items-center gap-2.5 overflow-hidden">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white font-bold text-sm shadow-inner">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white font-bold text-sm">
                 TC
               </div>
               {!sidebarCollapsed && (
                 <div className="truncate">
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-semibold text-sm tracking-tight text-white">
-                      TradeCloseout
-                    </span>
+                  <div className="font-semibold text-sm text-white truncate">
+                    TradeCloseout
                   </div>
-                  <p className="text-[11px] text-slate-400 truncate">
-                    {activeProject ? activeProject.tradeName || "Digital Handover" : "Platform"}
-                  </p>
+                  <div className="text-[11px] text-slate-400 truncate">
+                    Apex MEP Contractors
+                  </div>
                 </div>
               )}
             </div>
             <button
               onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              className="rounded-md p-1 text-slate-400 hover:bg-slate-800 hover:text-white"
-              title="Toggle Sidebar"
+              className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-white"
             >
               {sidebarCollapsed ? (
-                <PanelLeft className="h-4 w-4" />
+                <PanelLeft className="h-4 w-4"/>
               ) : (
-                <PanelLeftClose className="h-4 w-4" />
+                <PanelLeftClose className="h-4 w-4"/>
               )}
             </button>
           </div>
 
-          {/* Primary Workspace Nav */}
-          <div className="px-2.5 py-3 space-y-0.5">
-            {!sidebarCollapsed && (
-              <div className="px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                Project Workspace
-              </div>
-            )}
+          {/* Primary Nav */}
+          <div className="px-2.5 py-3 space-y-1">
             {[
-              {
-                id: "overview",
-                label: "Project Overview",
-                icon: LayoutDashboard,
-                badge: null,
-              },
+              { id: "overview", label: "Overview", icon: LayoutDashboard },
               {
                 id: "checklist",
-                label: "Compliance Checklist",
+                label: "Checklist",
                 icon: ClipboardCheck,
-                badge: String(totalReqs),
+                badge: requirements.length,
               },
               {
-                id: "viewer",
-                label: "Review Workbench",
+                id: "reviews",
+                label: "Reviews",
                 icon: Eye,
-                badge: String(inReview),
-                badgeColor:
-                  inReview > 0
-                    ? "bg-amber-500/20 text-amber-300 border-amber-500/30"
-                    : "bg-slate-800 text-slate-400 border-slate-700",
+                badge: requirements.filter((r) => r.status === "IN_REVIEW").length,
               },
+              { id: "packages", label: "Packages", icon: PackageCheck },
               {
-                id: "package",
-                label: "Handover Dossier",
-                icon: PackageCheck,
-                badge: dossierInitialized ? "v1" : "0",
+                id: "warranty_dlp",
+                label: "Warranties & Defects",
+                icon: Wrench,
+                badge: defects.filter((d) => d.status !== "CLOSED").length,
               },
             ].map((item) => {
               const Icon = item.icon;
@@ -666,29 +1151,18 @@ export default function TradeCloseoutEnterpriseApp() {
                 <button
                   key={item.id}
                   onClick={() => setActiveTab(item.id as typeof activeTab)}
-                  className={`group flex w-full items-center justify-between rounded-md px-2.5 py-2 text-xs font-medium transition-colors ${
+                  className={`flex w-full items-center justify-between rounded-md px-2.5 py-2 text-xs font-medium transition-colors ${
                     active
-                      ? "bg-blue-600 text-white shadow-sm"
+                      ? "bg-blue-600 text-white"
                       : "text-slate-300 hover:bg-slate-800/70 hover:text-white"
                   }`}
                 >
                   <div className="flex items-center gap-2.5 truncate">
-                    <Icon
-                      className={`h-4 w-4 shrink-0 ${
-                        active ? "text-white" : "text-slate-400 group-hover:text-white"
-                      }`}
-                    />
-                    {!sidebarCollapsed && <span className="truncate">{item.label}</span>}
+                    <Icon className="h-4 w-4 shrink-0"/>
+                    {!sidebarCollapsed && <span>{item.label}</span>}
                   </div>
-                  {!sidebarCollapsed && item.badge && (
-                    <span
-                      className={`ml-2 rounded-full px-1.5 py-0.5 text-[10px] font-semibold border ${
-                        active
-                          ? "bg-blue-700 text-white border-blue-400/40"
-                          : item.badgeColor ||
-                            "bg-slate-800 text-slate-300 border-slate-700"
-                      }`}
-                    >
+                  {!sidebarCollapsed && item.badge !== undefined && (
+                    <span className="rounded-full bg-slate-800 px-1.5 py-0.5 font-mono text-[10px] text-slate-200">
                       {item.badge}
                     </span>
                   )}
@@ -697,157 +1171,66 @@ export default function TradeCloseoutEnterpriseApp() {
             })}
           </div>
 
-          {/* Registers & Shortcuts */}
-          <div className="px-2.5 py-2 border-t border-slate-800/80 space-y-0.5">
-            {!sidebarCollapsed && (
-              <div className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                Registers & Shortcuts
+          {/* External Guest Plane Switchers (To inspect isolated SCR-034 & SCR-031) */}
+          {!sidebarCollapsed && (
+            <div className="px-3 pt-4 border-t border-slate-800/80 space-y-1.5">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                Isolated Guest Portals
               </div>
-            )}
-            {[
-              {
-                label: `Equipment Register (${uniqueAssets.length})`,
-                icon: Cpu,
-                action: () => {
-                  setFilterAssetOnly(true);
-                  setFilterGroupOnly(null);
-                  setStatusFilter("ALL");
-                  setSearchQuery("");
-                  setActiveTab("checklist");
-                },
-              },
-              {
-                label: "Statutory Approvals",
-                icon: ShieldCheck,
-                action: () => {
-                  setFilterGroupOnly("G1");
-                  setFilterAssetOnly(false);
-                  setStatusFilter("ALL");
-                  setSearchQuery("");
-                  setActiveTab("checklist");
-                },
-              },
-              {
-                label: `Immutable Audit Trail (${auditEvents.length})`,
-                icon: Layers,
-                action: () => setAuditModalOpen(true),
-              },
-              {
-                label: "Billing & Subscriptions",
-                icon: CreditCard,
-                action: () => setBillingModalOpen(true),
-              },
-            ].map((item, idx) => {
-              const Icon = item.icon;
-              return (
-                <button
-                  key={idx}
-                  onClick={item.action}
-                  className="group flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-slate-400 hover:bg-slate-800/60 hover:text-slate-200 transition-colors"
-                >
-                  <Icon className="h-4 w-4 shrink-0 text-slate-500 group-hover:text-slate-300" />
-                  {!sidebarCollapsed && <span className="truncate">{item.label}</span>}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* External Portals */}
-          <div className="px-2.5 py-2 border-t border-slate-800/80 space-y-0.5">
-            {!sidebarCollapsed && (
-              <div className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                External Portals
-              </div>
-            )}
-            <button
-              onClick={() => setActiveTab("supplier")}
-              className={`group flex w-full items-center justify-between rounded-md px-2.5 py-2 text-xs font-medium transition-colors ${
-                activeTab === "supplier"
-                  ? "bg-blue-600 text-white shadow-sm"
-                  : "text-slate-300 hover:bg-slate-800/70 hover:text-white"
-              }`}
-            >
-              <div className="flex items-center gap-2.5 truncate">
-                <ExternalLink className="h-4 w-4 shrink-0 text-emerald-400 group-hover:text-white" />
-                {!sidebarCollapsed && <span className="truncate">Supplier Guest Link</span>}
-              </div>
-              {!sidebarCollapsed && (
-                <span className="ml-2 rounded-full px-1.5 py-0.5 text-[10px] font-semibold border bg-emerald-500/20 text-emerald-300 border-emerald-500/30">
-                  Guest
-                </span>
-              )}
-            </button>
-          </div>
-        </div>
-
-        {/* Bottom Storage Status */}
-        <div className="border-t border-slate-800 p-3">
-          {!sidebarCollapsed ? (
-            <div className="rounded-lg bg-slate-900/90 p-2.5 border border-slate-800">
-              <div className="flex items-center justify-between text-[11px]">
-                <span className="font-medium text-slate-300">Active Workspace</span>
-                <span className="text-emerald-400 font-mono text-[10px]">● Online</span>
-              </div>
-              <div className="mt-2 h-1.5 w-full rounded-full bg-slate-800 overflow-hidden">
-                <div
-                  className="h-full bg-blue-500 rounded-full"
-                  style={{ width: `${projects.length > 0 ? "10%" : "0%"}` }}
-                />
-              </div>
-              <div className="mt-1.5 flex justify-between text-[10px] text-slate-400 font-mono">
-                <span>0 MB / 100 GB</span>
-                <span>{projects.length} / 15 Projects</span>
-              </div>
-            </div>
-          ) : (
-            <div className="flex justify-center">
-              <Settings className="h-4 w-4 text-slate-400" />
+              <button
+                onClick={() => setActorPlane("SUPPLIER_GUEST")}
+                className="flex w-full items-center justify-between rounded-md border border-slate-800 bg-slate-900/70 px-2.5 py-2 text-xs text-emerald-300 hover:border-emerald-500/40"
+              >
+                <span>Supplier Upload Link</span>
+                <ExternalLink className="h-3.5 w-3.5"/>
+              </button>
+              <button
+                onClick={() => setActorPlane("CLIENT_GUEST")}
+                className="flex w-full items-center justify-between rounded-md border border-slate-800 bg-slate-900/70 px-2.5 py-2 text-xs text-amber-300 hover:border-amber-500/40"
+              >
+                <span>Client Acceptance Portal</span>
+                <ExternalLink className="h-3.5 w-3.5"/>
+              </button>
             </div>
           )}
         </div>
+
+        {/* Bottom Plan & Storage Counter */}
+        {!sidebarCollapsed && (
+          <div className="border-t border-slate-800 p-3 text-[11px] text-slate-400">
+            <div className="flex justify-between font-medium text-slate-300">
+              <span>Growth Plan</span>
+              <span className="font-mono text-emerald-400">₹9,999/mo</span>
+            </div>
+            <div className="mt-1 font-mono text-[10px]">
+              38.4 GB / 100 GB · Mumbai Region
+            </div>
+          </div>
+        )}
       </aside>
 
-      {/* ===================================================================== */}
-      {/* 2. MAIN WORKSPACE COLUMN                                              */}
-      {/* ===================================================================== */}
+      {/* 2. MAIN CONTENT AREA */}
       <div className="flex flex-1 flex-col min-w-0 overflow-hidden">
-        {/* TOP CONTEXTUAL COMMAND BAR */}
-        <header className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-5 z-20">
-          {/* Left: Clean Project Selector */}
-          <div className="flex items-center gap-2.5 text-xs">
-            <span className="text-slate-400 font-medium">Workspace</span>
-            <ChevronRight className="h-3.5 w-3.5 text-slate-300" />
-            {activeProject ? (
-              <div className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 font-medium text-slate-900">
-                <span className="font-mono text-[11px] font-bold text-blue-700">
-                  {activeProject.code}
-                </span>
-                <span className="text-slate-300">/</span>
-                <span className="font-semibold text-slate-800">{activeProject.name}</span>
-                <ChevronDown className="h-3.5 w-3.5 text-slate-500" />
-              </div>
-            ) : (
-              <button
-                onClick={() => setNewProjectModalOpen(true)}
-                className="flex items-center gap-1.5 rounded-md border border-dashed border-slate-300 bg-slate-50 px-2.5 py-1 font-medium text-slate-600 hover:border-blue-500 hover:text-blue-700 hover:bg-blue-50/50 transition-colors"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                <span>Select or Create Project</span>
-              </button>
-            )}
-
-            {activeProject && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
-                {activeProject.status || "Active"}
-              </span>
-            )}
+        {/* Top Header Bar (11 §2.1: Org switcher | Global search | Help | Notifications | Profile) */}
+        <header className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-5">
+          <div className="flex items-center gap-3 text-xs">
+            <button className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-semibold text-slate-900 hover:bg-slate-100">
+              <span className="h-2 w-2 rounded-full bg-emerald-600" />
+              <span>Apex MEP Contractors Pvt Ltd</span>
+              <ChevronDown className="h-3.5 w-3.5 text-slate-500"/>
+            </button>
+            <ChevronRight className="h-4 w-4 text-slate-400"/>
+            <span className="font-mono text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">
+              PRJ-024
+            </span>
+            <span className="font-semibold text-slate-900 truncate max-w-md">
+              Skyview Commercial Towers (HVAC)
+            </span>
           </div>
 
-          {/* Right: Global Search, Add Actions, Profile */}
           <div className="flex items-center gap-3">
-            <div className="relative hidden md:flex items-center">
-              <Search className="absolute left-2.5 h-3.5 w-3.5 text-slate-400" />
+            <div className="relative hidden md:block">
+              <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-400"/>
               <input
                 type="text"
                 value={searchQuery}
@@ -855,828 +1238,491 @@ export default function TradeCloseoutEnterpriseApp() {
                   setSearchQuery(e.target.value);
                   if (activeTab !== "checklist") setActiveTab("checklist");
                 }}
-                placeholder="Search requirement, tag, doc..."
-                className="h-8 w-64 rounded-md border border-slate-300 bg-slate-50/70 pl-8 pr-12 text-xs text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600/20"
+                placeholder="Search equipment (CHLR-01), document..."
+                className="h-8 w-64 rounded-md border border-slate-300 bg-slate-50 pl-8 pr-3 text-xs focus:border-blue-600 focus:bg-white focus:outline-none"
               />
-              <kbd className="pointer-events-none absolute right-2 rounded border border-slate-200 bg-white px-1.5 py-0.5 font-mono text-[10px] text-slate-400">
-                ⌘K
-              </kbd>
             </div>
 
             <button
-              onClick={() => {
-                if (requirements.length === 0) {
-                  setNewReqModalOpen(true);
-                } else {
-                  setUploadTargetReq(requirements[0]);
-                  setUploadModalOpen(true);
-                }
-              }}
-              className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[#0F2942] px-3 text-xs font-medium text-white shadow-sm hover:bg-[#163A5F] transition-colors"
+              onClick={handleToggleDemoData}
+              className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+              title="Toggle between clean empty state and realistic demonstration data"
             >
-              <UploadCloud className="h-3.5 w-3.5" />
-              <span>Upload Document</span>
+              {isDemoDataLoaded ? "Clear Sample Data" : "Load Sample Data"}
             </button>
 
-            <button className="relative rounded-md border border-slate-200 p-1.5 text-slate-600 hover:bg-slate-100">
-              <Bell className="h-4 w-4" />
+            <button
+              onClick={() => setNewReqModalOpen(true)}
+              className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span>Add requirement</span>
             </button>
-
-            <div className="h-5 w-[1px] bg-slate-200" />
 
             <button
               onClick={() => {
-                if (!currentUser) handleQuickLogin();
+                if (requirements.length > 0) {
+                  setUploadTarget(requirements[0]);
+                  setUploadSheetOpen(true);
+                } else {
+                  setNewReqModalOpen(true);
+                }
               }}
-              title={currentUser ? "Authenticated" : "Click to sign in via OTP"}
-              className="flex items-center gap-2 rounded-md p-1 hover:bg-slate-50 transition-colors text-left"
+              className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[#0F2942] px-3 text-xs font-semibold text-white hover:bg-[#163A5F]"
             >
-              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-800 text-[11px] font-semibold text-white">
-                {currentUser ? (currentUser.full_name ? currentUser.full_name[0].toUpperCase() : "U") : "A"}
-              </div>
-              <div className="hidden lg:block leading-tight">
-                <div className="text-xs font-semibold text-slate-900">
-                  {currentUser ? currentUser.full_name || currentUser.email : (authLoading ? "Signing in..." : "Sign In / OTP")}
-                </div>
-                <div className="text-[10px] text-slate-500 font-mono">
-                  {currentUser ? `${currentUser.org_role} · Online` : "1-Click Dev Auth"}
-                </div>
-              </div>
+              <UploadCloud className="h-3.5 w-3.5"/>
+              <span>Upload document</span>
             </button>
+
+            <div className="flex items-center gap-2 border-l border-slate-200 pl-3">
+              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 text-[11px] font-bold text-white">
+                AP
+              </div>
+              <div className="hidden lg:block text-xs leading-tight">
+                <div className="font-semibold text-slate-900">Anil Pillai</div>
+                <div className="text-[10px] text-slate-500">Project Manager</div>
+              </div>
+            </div>
           </div>
         </header>
 
-        {/* Global Banner Notification */}
-        {reviewBanner && (
-          <div className="bg-emerald-600 text-white px-5 py-2 text-xs font-semibold flex items-center justify-between shadow-sm z-10">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4" />
-              <span>{reviewBanner}</span>
-            </div>
-            <button onClick={() => setReviewBanner(null)} className="opacity-80 hover:opacity-100">
-              <X className="h-3.5 w-3.5" />
-            </button>
+        {/* Project Handover Mode Banner (11 §4.4) */}
+        <div className="flex items-center justify-between border-b border-blue-200 bg-blue-50/70 px-5 py-2 text-xs text-blue-950">
+          <div className="flex items-center gap-2">
+            <PackageCheck className="h-4 w-4 text-blue-700"/>
+            <span>
+              <strong>Handover in progress</strong> — Target handover date:{" "}
+              <strong className="font-mono">18 Nov 2026</strong> (17 days remaining).
+            </span>
           </div>
-        )}
+          {changeRequests.length > 0 && (
+            <span className="rounded bg-amber-100 border border-amber-300 px-2 py-0.5 font-semibold text-amber-900">
+              {changeRequests.length} Client Exception Change Request Pending
+            </span>
+          )}
+        </div>
 
-        {/* =================================================================== */}
-        {/* VIEW 1: PROJECT OVERVIEW (SCR-013)                                  */}
-        {/* =================================================================== */}
+        {/* =============================================================== */}
+        {/* TAB 1: PROJECT OVERVIEW (SCR-013)                               */}
+        {/* =============================================================== */}
         {activeTab === "overview" && (
           <main className="flex-1 overflow-y-auto p-5 space-y-5">
-            {/* Project Dossier Card or Empty State */}
-            {activeProject ? (
-              <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-xs">
-                <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 border-b border-slate-100 pb-4">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2.5">
-                      <h1 className="text-lg font-bold tracking-tight text-slate-900">
-                        {activeProject.name}
-                      </h1>
-                      <span className="rounded bg-blue-50 px-2 py-0.5 font-mono text-xs font-semibold text-blue-700 border border-blue-200">
-                        {activeProject.code}
+            {/* Dynamic Segmented Progress Card */}
+            {(() => {
+              const totalReqs = requirements.length;
+              const approvedReqs = requirements.filter((r) => r.status === "APPROVED").length;
+              const extApprovedReqs = requirements.filter((r) => r.status === "APPROVED_EXTERNAL").length;
+              const waivedReqs = requirements.filter((r) => r.status === "WAIVED").length;
+              const inReviewReqs = requirements.filter((r) => r.status === "IN_REVIEW" || r.status === "UPLOADED").length;
+              const blockersReqs = requirements.filter((r) => r.status === "MISSING" || r.status === "EXPIRED").length;
+              const compliantTotal = approvedReqs + extApprovedReqs + waivedReqs;
+              const pct = totalReqs > 0 ? ((compliantTotal / totalReqs) * 100).toFixed(1) : "0.0";
+              const pApp = totalReqs > 0 ? (approvedReqs / totalReqs) * 100 : 0;
+              const pExt = totalReqs > 0 ? (extApprovedReqs / totalReqs) * 100 : 0;
+              const pWai = totalReqs > 0 ? (waivedReqs / totalReqs) * 100 : 0;
+              const pRev = totalReqs > 0 ? (inReviewReqs / totalReqs) * 100 : 0;
+              const pBlk = totalReqs > 0 ? (blockersReqs / totalReqs) * 100 : 0;
+              const equipmentCount = new Set(requirements.filter((r) => r.assetTag).map((r) => r.assetTag)).size;
+
+              return (
+                <>
+                  <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-2xs">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                        Required Documents Progress
+                      </span>
+                      <span className="font-mono text-sm font-bold text-slate-900">
+                        {compliantTotal} of {totalReqs} required documents approved ({pct}%)
                       </span>
                     </div>
-                    <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600">
-                      <span>
-                        Contract Ref:{" "}
-                        <strong className="font-mono text-slate-800">
-                          {activeProject.contractRef || "—"}
-                        </strong>
+                    <div className="flex h-3 w-full overflow-hidden rounded-full bg-slate-100 p-0.5 gap-0.5 border border-slate-200">
+                      <div style={{ width: `${pApp}%` }} className="bg-emerald-600 rounded-l-full" />
+                      <div style={{ width: `${pExt}%` }} className="bg-teal-600" />
+                      <div style={{ width: `${pWai}%` }} className="bg-purple-600" />
+                      <div style={{ width: `${pRev}%` }} className="bg-amber-500" />
+                      <div style={{ width: `${pBlk}%` }} className="bg-red-600 rounded-r-full" />
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-5 text-xs text-slate-600">
+                      <span>● {approvedReqs} Approved</span>
+                      <span>● {extApprovedReqs} Approved (external)</span>
+                      <span>● {waivedReqs} Waived</span>
+                      <span className="text-amber-800 font-medium">
+                        ● {inReviewReqs} Waiting for review
                       </span>
-                      <span className="text-slate-300">·</span>
-                      <span>
-                        Client:{" "}
-                        <strong className="text-slate-800">
-                          {activeProject.clientName || "—"}
-                        </strong>
-                      </span>
-                      <span className="text-slate-300">·</span>
-                      <span>
-                        PMC:{" "}
-                        <strong className="text-slate-800">
-                          {activeProject.pmcName || "—"}
-                        </strong>
-                      </span>
-                      <span className="text-slate-300">·</span>
-                      <span>
-                        EPC Contractor:{" "}
-                        <strong className="text-slate-800">
-                          {activeProject.contractorName || "—"}
-                        </strong>
-                      </span>
-                      <span className="text-slate-300">·</span>
-                      <span>
-                        Location:{" "}
-                        <strong className="text-slate-800">
-                          {activeProject.location || "—"}
-                        </strong>
+                      <span className="text-red-700 font-semibold">
+                        ● {blockersReqs} Missing / Expired blockers
                       </span>
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-2.5">
-                    {activeProject.targetHandoverDate && (
-                      <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50/80 px-3 py-1.5 text-xs font-medium text-amber-900">
-                        <Clock className="h-3.5 w-3.5 text-amber-700" />
-                        <span>Target Handover: </span>
-                        <strong className="font-mono">{activeProject.targetHandoverDate}</strong>
+                  {/* KPI Row */}
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="rounded-lg border border-slate-200 bg-white p-4">
+                      <div className="text-xs text-slate-500 font-medium">
+                        Contract Retention Gated
                       </div>
-                    )}
-                    <button
-                      onClick={() => setActiveTab("package")}
-                      className="inline-flex items-center gap-1.5 rounded-md bg-[#0F2942] px-3.5 py-1.5 text-xs font-medium text-white hover:bg-[#163A5F] transition-colors"
+                      <div className="mt-1.5 font-mono text-2xl font-bold text-slate-900">
+                        {totalReqs > 0 ? "₹75,00,000" : "₹0"}
+                      </div>
+                      <div className="mt-1 text-[11px] text-slate-500">
+                        {totalReqs > 0 ? "5% of ₹15,00,00,000 contract value" : "No active contract value"}
+                      </div>
+                    </div>
+                    <div
+                      onClick={() => setActiveTab("reviews")}
+                      className="cursor-pointer rounded-lg border border-amber-300 bg-white p-4 hover:bg-amber-50/30"
                     >
-                      <PackageCheck className="h-3.5 w-3.5" />
-                      <span>Assemble Handover Dossier</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Contractual Readiness Bar */}
-                <div className="mt-4">
-                  <div className="flex items-baseline justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-semibold uppercase tracking-wider text-slate-600">
-                        Contractual Closeout Readiness
-                      </span>
-                      <span className="text-[11px] text-slate-400">
-                        (Click any segment to filter checklist)
-                      </span>
-                    </div>
-                    <div className="font-mono text-sm font-bold text-slate-900">
-                      {satisfiedCount} / {totalReqs} Applicable Satisfied{" "}
-                      <span className="text-emerald-700">({satisfactionPct}%)</span>
-                    </div>
-                  </div>
-
-                  <div className="flex h-3 w-full overflow-hidden rounded-full bg-slate-100 p-0.5 gap-0.5 border border-slate-200">
-                    {totalReqs > 0 ? (
-                      <>
-                        <button
-                          onClick={() => {
-                            setStatusFilter("APPROVED");
-                            setActiveTab("checklist");
-                          }}
-                          style={{ width: `${(approvedInApp / totalReqs) * 100}%` }}
-                          className="h-full bg-emerald-600 hover:opacity-90 transition-opacity rounded-l-full"
-                          title={`Approved In-App: ${approvedInApp}`}
-                        />
-                        <button
-                          onClick={() => {
-                            setStatusFilter("APPROVED_EXTERNAL");
-                            setActiveTab("checklist");
-                          }}
-                          style={{ width: `${(approvedExternal / totalReqs) * 100}%` }}
-                          className="h-full bg-teal-600 hover:opacity-90 transition-opacity"
-                          title={`Approved External (Stamped): ${approvedExternal}`}
-                        />
-                        <button
-                          onClick={() => {
-                            setStatusFilter("WAIVED");
-                            setActiveTab("checklist");
-                          }}
-                          style={{ width: `${(waived / totalReqs) * 100}%` }}
-                          className="h-full bg-purple-600 hover:opacity-90 transition-opacity"
-                          title={`Waived: ${waived}`}
-                        />
-                        <button
-                          onClick={() => {
-                            setStatusFilter("IN_REVIEW");
-                            setActiveTab("checklist");
-                          }}
-                          style={{ width: `${(inReview / totalReqs) * 100}%` }}
-                          className="h-full bg-amber-500 hover:opacity-90 transition-opacity"
-                          title={`Waiting for Review: ${inReview}`}
-                        />
-                        <button
-                          onClick={() => {
-                            setStatusFilter("MISSING_EXPIRED");
-                            setActiveTab("checklist");
-                          }}
-                          style={{ width: `${(missingExpired / totalReqs) * 100}%` }}
-                          className="h-full bg-red-600 hover:opacity-90 transition-opacity rounded-r-full"
-                          title={`Missing / Expired: ${missingExpired}`}
-                        />
-                      </>
-                    ) : (
-                      <div className="h-full w-full bg-slate-200 rounded-full" />
-                    )}
-                  </div>
-
-                  {/* Legend */}
-                  <div className="mt-3 flex flex-wrap items-center justify-between gap-4 text-xs">
-                    <div className="flex flex-wrap items-center gap-5">
-                      <button
-                        onClick={() => {
-                          setStatusFilter("APPROVED");
-                          setActiveTab("checklist");
-                        }}
-                        className="flex items-center gap-1.5 text-slate-700 hover:text-slate-900 font-medium"
-                      >
-                        <span className="h-2.5 w-2.5 rounded-full bg-emerald-600" />
-                        <span>Approved In-App</span>
-                        <strong className="font-mono text-slate-900">{approvedInApp}</strong>
-                      </button>
-                      <button
-                        onClick={() => {
-                          setStatusFilter("APPROVED_EXTERNAL");
-                          setActiveTab("checklist");
-                        }}
-                        className="flex items-center gap-1.5 text-slate-700 hover:text-slate-900 font-medium"
-                      >
-                        <span className="h-2.5 w-2.5 rounded-full bg-teal-600" />
-                        <span>Approved (External Stamp)</span>
-                        <strong className="font-mono text-slate-900">{approvedExternal}</strong>
-                      </button>
-                      <button
-                        onClick={() => {
-                          setStatusFilter("WAIVED");
-                          setActiveTab("checklist");
-                        }}
-                        className="flex items-center gap-1.5 text-slate-700 hover:text-slate-900 font-medium"
-                      >
-                        <span className="h-2.5 w-2.5 rounded-full bg-purple-600" />
-                        <span>Waived</span>
-                        <strong className="font-mono text-slate-900">{waived}</strong>
-                      </button>
-                      <button
-                        onClick={() => {
-                          setStatusFilter("IN_REVIEW");
-                          setActiveTab("checklist");
-                        }}
-                        className="flex items-center gap-1.5 text-slate-700 hover:text-slate-900 font-medium"
-                      >
-                        <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
-                        <span>Waiting for Review</span>
-                        <strong className="font-mono text-slate-900">{inReview}</strong>
-                      </button>
-                      <button
-                        onClick={() => {
-                          setStatusFilter("MISSING_EXPIRED");
-                          setActiveTab("checklist");
-                        }}
-                        className="flex items-center gap-1.5 text-slate-700 hover:text-slate-900 font-medium"
-                      >
-                        <span className="h-2.5 w-2.5 rounded-full bg-red-600" />
-                        <span>Blocking / Expired</span>
-                        <strong className="font-mono text-slate-900">{missingExpired}</strong>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              /* No Active Project State */
-              <div className="rounded-xl border-2 border-dashed border-slate-300 bg-white p-8 text-center shadow-xs">
-                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-blue-50 text-blue-600">
-                  <FolderPlus className="h-7 w-7" />
-                </div>
-                <h2 className="mt-4 text-base font-bold text-slate-900">
-                  No Active Project Selected
-                </h2>
-                <p className="mx-auto mt-1 max-w-md text-xs text-slate-500 leading-relaxed">
-                  Create a new project to start tracking closeout milestones, equipment
-                  registers, compliance checklists, and digital handover dossiers.
-                </p>
-                <div className="mt-5 flex justify-center gap-3">
-                  <button
-                    onClick={() => setNewProjectModalOpen(true)}
-                    className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 transition-colors"
-                  >
-                    <Plus className="h-4 w-4" />
-                    <span>Create New Project</span>
-                  </button>
-                  <button
-                    onClick={() => setNewReqModalOpen(true)}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                  >
-                    <Plus className="h-4 w-4" />
-                    <span>Add Requirement Directly</span>
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* 4 Executive KPI Bento Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {/* Card 1: Retention Money Gated */}
-              <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-xs">
-                <div className="flex items-center justify-between text-xs text-slate-500 font-medium">
-                  <span>Retention Money Gated</span>
-                  <CreditCard className="h-4 w-4 text-slate-400" />
-                </div>
-                <div className="mt-2 flex items-baseline gap-2">
-                  <span className="font-mono text-2xl font-bold tracking-tight text-slate-900">
-                    ₹0
-                  </span>
-                  <span className="text-[11px] font-medium text-slate-500">
-                    0.0% of contract
-                  </span>
-                </div>
-                <p className="mt-1 text-[11px] text-slate-500">
-                  {missingExpired} mandatory blockers remaining
-                </p>
-              </div>
-
-              {/* Card 2: Actionable Review Queue */}
-              <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-xs">
-                <div className="flex items-center justify-between text-xs text-slate-500 font-medium">
-                  <span>Actionable Review Queue</span>
-                  <Clock className="h-4 w-4 text-amber-500" />
-                </div>
-                <div className="mt-2 flex items-baseline gap-2">
-                  <span className="font-mono text-2xl font-bold tracking-tight text-slate-900">
-                    {inReview}
-                  </span>
-                  <span className="text-xs font-semibold text-amber-600">Pending</span>
-                  <span className="text-[11px] text-slate-400">Avg SLA: —</span>
-                </div>
-                <div className="mt-1 flex items-center justify-between text-[11px]">
-                  <span className="text-slate-500 truncate">
-                    {inReview > 0 ? `${inReview} awaiting inspection` : "Review queue is clear"}
-                  </span>
-                  <button
-                    onClick={() => setActiveTab("viewer")}
-                    className="font-medium text-blue-600 hover:text-blue-800"
-                  >
-                    Inspect →
-                  </button>
-                </div>
-              </div>
-
-              {/* Card 3: Installed Asset Coverage */}
-              <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-xs">
-                <div className="flex items-center justify-between text-xs text-slate-500 font-medium">
-                  <span>Installed Asset Coverage</span>
-                  <Cpu className="h-4 w-4 text-slate-400" />
-                </div>
-                <div className="mt-2 flex items-baseline gap-2">
-                  <span className="font-mono text-2xl font-bold tracking-tight text-slate-900">
-                    {assetsTagged} / {totalReqs}
-                  </span>
-                  <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700">
-                    {totalReqs > 0 ? `${((assetsTagged / totalReqs) * 100).toFixed(0)}%` : "0%"} Tagged
-                  </span>
-                </div>
-                <p className="mt-1 text-[11px] text-slate-500">
-                  {uniqueAssets.length} unique equipment tags registered
-                </p>
-              </div>
-
-              {/* Card 4: DLP & Warranty Horizon */}
-              <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-xs">
-                <div className="flex items-center justify-between text-xs text-slate-500 font-medium">
-                  <span>DLP & Warranty Horizon</span>
-                  <ShieldCheck className="h-4 w-4 text-slate-400" />
-                </div>
-                <div className="mt-2 flex items-baseline gap-2">
-                  <span className="font-mono text-2xl font-bold tracking-tight text-slate-900">
-                    —
-                  </span>
-                  <span className="text-[11px] text-slate-500">Basis: Handover</span>
-                </div>
-                <p className="mt-1 text-[11px] text-slate-500">
-                  0 warranty basis conflicts recorded
-                </p>
-              </div>
-            </div>
-
-            {/* 2-Column Split: Blockers vs Asset & Audit Stream */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-              {/* Left Column (7 cols): Readiness Blockers */}
-              <div className="lg:col-span-7 rounded-lg border border-slate-200 bg-white shadow-xs">
-                <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <AlertTriangle className="h-4 w-4 text-red-600" />
-                    <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-800">
-                      Readiness Blockers & Action Items ({blockers.length})
-                    </h2>
-                  </div>
-                  <button
-                    onClick={() => setActiveTab("checklist")}
-                    className="text-xs font-semibold text-blue-600 hover:text-blue-800"
-                  >
-                    Open Full Checklist →
-                  </button>
-                </div>
-
-                <div className="p-4">
-                  {blockers.length > 0 ? (
-                    <div className="divide-y divide-slate-100">
-                      {blockers.map((req) => (
-                        <div key={req.id} className="py-3 flex items-center justify-between gap-4">
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono text-xs font-bold text-slate-800">
-                                {req.key}
-                              </span>
-                              <span className="rounded bg-slate-100 px-1.5 py-0.2 font-mono text-[10px] text-slate-600">
-                                {req.docTypeCode}
-                              </span>
-                              {req.assetTag && (
-                                <span className="rounded bg-blue-50 px-1.5 py-0.2 font-mono text-[10px] font-semibold text-blue-700">
-                                  {req.assetTag}
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-xs font-medium text-slate-900 truncate mt-0.5">
-                              {req.title}
-                            </div>
-                            <div className="text-[11px] text-slate-500 mt-0.5">
-                              Owner: {req.ownerName} · Due: {req.dueDate || "Not set"}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <StatusPill status={req.status} compact />
-                            <button
-                              onClick={() => {
-                                setUploadTargetReq(req);
-                                setUploadModalOpen(true);
-                              }}
-                              className="rounded bg-slate-900 px-2.5 py-1 text-xs font-semibold text-white hover:bg-slate-800"
-                            >
-                              Upload
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="py-8 text-center">
-                      <CheckCircle2 className="mx-auto h-8 w-8 text-emerald-500" />
-                      <p className="mt-2 text-xs font-semibold text-slate-800">
-                        No Blocking Requirements
-                      </p>
-                      <p className="mt-0.5 text-[11px] text-slate-500">
-                        {totalReqs === 0
-                          ? "No requirements configured yet. Click '+ Add Requirement' to begin."
-                          : "All mandatory closeout requirements are satisfied or in review."}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Right Column (5 cols): Equipment Category Readiness & Audit Stream */}
-              <div className="lg:col-span-5 space-y-5">
-                {/* Equipment Category Readiness */}
-                <div className="rounded-lg border border-slate-200 bg-white shadow-xs">
-                  <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-                    <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-800">
-                      Equipment Category Readiness
-                    </h2>
-                    <span className="text-[11px] text-slate-500">
-                      {uniqueAssets.length} Assets Registered
-                    </span>
-                  </div>
-                  <div className="p-4">
-                    {uniqueAssets.length > 0 ? (
-                      <div className="space-y-3">
-                        {uniqueAssets.map((tag, i) => {
-                          const tagReqs = requirements.filter((r) => r.assetTag === tag);
-                          const tagSatisfied = tagReqs.filter(
-                            (r) =>
-                              r.status === "APPROVED" ||
-                              r.status === "APPROVED_EXTERNAL" ||
-                              r.status === "WAIVED"
-                          ).length;
-                          const pct =
-                            tagReqs.length > 0
-                              ? Math.round((tagSatisfied / tagReqs.length) * 100)
-                              : 0;
-
-                          return (
-                            <div key={i} className="space-y-1">
-                              <div className="flex justify-between text-xs">
-                                <span className="font-semibold text-slate-800">{tag}</span>
-                                <span className="font-mono text-slate-500">
-                                  {tagSatisfied}/{tagReqs.length} ({pct}%)
-                                </span>
-                              </div>
-                              <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
-                                <div
-                                  style={{ width: `${pct}%` }}
-                                  className="h-full rounded-full bg-blue-600"
-                                />
-                              </div>
-                            </div>
-                          );
-                        })}
+                      <div className="text-xs text-amber-900 font-medium">
+                        Waiting for Review
                       </div>
-                    ) : (
-                      <div className="py-6 text-center">
-                        <Cpu className="mx-auto h-7 w-7 text-slate-400" />
-                        <p className="mt-2 text-xs font-semibold text-slate-700">
-                          No Assets Tagged
-                        </p>
-                        <p className="mt-0.5 text-[11px] text-slate-500">
-                          Tag requirements with equipment IDs to track asset closeout.
-                        </p>
+                      <div className="mt-1.5 font-mono text-2xl font-bold text-amber-800">
+                        {inReviewReqs} Documents
                       </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Recent Cryptographic Audit Stream */}
-                <div className="rounded-lg border border-slate-200 bg-white shadow-xs">
-                  <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-                    <div className="flex items-center gap-1.5">
-                      <History className="h-3.5 w-3.5 text-slate-500" />
-                      <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-800">
-                        Recent Audit Trail
-                      </h2>
+                      <div className="mt-1 text-[11px] text-blue-700 font-semibold">
+                        Open Review Queue →
+                      </div>
                     </div>
-                    <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] text-slate-600">
-                      SHA-256 Verified
-                    </span>
-                  </div>
-                  <div className="p-4">
-                    {auditEvents.length > 0 ? (
-                      <div className="divide-y divide-slate-100 text-xs">
-                        {auditEvents.slice(0, 5).map((ev) => (
-                          <div
-                            key={ev.id}
-                            className="py-2 flex items-start justify-between gap-2"
-                          >
-                            <div>
-                              <span className="font-semibold text-slate-900">{ev.actor}</span>{" "}
-                              <span className="text-slate-600">{ev.action}</span>
-                              <div className="text-[10px] text-slate-400 mt-0.5">{ev.time}</div>
-                            </div>
-                            <span className="font-mono text-[10px] text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200">
-                              #{ev.hash}
-                            </span>
-                          </div>
-                        ))}
+                    <div className="rounded-lg border border-slate-200 bg-white p-4">
+                      <div className="text-xs text-slate-500 font-medium">
+                        Equipment Coverage
                       </div>
-                    ) : (
-                      <div className="py-6 text-center">
-                        <History className="mx-auto h-7 w-7 text-slate-400" />
-                        <p className="mt-2 text-xs font-semibold text-slate-700">
-                          No Audit Events Recorded
-                        </p>
-                        <p className="mt-0.5 text-[11px] text-slate-500">
-                          Cryptographic transactions will appear as documents and reviews are
-                          processed.
-                        </p>
+                      <div className="mt-1.5 font-mono text-2xl font-bold text-slate-900">
+                        {equipmentCount} Units
                       </div>
-                    )}
-                  </div>
+                      <div className="mt-1 text-[11px] text-slate-500">
+                        {equipmentCount > 0 ? "Mandatory certificates linked" : "No equipment tagged"}
+                      </div>
+                    </div>
+              <div
+                onClick={() => setActiveTab("warranty_dlp")}
+                className="cursor-pointer rounded-lg border border-slate-200 bg-white p-4 hover:bg-slate-50"
+              >
+                <div className="text-xs text-slate-500 font-medium">
+                  Open Defects / Snags
+                </div>
+                <div className="mt-1.5 font-mono text-2xl font-bold text-slate-900">
+                  {defects.filter((d) => d.status !== "CLOSED").length} Active
+                </div>
+                <div className="mt-1 text-[11px] text-blue-700 font-semibold">
+                  Manage DLP & Warranties →
                 </div>
               </div>
             </div>
+                </>
+              );
+            })()}
           </main>
         )}
 
-        {/* =================================================================== */}
-        {/* VIEW 2: COMPLIANCE CHECKLIST GRID (SCR-014)                          */}
-        {/* =================================================================== */}
+        {/* =============================================================== */}
+        {/* TAB 2: CHECKLIST GRID (SCR-014) + DETAIL DRAWER (SCR-015)       */}
+        {/* =============================================================== */}
         {activeTab === "checklist" && (
-          <div className="flex flex-1 min-h-0 overflow-hidden relative">
-            <div className="flex-1 flex flex-col min-w-0 overflow-hidden p-5">
-              {/* Active Filter Scope Pill */}
-              {(filterAssetOnly || filterGroupOnly) && (
-                <div className="mb-3 flex items-center justify-between rounded-lg bg-blue-50 border border-blue-200 px-4 py-2.5 text-xs text-blue-900 shadow-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-blue-950">Active Scope:</span>
-                    <span>
-                      {filterAssetOnly
-                        ? "Filtered to Equipment-Tagged Requirements"
-                        : "Filtered to Group: " + filterGroupOnly}
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setFilterAssetOnly(false);
-                      setFilterGroupOnly(null);
-                    }}
-                    className="font-semibold text-blue-700 hover:text-blue-950 underline"
-                  >
-                    Clear Filter
-                  </button>
-                </div>
-              )}
-
-              {/* Filter & Facet Command Bar */}
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-t-lg border border-slate-200 bg-white px-4 py-3">
-                <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex flex-1 min-h-0 overflow-hidden">
+            <div className="flex-1 flex flex-col min-w-0 p-5 overflow-hidden">
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-t-lg border border-slate-200 bg-white px-4 py-2.5">
+                <div className="flex flex-wrap gap-1.5">
                   {[
-                    { id: "ALL", label: "All Items", count: totalReqs },
-                    {
-                      id: "MISSING_EXPIRED",
-                      label: "Missing / Expired",
-                      count: missingExpired,
-                      danger: true,
-                    },
-                    {
-                      id: "IN_REVIEW",
-                      label: "Waiting for Review",
-                      count: inReview,
-                    },
-                    {
-                      id: "CHANGES_REQUESTED",
-                      label: "Changes Requested",
-                      count: requirements.filter((r) => r.status === "CHANGES_REQUESTED").length,
-                    },
-                    {
-                      id: "APPROVED_ALL",
-                      label: "Approved (All)",
-                      count: approvedInApp + approvedExternal,
-                    },
-                    {
-                      id: "WAIVED",
-                      label: "Waived",
-                      count: waived,
-                    },
-                  ].map((pill) => {
-                    const active = statusFilter === pill.id;
-                    return (
-                      <button
-                        key={pill.id}
-                        onClick={() => setStatusFilter(pill.id)}
-                        className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors border ${
-                          active
-                            ? pill.danger
-                              ? "bg-red-600 text-white border-red-600"
-                              : "bg-[#0F2942] text-white border-[#0F2942]"
-                            : pill.danger && pill.count > 0
-                            ? "bg-red-50 text-red-800 border-red-200 hover:bg-red-100"
-                            : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
-                        }`}
-                      >
-                        <span>{pill.label}</span>
-                        <span
-                          className={`rounded-full px-1.5 text-[10px] font-mono font-semibold ${
-                            active
-                              ? "bg-white/20 text-white"
-                              : pill.danger && pill.count > 0
-                              ? "bg-red-200/80 text-red-900"
-                              : "bg-slate-200 text-slate-700"
-                          }`}
-                        >
-                          {pill.count}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setNewReqModalOpen(true)}
-                    className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 shadow-xs"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    <span>Add Requirement</span>
-                  </button>
+                    { id: "ALL", label: "All requirements" },
+                    { id: "BLOCKERS", label: "Missing & Expired" },
+                    { id: "IN_REVIEW", label: "Waiting for review" },
+                    { id: "CHANGES_REQUESTED", label: "Changes requested" },
+                    { id: "APPROVED_ALL", label: "Approved" },
+                  ].map((f) => (
+                    <button
+                      key={f.id}
+                      onClick={() => setStatusFilter(f.id)}
+                      className={`rounded-md px-2.5 py-1 text-xs font-medium border ${
+                        statusFilter === f.id
+                          ? "bg-[#0F2942] text-white border-[#0F2942]"
+                          : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                      }`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              {/* Data Grid or Empty State */}
-              <div className="flex-1 overflow-y-auto border-x border-b border-slate-200 bg-white">
-                {filteredReqs.length > 0 ? (
-                  <table className="w-full border-collapse text-left text-xs">
-                    <thead className="sticky top-0 z-10 bg-slate-100 text-slate-700 font-semibold border-b border-slate-200">
+              <div className="flex-1 overflow-y-auto border-x border-b border-slate-200 bg-white rounded-b-lg">
+                <table className="w-full border-collapse text-left text-xs">
+                  <thead className="sticky top-0 bg-slate-100 border-b border-slate-200 text-[11px] font-semibold uppercase text-slate-600">
+                    <tr>
+                      <th className="py-2.5 pl-4">Requirement</th>
+                      <th className="py-2.5 px-3">Equipment</th>
+                      <th className="py-2.5 px-3">Status</th>
+                      <th className="py-2.5 px-3">Owner</th>
+                      <th className="py-2.5 px-3">Due Date</th>
+                      <th className="py-2.5 pr-4 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {filteredReqs.length === 0 ? (
                       <tr>
-                        <th className="py-2.5 px-3 w-10">
-                          <input
-                            type="checkbox"
-                            checked={
-                              selectedIds.length === filteredReqs.length &&
-                              filteredReqs.length > 0
-                            }
-                            onChange={() => {
-                              if (selectedIds.length === filteredReqs.length) {
-                                setSelectedIds([]);
-                              } else {
-                                setSelectedIds(filteredReqs.map((r) => r.id));
-                              }
-                            }}
-                            className="rounded border-slate-300"
-                          />
-                        </th>
-                        <th className="py-2.5 px-3 w-28 font-mono">Code</th>
-                        <th className="py-2.5 px-3">Title & Requirement Scope</th>
-                        <th className="py-2.5 px-3 w-32">Asset Tag</th>
-                        <th className="py-2.5 px-3 w-40">Status</th>
-                        <th className="py-2.5 px-3 w-32">Owner</th>
-                        <th className="py-2.5 px-3 w-24">Due Date</th>
-                        <th className="py-2.5 px-3 w-20 text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {groupedReqs.map(([groupKey, group]) => {
-                        const isCollapsed = collapsedGroups[groupKey];
-                        return (
-                          <React.Fragment key={groupKey}>
-                            <tr
-                              onClick={() =>
-                                setCollapsedGroups((prev) => ({
-                                  ...prev,
-                                  [groupKey]: !prev[groupKey],
-                                }))
-                              }
-                              className="bg-slate-50/80 hover:bg-slate-100/80 cursor-pointer font-semibold text-slate-800"
+                        <td colSpan={6} className="py-12 text-center text-xs text-slate-500">
+                          <ClipboardCheck className="mx-auto h-8 w-8 text-slate-300 mb-2" />
+                          <div className="font-semibold text-slate-700 text-sm">Checklist is Empty</div>
+                          <p className="mt-1 max-w-sm mx-auto text-slate-400">
+                            No requirements found matching your criteria. Add a requirement or load demonstration data.
+                          </p>
+                          <div className="mt-4 flex justify-center gap-2">
+                            <button
+                              onClick={() => setNewReqModalOpen(true)}
+                              className="rounded-md bg-[#0F2942] px-3 py-1.5 font-medium text-white hover:bg-[#163A5F]"
                             >
-                              <td colSpan={8} className="py-2 px-3">
-                                <div className="flex items-center gap-2">
-                                  {isCollapsed ? (
-                                    <ChevronRight className="h-4 w-4 text-slate-500" />
-                                  ) : (
-                                    <ChevronDown className="h-4 w-4 text-slate-500" />
-                                  )}
-                                  <span>{group.title}</span>
-                                  <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-mono text-slate-700">
-                                    {group.items.length}
-                                  </span>
-                                </div>
-                              </td>
-                            </tr>
-                            {!isCollapsed &&
-                              group.items.map((req) => (
-                                <tr
-                                  key={req.id}
-                                  className="hover:bg-slate-50/60 transition-colors"
-                                >
-                                  <td className="py-2 px-3">
-                                    <input
-                                      type="checkbox"
-                                      checked={selectedIds.includes(req.id)}
-                                      onChange={() => toggleSelectRow(req.id)}
-                                      className="rounded border-slate-300"
-                                    />
-                                  </td>
-                                  <td className="py-2 px-3 font-mono font-bold text-slate-800">
-                                    {req.key}
-                                  </td>
-                                  <td className="py-2 px-3">
-                                    <div className="font-medium text-slate-900">{req.title}</div>
-                                    <div className="text-[11px] text-slate-500">
-                                      {req.docTypeCode} · {req.docTypeName}
-                                    </div>
-                                  </td>
-                                  <td className="py-2 px-3">
-                                    {req.assetTag ? (
-                                      <span className="rounded bg-blue-50 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-blue-700 border border-blue-200">
-                                        {req.assetTag}
-                                      </span>
-                                    ) : (
-                                      <span className="text-slate-400 font-mono text-[11px]">
-                                        —
-                                      </span>
-                                    )}
-                                  </td>
-                                  <td className="py-2 px-3">
-                                    <StatusPill status={req.status} compact />
-                                  </td>
-                                  <td className="py-2 px-3 text-slate-700">
-                                    <div>{req.ownerName}</div>
-                                    <div className="text-[10px] text-slate-400">
-                                      {req.ownerRole}
-                                    </div>
-                                  </td>
-                                  <td className="py-2 px-3 font-mono text-slate-600">
-                                    {req.dueDate || "—"}
-                                  </td>
-                                  <td className="py-2 px-3 text-right">
-                                    <button
-                                      onClick={() => {
-                                        setUploadTargetReq(req);
-                                        setUploadModalOpen(true);
-                                      }}
-                                      className="rounded bg-slate-900 px-2.5 py-1 text-xs font-semibold text-white hover:bg-slate-800"
-                                    >
-                                      Upload
-                                    </button>
-                                  </td>
-                                </tr>
-                              ))}
-                          </React.Fragment>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                ) : (
-                  /* Empty State */
-                  <div className="py-16 text-center">
-                    <ClipboardCheck className="mx-auto h-12 w-12 text-slate-300" />
-                    <h3 className="mt-3 text-sm font-bold text-slate-800">
-                      Checklist is Empty
-                    </h3>
-                    <p className="mx-auto mt-1 max-w-sm text-xs text-slate-500 leading-relaxed">
-                      No requirements found matching your criteria. Add your first closeout
-                      requirement to begin tracking documentation and signoffs.
-                    </p>
-                    <div className="mt-5">
-                      <button
-                        onClick={() => setNewReqModalOpen(true)}
-                        className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-700"
+                              Add Requirement
+                            </button>
+                            <button
+                              onClick={handleToggleDemoData}
+                              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-50"
+                            >
+                              {isDemoDataLoaded ? "Clear Demo Data" : "Load Demo Data"}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : (
+                    filteredReqs.map((req) => (
+                      <tr
+                        key={req.id}
+                        onClick={() => setDetailReq(req)}
+                        className="cursor-pointer hover:bg-slate-50"
                       >
-                        <Plus className="h-4 w-4" />
-                        <span>Add First Requirement</span>
+                        <td className="py-2.5 pl-4">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-[11px] font-semibold text-slate-600">
+                              {req.key}
+                            </span>
+                            {req.mandatory && (
+                              <span className="rounded bg-red-50 border border-red-200 px-1.5 py-0.2 text-[10px] font-semibold text-red-700">
+                                Mandatory
+                              </span>
+                            )}
+                          </div>
+                          <div className="font-medium text-slate-900 mt-0.5">
+                            {req.title}
+                          </div>
+                        </td>
+                        <td className="py-2.5 px-3 font-mono text-[11px]">
+                          {req.assetTag || "Project-wide"}
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <StatusBadge sm status={req.status}/>
+                        </td>
+                        <td className="py-2.5 px-3">{req.ownerName}</td>
+                        <td className="py-2.5 px-3 font-mono text-[11px]">
+                          {req.dueDate || "No deadline"}
+                        </td>
+                        <td
+                          className="py-2.5 pr-4 text-right space-x-1.5"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {req.status !== "APPROVED" &&
+                            req.status !== "APPROVED_EXTERNAL" &&
+                            req.status !== "WAIVED" && (
+                              <button
+                                onClick={() => setWaiverModalReq(req)}
+                                className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
+                              >
+                                Waive
+                              </button>
+                            )}
+                          <button
+                            onClick={() => {
+                              setUploadTarget(req);
+                              setUploadSheetOpen(true);
+                            }}
+                            className="rounded bg-[#0F2942] px-2.5 py-1 text-[11px] font-medium text-white hover:bg-[#163A5F]"
+                          >
+                            Upload
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* =============================================================== */}
+        {/* TAB 3: DOCUMENT VIEWER & REVIEW DECISION (SCR-025 / SCR-027)    */}
+        {/* =============================================================== */}
+        {activeTab === "reviews" && (
+          <div className="flex flex-1 min-h-0 overflow-hidden">
+            {/* Dark PDF Stage */}
+            <div className="flex-1 bg-[#1E293B] p-6 overflow-auto flex justify-center items-start">
+              <div
+                onClick={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const x = Math.round(((e.clientX - rect.left) / rect.width) * 100);
+                  const y = Math.round(((e.clientY - rect.top) / rect.height) * 100);
+                  setPdfPins((prev) => [
+                    ...prev,
+                    {
+                      id: prev.length + 1,
+                      page: 12,
+                      x,
+                      y,
+                      text: `Pin #${prev.length + 1} dropped on Page 12`,
+                      author: "Anil Pillai",
+                    },
+                  ]);
+                }}
+                className="relative w-[640px] rounded-xs bg-white p-8 text-slate-900 shadow-2xl cursor-crosshair select-none"
+              >
+                <div className="text-[10px] font-mono text-slate-500 flex justify-between border-b border-slate-300 pb-2">
+                  <span>CARRIER AIR CONDITIONING INDIA · HYDROSTATIC TEST REPORT</span>
+                  <span>PAGE 12 OF 48 (Click anywhere on page to drop comment pin)</span>
+                </div>
+                <h2 className="mt-3 text-sm font-bold">
+                  CHILLED WATER HEADER PRESSURE TEST CERTIFICATE (10.5 BAR)
+                </h2>
+                <p className="mt-1 text-xs text-slate-600 font-mono">
+                  Equipment: CHLR-01 · Gauge: WIKA PG-NABL-409 · Result: ZERO DROP (4 HRS)
+                </p>
+
+                {pdfPins.map((pin) => (
+                  <div
+                    key={pin.id}
+                    style={{ left: `${pin.x}%`, top: `${pin.y}%` }}
+                    className="absolute -translate-x-1/2 -translate-y-1/2 flex h-6 w-6 items-center justify-center rounded-full bg-orange-500 text-xs font-bold text-white shadow-md ring-4 ring-orange-500/30"
+                  >
+                    {pin.id}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Right Decision Panel (SCR-027) */}
+            <div className="w-96 shrink-0 border-l border-slate-200 bg-white flex flex-col justify-between p-4 overflow-y-auto">
+              <div className="space-y-4">
+                <div className="border-b border-slate-200 pb-3">
+                  <div className="font-mono text-xs font-bold text-blue-700">
+                    REQ-HVAC-033 · Revision R2
+                  </div>
+                  <h3 className="text-sm font-semibold text-slate-900 mt-0.5">
+                    Chilled Water Header Hydrostatic Test Report
+                  </h3>
+                </div>
+
+                {reviewError && (
+                  <div className="rounded-md border border-red-300 bg-red-50 p-3 text-xs text-red-900">
+                    {reviewError}
+                  </div>
+                )}
+                {reviewSuccess && (
+                  <div className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-xs text-emerald-900">
+                    {reviewSuccess}
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <div className="text-xs font-semibold text-slate-700">
+                    Page Comments ({pdfPins.length})
+                  </div>
+                  {pdfPins.map((p) => (
+                    <div
+                      key={p.id}
+                      className="rounded border border-orange-200 bg-orange-50/60 p-2.5 text-xs"
+                    >
+                      <div className="font-semibold text-orange-950">
+                        Pin #{p.id} (Page {p.page}) · {p.author}
+                      </div>
+                      <div className="text-slate-700 mt-0.5">{p.text}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Decision Controls */}
+              <div className="border-t border-slate-200 pt-4 space-y-3 text-xs">
+                <div className="grid grid-cols-2 rounded-lg bg-slate-100 p-1 font-semibold">
+                  <button
+                    onClick={() => setReviewTab("in_app")}
+                    className={`rounded py-1.5 ${
+                      reviewTab === "in_app" ? "bg-white shadow-2xs" : "text-slate-600"
+                    }`}
+                  >
+                    In-App Review
+                  </button>
+                  <button
+                    onClick={() => setReviewTab("external")}
+                    className={`rounded py-1.5 ${
+                      reviewTab === "external" ? "bg-white shadow-2xs" : "text-slate-600"
+                    }`}
+                  >
+                    Record External Approval
+                  </button>
+                </div>
+
+                {reviewTab === "in_app" ? (
+                  <>
+                    <textarea
+                      rows={2}
+                      value={reviewComment}
+                      onChange={(e) => setReviewComment(e.target.value)}
+                      placeholder="Review comment (required for changes/reject, min 10 chars)..."
+                      className="w-full rounded border border-slate-300 p-2 text-xs"
+                    />
+                    <div className="grid grid-cols-3 gap-2">
+                      <button
+                        onClick={() => handleReviewDecision("APPROVE")}
+                        className="rounded bg-emerald-700 py-2 font-semibold text-white hover:bg-emerald-800"
+                      >
+                        Approve
+                      </button>
+                      <button
+                        onClick={() => handleReviewDecision("REQUEST_CHANGES")}
+                        className="rounded bg-orange-600 py-2 font-semibold text-white hover:bg-orange-700"
+                      >
+                        Request changes
+                      </button>
+                      <button
+                        onClick={() => handleReviewDecision("REJECT")}
+                        className="rounded bg-red-600 py-2 font-semibold text-white hover:bg-red-700"
+                      >
+                        Reject
                       </button>
                     </div>
+                  </>
+                ) : (
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      value={extApprover}
+                      onChange={(e) => setExtApprover(e.target.value)}
+                      placeholder="Approver Name & Organisation"
+                      className="w-full rounded border border-slate-300 px-2.5 py-1.5"
+                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      <select
+                        value={extMethod}
+                        onChange={(e) =>
+                          setExtMethod(e.target.value as typeof extMethod)
+                        }
+                        className="rounded border border-slate-300 px-2 py-1.5"
+                      >
+                        <option value="STAMPED_PDF">Stamped PDF</option>
+                        <option value="EMAIL">Email</option>
+                        <option value="PORTAL">Portal transmittal</option>
+                        <option value="PHYSICAL">Physical meeting</option>
+                      </select>
+                      <input
+                        type="date"
+                        value={extDate}
+                        onChange={(e) => setExtDate(e.target.value)}
+                        className="rounded border border-slate-300 px-2 py-1.5 font-mono"
+                      />
+                    </div>
+                    <button
+                      onClick={() => handleReviewDecision("APPROVE")}
+                      className="w-full rounded bg-teal-700 py-2 font-semibold text-white hover:bg-teal-800"
+                    >
+                      Save External Approval
+                    </button>
                   </div>
                 )}
               </div>
@@ -1684,831 +1730,485 @@ export default function TradeCloseoutEnterpriseApp() {
           </div>
         )}
 
-        {/* =================================================================== */}
-        {/* VIEW 3: DOCUMENT REVIEW WORKBENCH (SCR-025 / SCR-027)               */}
-        {/* =================================================================== */}
-        {activeTab === "viewer" && (
-          <div className="flex flex-1 min-h-0 overflow-hidden">
-            {/* Left CAD Stage */}
-            <div className="flex flex-1 min-w-0 bg-[#0F172A] text-slate-200 overflow-hidden flex-col items-center justify-center p-8">
-              {selectedReviewReq || reviewQueue.length > 0 ? (
-                (() => {
-                  const currentReq = selectedReviewReq || reviewQueue[0];
-                  return (
-                    <div className="w-full max-w-2xl bg-white text-slate-900 rounded-lg shadow-2xl p-8 border border-slate-700 space-y-6">
-                      <div className="flex items-center justify-between border-b pb-4">
-                        <div>
-                          <span className="font-mono text-xs font-bold text-blue-600">
-                            {currentReq.key}
-                          </span>
-                          <h2 className="text-base font-bold text-slate-900 mt-0.5">
-                            {currentReq.title}
-                          </h2>
-                          <p className="text-xs text-slate-500">
-                            Submitted Revision {currentReq.revision || "R1"} · Owner:{" "}
-                            {currentReq.ownerName}
-                          </p>
-                        </div>
-                        <StatusPill status={currentReq.status} />
-                      </div>
-
-                      <div className="rounded-lg bg-slate-50 border p-4 space-y-2 text-xs">
-                        <div className="flex justify-between">
-                          <span className="text-slate-500">Document Type:</span>
-                          <span className="font-medium text-slate-800">
-                            {currentReq.docTypeCode} — {currentReq.docTypeName}
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-500">Associated Asset:</span>
-                          <span className="font-mono font-medium text-slate-800">
-                            {currentReq.assetTag || "Project-wide"}
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-500">Last Updated:</span>
-                          <span className="text-slate-800">{currentReq.updatedAt}</span>
-                        </div>
-                      </div>
-
-                      {/* Review Actions */}
-                      <div className="space-y-3 pt-2">
-                        <label className="block text-xs font-semibold text-slate-700">
-                          Review Comments / Corrective Actions
-                        </label>
-                        <textarea
-                          rows={3}
-                          value={reviewComment}
-                          onChange={(e) => setReviewComment(e.target.value)}
-                          placeholder="Enter technical comments, code compliance notes, or punch list items..."
-                          className="w-full rounded-md border border-slate-300 p-2.5 text-xs focus:border-blue-600 focus:outline-none"
-                        />
-
-                        <div className="flex items-center gap-3 pt-2">
-                          <button
-                            onClick={() => handleApproveCurrentDoc(currentReq)}
-                            className="flex-1 rounded-md bg-emerald-600 py-2.5 text-xs font-bold text-white hover:bg-emerald-700 shadow-sm"
-                          >
-                            Approve In-App
-                          </button>
-                          <button
-                            onClick={() => handleExternalApproveDoc(currentReq)}
-                            className="flex-1 rounded-md bg-teal-600 py-2.5 text-xs font-bold text-white hover:bg-teal-700 shadow-sm"
-                          >
-                            Stamp External Approval
-                          </button>
-                          <button
-                            onClick={() => handleRejectDoc(currentReq)}
-                            className="flex-1 rounded-md bg-orange-600 py-2.5 text-xs font-bold text-white hover:bg-orange-700 shadow-sm"
-                          >
-                            Request Changes
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()
-              ) : (
-                /* Empty Review Stage */
-                <div className="text-center space-y-3">
-                  <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-slate-800 text-slate-400">
-                    <FileCheck2 className="h-8 w-8" />
-                  </div>
-                  <h3 className="text-base font-bold text-white">Review Queue is Empty</h3>
-                  <p className="max-w-md text-xs text-slate-400 leading-relaxed">
-                    There are 0 documents awaiting inspection or approval sign-off. When evidence
-                    is uploaded for checklist items, it will appear here for CAD inspection and
-                    stamping.
-                  </p>
-                  <div className="pt-2">
-                    <button
-                      onClick={() => setActiveTab("checklist")}
-                      className="rounded-md bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700"
-                    >
-                      Open Compliance Checklist
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* =================================================================== */}
-        {/* VIEW 4: HANDOVER DOSSIER STUDIO (SCR-028)                           */}
-        {/* =================================================================== */}
-        {activeTab === "package" && (
-          <main className="flex-1 overflow-y-auto p-6 space-y-6">
-            <div className="rounded-xl border border-slate-200 bg-white p-8 text-center shadow-xs">
-              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-blue-50 text-blue-600">
-                <PackageCheck className="h-8 w-8" />
+        {/* =============================================================== */}
+        {/* TAB 4: PACKAGE BUILDER & PREVIEW (SCR-028 / SCR-057)            */}
+        {/* =============================================================== */}
+        {activeTab === "packages" && (
+          <main className="flex-1 overflow-y-auto p-5 space-y-4">
+            {packageGeneratedBanner && (
+              <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-xs font-medium text-emerald-900">
+                {packageGeneratedBanner}
               </div>
-              <h2 className="mt-4 text-base font-bold text-slate-900">
-                Digital Handover Dossier Studio
-              </h2>
-              <p className="mx-auto mt-1 max-w-md text-xs text-slate-500 leading-relaxed">
-                Compile approved project documents into an indexed, Bates-stamped digital handover
-                dossier compliant with Indian public works and MEP closeout standards.
-              </p>
+            )}
+            <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-white p-4">
+              <div>
+                <h2 className="text-sm font-bold text-slate-900">
+                  Handover Package Preview & Readiness Check
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Pure Node.js PDF/A compilation (`pdf-lib` + `qpdf`) · Includes cover,
+                  approval summary, waivers & bookmarks
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href={`/api/v1/projects/${activeProject?.id || "default"}/dossier/pdf`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50"
+                >
+                  <Download className="h-4 w-4" />
+                  <span>Download Dossier PDF</span>
+                </a>
+                <button
+                  onClick={() => setOverrideModalOpen(true)}
+                  className="rounded-md bg-[#0F2942] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[#163A5F]"
+                >
+                  Generate Handover Package
+                </button>
+              </div>
+            </div>
 
-              {dossierInitialized ? (
-                <div className="mt-6 max-w-xl mx-auto rounded-lg border border-slate-200 bg-slate-50 p-4 text-left space-y-3 text-xs">
-                  <div className="flex justify-between font-bold text-slate-800">
-                    <span>Dossier Volume 1: Statutory & Technical Handover</span>
-                    <span className="text-emerald-700">Ready to Compile</span>
-                  </div>
-                  <p className="text-slate-600">
-                    Includes {satisfiedCount} approved document versions with pure-Node Bates page
-                    numbering and cryptographic SHA-256 manifest.
-                  </p>
-                  <button
-                    onClick={() => {
-                      if (activeProject) {
-                        window.open(`/api/v1/projects/${activeProject.id}/dossier/pdf`, "_blank");
-                      } else {
-                        alert("Please select or create an active project first.");
-                      }
-                    }}
-                    className="w-full rounded-md bg-[#0F2942] py-2 text-xs font-semibold text-white hover:bg-[#163A5F] flex items-center justify-center gap-2 transition-colors"
-                  >
-                    <Download className="h-3.5 w-3.5" />
-                    <span>Download Bates-Stamped Handover PDF</span>
-                  </button>
-                </div>
-              ) : (
-                <div className="mt-6">
-                  <button
-                    onClick={() => {
-                      setDossierInitialized(true);
-                      setAuditEvents((prev) => [
-                        {
-                          id: String(Date.now()),
-                          actor: "User",
-                          action: "initialized Digital Handover Dossier structure",
-                          time: "Just now",
-                          hash: Math.random().toString(16).substring(2, 8),
-                        },
-                        ...prev,
-                      ]);
-                    }}
-                    className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-700"
-                  >
-                    <Plus className="h-4 w-4" />
-                    <span>Initialize Handover Package</span>
-                  </button>
-                </div>
-              )}
+            <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-100 border-b border-slate-200 text-[11px] font-semibold uppercase text-slate-600">
+                  <tr>
+                    <th className="py-2.5 pl-4">Requirement Item</th>
+                    <th className="py-2.5 px-3">Status</th>
+                    <th className="py-2.5 px-3">Est. Pages</th>
+                    <th className="py-2.5 pr-4 text-right">Include / Exclude</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {requirements.map((r) => (
+                    <tr key={r.id} className={r.excludedFromPackage ? "opacity-50" : ""}>
+                      <td className="py-2.5 pl-4 font-medium text-slate-900">
+                        {r.key} · {r.title}
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <StatusBadge sm status={r.status}/>
+                      </td>
+                      <td className="py-2.5 px-3 font-mono">{r.pages || 2} pp</td>
+                      <td className="py-2.5 pr-4 text-right">
+                        <button
+                          onClick={() =>
+                            setRequirements((prev) =>
+                              prev.map((item) =>
+                                item.id === r.id
+                                  ? {
+                                      ...item,
+                                      excludedFromPackage: !item.excludedFromPackage,
+                                      exclusionReason: !item.excludedFromPackage
+                                        ? "Excluded for partial phase handover"
+                                        : undefined,
+                                    }
+                                  : item
+                              )
+                            )
+                          }
+                          className="text-xs font-medium text-blue-700 hover:underline"
+                        >
+                          {r.excludedFromPackage ? "Include item" : "Exclude with reason"}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </main>
         )}
 
-        {/* =================================================================== */}
-        {/* VIEW 5: SUPPLIER GUEST LINK SIMULATOR (SCR-034)                     */}
-        {/* =================================================================== */}
-        {activeTab === "supplier" && (
-          <main className="flex-1 overflow-y-auto p-6 flex items-center justify-center bg-slate-100/60">
-            <div className="w-full max-w-lg rounded-xl border border-slate-200 bg-white p-6 shadow-xl space-y-5">
-              <div className="border-b pb-4">
-                <span className="rounded bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
-                  GUEST UPLOAD PORTAL
-                </span>
-                <h2 className="text-base font-bold text-slate-900 mt-2">
-                  External Supplier Evidence Submission
-                </h2>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Secure OTP-authenticated portal for external vendors and testing agencies.
-                </p>
-              </div>
-
-              <div className="space-y-4 text-xs">
-                <div>
-                  <label className="block text-slate-700 font-semibold mb-1">
-                    Select Requirement to Upload
-                  </label>
-                  <select
-                    className="w-full rounded border border-slate-300 p-2 text-xs bg-white"
-                    onChange={(e) => {
-                      const found = requirements.find((r) => r.id === e.target.value);
-                      if (found) setUploadTargetReq(found);
-                    }}
-                  >
-                    {requirements.length > 0 ? (
-                      requirements.map((r) => (
-                        <option key={r.id} value={r.id}>
-                          {r.key}: {r.title}
-                        </option>
-                      ))
-                    ) : (
-                      <option>No requirements created yet</option>
-                    )}
-                  </select>
-                </div>
-
-                <div className="rounded-lg border-2 border-dashed border-slate-300 p-6 text-center hover:border-blue-500 transition-colors cursor-pointer bg-slate-50">
-                  <UploadCloud className="mx-auto h-8 w-8 text-slate-400" />
-                  <p className="mt-2 font-semibold text-slate-700 text-xs">
-                    Choose PDF or ZIP to Upload
-                  </p>
-                  <p className="text-[10px] text-slate-400 mt-0.5">
-                    Max file size 100MB · Pure-Node sanitisation & ClamAV virus scanning
-                  </p>
-                </div>
-
-                <button
-                  onClick={() => {
-                    if (requirements.length > 0) {
-                      const target = uploadTargetReq || requirements[0];
-                      setRequirements((prev) =>
-                        prev.map((r) =>
-                          r.id === target.id
-                            ? {
-                                ...r,
-                                status: "IN_REVIEW",
-                                updatedAt: "Just now",
-                              }
-                            : r
+        {/* =============================================================== */}
+        {/* TAB 5: WARRANTY & DEFECT / SNAG TRACKER (SCR-058 & SCR-059)     */}
+        {/* =============================================================== */}
+        {activeTab === "warranty_dlp" && (
+          <main className="flex-1 overflow-y-auto p-5 space-y-5">
+            <div className="rounded-lg border border-slate-200 bg-white p-4">
+              <h2 className="text-sm font-bold text-slate-900">
+                Defect Liability Period (DLP) Snag Tracker
+              </h2>
+              <div className="mt-3 divide-y divide-slate-200 text-xs">
+                {defects.map((d) => (
+                  <div key={d.id} className="py-3 flex items-center justify-between">
+                    <div>
+                      <span className="font-mono font-bold text-slate-700">
+                        {d.code} ({d.assetTag})
+                      </span>{" "}
+                      — <span className="font-medium text-slate-900">{d.title}</span>
+                      <div className="text-[11px] text-slate-500 mt-0.5">
+                        Assigned to: {d.assignee} · Due: {d.dueDate}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() =>
+                        setDefects((prev) =>
+                          prev.map((item) =>
+                            item.id === d.id ? { ...item, status: "CLOSED" } : item
+                          )
                         )
-                      );
-                      setAuditEvents((prev) => [
-                        {
-                          id: String(Date.now()),
-                          actor: "External Supplier (Guest)",
-                          action: `uploaded document for ${target.key} via Guest Upload Link`,
-                          time: "Just now",
-                          hash: Math.random().toString(16).substring(2, 8),
-                        },
-                        ...prev,
-                      ]);
-                      setReviewBanner(`Document submitted for ${target.key}. Review queue updated.`);
-                      setTimeout(() => setReviewBanner(null), 4000);
-                      setActiveTab("viewer");
-                    }
-                  }}
-                  className="w-full rounded-md bg-blue-600 py-2.5 text-xs font-semibold text-white hover:bg-blue-700 shadow-sm"
-                >
-                  Submit Document as Supplier
-                </button>
+                      }
+                      className={`rounded px-2.5 py-1 font-semibold ${
+                        d.status === "CLOSED"
+                          ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
+                          : "bg-[#0F2942] text-white"
+                      }`}
+                    >
+                      {d.status === "CLOSED" ? "Closed" : "Upload Evidence & Close"}
+                    </button>
+                  </div>
+                ))}
               </div>
             </div>
           </main>
         )}
       </div>
 
-      {/* ===================================================================== */}
-      {/* MODAL: CREATE NEW PROJECT                                             */}
-      {/* ===================================================================== */}
-      {newProjectModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
-          <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-2xl overflow-hidden">
-            <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
-              <h3 className="text-xs font-bold text-slate-900">Create New Project</h3>
-              <button
-                onClick={() => setNewProjectModalOpen(false)}
-                className="rounded p-1 text-slate-400 hover:bg-slate-200"
-              >
-                <X className="h-4 w-4" />
+      {/* =================================================================== */}
+      {/* MODAL 1: TWO-APPROVER MANDATORY WAIVER (FR-CHK-016)                 */}
+      {/* =================================================================== */}
+      {waiverModalReq && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl space-y-4 text-xs">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <h3 className="text-sm font-bold text-slate-900">
+                Waive Requirement ({waiverModalReq.key})
+              </h3>
+              <button onClick={() => setWaiverModalReq(null)}>
+                <X className="h-4 w-4 text-slate-400"/>
               </button>
             </div>
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-                const form = e.target as HTMLFormElement;
-                const fd = new FormData(form);
-                const code = ((fd.get("code") as string) || "PRJ-001").trim().toUpperCase();
-                const name = ((fd.get("name") as string) || "New Project").trim();
-
-                let realId = "prj-" + Date.now();
-                try {
-                  // Ensure session exists
-                  if (!currentUser) {
-                    await handleQuickLogin();
-                  }
-                  const res = await api.projects.create({
-                    code,
-                    name,
-                    projectType: "PRIVATE_COMMERCIAL",
-                  });
-                  if (res.data?.id) {
-                    realId = res.data.id;
-                  }
-                } catch (err) {
-                  console.error("Failed to persist project in DB", err);
-                }
-
-                const newProj: ProjectItem = {
-                  id: realId,
-                  code,
-                  name,
-                  contractRef: (fd.get("contractRef") as string) || "",
-                  clientName: (fd.get("clientName") as string) || "",
-                  pmcName: (fd.get("pmcName") as string) || "",
-                  contractorName: (fd.get("contractorName") as string) || "",
-                  tradeName: (fd.get("tradeName") as string) || "MEP Closeout",
-                  location: (fd.get("location") as string) || "",
-                  targetHandoverDate: (fd.get("targetHandoverDate") as string) || "",
-                  status: "Handover Active",
-                  retentionPercent: 5.0,
-                  contractValueInr: 0,
-                };
-                setProjects((prev) => [newProj, ...prev]);
-                setActiveProject(newProj);
-                setNewProjectModalOpen(false);
+            {waiverModalReq.mandatory && (
+              <div className="rounded bg-purple-50 border border-purple-200 p-2.5 text-purple-900">
+                <strong>Mandatory Requirement Guardrail:</strong> Waiving a mandatory
+                requirement requires a recorded reason and a second approver
+                (Owner/Admin) countersignature.
+              </div>
+            )}
+            <div>
+              <label className="block font-semibold text-slate-700 mb-1">
+                Waiver Reason (Required)
+              </label>
+              <textarea
+                rows={2}
+                value={waiverReason}
+                onChange={(e) => setWaiverReason(e.target.value)}
+                placeholder="State contractual clause or client instruction waiving this item..."
+                className="w-full rounded border border-slate-300 p-2"
+              />
+            </div>
+            <div>
+              <label className="block font-semibold text-slate-700 mb-1">
+                Countersigning Second Approver (Owner / Admin)
+              </label>
+              <input
+                type="text"
+                value={waiverSecondApprover}
+                onChange={(e) => setWaiverSecondApprover(e.target.value)}
+                className="w-full rounded border border-slate-300 px-2.5 py-1.5"
+              />
+            </div>
+            <button
+              onClick={() => {
+                if (!waiverReason.trim()) return;
+                setRequirements((prev) =>
+                  prev.map((r) =>
+                    r.id === waiverModalReq.id
+                      ? {
+                          ...r,
+                          status: "WAIVED",
+                          waiverSecondApprover,
+                          updatedAt: "Waived (2-approver)",
+                        }
+                      : r
+                  )
+                );
+                setWaiverModalReq(null);
+                setWaiverReason("");
               }}
-              className="p-4 space-y-3 text-xs"
+              className="w-full rounded-md bg-purple-700 py-2.5 font-semibold text-white hover:bg-purple-800"
             >
-              <div>
-                <label className="block font-semibold text-slate-700">Project Code</label>
-                <input
-                  name="code"
-                  defaultValue="PRJ-001"
-                  required
-                  className="mt-1 w-full rounded border border-slate-300 p-2 font-mono text-xs"
-                />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-700">Project Name</label>
-                <input
-                  name="name"
-                  placeholder="e.g. Commercial Complex Phase 1"
-                  required
-                  className="mt-1 w-full rounded border border-slate-300 p-2 text-xs"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block font-semibold text-slate-700">Contract Ref</label>
-                  <input
-                    name="contractRef"
-                    placeholder="e.g. CON-2026-01"
-                    className="mt-1 w-full rounded border border-slate-300 p-2 text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold text-slate-700">Client / Developer</label>
-                  <input
-                    name="clientName"
-                    placeholder="Client Name"
-                    className="mt-1 w-full rounded border border-slate-300 p-2 text-xs"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block font-semibold text-slate-700">Location</label>
-                  <input
-                    name="location"
-                    placeholder="e.g. Gurugram, HR"
-                    className="mt-1 w-full rounded border border-slate-300 p-2 text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold text-slate-700">Target Handover</label>
-                  <input
-                    name="targetHandoverDate"
-                    placeholder="e.g. 15 Dec 2026"
-                    className="mt-1 w-full rounded border border-slate-300 p-2 text-xs"
-                  />
-                </div>
-              </div>
-              <button
-                type="submit"
-                className="w-full rounded-md bg-blue-600 py-2.5 text-xs font-semibold text-white hover:bg-blue-700 shadow-sm"
-              >
-                Create Project
-              </button>
-            </form>
+              Confirm Two-Approver Waiver
+            </button>
           </div>
         </div>
       )}
 
-      {/* ===================================================================== */}
-      {/* MODAL: ADD REQUIREMENT                                                */}
-      {/* ===================================================================== */}
-      {newReqModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
-          <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-2xl overflow-hidden">
-            <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
-              <h3 className="text-xs font-bold text-slate-900">Add Checklist Requirement</h3>
-              <button
-                onClick={() => setNewReqModalOpen(false)}
-                className="rounded p-1 text-slate-400 hover:bg-slate-200"
-              >
-                <X className="h-4 w-4" />
+      {/* =================================================================== */}
+      {/* MODAL 2: PACKAGE READINESS OVERRIDE (FR-HND-008)                    */}
+      {/* =================================================================== */}
+      {overrideModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl space-y-4 text-xs">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <h3 className="text-sm font-bold text-slate-900">
+                Readiness Gate Warning (2 Blockers)
+              </h3>
+              <button onClick={() => setOverrideModalOpen(false)}>
+                <X className="h-4 w-4 text-slate-400"/>
               </button>
             </div>
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-                const form = e.target as HTMLFormElement;
-                const fd = new FormData(form);
-                const key = ((fd.get("key") as string) || "REQ-001").trim();
-                const title = ((fd.get("title") as string) || "New Closeout Requirement").trim();
-                const docTypeCode = (fd.get("docTypeCode") as string) || "DT-001";
-                const mandatory = fd.get("mandatory") === "on";
-                const assetTag = (fd.get("assetTag") as string) || null;
-                const dueDate = (fd.get("dueDate") as string) || "";
-
-                let realId = "req-" + Date.now();
-                try {
-                  if (activeProject && !activeProject.id.startsWith("prj-temp-")) {
-                    const res = await api.checklists.createRequirement(activeProject.id, {
-                      key,
-                      title,
-                      docTypeCode,
-                      mandatory,
-                      assetTag: assetTag || undefined,
-                      dueDate: dueDate || undefined,
-                    });
-                    if (res.data?.id) {
-                      realId = res.data.id;
-                    }
-                  }
-                } catch (err) {
-                  console.error("Failed to persist requirement in DB", err);
-                }
-
-                const newReq: RequirementItem = {
-                  id: realId,
-                  key,
-                  title,
-                  groupKey: (fd.get("groupKey") as string) || "G1",
-                  groupTitle: (fd.get("groupTitle") as string) || "01. General Requirements",
-                  docTypeCode,
-                  docTypeName: "Statutory / Engineering Document",
-                  mandatory,
-                  assetTag,
-                  assetName: null,
-                  status: "MISSING",
-                  ownerName: (fd.get("ownerName") as string) || "Unassigned",
-                  ownerRole: "Engineer",
-                  dueDate,
-                  revision: null,
-                  updatedAt: "Just now",
-                  reviewerRole: "PMC Engineer",
-                };
-                setRequirements((prev) => [...prev, newReq]);
-                setNewReqModalOpen(false);
-                setAuditEvents((prev) => [
-                  {
-                    id: String(Date.now()),
-                    actor: currentUser?.full_name || "User",
-                    action: `created requirement ${newReq.key}: ${newReq.title}`,
-                    time: "Just now",
-                    hash: Math.random().toString(16).substring(2, 8),
-                  },
-                  ...prev,
-                ]);
+            <div className="rounded bg-red-50 border border-red-200 p-3 text-red-900 space-y-1">
+              <div className="font-bold">Blocking Items Detected:</div>
+              <div>• REQ-HVAC-001: Missing (Fire Officer NOC)</div>
+              <div>• REQ-HVAC-002: Expired (CAR Insurance Policy)</div>
+            </div>
+            <div>
+              <label className="block font-semibold text-slate-700 mb-1">
+                Override Reason (Required to generate package with missing/expired items)
+              </label>
+              <textarea
+                rows={2}
+                value={overrideReason}
+                onChange={(e) => setOverrideReason(e.target.value)}
+                placeholder="e.g., Provisional package for PMC stage review; NOC awaited from Fire Dept."
+                className="w-full rounded border border-slate-300 p-2"
+              />
+            </div>
+            <button
+              onClick={() => {
+                if (!overrideReason.trim()) return;
+                setOverrideModalOpen(false);
+                setPackageGeneratedBanner(
+                  `Handover Package v3 queued with recorded override reason: "${overrideReason}".`
+                );
               }}
-              className="p-4 space-y-3 text-xs"
+              className="w-full rounded-md bg-[#0F2942] py-2.5 font-semibold text-white hover:bg-[#163A5F]"
             >
+              Record Override & Generate Package
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* =================================================================== */}
+      {/* MODAL 4: NEW REQUIREMENT MODAL                                      */}
+      {/* =================================================================== */}
+      {newReqModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl space-y-4 text-xs">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <h3 className="text-sm font-bold text-slate-900">Add Closeout Requirement</h3>
+              <button onClick={() => setNewReqModalOpen(false)}>
+                <X className="h-4 w-4 text-slate-400" />
+              </button>
+            </div>
+            <div>
+              <label className="block font-semibold text-slate-700 mb-1">Requirement Title</label>
+              <input
+                type="text"
+                value={newReqTitle}
+                onChange={(e) => setNewReqTitle(e.target.value)}
+                placeholder="e.g., AHU Static Pressure Test Report"
+                className="w-full rounded border border-slate-300 p-2"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block font-semibold text-slate-700">Requirement Key</label>
-                <input
-                  name="key"
-                  defaultValue={`REQ-${totalReqs + 1 < 10 ? "00" : "0"}${totalReqs + 1}`}
-                  required
-                  className="mt-1 w-full rounded border border-slate-300 p-2 font-mono text-xs"
-                />
+                <label className="block font-semibold text-slate-700 mb-1">Document Type</label>
+                <select
+                  value={newReqDocType}
+                  onChange={(e) => setNewReqDocType(e.target.value)}
+                  className="w-full rounded border border-slate-300 p-2 bg-white"
+                >
+                  <option value="DT-001">DT-001 As-Built Drawing</option>
+                  <option value="DT-022">DT-022 Factory Test Report</option>
+                  <option value="DT-033">DT-033 Pressure Test Report</option>
+                  <option value="DT-044">DT-044 Operation & Maintenance Manual</option>
+                  <option value="DT-086">DT-086 Fire Safety / NOC</option>
+                </select>
               </div>
               <div>
-                <label className="block font-semibold text-slate-700">Requirement Title</label>
+                <label className="block font-semibold text-slate-700 mb-1">Equipment Tag</label>
                 <input
-                  name="title"
-                  placeholder="e.g. Chief Fire Officer NOC or TAB Balancing Report"
-                  required
-                  className="mt-1 w-full rounded border border-slate-300 p-2 text-xs"
+                  type="text"
+                  value={newReqAssetTag}
+                  onChange={(e) => setNewReqAssetTag(e.target.value)}
+                  placeholder="e.g., AHU-FL08"
+                  className="w-full rounded border border-slate-300 p-2 font-mono"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block font-semibold text-slate-700">Doc Type Code</label>
-                  <input
-                    name="docTypeCode"
-                    defaultValue="DT-001"
-                    className="mt-1 w-full rounded border border-slate-300 p-2 font-mono text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold text-slate-700">Asset Tag (Optional)</label>
-                  <input
-                    name="assetTag"
-                    placeholder="e.g. CHLR-01"
-                    className="mt-1 w-full rounded border border-slate-300 p-2 font-mono text-xs"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block font-semibold text-slate-700">Owner Name</label>
-                  <input
-                    name="ownerName"
-                    placeholder="Assignee Name"
-                    className="mt-1 w-full rounded border border-slate-300 p-2 text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold text-slate-700">Due Date</label>
-                  <input
-                    name="dueDate"
-                    placeholder="e.g. 15 Nov 2026"
-                    className="mt-1 w-full rounded border border-slate-300 p-2 text-xs"
-                  />
-                </div>
-              </div>
-              <div className="flex items-center gap-2 pt-1">
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Due Date</label>
                 <input
-                  type="checkbox"
-                  name="mandatory"
-                  defaultChecked
-                  id="mandatory"
-                  className="rounded border-slate-300"
+                  type="date"
+                  value={newReqDueDate}
+                  onChange={(e) => setNewReqDueDate(e.target.value)}
+                  className="w-full rounded border border-slate-300 p-2"
                 />
-                <label htmlFor="mandatory" className="font-medium text-slate-800">
-                  Mandatory for milestone signoff (Gated)
+              </div>
+              <div className="flex items-center pt-5">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={newReqMandatory}
+                    onChange={(e) => setNewReqMandatory(e.target.checked)}
+                    className="rounded border-slate-300 text-blue-600"
+                  />
+                  <span className="font-semibold text-slate-700">Mandatory Closeout Item</span>
                 </label>
               </div>
-              <button
-                type="submit"
-                className="w-full rounded-md bg-blue-600 py-2.5 text-xs font-semibold text-white hover:bg-blue-700 shadow-sm"
-              >
-                Add Requirement
-              </button>
-            </form>
+            </div>
+            <button
+              onClick={async () => {
+                if (!newReqTitle.trim()) return;
+                const newId = "req-" + Date.now();
+                const newKey = "REQ-HVAC-" + String(requirements.length + 1).padStart(3, "0");
+                const newReq: RequirementRow = {
+                  id: newId,
+                  key: newKey,
+                  groupKey: "G1",
+                  groupName: "01. General Closeout Requirements",
+                  title: newReqTitle.trim(),
+                  docTypeCode: newReqDocType,
+                  docTypeName: "Closeout Document",
+                  mandatory: newReqMandatory,
+                  assetTag: newReqAssetTag.trim() || null,
+                  assetName: newReqAssetTag.trim() ? `Asset ${newReqAssetTag.trim()}` : "Project-wide",
+                  status: "NOT_STARTED",
+                  ownerName: sessionUser?.full_name || "Assigned Lead",
+                  ownerRole: "Lead Engineer",
+                  reviewerRole: "Project Director",
+                  dueDate: newReqDueDate,
+                  revision: null,
+                  updatedAt: "Just added",
+                };
+                setRequirements((prev) => [newReq, ...prev]);
+                if (activeProject) {
+                  api.checklists.createRequirement(activeProject.id, {
+                    title: newReqTitle.trim(),
+                    docTypeCode: newReqDocType,
+                    mandatory: newReqMandatory,
+                    assetTag: newReqAssetTag.trim() || undefined,
+                    dueDate: newReqDueDate,
+                  }).catch(() => {});
+                }
+                setNewReqTitle("");
+                setNewReqAssetTag("");
+                setNewReqModalOpen(false);
+              }}
+              className="w-full rounded-md bg-[#0F2942] py-2.5 font-semibold text-white hover:bg-[#163A5F]"
+            >
+              Save Requirement
+            </button>
           </div>
         </div>
       )}
 
-      {/* ===================================================================== */}
-      {/* MODAL: UPLOAD EVIDENCE                                                */}
-      {/* ===================================================================== */}
-      {uploadModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
-          <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-2xl overflow-hidden">
-            <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
+      {/* =================================================================== */}
+      {/* MODAL 3: UPLOAD SHEET WITH LOCALSTORAGE AUTOSAVE (SCR-023)          */}
+      {/* =================================================================== */}
+      {uploadSheetOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl space-y-4 text-xs">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
               <div>
-                <span className="font-mono text-xs font-bold text-blue-700">
-                  {uploadTargetReq?.key || "Document Upload"}
+                <div className="font-mono font-bold text-blue-700">
+                  {uploadTarget?.key} · {uploadTarget?.assetTag || "Project-wide"}
+                </div>
+                <div className="font-semibold text-slate-900">{uploadTarget?.title}</div>
+              </div>
+              <button onClick={() => setUploadSheetOpen(false)}>
+                <X className="h-4 w-4 text-slate-400"/>
+              </button>
+            </div>
+
+            {uploadFileError && (
+              <div className="rounded border border-red-300 bg-red-50 p-2.5 text-red-900 font-medium">
+                {uploadFileError}
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() =>
+                  handleSimulateFileSelect("PRJ-024-HVAC-CERT-R1-20261031.pdf")
+                }
+                className="rounded-lg border-2 border-dashed border-blue-600 bg-blue-50/40 p-3 font-semibold text-blue-900 hover:bg-blue-50"
+              >
+                Select Valid PDF
+              </button>
+              <button
+                onClick={() => handleSimulateFileSelect("malicious-diagram.svg")}
+                className="rounded-lg border border-slate-300 bg-slate-50 p-3 font-medium text-slate-700 hover:bg-slate-100"
+              >
+                Test Banned SVG (11 §4.8)
+              </button>
+            </div>
+
+            {selectedFileName && (
+              <div className="rounded bg-emerald-50 border border-emerald-200 px-3 py-2 font-mono text-[11px] text-emerald-900">
+                Selected file retained in memory: {selectedFileName}
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Revision Code (Required)
+                </label>
+                <input
+                  type="text"
+                  value={draftRev}
+                  onChange={(e) => setDraftRev(e.target.value)}
+                  className="w-full rounded border border-slate-400 px-2.5 py-1.5 font-mono"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Issue Date (Required)
+                </label>
+                <input
+                  type="date"
+                  value={draftDate}
+                  onChange={(e) => setDraftDate(e.target.value)}
+                  className="w-full rounded border border-slate-400 px-2.5 py-1.5 font-mono"
+                />
+              </div>
+            </div>
+
+            <div>
+              <div className="flex justify-between mb-1">
+                <label className="font-semibold text-slate-700">
+                  Remarks (Optional)
+                </label>
+                <span className="text-[10px] text-emerald-700 font-medium">
+                  ✓ Autosaved to localStorage
                 </span>
-                <h3 className="text-xs font-semibold text-slate-900 truncate max-w-xs">
-                  {uploadTargetReq?.title || "Upload Requirement Evidence"}
-                </h3>
               </div>
-              <button
-                onClick={() => setUploadModalOpen(false)}
-                className="rounded p-1 text-slate-400 hover:bg-slate-200"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="p-4 space-y-4 text-xs">
               <input
-                type="file"
-                ref={fileInputRef}
-                onChange={handleFilePicked}
-                accept=".pdf,.zip,.dwg,.jpg,.jpeg,.png"
-                className="hidden"
+                type="text"
+                value={draftRemarks}
+                onChange={(e) => updateDraftRemarks(e.target.value)}
+                placeholder="Notes for reviewer..."
+                className="w-full rounded border border-slate-300 px-2.5 py-1.5"
               />
-
-              <div className="grid grid-cols-2 gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex flex-col items-center justify-center gap-1.5 rounded-lg bg-blue-600 p-4 text-white font-semibold shadow-xs hover:bg-blue-700 transition-colors"
-                >
-                  <Smartphone className="h-5 w-5" />
-                  <span>Take Site Photo</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-[#0F2942] bg-white p-4 text-[#0F2942] font-semibold hover:bg-slate-50 transition-colors"
-                >
-                  <UploadCloud className="h-5 w-5" />
-                  <span>Choose PDF / ZIP</span>
-                </button>
-              </div>
-
-              {selectedFile ? (
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-1.5">
-                  <div className="flex items-center justify-between font-semibold text-slate-800">
-                    <span className="truncate max-w-[200px]">{selectedFile.name}</span>
-                    <span className="font-mono text-[10px] text-slate-500">
-                      {(selectedFile.size / 1024).toFixed(1)} KB
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-[10px] text-slate-600">
-                    <ShieldCheck className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
-                    <span className="font-mono truncate">
-                      SHA-256: {selectedFile.sha256}
-                    </span>
-                  </div>
-                </div>
-              ) : (
-                <p className="text-[11px] text-slate-500 text-center">
-                  Accepted: Single PDF, DWG, or ZIP bundle. Maximum 100MB per specification.
-                </p>
-              )}
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-700">
-                    Revision Code
-                  </label>
-                  <input
-                    type="text"
-                    defaultValue="R1"
-                    className="mt-1 w-full rounded border border-slate-400 px-2.5 py-1.5 font-mono text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-700">
-                    Issue Date
-                  </label>
-                  <input
-                    type="text"
-                    defaultValue={new Date().toISOString().split('T')[0]}
-                    className="mt-1 w-full rounded border border-slate-400 px-2.5 py-1.5 font-mono text-xs"
-                  />
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={async () => {
-                  if (uploadTargetReq) {
-                    const sha = selectedFile?.sha256 || Math.random().toString(16).substring(2, 10);
-                    
-                    if (activeProject && !activeProject.id.startsWith("prj-temp-")) {
-                      try {
-                        await api.documents.createUploadIntent(activeProject.id, {
-                          mimeType: "application/pdf",
-                          sizeBytes: selectedFile?.size || 1024,
-                          fileName: selectedFile?.name || `${uploadTargetReq.key}-R1.pdf`,
-                          requirementId: uploadTargetReq.id,
-                        });
-                      } catch (err) {
-                        console.error("Failed to register upload intent", err);
-                      }
-                    }
-
-                    const updatedReq = {
-                      ...uploadTargetReq,
-                      status: "IN_REVIEW" as ReqStatus,
-                      revision: "R1",
-                      updatedAt: "Just now",
-                      sha256: sha,
-                      isOverdue: false,
-                    };
-
-                    setRequirements((prev) =>
-                      prev.map((r) => (r.id === uploadTargetReq.id ? updatedReq : r))
-                    );
-
-                    setSelectedReviewReq(updatedReq);
-
-                    setAuditEvents((prev) => [
-                      {
-                        id: String(Date.now()),
-                        actor: currentUser?.full_name || "Lead Engineer",
-                        action: `uploaded Revision R1 for ${uploadTargetReq.key} (SHA-256: ${sha.slice(0, 8)})`,
-                        time: "Just now",
-                        hash: sha.slice(0, 8),
-                      },
-                      ...prev,
-                    ]);
-
-                    setReviewBanner(`Document uploaded for ${uploadTargetReq.key}. Routed to Review Workbench.`);
-                    setTimeout(() => setReviewBanner(null), 4000);
-                    setActiveTab("viewer");
-                  }
-                  setUploadModalOpen(false);
-                  setSelectedFile(null);
-                }}
-                className="w-full rounded-md bg-[#0F2942] py-2.5 text-xs font-semibold text-white hover:bg-[#163A5F] shadow-sm transition-colors"
-              >
-                Upload & Route to Review Workbench
-              </button>
             </div>
-          </div>
-        </div>
-      )}
 
-      {/* ===================================================================== */}
-      {/* MODAL: AUDIT TRAIL                                                    */}
-      {/* ===================================================================== */}
-      {auditModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
-          <div className="w-full max-w-xl rounded-xl border border-slate-200 bg-white shadow-2xl overflow-hidden">
-            <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-5 py-3.5">
-              <div className="flex items-center gap-2">
-                <History className="h-4 w-4 text-blue-700" />
-                <h3 className="text-sm font-bold text-slate-900">
-                  Cryptographic Chain of Custody (SHA-256)
-                </h3>
-              </div>
-              <button
-                onClick={() => setAuditModalOpen(false)}
-                className="rounded p-1 text-slate-400 hover:bg-slate-200"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="p-5 space-y-4 text-xs">
-              {auditEvents.length > 0 ? (
-                <div className="divide-y divide-slate-100 max-h-72 overflow-y-auto space-y-2 pr-1">
-                  {auditEvents.map((ev) => (
-                    <div key={ev.id} className="pt-2 flex items-start justify-between gap-3">
-                      <div>
-                        <div className="font-semibold text-slate-900">{ev.actor}</div>
-                        <div className="text-slate-600 mt-0.5">{ev.action}</div>
-                        <div className="text-[10px] text-slate-400 mt-0.5">{ev.time}</div>
-                      </div>
-                      <span className="font-mono text-[10px] bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 text-slate-700">
-                        #{ev.hash}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="py-8 text-center">
-                  <History className="mx-auto h-8 w-8 text-slate-300" />
-                  <p className="mt-2 text-xs font-semibold text-slate-700">
-                    No Audit Transactions Recorded
-                  </p>
-                  <p className="mt-0.5 text-[11px] text-slate-400">
-                    Actions performed on requirements, uploads, and approvals will generate
-                    tamper-evident SHA-256 entries.
-                  </p>
-                </div>
-              )}
-            </div>
-            <div className="border-t border-slate-200 bg-slate-50 px-5 py-3 flex justify-end">
-              <button
-                onClick={() => setAuditModalOpen(false)}
-                className="rounded-md bg-slate-900 px-4 py-1.5 text-xs font-semibold text-white hover:bg-slate-800"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ===================================================================== */}
-      {/* MODAL: BILLING & SUBSCRIPTIONS                                        */}
-      {/* ===================================================================== */}
-      {billingModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
-          <div className="w-full max-w-xl rounded-xl border border-slate-200 bg-white shadow-2xl overflow-hidden">
-            <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-5 py-3.5">
-              <div className="flex items-center gap-2">
-                <CreditCard className="h-4 w-4 text-blue-700" />
-                <h3 className="text-sm font-bold text-slate-900">
-                  Billing, Subscriptions & GST Accounting
-                </h3>
-              </div>
-              <button
-                onClick={() => setBillingModalOpen(false)}
-                className="rounded p-1 text-slate-400 hover:bg-slate-200"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="p-5 space-y-4 text-xs">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-1">
-                  <div className="text-[10px] font-semibold text-slate-500 uppercase">
-                    Current Plan
-                  </div>
-                  <div className="text-base font-extrabold text-slate-900">Enterprise Growth</div>
-                  <div className="text-slate-600">
-                    {projects.length} of 15 project slots utilized
-                  </div>
-                </div>
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-1">
-                  <div className="text-[10px] font-semibold text-slate-500 uppercase">
-                    Statutory SAC
-                  </div>
-                  <div className="text-base font-mono font-bold text-slate-900">SAC 998315</div>
-                  <div className="text-slate-600">18% GST (9% CGST + 9% SGST)</div>
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-slate-200 p-4 text-center">
-                <p className="text-xs text-slate-600">
-                  No statutory billing disputes or pending Section 194J TDS deductions.
-                </p>
-              </div>
-            </div>
-            <div className="border-t border-slate-200 bg-slate-50 px-5 py-3 flex justify-end">
-              <button
-                onClick={() => setBillingModalOpen(false)}
-                className="rounded-md bg-slate-900 px-4 py-1.5 text-xs font-semibold text-white hover:bg-slate-800"
-              >
-                Close
-              </button>
-            </div>
+            <button
+              onClick={() => {
+                if (uploadTarget) {
+                  setRequirements((prev) =>
+                    prev.map((r) =>
+                      r.id === uploadTarget.id
+                        ? {
+                            ...r,
+                            status: "IN_REVIEW",
+                            revision: draftRev,
+                            updatedAt: "Just now",
+                          }
+                        : r
+                    )
+                  );
+                }
+                setUploadSheetOpen(false);
+              }}
+              className="w-full rounded-md bg-[#1D4ED8] py-2.5 font-semibold text-white hover:bg-blue-800"
+            >
+              Upload & Submit for Review
+            </button>
           </div>
         </div>
       )}

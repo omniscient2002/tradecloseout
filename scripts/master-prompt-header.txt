@@ -1,0 +1,84 @@
+# TRADECLOSEOUT — COMPLETE SPECIFICATION BUNDLE (SINGLE-FILE PROMPT)
+
+**Generated:** 2026-10-31  
+**Source:** `/home/cassandra/tradecloseout`  
+**Contents:** 32 files, verbatim, in the order below.  
+**Status of the specification:** v0.2 (post-remediation). No application code exists yet.
+
+---
+
+## 0. INSTRUCTIONS TO THE RECEIVING AGENT
+
+You are being given the complete design specification and independent audit for **TradeCloseout**, a multi-tenant SaaS product for technical documentation, compliance tracking and project handover, initially for Indian HVAC subcontractors.
+
+**Read this entire bundle before writing anything.** Then obey the following rules:
+
+1. **Do not invent behaviour.** If a behaviour is not specified, say so and record it as an open question, rather than choosing silently.
+2. **Respect the authority order.** On conflict, use: `SOURCES-VERIFICATION.md` → `DECISIONS-AND-OPEN-QUESTIONS.md` → `03-PRODUCT-REQUIREMENTS.md` → `05`/`13` (security overrides convenience) → `06` → `08` → `07` → everything else.
+3. **Treat unverified claims as unverified.** Every legal, tax, regulatory, competitor and market claim is `UNVERIFIED` in `SOURCES-VERIFICATION.md`. Do not present them as facts, and do not add new ones without a source.
+4. **The build gate is real.** `16-MVP-AND-IMPLEMENTATION-ROADMAP.md` gates milestone M3 on five real consultant/contractor checklists being validated. Do not hard-code the default checklist as if it were authoritative.
+5. **Do not weaken the non-negotiables:** tenant/project isolation, immutable document versions, append-only audit, checklist snapshots, output escaping, signed file access, backups.
+6. **Use the ID scheme consistently:** `FR-*`, `NFR-*`, `E-*`, `WF-*`, `API-*`, `SCR-*`, `TC-*`, `D-*`, `Q-*`, `A-*`, `RK-*`, `SRC-*`, `AUD-*`.
+7. **The specification is a draft, not a proven product.** Commercial assumptions are hypotheses. Say so if asked for certainty.
+8. **Ask before large scope changes.** The audit found that the original design was over-ambitious in places; do not silently expand scope.
+
+### Current state
+
+- The specification is **v0.2**. An independent red-team audit produced 157 distinct findings; the blocking and high-severity ones have been remediated in the text.
+- Remaining open items are **external validation**, not design work: five real checklists, CA/counsel confirmation of GST/e-invoice/TDS and DPDP/CERT-In positions, competitor pricing, and 15–20 customer interviews.
+- The audit verdict remains **REQUIRES MAJOR REVISION** until a re-audit confirms the remediation. Do not claim the product is approved or validated.
+- No code has been written. The recommended first milestones are M0–M2 plus technical spikes (see `16`).
+
+### What to do first
+
+1. Summarise your understanding of the product and the MVP boundary.
+2. List every unresolved question and external dependency you find.
+3. Propose an implementation plan mapped to milestones M0–M10.
+4. Wait for confirmation before writing code.
+
+---
+
+## 1. FILE INDEX
+
+| # | File | Role |
+|---|---|---|
+| 1 | `README.md` | Specification |
+| 2 | `00-PRODUCT-VISION.md` | Specification |
+| 3 | `01-MARKET-AND-DOMAIN-RESEARCH.md` | Specification |
+| 4 | `02-BUSINESS-REQUIREMENTS.md` | Specification |
+| 5 | `03-PRODUCT-REQUIREMENTS.md` | Specification |
+| 6 | `04-DOCUMENT-CATALOGUE.md` | Specification |
+| 7 | `05-ACTORS-AND-PERMISSIONS.md` | Specification |
+| 8 | `06-WORKFLOWS-AND-STATE-MACHINES.md` | Specification |
+| 9 | `07-CUSTOMISATION-ENGINE.md` | Specification |
+| 10 | `08-DATA-MODEL-AND-ERD.md` | Specification |
+| 11 | `09-SYSTEM-ARCHITECTURE.md` | Specification |
+| 12 | `10-API-AND-INTEGRATIONS.md` | Specification |
+| 13 | `11-UI-UX-SPECIFICATION.md` | Specification |
+| 14 | `12-EDGE-CASES-AND-FAILURE-MODES.md` | Specification |
+| 15 | `13-SECURITY-PRIVACY-AND-COMPLIANCE.md` | Specification |
+| 16 | `14-TESTING-AND-ACCEPTANCE.md` | Specification |
+| 17 | `15-DEPLOYMENT-AND-OPERATIONS.md` | Specification |
+| 18 | `16-MVP-AND-IMPLEMENTATION-ROADMAP.md` | Specification |
+| 19 | `17-BUSINESS-VALIDATION-PLAN.md` | Specification |
+| 20 | `SOURCES-VERIFICATION.md` | Specification |
+| 21 | `DECISIONS-AND-OPEN-QUESTIONS.md` | Specification |
+| 22 | `TRADECLOSEOUT-AUDIT/README.md` | Audit |
+| 23 | `TRADECLOSEOUT-AUDIT/00-EXECUTIVE-AUDIT.md` | Audit |
+| 24 | `TRADECLOSEOUT-AUDIT/01-CRITICAL-ISSUES.md` | Audit |
+| 25 | `TRADECLOSEOUT-AUDIT/02-DOMAIN-AND-BUSINESS-REVIEW.md` | Audit |
+| 26 | `TRADECLOSEOUT-AUDIT/03-PRODUCT-AND-WORKFLOW-REVIEW.md` | Audit |
+| 27 | `TRADECLOSEOUT-AUDIT/04-ARCHITECTURE-AND-DATABASE-REVIEW.md` | Audit |
+| 28 | `TRADECLOSEOUT-AUDIT/05-SECURITY-AND-EDGE-CASE-REVIEW.md` | Audit |
+| 29 | `TRADECLOSEOUT-AUDIT/06-REQUIREMENT-TRACEABILITY.md` | Audit |
+| 30 | `TRADECLOSEOUT-AUDIT/07-RECOMMENDED-CHANGES.md` | Audit |
+| 31 | `TRADECLOSEOUT-AUDIT/08-FINAL-READINESS-REPORT.md` | Audit |
+| 32 | `TRADECLOSEOUT-AUDIT/ISSUE-REGISTER.md` | Audit |
+
+---
+
+## 2. FILE CONTENTS (verbatim)
+
+Each file is delimited by a banner. Content is reproduced exactly as stored; do not assume any omitted sections.
+
+

@@ -88,7 +88,8 @@ export class BillingService {
         [ctx.orgId],
       );
       const seqNo = Number(countRes.rows[0].count) + 1;
-      const number = `TC-INV-2026-${seqNo.toString().padStart(4, '0')}`;
+      const randSuffix = Math.floor(1000 + Math.random() * 9000);
+      const number = `TC-INV-${seqNo.toString().padStart(3, '0')}-${randSuffix}`;
 
       const res = await client.query(
         `INSERT INTO invoices (
