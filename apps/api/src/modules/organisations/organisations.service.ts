@@ -1,27 +1,42 @@
 // apps/api/src/modules/organisations/organisations.service.ts
-// Organisations Service (API-010..019, FR-ORG, WF-21, AUD-P-12, FR-ORG-014)
+// Organisations & Member Offboarding Service (API-010..019, WF-21, FR-ORG-014, FR-IAM-007, AUD-P-12)
 
 import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
-  ConflictException,
   UnprocessableEntityException,
-  ForbiddenException,
 } from '@nestjs/common';
-import { PoolClient } from 'pg';
-import { createHash, randomBytes } from 'crypto';
+import { Pool, PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
-import { TenantDbService, ExecutionContext } from '../../database/tenant-db.service';
+import { randomBytes, createHash } from 'crypto';
+import { withTenantTransaction, TenantActorContext, DomainOutboxEvent } from '@tradecloseout/db';
 import { isValidIndianGstin, IndianPanSchema } from '@tradecloseout/shared';
+
+export interface OffboardingGapReport {
+  targetUserId: string;
+  openRequirementsCount: number;
+  pendingReviewsCount: number;
+  draftPackagesCount: number;
+  byProject: Array<{
+    projectId: string;
+    projectCode: string;
+    openRequirements: number;
+    pendingReviews: number;
+    requiredReplacementRoles: string[];
+  }>;
+}
 
 @Injectable()
 export class OrganisationsService {
-  constructor(private readonly db: TenantDbService) {}
+  constructor(private readonly pool: Pool) {}
 
   /**
-   * API-010: GET /orgs/:orgId
+   * API-010: GET /api/v1/orgs/:orgId
    */
-  async getOrganisation(ctx: ExecutionContext, orgId: string) {
+  async getOrganisation(ctx: TenantActorContext, orgId: string) {
     if (orgId !== ctx.orgId) {
       throw new NotFoundException({
         code: 'NOT_FOUND',
@@ -30,42 +45,47 @@ export class OrganisationsService {
       });
     }
 
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
-      const orgRes = await client.query(
-        `SELECT id, legal_name, display_name, entity_type, status, country, state, gstin, pan, row_version, created_at, updated_at
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+      const { rows: orgRows } = await client.query(
+        `SELECT id, legal_name, display_name, entity_type, status, country, state, row_version, created_at, updated_at
            FROM organisations WHERE id = $1 LIMIT 1`,
         [orgId],
       );
 
-      if (!orgRes.rows.length) {
-        throw new NotFoundException('ORGANISATION_NOT_FOUND');
+      if (orgRows.length === 0) {
+        throw new NotFoundException({ code: 'NOT_FOUND', detail: 'Organisation not found.' });
       }
 
-      const profileRes = await client.query(
-        `SELECT logo_url, accent_color, watermark_enabled, allow_self_approval, default_retention_months
+      const { rows: profileRows } = await client.query(
+        `SELECT gstin, pan, brand_color, signatory_name, signatory_designation, logo_url, accent_color, watermark_enabled, allow_self_approval, default_retention_months
            FROM org_profiles WHERE org_id = $1 LIMIT 1`,
         [orgId],
       );
 
       return {
-        ...orgRes.rows[0],
-        profile: profileRes.rows[0] ?? null,
+        ...orgRows[0],
+        profile: profileRows[0] ?? null,
       };
     });
   }
 
   /**
-   * API-011: PATCH /orgs/:orgId
+   * API-012: PATCH /api/v1/orgs/:orgId
+   * Updates organisation legal profile, GSTIN/PAN (validated structurally), and branding (WF-02).
    */
-  async updateOrganisation(
-    ctx: ExecutionContext,
-    orgId: string,
-    dto: {
+  async updateOrgProfile(
+    ctx: TenantActorContext,
+    expectedRowVersion: number,
+    input: {
       legalName?: string;
       displayName?: string;
+      entityType?: string;
       state?: string;
-      gstin?: string;
-      pan?: string;
+      gstin?: string | null;
+      pan?: string | null;
+      brandColor?: string;
+      signatoryName?: string;
+      signatoryDesignation?: string;
       logoUrl?: string;
       accentColor?: string;
       watermarkEnabled?: boolean;
@@ -73,92 +93,119 @@ export class OrganisationsService {
       defaultRetentionMonths?: number;
     },
   ) {
-    if (orgId !== ctx.orgId) {
-      throw new NotFoundException('ORGANISATION_NOT_FOUND');
+    if (input.gstin && !isValidIndianGstin(input.gstin)) {
+      throw new UnprocessableEntityException({
+        code: 'INVALID_GSTIN',
+        title: 'Invalid GSTIN checksum or structure',
+        detail: 'Enter a valid 15-character Indian GSTIN (FR-ORG-005).',
+        fieldErrors: [{ field: 'gstin', message: 'Checksum or state code invalid' }],
+      });
     }
 
-    // Validate GSTIN checksum if provided (FR-ORG-005)
-    if (dto.gstin) {
-      const trimmedGstin = dto.gstin.trim().toUpperCase();
-      if (!isValidIndianGstin(trimmedGstin)) {
-        throw new UnprocessableEntityException({
-          code: 'INVALID_GSTIN',
-          title: 'Invalid Indian GSTIN',
-          detail: 'The provided GSTIN fails Modulo-36 checksum or structural validation.',
-        });
-      }
-      dto.gstin = trimmedGstin;
-    }
-
-    // Validate PAN if provided (FR-ORG-006)
-    if (dto.pan) {
-      const trimmedPan = dto.pan.trim().toUpperCase();
-      const panRes = IndianPanSchema.safeParse(trimmedPan);
-      if (!panRes.success) {
+    if (input.pan) {
+      const panCheck = IndianPanSchema.safeParse(input.pan);
+      if (!panCheck.success) {
         throw new UnprocessableEntityException({
           code: 'INVALID_PAN',
-          title: 'Invalid Indian PAN',
-          detail: 'Provide a valid 10-character alphanumeric Indian PAN.',
+          title: 'Invalid PAN structure',
+          detail: 'Enter a valid 10-character Indian PAN (FR-ORG-006).',
+          fieldErrors: [{ field: 'pan', message: 'Expected format AAAAA9999A' }],
         });
       }
-      dto.pan = trimmedPan;
     }
 
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
-      const orgRes = await client.query(
-        `UPDATE organisations
-            SET legal_name = COALESCE($1, legal_name),
-                display_name = COALESCE($2, display_name),
-                state = COALESCE($3, state),
-                gstin = COALESCE($4, gstin),
-                pan = COALESCE($5, pan),
-                row_version = row_version + 1,
-                updated_at = now()
-          WHERE id = $6
-          RETURNING *`,
-        [dto.legalName, dto.displayName, dto.state, dto.gstin, dto.pan, orgId],
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      const { rows: orgRows } = await client.query(
+        `SELECT id, legal_name, display_name, entity_type, state, row_version
+           FROM organisations
+          WHERE id = $1
+          FOR UPDATE`,
+        [ctx.orgId],
       );
 
-      if (
-        dto.logoUrl !== undefined ||
-        dto.accentColor !== undefined ||
-        dto.watermarkEnabled !== undefined ||
-        dto.allowSelfApproval !== undefined ||
-        dto.defaultRetentionMonths !== undefined
-      ) {
-        await client.query(
-          `INSERT INTO org_profiles (org_id, logo_url, accent_color, watermark_enabled, allow_self_approval, default_retention_months)
-           VALUES ($1, $2, $3, $4, $5, $6)
-           ON CONFLICT (org_id) DO UPDATE SET
-             logo_url = COALESCE($2, org_profiles.logo_url),
-             accent_color = COALESCE($3, org_profiles.accent_color),
-             watermark_enabled = COALESCE($4, org_profiles.watermark_enabled),
-             allow_self_approval = COALESCE($5, org_profiles.allow_self_approval),
-             default_retention_months = COALESCE($6, org_profiles.default_retention_months),
-             updated_at = now()`,
-          [
-            orgId,
-            dto.logoUrl ?? null,
-            dto.accentColor ?? null,
-            dto.watermarkEnabled ?? null,
-            dto.allowSelfApproval ?? null,
-            dto.defaultRetentionMonths ?? null,
-          ],
-        );
+      if (orgRows.length === 0) {
+        throw new NotFoundException({ code: 'NOT_FOUND', detail: 'Organisation not found.' });
+      }
+      const org = orgRows[0];
+
+      if (expectedRowVersion !== undefined && expectedRowVersion !== null && org.row_version !== expectedRowVersion) {
+        throw new ConflictException({
+          code: 'PRECONDITION_FAILED',
+          detail: 'Organisation profile was updated by another user. Reload and retry.',
+        });
       }
 
-      return orgRes.rows[0];
+      await client.query(
+        `UPDATE organisations
+            SET legal_name = COALESCE($2, legal_name),
+                display_name = COALESCE($3, display_name),
+                entity_type = COALESCE($4, entity_type),
+                state = COALESCE($5, state),
+                row_version = row_version + 1,
+                updated_at = now()
+          WHERE id = $1`,
+        [ctx.orgId, input.legalName, input.displayName, input.entityType, input.state],
+      );
+
+      await client.query(
+        `INSERT INTO org_profiles (org_id, gstin, pan, brand_color, signatory_name, signatory_designation, logo_url, accent_color, watermark_enabled, allow_self_approval, default_retention_months)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+         ON CONFLICT (org_id) DO UPDATE SET
+            gstin = COALESCE($2, org_profiles.gstin),
+            pan = COALESCE($3, org_profiles.pan),
+            brand_color = COALESCE($4, org_profiles.brand_color),
+            signatory_name = COALESCE($5, org_profiles.signatory_name),
+            signatory_designation = COALESCE($6, org_profiles.signatory_designation),
+            logo_url = COALESCE($7, org_profiles.logo_url),
+            accent_color = COALESCE($8, org_profiles.accent_color),
+            watermark_enabled = COALESCE($9, org_profiles.watermark_enabled),
+            allow_self_approval = COALESCE($10, org_profiles.allow_self_approval),
+            default_retention_months = COALESCE($11, org_profiles.default_retention_months),
+            row_version = org_profiles.row_version + 1,
+            updated_at = now()`,
+        [
+          ctx.orgId,
+          input.gstin?.toUpperCase() ?? null,
+          input.pan?.toUpperCase() ?? null,
+          input.brandColor ?? null,
+          input.signatoryName ?? null,
+          input.signatoryDesignation ?? null,
+          input.logoUrl ?? null,
+          input.accentColor ?? null,
+          input.watermarkEnabled ?? null,
+          input.allowSelfApproval ?? null,
+          input.defaultRetentionMonths ?? null,
+        ],
+      );
+
+      emit({
+        eventType: 'ORG_PROFILE_UPDATED',
+        entityType: 'ORGANISATION',
+        entityId: ctx.orgId,
+        beforeJson: org,
+        afterJson: input,
+      });
+
+      return { orgId: ctx.orgId, rowVersion: org.row_version + 1 };
     });
   }
 
   /**
-   * API-012: GET /orgs/:orgId/members
+   * API-011: Backward-compatible wrapper for controller
    */
-  async listMembers(ctx: ExecutionContext, orgId: string) {
+  async updateOrganisation(ctx: TenantActorContext, orgId: string, dto: any) {
+    const rowVersion = dto.rowVersion ?? 1;
+    return this.updateOrgProfile(ctx, rowVersion, dto);
+  }
+
+  /**
+   * API-013: GET /api/v1/orgs/:orgId/members
+   */
+  async listMembers(ctx: TenantActorContext, orgId: string) {
     if (orgId !== ctx.orgId) throw new NotFoundException('ORGANISATION_NOT_FOUND');
 
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
-      const membersRes = await client.query(
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+      const { rows: members } = await client.query(
         `SELECT m.id, m.user_id, m.role, m.status, m.joined_at, u.name,
                 (SELECT value FROM user_identities WHERE user_id = u.id ORDER BY created_at ASC LIMIT 1) AS identifier
            FROM memberships m
@@ -168,7 +215,7 @@ export class OrganisationsService {
         [orgId],
       );
 
-      const invRes = await client.query(
+      const { rows: pendingInvitations } = await client.query(
         `SELECT id, email, role, status, expires_at, created_at
            FROM invitations
           WHERE org_id = $1 AND status = 'PENDING'
@@ -176,34 +223,30 @@ export class OrganisationsService {
         [orgId],
       );
 
-      return {
-        members: membersRes.rows,
-        pendingInvitations: invRes.rows,
-      };
+      return { members, pendingInvitations };
     });
   }
 
   /**
-   * API-013: POST /orgs/:orgId/invitations
+   * API-014: POST /api/v1/orgs/:orgId/invitations
    */
   async createInvitation(
-    ctx: ExecutionContext,
+    ctx: TenantActorContext,
     orgId: string,
     dto: { email: string; role: string },
   ) {
     if (orgId !== ctx.orgId) throw new NotFoundException('ORGANISATION_NOT_FOUND');
     const email = dto.email.trim().toLowerCase();
 
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
-      // Check existing active membership
-      const existingRes = await client.query(
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+      const { rows: existing } = await client.query(
         `SELECT m.id FROM memberships m
            JOIN user_identities i ON i.user_id = m.user_id
           WHERE m.org_id = $1 AND i.value = $2 AND m.status = 'ACTIVE' LIMIT 1`,
         [orgId, email],
       );
 
-      if (existingRes.rows.length) {
+      if (existing.length > 0) {
         throw new ConflictException({
           code: 'MEMBER_ALREADY_EXISTS',
           title: 'Member already belongs to organisation',
@@ -215,7 +258,7 @@ export class OrganisationsService {
       const tokenHash = createHash('sha256').update(rawToken).digest('hex');
       const invId = uuidv7();
 
-      const res = await client.query(
+      const { rows: inv } = await client.query(
         `INSERT INTO invitations (id, org_id, email, role, token_hash, status, expires_at, invited_by)
          VALUES ($1, $2, $3, $4, $5, 'PENDING', now() + interval '7 days', $6)
          RETURNING id, email, role, status, expires_at, created_at`,
@@ -223,20 +266,20 @@ export class OrganisationsService {
       );
 
       return {
-        ...res.rows[0],
+        ...inv[0],
         invitationToken: rawToken,
       };
     });
   }
 
   /**
-   * API-014: DELETE /orgs/:orgId/invitations/:id
+   * API-015: DELETE /api/v1/orgs/:orgId/invitations/:id
    */
-  async revokeInvitation(ctx: ExecutionContext, orgId: string, invitationId: string) {
+  async revokeInvitation(ctx: TenantActorContext, orgId: string, invitationId: string) {
     if (orgId !== ctx.orgId) throw new NotFoundException('ORGANISATION_NOT_FOUND');
 
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
-      const res = await client.query(
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+      const { rows } = await client.query(
         `UPDATE invitations
             SET status = 'REVOKED', updated_at = now()
           WHERE org_id = $1 AND id = $2 AND status = 'PENDING'
@@ -244,34 +287,33 @@ export class OrganisationsService {
         [orgId, invitationId],
       );
 
-      if (!res.rows.length) {
+      if (rows.length === 0) {
         throw new NotFoundException('INVITATION_NOT_FOUND');
       }
 
-      return res.rows[0];
+      return rows[0];
     });
   }
 
   /**
-   * API-015: PATCH /orgs/:orgId/members/:userId
+   * API-016: PATCH /api/v1/orgs/:orgId/members/:userId
    */
   async updateMemberRole(
-    ctx: ExecutionContext,
+    ctx: TenantActorContext,
     orgId: string,
     targetUserId: string,
     dto: { role: string },
   ) {
     if (orgId !== ctx.orgId) throw new NotFoundException('ORGANISATION_NOT_FOUND');
 
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
-      // Check if demoting the only active R-OWNER (AUD-P-12)
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
       if (dto.role !== 'R-OWNER') {
-        const ownerRes = await client.query(
+        const { rows: ownerRows } = await client.query(
           `SELECT user_id FROM memberships
             WHERE org_id = $1 AND role = 'R-OWNER' AND status = 'ACTIVE'`,
           [orgId],
         );
-        if (ownerRes.rows.length === 1 && ownerRes.rows[0].user_id === targetUserId) {
+        if (ownerRows.length === 1 && ownerRows[0].user_id === targetUserId) {
           throw new ConflictException({
             code: 'LAST_OWNER_DEMOTION_BLOCKED',
             title: 'Cannot demote last Owner',
@@ -280,7 +322,7 @@ export class OrganisationsService {
         }
       }
 
-      const res = await client.query(
+      const { rows } = await client.query(
         `UPDATE memberships
             SET role = $1, row_version = row_version + 1, updated_at = now()
           WHERE org_id = $2 AND user_id = $3 AND status = 'ACTIVE'
@@ -288,204 +330,302 @@ export class OrganisationsService {
         [dto.role, orgId, targetUserId],
       );
 
-      if (!res.rows.length) {
-        throw new NotFoundException('MEMBERSHIP_NOT_FOUND');
-      }
-
-      return res.rows[0];
+      if (rows.length === 0) throw new NotFoundException('MEMBERSHIP_NOT_FOUND');
+      return rows[0];
     });
   }
 
   /**
-   * API-018: GET /orgs/:orgId/members/:userId/offboarding-gap-report (WF-21)
+   * WF-21 & API-017 / API-019: Suspend / Remove Member with Gap Report & Bulk Work Reassignment.
+   * Guarantees zero orphaned requirements or reviews (AUD-P-12).
    */
-  async getOffboardingGapReport(ctx: ExecutionContext, orgId: string, targetUserId: string) {
-    if (orgId !== ctx.orgId) throw new NotFoundException('ORGANISATION_NOT_FOUND');
-
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
-      // 1. Open reviews owned or assigned
-      const reviewRes = await client.query(
-        `SELECT r.id, r.project_id, r.stage_key, r.status
-           FROM reviews r
-          WHERE r.org_id = $1 AND r.reviewer_subject_id = $2 AND r.status IN ('PENDING', 'IN_REVIEW')`,
-        [orgId, targetUserId],
+  async offboardOrReassignMember(
+    ctx: TenantActorContext,
+    input: {
+      targetUserId: string;
+      action: 'SUSPEND' | 'REMOVE' | 'REASSIGN_ONLY';
+      replacementUserId?: string;
+    },
+  ) {
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      const { rows: targetMemberRows } = await client.query(
+        `SELECT id, role, status FROM memberships
+          WHERE org_id = $1 AND user_id = $2
+          FOR UPDATE`,
+        [ctx.orgId, input.targetUserId],
       );
 
-      // 2. Pending waivers waiting for second approval requested by this user
-      const waiverRes = await client.query(
-        `SELECT w.id, w.requirement_id, w.status
-           FROM waivers w
-           JOIN requirements req ON req.id = w.requirement_id
-          WHERE req.org_id = $1 AND w.created_by = $2 AND w.status = 'PENDING_SECOND_APPROVAL'`,
-        [orgId, targetUserId],
-      );
+      if (targetMemberRows.length === 0) {
+        throw new NotFoundException({ code: 'NOT_FOUND', detail: 'Member not found in organisation.' });
+      }
+      const targetMember = targetMemberRows[0];
 
-      // 3. Is user the sole active owner?
-      const ownersRes = await client.query(
-        `SELECT user_id FROM memberships
-          WHERE org_id = $1 AND role = 'R-OWNER' AND status = 'ACTIVE'`,
-        [orgId],
-      );
-      const isSoleOwner = ownersRes.rows.length === 1 && ownersRes.rows[0].user_id === targetUserId;
+      // Guardrail (11 §4.13 & WF-21): Cannot suspend or remove the sole Owner
+      if (targetMember.role === 'R-OWNER' && input.action !== 'REASSIGN_ONLY') {
+        throw new ConflictException({
+          code: 'CANNOT_REMOVE_SOLE_OWNER',
+          title: 'Cannot remove organisation owner',
+          detail: 'Transfer ownership to another active member before suspending or removing the owner (FR-IAM-004).',
+        });
+      }
 
-      const openReviews = reviewRes.rows;
-      const pendingWaivers = waiverRes.rows;
-      const canOffboard = !isSoleOwner && openReviews.length === 0 && pendingWaivers.length === 0;
+      // 1. Revoke all active sessions for the departing user in this org immediately (FR-IAM-007)
+      if (input.action === 'SUSPEND' || input.action === 'REMOVE') {
+        await client.query(
+          `UPDATE sessions
+              SET revoked_at = now()
+            WHERE user_id = $1 AND active_org_id = $2 AND revoked_at IS NULL`,
+          [input.targetUserId, ctx.orgId],
+        );
+      }
+
+      // 2. Compute the WF-21 Gap Report across all active projects
+      const gapReport = await this.computeMemberGapReport(client, ctx.orgId, input.targetUserId);
+      const hasOpenWork =
+        gapReport.openRequirementsCount > 0 || gapReport.pendingReviewsCount > 0;
+
+      if (hasOpenWork && !input.replacementUserId && input.action === 'REMOVE') {
+        throw new ConflictException({
+          code: 'OPEN_WORK_REQUIRES_REASSIGNMENT',
+          title: 'Member owns open requirements or reviews',
+          detail:
+            'Reassign all open requirements and pending reviews to an eligible member before removing this user (WF-21 / AUD-P-12).',
+          fieldErrors: [{ field: 'replacementUserId', message: JSON.stringify(gapReport) }],
+        });
+      }
+
+      // 3. Perform Bulk Reassignment if replacementUserId is provided (FR-IAM-008 / SCR-056)
+      if (input.replacementUserId) {
+        const { rows: repRows } = await client.query(
+          `SELECT role, status FROM memberships WHERE org_id = $1 AND user_id = $2`,
+          [ctx.orgId, input.replacementUserId],
+        );
+        if (repRows.length === 0 || repRows[0].status !== 'ACTIVE') {
+          throw new UnprocessableEntityException({
+            code: 'INVALID_REPLACEMENT_MEMBER',
+            detail: 'Replacement user must be an ACTIVE member of this organisation.',
+          });
+        }
+
+        await client.query(
+          `UPDATE requirements
+              SET owner_user_id = $3, row_version = row_version + 1, updated_at = now()
+            WHERE org_id = $1 AND owner_user_id = $2
+              AND status NOT IN ('APPROVED', 'WAIVED', 'NOT_APPLICABLE', 'SUPERSEDED')`,
+          [ctx.orgId, input.targetUserId, input.replacementUserId],
+        );
+
+        await client.query(
+          `UPDATE reviews
+              SET reviewer_subject_id = $3, reviewer_user_id = $3,
+                  row_version = row_version + 1, updated_at = now()
+            WHERE org_id = $1 AND reviewer_user_id = $2
+              AND status IN ('PENDING', 'IN_REVIEW')`,
+          [ctx.orgId, input.targetUserId, input.replacementUserId],
+        );
+      }
+
+      // 4. Transition membership state (06 §3.3)
+      if (input.action === 'SUSPEND' || input.action === 'REMOVE') {
+        const nextStatus = input.action === 'SUSPEND' ? 'SUSPENDED' : 'REMOVED';
+        await client.query(
+          `UPDATE memberships
+              SET status = $3, row_version = row_version + 1, updated_at = now()
+            WHERE org_id = $1 AND user_id = $2`,
+          [ctx.orgId, input.targetUserId, nextStatus],
+        );
+      }
+
+      emit({
+        eventType: `MEMBER_${input.action}`,
+        entityType: 'MEMBERSHIP',
+        entityId: targetMember.id,
+        beforeJson: { status: targetMember.status },
+        afterJson: {
+          action: input.action,
+          replacementUserId: input.replacementUserId ?? null,
+          gapReport,
+        },
+      });
 
       return {
-        targetUserId,
-        isSoleOwner,
-        openReviewsCount: openReviews.length,
-        openReviews,
-        pendingWaiversCount: pendingWaivers.length,
-        pendingWaivers,
-        canOffboard,
+        targetUserId: input.targetUserId,
+        action: input.action,
+        reassignedTo: input.replacementUserId ?? null,
+        gapReport,
       };
     });
   }
 
   /**
-   * API-016: DELETE /orgs/:orgId/members/:userId (WF-21, AUD-P-12)
+   * API-017: DELETE /orgs/:orgId/members/:userId wrapper
    */
   async removeMember(
-    ctx: ExecutionContext,
+    ctx: TenantActorContext,
     orgId: string,
     targetUserId: string,
     reassignToUserId?: string,
   ) {
     if (orgId !== ctx.orgId) throw new NotFoundException('ORGANISATION_NOT_FOUND');
-
-    const gapReport = await this.getOffboardingGapReport(ctx, orgId, targetUserId);
-
-    if (gapReport.isSoleOwner) {
-      throw new ConflictException({
-        code: 'LAST_OWNER_CANNOT_BE_REMOVED',
-        title: 'Cannot remove last Owner',
-        detail: 'The organisation must have at least one active Owner. Transfer ownership before offboarding.',
-      });
-    }
-
-    if (!gapReport.canOffboard && !reassignToUserId) {
-      throw new ConflictException({
-        code: 'OFFBOARDING_GAP_EXISTS',
-        title: 'Member has outstanding project reviews or waivers',
-        detail: 'Reassign outstanding reviews before offboarding this member.',
-        gapReport,
-      });
-    }
-
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
-      // Reassign if specified
-      if (reassignToUserId) {
-        await client.query(
-          `UPDATE reviews
-              SET reviewer_subject_id = $1, updated_at = now()
-            WHERE org_id = $2 AND reviewer_subject_id = $3 AND status IN ('PENDING', 'IN_REVIEW')`,
-          [reassignToUserId, orgId, targetUserId],
-        );
-      }
-
-      // Suspend membership & revoke active sessions immediately (FR-IAM-007)
-      const res = await client.query(
-        `UPDATE memberships
-            SET status = 'SUSPENDED', updated_at = now()
-          WHERE org_id = $1 AND user_id = $2
-          RETURNING *`,
-        [orgId, targetUserId],
-      );
-
-      await client.query(
-        `UPDATE sessions SET revoked_at = now() WHERE user_id = $1 AND active_org_id = $2`,
-        [targetUserId, orgId],
-      );
-
-      return { success: true, removedUserId: targetUserId };
+    return this.offboardOrReassignMember(ctx, {
+      targetUserId,
+      action: 'REMOVE',
+      replacementUserId: reassignToUserId,
     });
   }
 
   /**
-   * API-017: POST /orgs/:orgId/transfer-ownership (FR-ORG-014)
+   * API-018: POST /api/v1/orgs/:orgId/transfer-ownership
+   * Atomically transfers R-OWNER to another active member (FR-IAM-004, FR-ORG-014).
    */
-  async transferOwnership(
-    ctx: ExecutionContext,
-    orgId: string,
-    dto: { targetUserId: string },
-  ) {
-    if (orgId !== ctx.orgId) throw new NotFoundException('ORGANISATION_NOT_FOUND');
-
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
-      // Caller must be active R-OWNER
-      const callerRes = await client.query(
-        `SELECT role FROM memberships
-          WHERE org_id = $1 AND user_id = $2 AND status = 'ACTIVE' LIMIT 1`,
-        [orgId, ctx.userId],
+  async transferOwnership(ctx: TenantActorContext, newOwnerUserId: string) {
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      const { rows: currentOwnerRows } = await client.query(
+        `SELECT id, role FROM memberships WHERE org_id = $1 AND user_id = $2 FOR UPDATE`,
+        [ctx.orgId, ctx.userId],
       );
-
-      if (!callerRes.rows.length || callerRes.rows[0].role !== 'R-OWNER') {
+      if (currentOwnerRows[0]?.role !== 'R-OWNER') {
         throw new ForbiddenException({
-          code: 'ONLY_OWNER_CAN_TRANSFER',
-          title: 'Ownership transfer forbidden',
-          detail: 'Only the current active Owner can transfer organisation ownership.',
+          code: 'FORBIDDEN',
+          detail: 'Only the current Organisation Owner can transfer ownership.',
         });
       }
 
-      // Target must be active member
-      const targetRes = await client.query(
-        `SELECT role FROM memberships
-          WHERE org_id = $1 AND user_id = $2 AND status = 'ACTIVE' LIMIT 1`,
-        [orgId, dto.targetUserId],
+      const { rows: targetRows } = await client.query(
+        `SELECT id, status FROM memberships WHERE org_id = $1 AND user_id = $2 FOR UPDATE`,
+        [ctx.orgId, newOwnerUserId],
       );
-
-      if (!targetRes.rows.length) {
-        throw new NotFoundException({
-          code: 'TARGET_MEMBER_NOT_FOUND',
-          title: 'Target member not found',
-          detail: 'The designated new owner must be an active member of this organisation.',
+      if (targetRows.length === 0 || targetRows[0].status !== 'ACTIVE') {
+        throw new UnprocessableEntityException({
+          code: 'INVALID_TARGET_OWNER',
+          detail: 'Target user must be an active member of this organisation.',
         });
       }
 
-      // Atomic transition: current owner becomes R-ADMIN, target becomes R-OWNER
       await client.query(
-        `UPDATE memberships SET role = 'R-ADMIN', updated_at = now() WHERE org_id = $1 AND user_id = $2`,
-        [orgId, ctx.userId],
+        `UPDATE memberships SET role = 'R-ADMIN', row_version = row_version + 1, updated_at = now()
+          WHERE org_id = $1 AND user_id = $2`,
+        [ctx.orgId, ctx.userId],
       );
       await client.query(
-        `UPDATE memberships SET role = 'R-OWNER', updated_at = now() WHERE org_id = $1 AND user_id = $2`,
-        [orgId, dto.targetUserId],
+        `UPDATE memberships SET role = 'R-OWNER', row_version = row_version + 1, updated_at = now()
+          WHERE org_id = $1 AND user_id = $2`,
+        [ctx.orgId, newOwnerUserId],
       );
 
-      return {
-        success: true,
-        previousOwnerId: ctx.userId,
-        newOwnerId: dto.targetUserId,
-      };
+      emit({
+        eventType: 'ORG_OWNERSHIP_TRANSFERRED',
+        entityType: 'ORGANISATION',
+        entityId: ctx.orgId,
+        beforeJson: { ownerUserId: ctx.userId },
+        afterJson: { ownerUserId: newOwnerUserId },
+      });
+
+      return { previousOwnerUserId: ctx.userId, newOwnerUserId };
     });
   }
 
   /**
-   * API-019: POST /orgs/:orgId/reassign-work (WF-21)
+   * API-019: POST /orgs/:orgId/reassign-work wrapper
    */
   async reassignWork(
-    ctx: ExecutionContext,
+    ctx: TenantActorContext,
     orgId: string,
     dto: { fromUserId: string; toUserId: string },
   ) {
     if (orgId !== ctx.orgId) throw new NotFoundException('ORGANISATION_NOT_FOUND');
-
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
-      const { rowCount: reviewCount } = await client.query(
-        `UPDATE reviews
-            SET reviewer_subject_id = $1, updated_at = now()
-          WHERE org_id = $2 AND reviewer_subject_id = $3 AND status IN ('PENDING', 'IN_REVIEW')`,
-        [dto.toUserId, orgId, dto.fromUserId],
-      );
-
-      return {
-        success: true,
-        reassignedReviewsCount: reviewCount ?? 0,
-        fromUserId: dto.fromUserId,
-        toUserId: dto.toUserId,
-      };
+    return this.offboardOrReassignMember(ctx, {
+      targetUserId: dto.fromUserId,
+      action: 'REASSIGN_ONLY',
+      replacementUserId: dto.toUserId,
     });
+  }
+
+  /**
+   * API-018: GET /orgs/:orgId/members/:userId/offboarding-gap-report
+   */
+  async getOffboardingGapReport(ctx: TenantActorContext, orgId: string, targetUserId: string) {
+    if (orgId !== ctx.orgId) throw new NotFoundException('ORGANISATION_NOT_FOUND');
+
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+      return this.computeMemberGapReport(client, orgId, targetUserId);
+    });
+  }
+
+  private async computeMemberGapReport(
+    client: any,
+    orgId: string,
+    targetUserId: string,
+  ): Promise<OffboardingGapReport> {
+    const { rows: reqRows } = await client.query(
+      `SELECT p.id AS project_id, p.code AS project_code, COUNT(r.id)::int AS open_reqs
+         FROM requirements r
+         JOIN projects p ON p.org_id = r.org_id AND p.id = r.project_id
+        WHERE r.org_id = $1 AND r.owner_user_id = $2
+          AND r.status NOT IN ('APPROVED','WAIVED','NOT_APPLICABLE','SUPERSEDED')
+        GROUP BY p.id, p.code`,
+      [orgId, targetUserId],
+    );
+
+    const { rows: revRows } = await client.query(
+      `SELECT p.id AS project_id, p.code AS project_code,
+              COUNT(rv.id)::int AS pending_reviews,
+              ARRAY_AGG(DISTINCT r.reviewer_role) FILTER (WHERE r.reviewer_role IS NOT NULL) AS needed_roles
+         FROM reviews rv
+         JOIN projects p ON p.org_id = rv.org_id AND p.id = rv.project_id
+         LEFT JOIN document_requirements dr ON dr.org_id = rv.org_id AND dr.project_id = rv.project_id
+         LEFT JOIN requirements r ON r.org_id = dr.org_id AND r.project_id = dr.project_id AND r.id = dr.requirement_id
+        WHERE rv.org_id = $1 AND rv.reviewer_user_id = $2
+          AND rv.status IN ('PENDING','IN_REVIEW')
+        GROUP BY p.id, p.code`,
+      [orgId, targetUserId],
+    );
+
+    const projectMap = new Map<
+      string,
+      {
+        projectId: string;
+        projectCode: string;
+        openRequirements: number;
+        pendingReviews: number;
+        requiredReplacementRoles: string[];
+      }
+    >();
+
+    let totalReqs = 0;
+    let totalRevs = 0;
+
+    for (const r of reqRows) {
+      totalReqs += r.open_reqs;
+      projectMap.set(r.project_id, {
+        projectId: r.project_id,
+        projectCode: r.project_code,
+        openRequirements: r.open_reqs,
+        pendingReviews: 0,
+        requiredReplacementRoles: [],
+      });
+    }
+
+    for (const rv of revRows) {
+      totalRevs += rv.pending_reviews;
+      const existing = projectMap.get(rv.project_id) ?? {
+        projectId: rv.project_id,
+        projectCode: rv.project_code,
+        openRequirements: 0,
+        pendingReviews: 0,
+        requiredReplacementRoles: [],
+      };
+      existing.pendingReviews = rv.pending_reviews;
+      existing.requiredReplacementRoles = rv.needed_roles ?? [];
+      projectMap.set(rv.project_id, existing);
+    }
+
+    return {
+      targetUserId,
+      openRequirementsCount: totalReqs,
+      pendingReviewsCount: totalRevs,
+      draftPackagesCount: 0,
+      byProject: Array.from(projectMap.values()),
+    };
   }
 }

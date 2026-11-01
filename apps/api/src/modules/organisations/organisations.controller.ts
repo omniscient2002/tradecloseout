@@ -102,7 +102,7 @@ export class OrganisationsController {
     @Param('orgId') orgId: string,
     @Body() dto: { targetUserId: string },
   ) {
-    return this.orgsService.transferOwnership(req.userContext, orgId, dto);
+    return this.orgsService.transferOwnership(req.userContext, dto.targetUserId);
   }
 
   @Post('reassign-work')

@@ -3,6 +3,20 @@
   "version": "0.2.1",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./tenant-tx": {
+      "types": "./dist/tenant-tx.d.ts",
+      "default": "./dist/tenant-tx.js"
+    },
+    "./schema": {
+      "types": "./dist/schema.d.ts",
+      "default": "./dist/schema.js"
+    }
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsc -w"

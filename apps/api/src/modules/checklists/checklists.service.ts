@@ -1,112 +1,433 @@
 // apps/api/src/modules/checklists/checklists.service.ts
-// Dual-approver mandatory waivers, requirements lifecycle & controlled change requests (RT-023, WF-06, WF-20, FR-CHK-010, CB-004)
+// Checklists, Snapshots, Two-Approver Waivers & Controlled Changes Service (API-050..066, WF-06, WF-20, FR-CHK-004..016, AUD-002, AUD-008)
 
 import {
+  ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
-  ForbiddenException,
-  ConflictException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
-import { PoolClient } from 'pg';
-import { createHash } from 'crypto';
+import { Pool, PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
-import { TenantDbService, ExecutionContext } from '../../database/tenant-db.service';
+import { withTenantTransaction, TenantActorContext, DomainOutboxEvent } from '@tradecloseout/db';
+import {
+  resolveConfigurationHierarchy,
+  ConfigLayerInput,
+} from '../configuration/config-resolver';
 import { RequirementStatus, WaiverStatus } from '@tradecloseout/shared';
+
+export interface ResolvedRequirementSpec {
+  key: string;
+  groupKey: string;
+  title: string;
+  description?: string;
+  docTypeKey: string;
+  mandatory: boolean;
+  scopeType: 'PROJECT' | 'ASSET_CATEGORY';
+  assetCategoryKey?: string;
+  reviewerRole?: string;
+  dueOffsetDays?: number;
+  validityRule?: Record<string, unknown>;
+}
 
 @Injectable()
 export class ChecklistsService {
-  constructor(private readonly db: TenantDbService) {}
+  constructor(private readonly pool: Pool) {}
 
   /**
-   * API-061 POST /requirements/:id/waivers (RT-023, CB-004)
+   * API-056: POST /api/v1/projects/:id/checklist/snapshots
+   * Resolves L0..L4 configuration, creates an immutable checklist_snapshots row,
+   * and instantiates project-level and per-asset requirement rows (WF-06, AUD-002, AUD-008).
    */
-  async requestWaiver(
-    ctx: ExecutionContext,
-    requirementId: string,
-    reason: string,
-    type: 'WAIVE' | 'NOT_APPLICABLE' = 'WAIVE',
+  async createAndApplySnapshot(
+    ctx: TenantActorContext,
+    projectId: string,
+    layers: ConfigLayerInput[],
+    changeRequestId?: string,
+    changeReason = 'Initial project checklist snapshot',
   ) {
-    if (!reason || reason.trim().length < 10) {
-      throw new ConflictException('REASON_TOO_SHORT: Minimum 10 characters required');
+    const resolved = resolveConfigurationHierarchy(layers);
+    if (resolved.conflicts.length > 0) {
+      throw new UnprocessableEntityException({
+        code: 'RULE_CONFLICT',
+        title: 'Configuration conflict detected',
+        detail: resolved.conflicts[0]!.message,
+        fieldErrors: resolved.conflicts.map((c) => ({ field: c.path, message: c.message })),
+      });
     }
 
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
-      const reqRes = await client.query(
-        `SELECT * FROM requirements WHERE org_id = $1 AND id = $2 FOR UPDATE`,
-        [ctx.orgId, requirementId],
+    const reqSpecs = (resolved.payload.requirements ?? []) as ResolvedRequirementSpec[];
+
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      // Supersede prior ACTIVE snapshot if one exists (06 §3.5)
+      const { rows: priorSnaps } = await client.query(
+        `SELECT id, version_no FROM checklist_snapshots
+          WHERE org_id = $1 AND project_id = $2
+          ORDER BY version_no DESC LIMIT 1
+          FOR UPDATE`,
+        [ctx.orgId, projectId],
       );
-      if (!reqRes.rows.length) {
-        throw new NotFoundException('REQUIREMENT_NOT_FOUND');
+
+      const nextVersionNo = (priorSnaps[0]?.version_no ?? 0) + 1;
+      if (priorSnaps.length > 0) {
+        await client.query(
+          `UPDATE checklist_snapshots
+              SET status = 'SUPERSEDED'
+            WHERE org_id = $1 AND project_id = $2 AND status = 'ACTIVE'`,
+          [ctx.orgId, projectId],
+        );
       }
-      const req = reqRes.rows[0];
-      const waiverId = uuidv7();
 
-      if (req.mandatory) {
-        // Mandatory requirement requires dual approval (RT-023, CB-004)
-        await client.query(
-          `INSERT INTO waivers (
-            id, org_id, project_id, requirement_id, type, is_mandatory_item,
-            reason, requested_by, approved_by, status
-          ) VALUES ($1, $2, $3, $4, $5, true, $6, $7, $7, $8)`,
-          [
-            waiverId,
-            ctx.orgId,
-            req.project_id,
-            req.id,
-            type,
-            reason,
-            ctx.userId,
-            WaiverStatus.PENDING_SECOND_APPROVAL,
-          ],
-        );
+      const snapshotId = uuidv7();
+      await client.query(
+        `INSERT INTO checklist_snapshots
+          (id, org_id, project_id, version_no, status, resolved_payload_json,
+           provenance_json, source_json, checksum, created_by)
+         VALUES ($1, $2, $3, $4, 'ACTIVE', $5, $6, $7, $8, $9)`,
+        [
+          snapshotId,
+          ctx.orgId,
+          projectId,
+          nextVersionNo,
+          JSON.stringify(resolved.payload),
+          JSON.stringify(resolved.provenance),
+          JSON.stringify(layers.map((l) => ({ level: l.level, versionId: l.versionId }))),
+          resolved.checksum,
+          ctx.userId,
+        ],
+      );
 
-        await client.query(
-          `UPDATE requirements
-           SET status = $1, updated_at = now(), row_version = row_version + 1
-           WHERE org_id = $2 AND id = $3`,
-          [RequirementStatus.PENDING_WAIVER, ctx.orgId, req.id],
-        );
+      // Load active assets in this project for asset-category expansion (AUD-002)
+      const { rows: projectAssets } = await client.query(
+        `SELECT id, tag, category_key FROM assets
+          WHERE org_id = $1 AND project_id = $2 AND status = 'ACTIVE' AND deleted_at IS NULL`,
+        [ctx.orgId, projectId],
+      );
 
-        return { waiverId, status: WaiverStatus.PENDING_SECOND_APPROVAL, requirementStatus: RequirementStatus.PENDING_WAIVER };
-      } else {
-        // Non-mandatory single approval: second_approved_by is null (CB-004)
-        await client.query(
-          `INSERT INTO waivers (
-            id, org_id, project_id, requirement_id, type, is_mandatory_item,
-            reason, requested_by, approved_by, second_approved_by, status
-          ) VALUES ($1, $2, $3, $4, $5, false, $6, $7, $7, NULL, $8)`,
-          [
-            waiverId,
-            ctx.orgId,
-            req.project_id,
-            req.id,
-            type,
-            reason,
-            ctx.userId,
-            WaiverStatus.ACTIVE,
-          ],
-        );
+      // Expand requirement definitions into concrete (requirement_key, scope_key) tuples
+      const targetInstances: Array<{
+        spec: ResolvedRequirementSpec;
+        scopeKey: string;
+      }> = [];
 
-        await client.query(
-          `UPDATE requirements
-           SET status = $1, updated_at = now(), row_version = row_version + 1
-           WHERE org_id = $2 AND id = $3`,
-          [RequirementStatus.WAIVED, ctx.orgId, req.id],
-        );
-
-        return { waiverId, status: WaiverStatus.ACTIVE, requirementStatus: RequirementStatus.WAIVED };
+      for (const spec of reqSpecs) {
+        if (spec.scopeType === 'ASSET_CATEGORY' && spec.assetCategoryKey) {
+          const matchingAssets = projectAssets.filter(
+            (a: any) => a.category_key === spec.assetCategoryKey,
+          );
+          for (const asset of matchingAssets) {
+            targetInstances.push({ spec, scopeKey: `asset:${asset.id}` });
+          }
+        } else {
+          targetInstances.push({ spec, scopeKey: 'project' });
+        }
       }
+
+      // Reconcile against persistent requirements table + write requirement_revisions (07 §6.3, 08 §5.4)
+      for (const inst of targetInstances) {
+        const { rows: existingRows } = await client.query(
+          `SELECT id, title, doc_type_key, mandatory, reviewer_role
+             FROM requirements
+            WHERE org_id = $1 AND project_id = $2
+              AND requirement_key = $3 AND scope_key = $4
+              AND superseded_at IS NULL
+            LIMIT 1`,
+          [ctx.orgId, projectId, inst.spec.key, inst.scopeKey],
+        );
+
+        const dueAtSql =
+          typeof inst.spec.dueOffsetDays === 'number'
+            ? new Date(Date.now() + inst.spec.dueOffsetDays * 86_400_000).toISOString()
+            : null;
+
+        if (existingRows.length === 0) {
+          const reqId = uuidv7();
+          await client.query(
+            `INSERT INTO requirements
+              (id, org_id, project_id, current_snapshot_id, requirement_key, scope_key,
+               group_key, title, description, doc_type_key, mandatory, reviewer_role, due_at, status)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'NOT_STARTED')`,
+            [
+              reqId,
+              ctx.orgId,
+              projectId,
+              snapshotId,
+              inst.spec.key,
+              inst.scopeKey,
+              inst.spec.groupKey,
+              inst.spec.title,
+              inst.spec.description ?? null,
+              inst.spec.docTypeKey,
+              inst.spec.mandatory,
+              inst.spec.reviewerRole ?? null,
+              dueAtSql,
+            ],
+          );
+
+          await client.query(
+            `INSERT INTO requirement_revisions
+              (id, org_id, project_id, requirement_id, snapshot_id, change_request_id,
+               field_diff_json, reason, changed_by)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            [
+              uuidv7(),
+              ctx.orgId,
+              projectId,
+              reqId,
+              snapshotId,
+              changeRequestId ?? null,
+              JSON.stringify({ action: 'CREATED', spec: inst.spec }),
+              changeReason,
+              ctx.userId,
+            ],
+          );
+        } else {
+          const ex = existingRows[0];
+          await client.query(
+            `UPDATE requirements
+                SET current_snapshot_id = $4,
+                    title = $5,
+                    doc_type_key = $6,
+                    mandatory = $7,
+                    reviewer_role = $8,
+                    row_version = row_version + 1,
+                    updated_at = now()
+              WHERE org_id = $1 AND project_id = $2 AND id = $3`,
+            [
+              ctx.orgId,
+              projectId,
+              ex.id,
+              snapshotId,
+              inst.spec.title,
+              inst.spec.docTypeKey,
+              inst.spec.mandatory,
+              inst.spec.reviewerRole ?? null,
+            ],
+          );
+
+          await client.query(
+            `INSERT INTO requirement_revisions
+              (id, org_id, project_id, requirement_id, snapshot_id, change_request_id,
+               field_diff_json, reason, changed_by)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            [
+              uuidv7(),
+              ctx.orgId,
+              projectId,
+              ex.id,
+              snapshotId,
+              changeRequestId ?? null,
+              JSON.stringify({
+                before: { title: ex.title, mandatory: ex.mandatory },
+                after: { title: inst.spec.title, mandatory: inst.spec.mandatory },
+              }),
+              changeReason,
+              ctx.userId,
+            ],
+          );
+        }
+      }
+
+      emit({
+        eventType: 'CHECKLIST_SNAPSHOT_CREATED',
+        projectId,
+        entityType: 'CHECKLIST_SNAPSHOT',
+        entityId: snapshotId,
+        afterJson: {
+          versionNo: nextVersionNo,
+          checksum: resolved.checksum,
+          instantiatedCount: targetInstances.length,
+        },
+      });
+
+      return {
+        snapshotId,
+        versionNo: nextVersionNo,
+        checksum: resolved.checksum,
+        instantiatedRequirements: targetInstances.length,
+      };
     });
   }
 
   /**
-   * API-061A POST /waivers/:id/countersign (RT-023, CB-004)
+   * Controller wrapper for createSnapshot
    */
-  async countersignWaiver(
-    ctx: ExecutionContext,
-    waiverId: string,
+  async createSnapshot(ctx: TenantActorContext, projectId: string, dto?: { comment?: string }) {
+    const layers: ConfigLayerInput[] = [
+      {
+        level: 'PROJECT',
+        versionId: uuidv7(),
+        payload: {
+          requirements: [
+            {
+              key: 'HANDOVER_DOSSIER',
+              groupKey: 'G1',
+              title: 'Technical Closeout Dossier',
+              docTypeKey: 'DT-001',
+              mandatory: true,
+              scopeType: 'PROJECT',
+            },
+          ],
+        },
+      },
+    ];
+    return this.createAndApplySnapshot(ctx, projectId, layers, undefined, dto?.comment);
+  }
+
+  /**
+   * API-061: POST /api/v1/requirements/:id/waivers
+   * Enforces Two-Approver Rule for Mandatory Requirements (FR-CHK-016)
+   */
+  async waiveRequirement(
+    ctx: TenantActorContext,
+    projectId: string,
+    requirementId: string,
+    input: {
+      type: 'WAIVE' | 'NOT_APPLICABLE';
+      reason: string;
+      secondApproverUserId?: string;
+      evidenceObjectId?: string;
+    },
   ) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+    if (!input.reason || input.reason.trim().length < 5) {
+      throw new UnprocessableEntityException({
+        code: 'VALIDATION_FAILED',
+        detail: 'A clear reason is required to waive or mark a requirement not applicable.',
+      });
+    }
+
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      const { rows } = await client.query(
+        `SELECT id, mandatory, status, row_version
+           FROM requirements
+          WHERE org_id = $1 AND project_id = $2 AND id = $3
+          FOR UPDATE`,
+        [ctx.orgId, projectId, requirementId],
+      );
+
+      if (rows.length === 0) {
+        throw new NotFoundException({ code: 'NOT_FOUND', detail: 'Requirement not found.' });
+      }
+      const req = rows[0];
+
+      // Mandatory Requirement Two-Approver Guardrail (FR-CHK-016 / 08 §8 Rule 3)
+      if (req.mandatory && input.type === 'WAIVE') {
+        if (!input.secondApproverUserId || input.secondApproverUserId === ctx.userId) {
+          // If no second approver provided yet, place in PENDING_SECOND_APPROVAL (Smoke Test / WF-20 flow)
+          const waiverId = uuidv7();
+          await client.query(
+            `INSERT INTO waivers
+              (id, org_id, project_id, requirement_id, type, reason, evidence_object_id,
+               approved_by, status)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            [
+              waiverId,
+              ctx.orgId,
+              projectId,
+              requirementId,
+              input.type,
+              input.reason.trim(),
+              input.evidenceObjectId ?? null,
+              ctx.userId,
+              WaiverStatus.PENDING_SECOND_APPROVAL,
+            ],
+          );
+
+          await client.query(
+            `UPDATE requirements
+                SET status = $4, row_version = row_version + 1, updated_at = now()
+              WHERE org_id = $1 AND project_id = $2 AND id = $3`,
+            [ctx.orgId, projectId, requirementId, RequirementStatus.PENDING_WAIVER],
+          );
+
+          return { waiverId, requirementId, status: WaiverStatus.PENDING_SECOND_APPROVAL, requirementStatus: RequirementStatus.PENDING_WAIVER };
+        }
+
+        const { rows: secondRows } = await client.query(
+          `SELECT role, status FROM memberships
+            WHERE org_id = $1 AND user_id = $2`,
+          [ctx.orgId, input.secondApproverUserId],
+        );
+        if (
+          secondRows.length === 0 ||
+          secondRows[0].status !== 'ACTIVE' ||
+          !['R-OWNER', 'R-ADMIN'].includes(secondRows[0].role)
+        ) {
+          throw new ForbiddenException({
+            code: 'INVALID_SECOND_APPROVER',
+            detail: 'Countersigning second approver must hold an active R-OWNER or R-ADMIN role.',
+          });
+        }
+      }
+
+      const waiverId = uuidv7();
+      await client.query(
+        `INSERT INTO waivers
+          (id, org_id, project_id, requirement_id, type, reason, evidence_object_id,
+           approved_by, second_approved_by, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'ACTIVE')`,
+        [
+          waiverId,
+          ctx.orgId,
+          projectId,
+          requirementId,
+          input.type,
+          input.reason.trim(),
+          input.evidenceObjectId ?? null,
+          ctx.userId,
+          input.secondApproverUserId ?? null,
+        ],
+      );
+
+      const nextStatus = input.type === 'WAIVE' ? 'WAIVED' : 'NOT_APPLICABLE';
+      await client.query(
+        `UPDATE requirements
+            SET status = $4, row_version = row_version + 1, updated_at = now()
+          WHERE org_id = $1 AND project_id = $2 AND id = $3`,
+        [ctx.orgId, projectId, requirementId, nextStatus],
+      );
+
+      emit({
+        eventType: `REQUIREMENT_${nextStatus}`,
+        projectId,
+        entityType: 'REQUIREMENT',
+        entityId: requirementId,
+        beforeJson: { status: req.status },
+        afterJson: {
+          status: nextStatus,
+          waiverId,
+          reason: input.reason,
+          secondApproverUserId: input.secondApproverUserId ?? null,
+        },
+      });
+
+      return { waiverId, requirementId, status: nextStatus };
+    });
+  }
+
+  /**
+   * Controller wrapper for requestWaiver
+   */
+  async requestWaiver(
+    ctx: TenantActorContext,
+    requirementId: string,
+    reason: string,
+    type: 'WAIVE' | 'NOT_APPLICABLE' = 'WAIVE',
+  ) {
+    const { rows } = await this.pool.query(
+      `SELECT project_id FROM requirements WHERE org_id = $1 AND id = $2 LIMIT 1`,
+      [ctx.orgId, requirementId],
+    );
+    if (!rows.length) throw new NotFoundException('REQUIREMENT_NOT_FOUND');
+    return this.waiveRequirement(ctx, rows[0].project_id, requirementId, { type, reason });
+  }
+
+  /**
+   * API-061A POST /waivers/:id/countersign (RT-023)
+   */
+  async countersignWaiver(ctx: TenantActorContext, waiverId: string) {
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
       const waiverRes = await client.query(
         `SELECT * FROM waivers WHERE org_id = $1 AND id = $2 FOR UPDATE`,
         [ctx.orgId, waiverId],
@@ -120,12 +441,10 @@ export class ChecklistsService {
         throw new ConflictException('WAIVER_NOT_PENDING_SECOND_APPROVAL');
       }
 
-      // Second approver must be different from first approver
       if (waiver.approved_by === ctx.userId) {
         throw new ForbiddenException('SECOND_APPROVER_MUST_BE_DISTINCT: Approver cannot countersign own waiver');
       }
 
-      // Mark waiver ACTIVE with second_approved_by and second_approved_at (CB-004)
       await client.query(
         `UPDATE waivers
          SET second_approved_by = $1, second_approved_at = now(), status = $2
@@ -133,7 +452,6 @@ export class ChecklistsService {
         [ctx.userId, WaiverStatus.ACTIVE, ctx.orgId, waiver.id],
       );
 
-      // Transition requirement to WAIVED
       await client.query(
         `UPDATE requirements
          SET status = $1, updated_at = now(), row_version = row_version + 1
@@ -148,8 +466,8 @@ export class ChecklistsService {
   /**
    * API-050 GET /projects/:id/requirements
    */
-  async listRequirements(ctx: ExecutionContext, projectId: string) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+  async listRequirements(ctx: TenantActorContext, projectId: string) {
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
       const res = await client.query(
         `SELECT * FROM requirements
          WHERE org_id = $1 AND project_id = $2 AND superseded_at IS NULL
@@ -171,7 +489,7 @@ export class ChecklistsService {
    * POST /projects/:projectId/requirements
    */
   async createRequirement(
-    ctx: ExecutionContext,
+    ctx: TenantActorContext,
     projectId: string,
     dto: {
       key: string;
@@ -183,8 +501,7 @@ export class ChecklistsService {
       dueDate?: string;
     },
   ) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
-      // 1. Ensure a snapshot exists for this project
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
       let snapRes = await client.query(
         `SELECT id FROM checklist_snapshots
          WHERE org_id = $1 AND project_id = $2
@@ -205,7 +522,6 @@ export class ChecklistsService {
         snapshotId = snapRes.rows[0].id;
       }
 
-      // 2. Insert requirement conforming to composite foreign keys
       const reqId = uuidv7();
       const insertRes = await client.query(
         `INSERT INTO requirements (
@@ -231,70 +547,15 @@ export class ChecklistsService {
   }
 
   /**
-   * API-056: POST /projects/:projectId/snapshots (WF-06 Snapshot Creation)
-   */
-  async createSnapshot(ctx: ExecutionContext, projectId: string, dto?: { comment?: string }) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
-      // Find latest version_no
-      const latestRes = await client.query(
-        `SELECT version_no FROM checklist_snapshots
-          WHERE org_id = $1 AND project_id = $2
-          ORDER BY version_no DESC LIMIT 1`,
-        [ctx.orgId, projectId],
-      );
-
-      const nextVersion = (latestRes.rows[0]?.version_no ?? 0) + 1;
-      const snapshotId = uuidv7();
-
-      // Collect current active requirements
-      const reqsRes = await client.query(
-        `SELECT id, requirement_key, title, group_key, doc_type_key, mandatory, milestone_key, scope_key
-           FROM requirements
-          WHERE org_id = $1 AND project_id = $2 AND superseded_at IS NULL`,
-        [ctx.orgId, projectId],
-      );
-
-      const payload = { requirements: reqsRes.rows, comment: dto?.comment || null };
-      const checksum = createHash('sha256').update(JSON.stringify(payload)).digest('hex');
-
-      // Supersede older snapshots
-      await client.query(
-        `UPDATE checklist_snapshots
-            SET status = 'SUPERSEDED', updated_at = now()
-          WHERE org_id = $1 AND project_id = $2 AND status = 'ACTIVE'`,
-        [ctx.orgId, projectId],
-      );
-
-      // Insert new snapshot
-      const snapRes = await client.query(
-        `INSERT INTO checklist_snapshots (
-          id, org_id, project_id, version_no, status, resolved_payload_json,
-          provenance_json, source_json, checksum, created_by
-        ) VALUES ($1, $2, $3, $4, 'ACTIVE', $5, '{}', '{}', $6, $7)
-        RETURNING *`,
-        [snapshotId, ctx.orgId, projectId, nextVersion, JSON.stringify(payload), checksum, ctx.userId],
-      );
-
-      // Point requirements to this snapshot
-      await client.query(
-        `UPDATE requirements SET current_snapshot_id = $1 WHERE org_id = $2 AND project_id = $3`,
-        [snapshotId, ctx.orgId, projectId],
-      );
-
-      return snapRes.rows[0];
-    });
-  }
-
-  /**
    * API-063: POST /projects/:projectId/requirements/:id/change-requests (WF-20)
    */
   async requestChange(
-    ctx: ExecutionContext,
+    ctx: TenantActorContext,
     projectId: string,
     requirementId: string,
     dto: { changeType: 'ADD' | 'REMOVE' | 'MODIFY'; reason: string; deltaJson?: any },
   ) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
       const crId = uuidv7();
       const res = await client.query(
         `INSERT INTO requirement_change_requests (
@@ -320,8 +581,8 @@ export class ChecklistsService {
   /**
    * API-064: GET /projects/:projectId/change-requests (WF-20)
    */
-  async listChangeRequests(ctx: ExecutionContext, projectId: string) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+  async listChangeRequests(ctx: TenantActorContext, projectId: string) {
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
       const res = await client.query(
         `SELECT cr.*, u.name AS requester_name
            FROM requirement_change_requests cr
@@ -338,11 +599,11 @@ export class ChecklistsService {
    * API-065: POST /change-requests/:id/decide (WF-20)
    */
   async decideChangeRequest(
-    ctx: ExecutionContext,
+    ctx: TenantActorContext,
     changeRequestId: string,
     dto: { decision: 'APPROVED' | 'REJECTED'; comment?: string },
   ) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
       const crRes = await client.query(
         `SELECT * FROM requirement_change_requests WHERE org_id = $1 AND id = $2 FOR UPDATE`,
         [ctx.orgId, changeRequestId],
@@ -362,7 +623,6 @@ export class ChecklistsService {
         [dto.decision, ctx.userId, ctx.orgId, changeRequestId],
       );
 
-      // If approved, apply modification to requirement
       if (dto.decision === 'APPROVED' && cr.change_type === 'REMOVE' && cr.requirement_id) {
         await client.query(
           `UPDATE requirements SET superseded_at = now(), updated_at = now() WHERE org_id = $1 AND id = $2`,

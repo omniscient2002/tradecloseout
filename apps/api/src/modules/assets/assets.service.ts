@@ -1,99 +1,202 @@
 // apps/api/src/modules/assets/assets.service.ts
-// Asset Register, Dynamic Requirement Instantiation & CSV Import/Export (API-070..076, RT-003, WF-07, FR-AST-006, FR-AST-008, CB-002)
+// Equipment / Assets Service with Dynamic Requirement Instantiation (API-070..076, WF-07, FR-AST-001..012, AUD-002)
 
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
-import { PoolClient } from 'pg';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
+import { Pool, PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
-import { TenantDbService, ExecutionContext } from '../../database/tenant-db.service';
-import { RequirementStatus } from '@tradecloseout/shared';
+import { withTenantTransaction, TenantActorContext, DomainOutboxEvent } from '@tradecloseout/db';
+import { AssetTagSchema } from '@tradecloseout/shared';
+import { ResolvedRequirementSpec } from '../checklists/checklists.service';
+
+export interface CreateAssetInput {
+  tag: string;
+  name: string;
+  categoryKey: string;
+  make?: string;
+  model?: string;
+  serialNo?: string;
+  location?: string;
+  refrigerant?: string;
+  installDate?: string;
+  warrantyStart?: string;
+  warrantyStartBasis?: 'COMMISSIONING' | 'HANDOVER' | 'ACCEPTANCE' | 'SUPPLY';
+  warrantyEnd?: string;
+  replacesAssetId?: string;
+}
 
 @Injectable()
 export class AssetsService {
-  constructor(private readonly db: TenantDbService) {}
+  constructor(private readonly pool: Pool) {}
 
   /**
-   * API-071 POST /projects/:id/assets
+   * API-071: POST /api/v1/projects/:id/assets
+   * Registers an equipment unit and automatically instantiates asset-scoped requirements
+   * from the active project checklist snapshot (WF-07, AUD-002).
    */
   async createAsset(
-    ctx: ExecutionContext,
+    ctx: TenantActorContext,
     projectId: string,
-    dto: { tag: string; name: string; categoryKey: string; make?: string; model?: string; serialNo?: string; location?: string },
+    input: CreateAssetInput,
   ) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
-      const assetId = uuidv7();
+    const tagParse = AssetTagSchema.safeParse(input.tag);
+    if (!tagParse.success) {
+      throw new UnprocessableEntityException({
+        code: 'VALIDATION_FAILED',
+        detail: tagParse.error.issues[0]?.message ?? 'Invalid asset tag.',
+      });
+    }
 
-      // 1. Insert Asset strictly matching SQL schema (CB-002)
-      const insertRes = await client.query(
-        `INSERT INTO assets (
-          id, org_id, project_id, tag, name, category_key,
-          make, model, serial_no, location, status, created_by
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'ACTIVE', $11)
-        RETURNING *`,
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      const normalizedTag = tagParse.data;
+
+      // Check case-insensitive tag uniqueness per project (FR-AST-004)
+      const { rows: dupRows } = await client.query(
+        `SELECT id FROM assets
+          WHERE org_id = $1 AND project_id = $2 AND upper(tag) = upper($3)
+            AND deleted_at IS NULL
+          LIMIT 1`,
+        [ctx.orgId, projectId, normalizedTag],
+      );
+      if (dupRows.length > 0) {
+        throw new ConflictException({
+          code: 'DUPLICATE_ASSET_TAG',
+          title: 'Equipment tag already exists',
+          detail: `An equipment record with tag '${normalizedTag}' already exists in this project.`,
+        });
+      }
+
+      const assetId = uuidv7();
+      const { rows: insertedRows } = await client.query(
+        `INSERT INTO assets
+          (id, org_id, project_id, tag, name, category_key, make, model, serial_no,
+           location, refrigerant, install_date, warranty_start, warranty_start_basis,
+           warranty_end, status, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'ACTIVE', $16)
+         RETURNING *`,
         [
           assetId,
           ctx.orgId,
           projectId,
-          dto.tag.trim().toUpperCase(),
-          dto.name.trim(),
-          dto.categoryKey,
-          dto.make || null,
-          dto.model || null,
-          dto.serialNo || null,
-          dto.location || null,
+          normalizedTag,
+          input.name.trim(),
+          input.categoryKey,
+          input.make ?? null,
+          input.model ?? null,
+          input.serialNo ?? null,
+          input.location ?? null,
+          input.refrigerant ?? null,
+          input.installDate ?? null,
+          input.warrantyStart ?? null,
+          input.warrantyStartBasis ?? 'HANDOVER',
+          input.warrantyEnd ?? null,
           ctx.userId,
         ],
       );
-      const asset = insertRes.rows[0];
 
-      // 2. Dynamic requirement expansion for asset-scoped items (RT-003, WF-07, CB-002)
-      const snapshotRes = await client.query(
-        `SELECT id, resolved_payload_json FROM checklist_snapshots
-         WHERE org_id = $1 AND project_id = $2 AND status = 'ACTIVE' LIMIT 1`,
-        [ctx.orgId, projectId],
-      );
-
-      if (snapshotRes.rows.length) {
-        const snapshotId = snapshotRes.rows[0].id;
-        const payload = snapshotRes.rows[0].resolved_payload_json;
-        const reqDefs = payload.requirements || [];
-
-        for (const def of reqDefs) {
-          if ((def.scope === 'A' || def.scope === 'AC') && def.assetCategoryKey === dto.categoryKey) {
-            const reqId = uuidv7();
-            await client.query(
-              `INSERT INTO requirements (
-                id, org_id, project_id, current_snapshot_id, asset_id, scope_key,
-                requirement_key, group_key, title, doc_type_key, mandatory, milestone_key, status
-              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-              [
-                reqId,
-                ctx.orgId,
-                projectId,
-                snapshotId,
-                asset.id,
-                `asset:${asset.id}`,
-                `${def.key}:${asset.tag}`,
-                def.groupKey || 'EQUIPMENT_DOCS',
-                `${def.title} — ${asset.tag}`,
-                def.docTypeKey || 'DT-025',
-                def.mandatory ?? true,
-                def.milestoneKey || 'INSTALLATION',
-                RequirementStatus.NOT_STARTED,
-              ],
-            );
-          }
-        }
+      // If this asset replaces an older unit, link replacement lineage (FR-AST-006 / FR-AST-011)
+      if (input.replacesAssetId) {
+        await client.query(
+          `UPDATE assets
+              SET status = 'REPLACED',
+                  replaced_by_asset_id = $4,
+                  row_version = row_version + 1,
+                  updated_at = now()
+            WHERE org_id = $1 AND project_id = $2 AND id = $3`,
+          [ctx.orgId, projectId, input.replacesAssetId, assetId],
+        );
       }
 
-      return asset;
+      // Instantiate asset-scoped requirements from active snapshot (AUD-002 / FR-AST-005)
+      const instantiatedCount = await this.instantiateAssetRequirements(
+        client,
+        ctx,
+        projectId,
+        assetId,
+        input.categoryKey,
+      );
+
+      emit({
+        eventType: 'ASSET_CREATED',
+        projectId,
+        entityType: 'ASSET',
+        entityId: assetId,
+        afterJson: {
+          tag: normalizedTag,
+          categoryKey: input.categoryKey,
+          instantiatedRequirements: instantiatedCount,
+        },
+      });
+
+      return {
+        ...insertedRows[0],
+        assetId,
+        tag: normalizedTag,
+        instantiatedRequirements: instantiatedCount,
+      };
     });
+  }
+
+  /**
+   * API-073: DELETE /api/v1/assets/:id
+   * Soft-deletes an asset only if it has no approved documents (FR-AST-008).
+   */
+  async deleteOrRetireAsset(ctx: TenantActorContext, projectId: string, assetId: string) {
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      const { rows: approvedDocs } = await client.query(
+        `SELECT da.document_id
+           FROM document_assets da
+           JOIN documents d
+             ON d.org_id = da.org_id AND d.project_id = da.project_id AND d.id = da.document_id
+          WHERE da.org_id = $1 AND da.project_id = $2 AND da.asset_id = $3
+            AND d.current_approved_version_id IS NOT NULL
+          LIMIT 1`,
+        [ctx.orgId, projectId, assetId],
+      );
+
+      if (approvedDocs.length > 0) {
+        throw new ConflictException({
+          code: 'ASSET_HAS_APPROVED_DOCUMENTS',
+          title: 'Equipment has approved documents',
+          detail:
+            'Equipment with approved documents cannot be deleted. Mark it REPLACED or RETIRED instead (FR-AST-008).',
+        });
+      }
+
+      await client.query(
+        `UPDATE assets
+            SET status = 'RETIRED', deleted_at = now(), row_version = row_version + 1
+          WHERE org_id = $1 AND project_id = $2 AND id = $3`,
+        [ctx.orgId, projectId, assetId],
+      );
+
+      emit({
+        eventType: 'ASSET_DELETED',
+        projectId,
+        entityType: 'ASSET',
+        entityId: assetId,
+      });
+
+      return { assetId, status: 'RETIRED' };
+    });
+  }
+
+  /**
+   * Controller wrapper for deleteAsset
+   */
+  async deleteAsset(ctx: TenantActorContext, projectId: string, assetId: string, hard = false) {
+    return this.deleteOrRetireAsset(ctx, projectId, assetId);
   }
 
   /**
    * API-070 GET /projects/:id/assets
    */
-  async listAssets(ctx: ExecutionContext, projectId: string) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+  async listAssets(ctx: TenantActorContext, projectId: string) {
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
       const res = await client.query(
         `SELECT * FROM assets
          WHERE org_id = $1 AND project_id = $2 AND deleted_at IS NULL
@@ -107,8 +210,8 @@ export class AssetsService {
   /**
    * API-072 GET /projects/:projectId/assets/:id
    */
-  async getAsset(ctx: ExecutionContext, projectId: string, assetId: string) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+  async getAsset(ctx: TenantActorContext, projectId: string, assetId: string) {
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
       const res = await client.query(
         `SELECT * FROM assets
           WHERE org_id = $1 AND project_id = $2 AND id = $3 AND deleted_at IS NULL`,
@@ -123,12 +226,12 @@ export class AssetsService {
    * API-073 PATCH /projects/:projectId/assets/:id
    */
   async updateAsset(
-    ctx: ExecutionContext,
+    ctx: TenantActorContext,
     projectId: string,
     assetId: string,
     dto: { name?: string; make?: string; model?: string; serialNo?: string; location?: string; status?: string },
   ) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
       const res = await client.query(
         `UPDATE assets
             SET name = COALESCE($1, name),
@@ -159,46 +262,10 @@ export class AssetsService {
   }
 
   /**
-   * API-074 DELETE /projects/:projectId/assets/:id (FR-AST-006, FR-AST-008, TC-AST-02)
-   */
-  async deleteAsset(ctx: ExecutionContext, projectId: string, assetId: string, hard = false) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
-      // TC-AST-02: Hard-deleting an asset with approved documents is blocked
-      const docRes = await client.query(
-        `SELECT d.id FROM document_assets da
-           JOIN documents d ON d.id = da.document_id
-          WHERE da.org_id = $1 AND da.project_id = $2 AND da.asset_id = $3
-            AND d.current_approved_version_id IS NOT NULL LIMIT 1`,
-        [ctx.orgId, projectId, assetId],
-      );
-
-      if (docRes.rows.length > 0 && hard) {
-        throw new ConflictException({
-          code: 'CANNOT_HARD_DELETE_ASSET_WITH_APPROVED_DOCS',
-          title: 'Asset has approved handover documents',
-          detail: 'This asset is associated with approved closeout documents. Use retirement or soft-delete instead.',
-        });
-      }
-
-      // Soft delete preserves historical documents and lineage (FR-AST-008)
-      const res = await client.query(
-        `UPDATE assets
-            SET deleted_at = now(), status = 'RETIRED', updated_at = now()
-          WHERE org_id = $1 AND project_id = $2 AND id = $3 AND deleted_at IS NULL
-          RETURNING *`,
-        [ctx.orgId, projectId, assetId],
-      );
-
-      if (!res.rows.length) throw new NotFoundException('ASSET_NOT_FOUND');
-      return { success: true, assetId };
-    });
-  }
-
-  /**
    * API-075 POST /projects/:projectId/assets/import (CSV/Excel batch dry-run & insertion)
    */
   async importAssets(
-    ctx: ExecutionContext,
+    ctx: TenantActorContext,
     projectId: string,
     items: Array<{ tag: string; name: string; categoryKey: string; make?: string; model?: string; serialNo?: string; location?: string }>,
     dryRun = false,
@@ -223,7 +290,7 @@ export class AssetsService {
         const asset = await this.createAsset(ctx, projectId, item);
         created.push(asset);
       } catch (err: any) {
-        // Continue or report error
+        // Skip errored or log
       }
     }
 
@@ -233,7 +300,7 @@ export class AssetsService {
   /**
    * API-076 GET /projects/:projectId/assets/export
    */
-  async exportAssets(ctx: ExecutionContext, projectId: string) {
+  async exportAssets(ctx: TenantActorContext, projectId: string) {
     const assets = await this.listAssets(ctx, projectId);
     return {
       projectId,
@@ -241,5 +308,63 @@ export class AssetsService {
       count: assets.length,
       data: assets,
     };
+  }
+
+  private async instantiateAssetRequirements(
+    client: PoolClient,
+    ctx: TenantActorContext,
+    projectId: string,
+    assetId: string,
+    categoryKey: string,
+  ): Promise<number> {
+    const { rows: snapRows } = await client.query(
+      `SELECT id, resolved_payload_json
+         FROM checklist_snapshots
+        WHERE org_id = $1 AND project_id = $2 AND status = 'ACTIVE'
+        LIMIT 1`,
+      [ctx.orgId, projectId],
+    );
+
+    if (snapRows.length === 0) return 0;
+
+    const snapshot = snapRows[0];
+    const reqDefs = (snapshot.resolved_payload_json?.requirements ?? []) as Array<any>;
+    const matchingDefs = reqDefs.filter(
+      (r) =>
+        (r.scopeType === 'ASSET_CATEGORY' && r.assetCategoryKey === categoryKey) ||
+        ((r.scope === 'A' || r.scope === 'AC') && r.assetCategoryKey === categoryKey),
+    );
+
+    const scopeKey = `asset:${assetId}`;
+    let count = 0;
+
+    for (const def of matchingDefs) {
+      const reqId = uuidv7();
+      await client.query(
+        `INSERT INTO requirements
+          (id, org_id, project_id, current_snapshot_id, requirement_key, scope_key,
+           group_key, title, description, doc_type_key, mandatory, reviewer_role, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'NOT_STARTED')
+         ON CONFLICT (project_id, requirement_key, scope_key) WHERE superseded_at IS NULL
+         DO NOTHING`,
+        [
+          reqId,
+          ctx.orgId,
+          projectId,
+          snapshot.id,
+          def.key,
+          scopeKey,
+          def.groupKey || 'EQUIPMENT_DOCS',
+          def.title,
+          def.description ?? null,
+          def.docTypeKey || 'DT-025',
+          def.mandatory ?? true,
+          def.reviewerRole ?? null,
+        ],
+      );
+      count += 1;
+    }
+
+    return count;
   }
 }

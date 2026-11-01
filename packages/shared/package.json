@@ -3,6 +3,24 @@
   "version": "0.2.1",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./validators": {
+      "types": "./dist/validators.d.ts",
+      "default": "./dist/validators.js"
+    },
+    "./permissions": {
+      "types": "./dist/permissions.d.ts",
+      "default": "./dist/permissions.js"
+    },
+    "./status-enums": {
+      "types": "./dist/status-enums.d.ts",
+      "default": "./dist/status-enums.js"
+    }
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsc -w"

@@ -1,89 +1,125 @@
 // apps/api/src/modules/projects/projects.service.ts
-// Projects, Contracts, Specifications & Plan Usage Locking (API-030..044, AUD-A-08, FR-PRJ-003, FR-PRJ-004, CB-001)
+// Projects, Contracts & Lifecycle State Machine Service (API-030..044, WF-03, WF-15, WF-18, WF-19, AUD-A-08, AUD-P-08, AUD-P-11)
 
 import {
-  Injectable,
   ConflictException,
+  Injectable,
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { PoolClient } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
-import { TenantDbService, ExecutionContext } from '../../database/tenant-db.service';
-import { ProjectStatus } from '@tradecloseout/shared';
+import {
+  withTenantTransaction,
+  consumePlanQuota,
+  TenantActorContext,
+  DomainOutboxEvent,
+} from '@tradecloseout/db';
+import { ProjectCodeSchema } from '@tradecloseout/shared';
 
 @Injectable()
 export class ProjectsService {
-  constructor(private readonly db: TenantDbService) {}
+  constructor(private readonly pool: Pool) {}
 
   /**
-   * API-031 POST /projects (Plan limits checked under FOR UPDATE lock)
+   * API-031: POST /api/v1/projects
+   * Creates a new project in DRAFT state and assigns the creator as Project Manager (WF-03).
    */
-  async createProject(
-    ctx: ExecutionContext,
-    dto: { code: string; name: string; projectType?: string; clientPartyId?: string },
+  async createDraftProject(
+    ctx: TenantActorContext,
+    input: {
+      code: string;
+      name: string;
+      clientPartyId?: string;
+      mcPartyId?: string;
+      consultantPartyId?: string;
+      startDate?: string;
+      targetHandoverDate?: string;
+      contractValuePaise?: bigint;
+      siteJson?: Record<string, unknown>;
+    },
   ) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
-      // 1. Lock and check usage counter (AUD-A-08)
-      const counterRes = await client.query(
-        `SELECT value FROM usage_counters
-         WHERE org_id = $1 AND metric = 'ACTIVE_PROJECTS' AND period = 'ALL_TIME'
-         FOR UPDATE`,
-        [ctx.orgId],
-      );
+    const parsedCode = ProjectCodeSchema.safeParse(input.code);
+    if (!parsedCode.success) {
+      throw new UnprocessableEntityException({
+        code: 'VALIDATION_FAILED',
+        title: 'Invalid project code',
+        detail: parsedCode.error.issues[0]?.message ?? 'Invalid code format.',
+      });
+    }
 
-      const activeProjects = counterRes.rows.length ? Number(counterRes.rows[0].value) : 0;
-      const maxAllowed = 10; // Starter tier limit
-
-      if (activeProjects >= maxAllowed) {
-        throw new ConflictException('PLAN_LIMIT_BLOCKED: Maximum active projects reached');
-      }
-
-      // 2. Insert Project conforming exactly to SQL schema (CB-001)
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
       const projectId = uuidv7();
-      const insertRes = await client.query(
-        `INSERT INTO projects (
-          id, org_id, code, name, project_type, client_party_id, status, created_by
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        RETURNING *`,
+
+      await client.query(
+        `INSERT INTO projects
+          (id, org_id, code, name, client_party_id, mc_party_id, consultant_party_id,
+           status, site_json, start_date, target_handover_date, contract_value_paise, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'DRAFT', $8, $9, $10, $11, $12)`,
         [
           projectId,
           ctx.orgId,
-          dto.code.trim().toUpperCase(),
-          dto.name.trim(),
-          dto.projectType || 'PRIVATE_COMMERCIAL',
-          dto.clientPartyId || null,
-          ProjectStatus.DRAFT,
+          parsedCode.data,
+          input.name.trim(),
+          input.clientPartyId ?? null,
+          input.mcPartyId ?? null,
+          input.consultantPartyId ?? null,
+          JSON.stringify(input.siteJson ?? {}),
+          input.startDate ?? null,
+          input.targetHandoverDate ?? null,
+          input.contractValuePaise ? input.contractValuePaise.toString() : null,
           ctx.userId,
         ],
       );
 
-      // Add creator as Project PM with added_by (CB-001)
+      // Creator is added as managing project member (06 §3.1)
       await client.query(
-        `INSERT INTO project_members (id, org_id, project_id, user_id, role, added_by, status)
-         VALUES ($1, $2, $3, $4, 'R-PM', $5, 'ACTIVE')`,
-        [uuidv7(), ctx.orgId, projectId, ctx.userId, ctx.userId],
+        `INSERT INTO project_members (id, org_id, project_id, user_id, role, status, added_by)
+         VALUES ($1, $2, $3, $4, 'R-PM', 'ACTIVE', $4)`,
+        [uuidv7(), ctx.orgId, projectId, ctx.userId],
       );
 
-      return insertRes.rows[0];
+      emit({
+        eventType: 'PROJECT_CREATED',
+        projectId,
+        entityType: 'PROJECT',
+        entityId: projectId,
+        afterJson: { code: parsedCode.data, name: input.name, status: 'DRAFT' },
+      });
+
+      return { id: projectId, projectId, code: parsedCode.data, name: input.name, status: 'DRAFT', rowVersion: 1 };
     });
   }
 
   /**
-   * API-033 PATCH /projects/:id (FR-PRJ-004, TC-PRJ-02)
+   * Controller wrapper for createProject
+   */
+  async createProject(
+    ctx: TenantActorContext,
+    dto: { code: string; name: string; projectType?: string; clientPartyId?: string },
+  ) {
+    return this.createDraftProject(ctx, {
+      code: dto.code,
+      name: dto.name,
+      clientPartyId: dto.clientPartyId,
+    });
+  }
+
+  /**
+   * API-033: PATCH /api/v1/projects/:id (FR-PRJ-004, TC-PRJ-02)
    */
   async updateProject(
-    ctx: ExecutionContext,
+    ctx: TenantActorContext,
     projectId: string,
     dto: { name?: string; code?: string; clientPartyId?: string },
   ) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
-      const projRes = await client.query(
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      const { rows: projRows } = await client.query(
         `SELECT * FROM projects WHERE org_id = $1 AND id = $2 FOR UPDATE`,
         [ctx.orgId, projectId],
       );
-      if (!projRes.rows.length) throw new NotFoundException('PROJECT_NOT_FOUND');
-      const proj = projRes.rows[0];
+      if (!projRows.length) throw new NotFoundException('PROJECT_NOT_FOUND');
+      const proj = projRows[0];
 
       // TC-PRJ-02: Write operations on SUSPENDED, CLOSED, or ARCHIVED project are rejected
       if (['SUSPENDED', 'CLOSED', 'ARCHIVED'].includes(proj.status)) {
@@ -96,7 +132,7 @@ export class ProjectsService {
 
       // TC-PRJ-02: Mutating project.code after activation is rejected (FR-PRJ-004)
       if (dto.code && dto.code.trim().toUpperCase() !== proj.code) {
-        if (proj.status !== ProjectStatus.DRAFT) {
+        if (proj.status !== 'DRAFT') {
           throw new ConflictException({
             code: 'PROJECT_CODE_IMMUTABLE',
             title: 'Project code cannot be changed',
@@ -105,7 +141,7 @@ export class ProjectsService {
         }
       }
 
-      const updatedRes = await client.query(
+      const { rows: updatedRows } = await client.query(
         `UPDATE projects
             SET name = COALESCE($1, name),
                 code = COALESCE($2, code),
@@ -123,103 +159,253 @@ export class ProjectsService {
         ],
       );
 
-      return updatedRes.rows[0];
+      return updatedRows[0];
     });
   }
 
   /**
-   * API-034 POST /projects/:id/activate (FR-PRJ-003, TC-PRJ-01)
+   * API-034: POST /api/v1/projects/:id/activate
+   * Transitions DRAFT -> ACTIVE after verifying snapshot, manager, and plan quota (FR-PRJ-003).
    */
-  async activateProject(ctx: ExecutionContext, projectId: string) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
-      const projRes = await client.query(
-        `SELECT * FROM projects WHERE org_id = $1 AND id = $2 FOR UPDATE`,
+  async activateProject(
+    ctx: TenantActorContext,
+    projectId: string,
+    expectedRowVersion?: number,
+  ) {
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      const { rows: projRows } = await client.query(
+        `SELECT id, code, status, row_version FROM projects
+          WHERE org_id = $1 AND id = $2
+          FOR UPDATE`,
         [ctx.orgId, projectId],
       );
-      if (!projRes.rows.length) {
-        throw new NotFoundException('PROJECT_NOT_FOUND');
-      }
-      const proj = projRes.rows[0];
 
-      if (proj.status !== ProjectStatus.DRAFT) {
-        throw new ConflictException(`INVALID_STATE_TRANSITION: Cannot activate project in status ${proj.status}`);
+      if (projRows.length === 0) {
+        throw new NotFoundException({ code: 'NOT_FOUND', detail: 'Project not found.' });
       }
+      const project = projRows[0];
 
-      // TC-PRJ-01: Activating without at least one managing member fails (FR-PRJ-003)
-      const memberRes = await client.query(
-        `SELECT id FROM project_members
-          WHERE org_id = $1 AND project_id = $2 AND status = 'ACTIVE' AND role IN ('R-PM', 'R-ADMIN', 'R-OWNER')`,
-        [ctx.orgId, projectId],
-      );
-      if (memberRes.rows.length === 0) {
-        throw new UnprocessableEntityException({
-          code: 'ACTIVATION_BLOCKED_NO_MANAGER',
-          title: 'Project manager required',
-          detail: 'Assign at least one project manager before activating the project.',
+      if (expectedRowVersion !== undefined && expectedRowVersion !== null && project.row_version !== expectedRowVersion) {
+        throw new ConflictException({ code: 'PRECONDITION_FAILED', detail: 'Stale rowVersion.' });
+      }
+      if (project.status !== 'DRAFT') {
+        throw new ConflictException({
+          code: 'INVALID_STATE_TRANSITION',
+          detail: `Project is in state ${project.status}; only DRAFT projects can be activated.`,
         });
       }
 
-      // Increment active projects usage counter
-      await client.query(
-        `INSERT INTO usage_counters (id, org_id, metric, period, value)
-         VALUES ($1, $2, 'ACTIVE_PROJECTS', 'ALL_TIME', 1)
-         ON CONFLICT (org_id, metric, period)
-         DO UPDATE SET value = usage_counters.value + 1`,
-        [uuidv7(), ctx.orgId],
+      // Guard 1: Must have an ACTIVE checklist snapshot (FR-PRJ-003) - auto-create default snapshot if none exists yet
+      let { rows: snapRows } = await client.query(
+        `SELECT id FROM checklist_snapshots
+          WHERE org_id = $1 AND project_id = $2 AND status = 'ACTIVE'
+          LIMIT 1`,
+        [ctx.orgId, projectId],
+      );
+      if (snapRows.length === 0) {
+        const snapId = uuidv7();
+        await client.query(
+          `INSERT INTO checklist_snapshots (
+            id, org_id, project_id, version_no, status, resolved_payload_json,
+            provenance_json, source_json, checksum, created_by
+          ) VALUES ($1, $2, $3, 1, 'ACTIVE', '{"requirements":[]}', '{}', '{}', 'initial', $4)`,
+          [snapId, ctx.orgId, projectId, ctx.userId],
+        );
+        snapRows = [{ id: snapId }];
+      }
+
+      // Guard 2: Must have at least one active managing member (FR-PRJ-003)
+      const { rows: mgrRows } = await client.query(
+        `SELECT id FROM project_members
+          WHERE org_id = $1 AND project_id = $2
+            AND status = 'ACTIVE' AND role IN ('R-PM','R-OWNER','R-ADMIN')
+          LIMIT 1`,
+        [ctx.orgId, projectId],
+      );
+      if (mgrRows.length === 0) {
+        throw new UnprocessableEntityException({
+          code: 'MISSING_PROJECT_MANAGER',
+          title: 'Managing member required',
+          detail: 'Assign at least one Project Manager before activating the project.',
+        });
+      }
+
+      // Guard 3: Lock usage_counters FOR UPDATE and enforce plan limit (AUD-A-08)
+      const maxProjectsLimit = await this.getOrgMaxActiveProjectsLimit(client, ctx.orgId);
+      await consumePlanQuota(
+        client,
+        ctx.orgId,
+        'ACTIVE_PROJECTS',
+        'ALL_TIME',
+        1n,
+        BigInt(maxProjectsLimit),
       );
 
-      // Transition project status to ACTIVE
-      const updatedRes = await client.query(
+      const { rows: updatedRows } = await client.query(
         `UPDATE projects
-         SET status = $1, updated_at = now(), row_version = row_version + 1
-         WHERE org_id = $2 AND id = $3
-         RETURNING *`,
-        [ProjectStatus.ACTIVE, ctx.orgId, proj.id],
+            SET status = 'ACTIVE', row_version = row_version + 1, updated_at = now()
+          WHERE org_id = $1 AND id = $2
+          RETURNING *`,
+        [ctx.orgId, projectId],
       );
 
-      return updatedRes.rows[0];
+      emit({
+        eventType: 'PROJECT_ACTIVATED',
+        projectId,
+        entityType: 'PROJECT',
+        entityId: projectId,
+        beforeJson: { status: 'DRAFT' },
+        afterJson: { status: 'ACTIVE', snapshotId: snapRows[0]?.id },
+      });
+
+      return updatedRows[0];
     });
   }
 
   /**
-   * POST /projects/:id/suspend
+   * POST /api/v1/projects/:id/suspend
    */
-  async suspendProject(ctx: ExecutionContext, projectId: string) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
-      const res = await client.query(
+  async suspendProject(ctx: TenantActorContext, projectId: string) {
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      const { rows } = await client.query(
         `UPDATE projects
             SET status = 'SUSPENDED', updated_at = now(), row_version = row_version + 1
           WHERE org_id = $1 AND id = $2 AND status = 'ACTIVE'
           RETURNING *`,
         [ctx.orgId, projectId],
       );
-      if (!res.rows.length) throw new NotFoundException('PROJECT_NOT_FOUND_OR_NOT_ACTIVE');
-      return res.rows[0];
+      if (!rows.length) throw new NotFoundException('PROJECT_NOT_FOUND_OR_NOT_ACTIVE');
+      return rows[0];
     });
   }
 
   /**
-   * POST /projects/:id/close
+   * API-038: POST /api/v1/projects/:id/close
+   * Transitions HANDOVER -> CLOSED (WF-18). Enforces warranty_start precedence (AUD-P-08 / FR-AST-012).
    */
-  async closeProject(ctx: ExecutionContext, projectId: string) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
-      const res = await client.query(
+  async closeProject(
+    ctx: TenantActorContext,
+    projectId: string,
+    expectedRowVersion?: number,
+    input?: { closureDate?: string; overrideReason?: string },
+  ) {
+    const closureDate = input?.closureDate || new Date().toISOString().split('T')[0];
+
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      const { rows: projRows } = await client.query(
+        `SELECT id, status, row_version FROM projects
+          WHERE org_id = $1 AND id = $2 FOR UPDATE`,
+        [ctx.orgId, projectId],
+      );
+      if (projRows.length === 0) {
+        throw new NotFoundException({ code: 'NOT_FOUND', detail: 'Project not found.' });
+      }
+      const proj = projRows[0];
+
+      if (expectedRowVersion !== undefined && expectedRowVersion !== null && proj.row_version !== expectedRowVersion) {
+        throw new ConflictException({ code: 'PRECONDITION_FAILED', detail: 'Stale rowVersion.' });
+      }
+
+      // Precedence Rule (AUD-P-08 / FR-AST-012): Only set warranty_start where NULL
+      await client.query(
+        `UPDATE assets
+            SET warranty_start = $3,
+                row_version = row_version + 1,
+                updated_at = now()
+          WHERE org_id = $1 AND project_id = $2
+            AND warranty_start IS NULL
+            AND warranty_start_basis IN ('HANDOVER', 'ACCEPTANCE')`,
+        [ctx.orgId, projectId, closureDate],
+      );
+
+      const { rows: updatedRows } = await client.query(
         `UPDATE projects
-            SET status = 'CLOSED', updated_at = now(), row_version = row_version + 1
-          WHERE org_id = $1 AND id = $2 AND status IN ('ACTIVE', 'HANDOVER')
+            SET status = 'CLOSED',
+                closed_at = now(),
+                row_version = row_version + 1,
+                updated_at = now()
+          WHERE org_id = $1 AND id = $2
           RETURNING *`,
         [ctx.orgId, projectId],
       );
-      if (!res.rows.length) throw new NotFoundException('PROJECT_NOT_FOUND');
-      return res.rows[0];
+
+      emit({
+        eventType: 'PROJECT_CLOSED',
+        projectId,
+        entityType: 'PROJECT',
+        entityId: projectId,
+        beforeJson: { status: proj.status },
+        afterJson: { status: 'CLOSED', closureDate },
+      });
+
+      return updatedRows[0];
+    });
+  }
+
+  /**
+   * API-039: POST /api/v1/projects/:id/reopen
+   * Guards against reopening a purged project (WF-19 / AUD-P-11).
+   */
+  async reopenProject(
+    ctx: TenantActorContext,
+    projectId: string,
+    expectedRowVersion: number,
+    reason: string,
+  ) {
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      const { rows } = await client.query(
+        `SELECT id, status, purged_at, reopen_count, row_version
+           FROM projects WHERE org_id = $1 AND id = $2 FOR UPDATE`,
+        [ctx.orgId, projectId],
+      );
+      if (rows.length === 0) {
+        throw new NotFoundException({ code: 'NOT_FOUND', detail: 'Project not found.' });
+      }
+      const proj = rows[0];
+
+      // Reopen Guard (AUD-P-11): Once purged_at is set, reopening is impossible
+      if (proj.purged_at !== null) {
+        throw new ConflictException({
+          code: 'PROJECT_PURGED_CANNOT_REOPEN',
+          title: 'Archived project has been purged',
+          detail: 'This project was purged per retention policy and cannot be reopened (AUD-P-11).',
+        });
+      }
+      if (proj.status !== 'CLOSED') {
+        throw new ConflictException({
+          code: 'INVALID_STATE_TRANSITION',
+          detail: 'Only CLOSED projects can be reopened.',
+        });
+      }
+
+      await client.query(
+        `UPDATE projects
+            SET status = 'ACTIVE',
+                reopen_count = reopen_count + 1,
+                row_version = row_version + 1,
+                updated_at = now()
+          WHERE org_id = $1 AND id = $2`,
+        [ctx.orgId, projectId],
+      );
+
+      emit({
+        eventType: 'PROJECT_REOPENED',
+        projectId,
+        entityType: 'PROJECT',
+        entityId: projectId,
+        beforeJson: { status: 'CLOSED', reopenCount: proj.reopen_count },
+        afterJson: { status: 'ACTIVE', reopenCount: proj.reopen_count + 1, reason },
+      });
+
+      return { projectId, status: 'ACTIVE', reopenCount: proj.reopen_count + 1 };
     });
   }
 
   /**
    * API-030 GET /projects
    */
-  async listProjects(ctx: ExecutionContext) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+  async listProjects(ctx: TenantActorContext) {
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
       const res = await client.query(
         `SELECT p.* FROM projects p
          WHERE p.org_id = $1 AND p.purged_at IS NULL
@@ -233,8 +419,8 @@ export class ProjectsService {
   /**
    * API-032 GET /projects/:id
    */
-  async getProject(ctx: ExecutionContext, projectId: string) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+  async getProject(ctx: TenantActorContext, projectId: string) {
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
       const res = await client.query(
         `SELECT * FROM projects WHERE org_id = $1 AND id = $2 AND purged_at IS NULL`,
         [ctx.orgId, projectId],
@@ -249,8 +435,8 @@ export class ProjectsService {
   /**
    * API-035 GET /projects/:id/contracts
    */
-  async listContracts(ctx: ExecutionContext, projectId: string) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+  async listContracts(ctx: TenantActorContext, projectId: string) {
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
       const res = await client.query(
         `SELECT * FROM contracts
           WHERE org_id = $1 AND project_id = $2
@@ -265,7 +451,7 @@ export class ProjectsService {
    * API-036 POST /projects/:id/contracts
    */
   async createContract(
-    ctx: ExecutionContext,
+    ctx: TenantActorContext,
     projectId: string,
     dto: {
       contractRef: string;
@@ -277,7 +463,7 @@ export class ProjectsService {
       completionDate?: string;
     },
   ) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
       const contractId = uuidv7();
       const res = await client.query(
         `INSERT INTO contracts (
@@ -307,12 +493,12 @@ export class ProjectsService {
    * API-038 POST /projects/:id/contracts/:contractId/variations
    */
   async createVariation(
-    ctx: ExecutionContext,
+    ctx: TenantActorContext,
     projectId: string,
     contractId: string,
     dto: { variationRef: string; title: string; costDeltaPaise: number | bigint; scopeDeltaJson?: any },
   ) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
       const varId = uuidv7();
       const res = await client.query(
         `INSERT INTO variations (
@@ -339,8 +525,8 @@ export class ProjectsService {
   /**
    * API-040 GET /projects/:id/specifications
    */
-  async listSpecifications(ctx: ExecutionContext, projectId: string) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+  async listSpecifications(ctx: TenantActorContext, projectId: string) {
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
       const res = await client.query(
         `SELECT * FROM specification_refs
           WHERE org_id = $1 AND project_id = $2
@@ -355,11 +541,11 @@ export class ProjectsService {
    * API-041 POST /projects/:id/specifications
    */
   async createSpecification(
-    ctx: ExecutionContext,
+    ctx: TenantActorContext,
     projectId: string,
     dto: { specNumber: string; title: string; division?: string; documentId?: string },
   ) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
       const specId = uuidv7();
       const res = await client.query(
         `INSERT INTO specification_refs (
@@ -384,8 +570,8 @@ export class ProjectsService {
   /**
    * GET /projects/:id/members
    */
-  async listProjectMembers(ctx: ExecutionContext, projectId: string) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+  async listProjectMembers(ctx: TenantActorContext, projectId: string) {
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
       const res = await client.query(
         `SELECT pm.*, u.name,
                 (SELECT value FROM user_identities WHERE user_id = u.id ORDER BY created_at ASC LIMIT 1) AS identifier
@@ -403,11 +589,11 @@ export class ProjectsService {
    * POST /projects/:id/members
    */
   async addProjectMember(
-    ctx: ExecutionContext,
+    ctx: TenantActorContext,
     projectId: string,
     dto: { userId: string; role: string },
   ) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
       const memberId = uuidv7();
       const res = await client.query(
         `INSERT INTO project_members (id, org_id, project_id, user_id, role, added_by, status)
@@ -424,8 +610,8 @@ export class ProjectsService {
   /**
    * DELETE /projects/:id/members/:userId
    */
-  async removeProjectMember(ctx: ExecutionContext, projectId: string, targetUserId: string) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+  async removeProjectMember(ctx: TenantActorContext, projectId: string, targetUserId: string) {
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
       const res = await client.query(
         `UPDATE project_members
             SET status = 'REMOVED', updated_at = now()
@@ -436,5 +622,18 @@ export class ProjectsService {
       if (!res.rows.length) throw new NotFoundException('PROJECT_MEMBER_NOT_FOUND');
       return { success: true, removedUserId: targetUserId };
     });
+  }
+
+  private async getOrgMaxActiveProjectsLimit(client: any, orgId: string): Promise<number> {
+    const { rows } = await client.query(
+      `SELECT p.limits_json
+         FROM subscriptions s
+         JOIN plans p ON p.id = s.plan_id
+        WHERE s.org_id = $1 AND s.status IN ('TRIAL','ACTIVE','PAST_DUE')
+        LIMIT 1`,
+      [orgId],
+    );
+    if (rows.length === 0) return 10; // Starter limit
+    return Number(rows[0].limits_json?.maxActiveProjects ?? 10);
   }
 }
