@@ -240,4 +240,60 @@ export const api = {
       );
     },
   },
+
+  notifications: {
+    async list() {
+      return request<any[]>('/api/v1/notifications');
+    },
+    async create(data: {
+      projectId?: string;
+      channel: 'IN_APP' | 'EMAIL' | 'SMS' | 'WHATSAPP';
+      eventKey: string;
+      payload: Record<string, any>;
+      dedupKey: string;
+      isUrgent?: boolean;
+    }) {
+      return request<any>('/api/v1/notifications', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+    },
+    async getOwnerDigest(projectId: string) {
+      return request<any>(`/api/v1/projects/${projectId}/owner-digest`);
+    },
+  },
+
+  billing: {
+    async listPlans() {
+      return request<any[]>('/api/v1/billing/plans');
+    },
+    async listInvoices() {
+      return request<any[]>('/api/v1/billing/invoices');
+    },
+    async createInvoice(data: {
+      subtotalPaise: number;
+      buyerGstin?: string;
+      placeOfSupply: string;
+      isInterState?: boolean;
+    }) {
+      return request<any>('/api/v1/billing/invoices', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+    },
+    async recordTds(
+      invoiceId: string,
+      data: {
+        section: '194J_A_2PCT' | '194J_B_10PCT' | '194C';
+        rateBps: number;
+        amountPaise: number;
+        certificateReference?: string;
+      }
+    ) {
+      return request<any>(`/api/v1/billing/invoices/${invoiceId}/tds`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+    },
+  },
 };

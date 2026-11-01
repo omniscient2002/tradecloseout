@@ -10,6 +10,8 @@ import { ReviewsModule } from './modules/reviews/reviews.module';
 import { PackagesModule } from './modules/packages/packages.module';
 import { PartiesModule } from './modules/parties/parties.module';
 import { CustomisationModule } from './modules/customisation/customisation.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
+import { BillingModule } from './modules/billing/billing.module';
 
 @Module({
   imports: [
@@ -24,6 +26,8 @@ import { CustomisationModule } from './modules/customisation/customisation.modul
     PackagesModule,
     PartiesModule,
     CustomisationModule,
+    NotificationsModule,
+    BillingModule,
   ],
 })
 export class AppModule {}

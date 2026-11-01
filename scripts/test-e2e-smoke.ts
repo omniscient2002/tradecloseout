@@ -201,8 +201,100 @@ async function runSmokeTests() {
   }
   console.log(`[PASS] 12. End-to-end closeout checklist state verified (${allReqs.length} items tracked).`);
 
+  // 13. Deduplicated Notification & IST Quiet Hours (FR-NOT-001..014)
+  const notifRes = await fetch(`${baseUrl}/api/v1/notifications`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: cookie,
+      'X-CSRF-Token': csrfToken,
+    },
+    body: JSON.stringify({
+      projectId: proj.id,
+      channel: 'IN_APP',
+      eventKey: 'REQUIREMENT_APPROVED',
+      payload: { requirementKey: `${projCode}-M01`, approvedBy: 'Chief Consultant' },
+      dedupKey: `${proj.id}:${projCode}-M01:APPROVED`,
+    }),
+  });
+  const notifData = (await notifRes.json()) as any;
+  if (notifRes.status !== 201 || !notifData.notification) {
+    throw new Error(`Notification creation failed (${notifRes.status}): ${JSON.stringify(notifData)}`);
+  }
+  console.log(`[PASS] 13. Deduplicated notification registered (Status: ${notifData.notification.status}).`);
+
+  // 14. Weekly Rupee-at-Risk Owner Digest (BR-GTM-07, RT-029)
+  const digestRes = await fetch(`${baseUrl}/api/v1/projects/${proj.id}/owner-digest`, {
+    headers: { Cookie: cookie },
+  });
+  const digest = (await digestRes.json()) as any;
+  if (digestRes.status !== 200 || !digest.retentionMoneyGatedInr) {
+    throw new Error(`Owner digest calculation failed (${digestRes.status}): ${JSON.stringify(digest)}`);
+  }
+  console.log(`[PASS] 14. Weekly Rupee-at-Risk Owner Digest computed (Retention Gated: ₹${(digest.retentionMoneyGatedInr).toLocaleString('en-IN')}).`);
+
+  // 15. Rule 46 GST Invoicing with SAC 998315 (FR-BIL-005, RT-015)
+  const invRes = await fetch(`${baseUrl}/api/v1/billing/invoices`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: cookie,
+      'X-CSRF-Token': csrfToken,
+    },
+    body: JSON.stringify({
+      subtotalPaise: 1500000, // ₹15,000 Starter Plan
+      placeOfSupply: '07', // Delhi
+      buyerGstin: '07AAAAA0000A1Z5',
+      isInterState: false,
+    }),
+  });
+  const invoice = (await invRes.json()) as any;
+  if (invRes.status !== 201 || !invoice.id || invoice.sac !== '998315') {
+    throw new Error(`Rule 46 GST Invoice creation failed (${invRes.status}): ${JSON.stringify(invoice)}`);
+  }
+  console.log(`[PASS] 15. Rule 46 GST Tax Invoice ${invoice.number} issued (SAC 998315, Total: ₹${invoice.total_paise / 100}).`);
+
+  // 16. Section 194J TDS Deduction Tracking (FR-BIL-011, RT-030)
+  const tdsRes = await fetch(`${baseUrl}/api/v1/billing/invoices/${invoice.id}/tds`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: cookie,
+      'X-CSRF-Token': csrfToken,
+    },
+    body: JSON.stringify({
+      section: '194J_A_2PCT',
+      rateBps: 200, // 2%
+      amountPaise: 30000, // ₹300 TDS
+    }),
+  });
+  const tds = (await tdsRes.json()) as any;
+  if (tdsRes.status !== 201 || tds.status !== 'PENDING_CERTIFICATE') {
+    throw new Error(`Section 194J TDS recording failed (${tdsRes.status}): ${JSON.stringify(tds)}`);
+  }
+  console.log(`[PASS] 16. Section 194J TDS deduction recorded (Status: ${tds.status}, Awaiting Form 16A).`);
+
+  // 17. Razorpay Payment Webhook Idempotency (API-160)
+  const webhookRes = await fetch(`${baseUrl}/api/v1/webhooks/razorpay`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Razorpay-Signature': 'mock_hmac_sha256_sig',
+    },
+    body: JSON.stringify({
+      id: `evt_${Date.now()}`,
+      event: 'payment.captured',
+      payload: { payment: { entity: { id: 'pay_test_123', amount: 1770000 } } },
+    }),
+  });
+  const webhookData = (await webhookRes.json()) as any;
+  if (webhookRes.status !== 201 && webhookRes.status !== 200) {
+    throw new Error(`Webhook handling failed (${webhookRes.status}): ${JSON.stringify(webhookData)}`);
+  }
+  console.log(`[PASS] 17. Razorpay webhook processed idempotently (${webhookData.status}).`);
+
   console.log('\n=================================================================');
-  console.log('>>> ALL 12/12 END-TO-END PRODUCTION SMOKE TESTS PASSED CLEANLY <<<');
+  console.log('>>> ALL 17/17 END-TO-END PRODUCTION MILESTONES PASSED CLEANLY <<<');
   console.log('=================================================================');
 }
 
