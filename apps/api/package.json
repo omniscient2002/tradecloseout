@@ -22,7 +22,8 @@
     "cookie-parser": "^1.4.7",
     "dotenv": "^16.4.7",
     "@tradecloseout/shared": "workspace:*",
-    "@tradecloseout/pdf-engine": "workspace:*"
+    "@tradecloseout/pdf-engine": "workspace:*",
+    "@tradecloseout/db": "workspace:*"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.5",

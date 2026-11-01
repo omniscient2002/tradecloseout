@@ -276,15 +276,23 @@ export class AuthService {
     if (!sessions.length) return null;
     const session = sessions[0];
 
-    // If active org set, fetch role using user context
+    // If active org set, fetch role using tenant context (AUD-014)
     if (session.active_org_id) {
-      const roleRes = await this.db.withUserContext(session.user_id, async (client) => {
-        const res = await client.query(
-          `SELECT role FROM memberships WHERE org_id = $1 AND user_id = $2 AND status = 'ACTIVE'`,
-          [session.active_org_id, session.user_id],
-        );
-        return res.rows;
-      });
+      const roleRes = await this.db.withTenantContext(
+        {
+          orgId: session.active_org_id,
+          userId: session.user_id,
+          actorType: 'USER',
+          requestId: 'auth-session',
+        },
+        async (client) => {
+          const res = await client.query(
+            `SELECT role FROM memberships WHERE org_id = $1 AND user_id = $2 AND status = 'ACTIVE'`,
+            [session.active_org_id, session.user_id],
+          );
+          return res.rows;
+        },
+      );
       session.org_role = roleRes.length ? roleRes[0].role : null;
     }
 
