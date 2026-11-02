@@ -2,6 +2,7 @@
 const nextConfig = {
   reactStrictMode: true,
   transpilePackages: ['@tradecloseout/shared'],
+  devIndicators: false,
   async rewrites() {
     return [
       {

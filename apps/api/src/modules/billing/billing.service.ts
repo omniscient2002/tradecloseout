@@ -12,29 +12,43 @@ export class BillingService {
 
   /**
    * API-150 GET /billing/plans
+   * Fix Business Risk 5: Includes Single-Project Closeout Pass (interval = ONE_TIME_PROJECT)
    */
   async listPlans() {
     return [
       {
         id: 'plan-starter',
+        code: 'STARTER',
         name: 'Starter Tier',
-        priceInr: 15000,
+        priceInr: 4999,
         billingPeriod: 'MONTHLY',
-        maxProjects: 3,
-        storageGb: 50,
+        maxProjects: 2,
+        storageGb: 20,
       },
       {
         id: 'plan-growth',
+        code: 'GROWTH',
         name: 'Growth Tier',
-        priceInr: 45000,
+        priceInr: 9999,
         billingPeriod: 'MONTHLY',
         maxProjects: 10,
-        storageGb: 250,
+        storageGb: 100,
+      },
+      {
+        id: 'plan-project-pass',
+        code: 'PROJECT_PASS',
+        name: 'Single-Project Closeout Pass',
+        priceInr: 24999,
+        billingPeriod: 'ONE_TIME_PROJECT',
+        maxProjects: 1,
+        storageGb: 10,
+        description: '18 months active execution + 8 years read-only DLP/audit archive hosting. Billable to site prelims.',
       },
       {
         id: 'plan-enterprise',
+        code: 'ENTERPRISE',
         name: 'Enterprise Tier',
-        priceInr: 120000,
+        priceInr: 49999,
         billingPeriod: 'MONTHLY',
         maxProjects: 50,
         storageGb: 1000,

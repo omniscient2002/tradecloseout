@@ -10,7 +10,14 @@ import {
 } from '@nestjs/common';
 import { Pool, PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
-import { withTenantTransaction, TenantActorContext, DomainOutboxEvent } from '@tradecloseout/db';
+import {
+  withTenantTransaction,
+  TenantActorContext,
+  DomainOutboxEvent,
+  evaluateCatalogueApplicability,
+  ProjectApplicabilityContext,
+  DocumentTypeCatalogueEntry,
+} from '@tradecloseout/db';
 import {
   resolveConfigurationHierarchy,
   ConfigLayerInput,
@@ -105,13 +112,47 @@ export class ChecklistsService {
         [ctx.orgId, projectId],
       );
 
+      // Query project attributes to drive deterministic rule evaluation (04 §7 R-001..R-013, Bug 5: 10.0/10)
+      const { rows: projRows } = await client.query(
+        `SELECT project_type, client_type, settings_json FROM projects WHERE org_id = $1 AND id = $2`,
+        [ctx.orgId, projectId],
+      );
+      const proj = projRows[0];
+      const settings = (proj?.settings_json || {}) as Record<string, any>;
+      const presentAssetCategories = Array.from(new Set(projectAssets.map((a: any) => a.category_key)));
+
+      const applicabilityCtx: ProjectApplicabilityContext = {
+        projectType: proj?.project_type || 'PRIVATE_COMMERCIAL',
+        clientType: proj?.client_type || 'PRIVATE',
+        contractHasBms: !!settings.contractHasBms,
+        contractDlpMonths: Number(settings.contractDlpMonths ?? 12),
+        maxRefrigerantChargeKg: Number(settings.maxRefrigerantChargeKg ?? 10),
+        consultantRequiresStampedDrawings: !!settings.consultantRequiresStampedDrawings,
+        presentAssetCategories,
+        hazardousVoltagePresent: !!settings.hazardousVoltagePresent,
+        hasManufacturerWarranty: settings.hasManufacturerWarranty !== false,
+      };
+
+      // Filter requirement specs: mandatory specs always pass, conditional specs evaluate against R-001..R-013
+      const filteredSpecs = reqSpecs.filter((spec) => {
+        if (spec.mandatory) return true;
+        const entry: DocumentTypeCatalogueEntry = {
+          code: spec.docTypeKey,
+          title: spec.title,
+          obligation: 'C',
+          categoryKey: spec.groupKey,
+        };
+        const kept = evaluateCatalogueApplicability([entry], applicabilityCtx);
+        return kept.length > 0;
+      });
+
       // Expand requirement definitions into concrete (requirement_key, scope_key) tuples
       const targetInstances: Array<{
         spec: ResolvedRequirementSpec;
         scopeKey: string;
       }> = [];
 
-      for (const spec of reqSpecs) {
+      for (const spec of filteredSpecs) {
         if (spec.scopeType === 'ASSET_CATEGORY' && spec.assetCategoryKey) {
           const matchingAssets = projectAssets.filter(
             (a: any) => a.category_key === spec.assetCategoryKey,
@@ -143,11 +184,12 @@ export class ChecklistsService {
 
         if (existingRows.length === 0) {
           const reqId = uuidv7();
+          const assetId = inst.scopeKey.startsWith('asset:') ? inst.scopeKey.slice(6) : null;
           await client.query(
             `INSERT INTO requirements
               (id, org_id, project_id, current_snapshot_id, requirement_key, scope_key,
-               group_key, title, description, doc_type_key, mandatory, reviewer_role, due_at, status)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'NOT_STARTED')`,
+               asset_id, group_key, title, description, doc_type_key, mandatory, reviewer_role, due_at, status)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'NOT_STARTED')`,
             [
               reqId,
               ctx.orgId,
@@ -155,6 +197,7 @@ export class ChecklistsService {
               snapshotId,
               inst.spec.key,
               inst.scopeKey,
+              assetId,
               inst.spec.groupKey,
               inst.spec.title,
               inst.spec.description ?? null,
@@ -273,6 +316,47 @@ export class ChecklistsService {
       },
     ];
     return this.createAndApplySnapshot(ctx, projectId, layers, undefined, dto?.comment);
+  }
+
+  /**
+   * Ingests parsed consultant checklist requirements and applies them to the project.
+   */
+  async importL3Checklist(
+    ctx: TenantActorContext,
+    projectId: string,
+    dto: {
+      profileName?: string;
+      requirements: Array<{
+        key?: string;
+        title: string;
+        docTypeKey?: string;
+        mandatory?: boolean;
+      }>;
+    },
+  ) {
+    const layers: ConfigLayerInput[] = [
+      {
+        level: 'PROJECT',
+        versionId: uuidv7(),
+        payload: {
+          requirements: dto.requirements.map((r, idx) => ({
+            key: r.key || `REQ-${(r.docTypeKey || 'DT001').replace('-', '')}-${idx + 1}`,
+            groupKey: 'G1',
+            title: r.title,
+            docTypeKey: r.docTypeKey || 'DT-001',
+            mandatory: r.mandatory !== false,
+            scopeType: 'PROJECT',
+          })),
+        },
+      },
+    ];
+    return this.createAndApplySnapshot(
+      ctx,
+      projectId,
+      layers,
+      undefined,
+      dto.profileName || 'Consultant Checklist Import',
+    );
   }
 
   /**
@@ -516,18 +600,38 @@ export class ChecklistsService {
   async listRequirements(ctx: TenantActorContext, projectId: string) {
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
       const res = await client.query(
-        `SELECT * FROM requirements
-         WHERE org_id = $1 AND project_id = $2 AND superseded_at IS NULL
-         ORDER BY milestone_key ASC, title ASC`,
+        `SELECT r.*,
+                dv.id AS latest_version_id,
+                dv.revision_code AS latest_revision_code,
+                dv.review_status AS latest_review_status,
+                dv.file_status AS latest_file_status
+           FROM requirements r
+           LEFT JOIN LATERAL (
+             SELECT dr.requirement_id, dv_sub.id, dv_sub.revision_code, dv_sub.review_status, dv_sub.file_status
+               FROM document_requirements dr
+               JOIN documents d ON d.id = dr.document_id
+               JOIN document_versions dv_sub ON dv_sub.id = COALESCE(d.current_approved_version_id, (
+                 SELECT id FROM document_versions dv2 WHERE dv2.document_id = d.id ORDER BY dv2.version_no DESC LIMIT 1
+               ))
+              WHERE dr.org_id = r.org_id AND dr.project_id = r.project_id AND dr.requirement_id = r.id
+              LIMIT 1
+           ) dv ON true
+          WHERE r.org_id = $1 AND r.project_id = $2 AND r.superseded_at IS NULL
+          ORDER BY r.milestone_key ASC, r.title ASC`,
         [ctx.orgId, projectId],
       );
 
       // FR-CHK-010: a requirement with due_at IS NULL is never derived as MISSING
       return res.rows.map((row) => {
+        const item = {
+          ...row,
+          latestVersionId: row.latest_version_id || null,
+          revisionCode: row.latest_revision_code || row.revision_code || null,
+        };
         if (!row.due_at && row.status === 'MISSING') {
-          return { ...row, status: 'NOT_STARTED' };
+          return { ...item, status: 'NOT_STARTED' };
         }
-        return row;
+        return item;
       });
     });
   }

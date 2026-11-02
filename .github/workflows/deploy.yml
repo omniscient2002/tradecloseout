@@ -1,0 +1,64 @@
+name: TradeCloseout CI/CD Pipeline (15 §4)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify-and-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: tradecloseout
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install qpdf for PDF bomb & linearization checks (RT-034)
+        run: sudo apt-get update && sudo apt-get install -y qpdf
+
+      - name: Setup pnpm & Node.js 22
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile=false
+
+      - name: Apply PostgreSQL 16 Migrations & Forced RLS
+        env:
+          MIGRATOR_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/tradecloseout
+        run: pnpm db:migrate
+
+      - name: Seed Deccan EnviroTech MEP Portfolio & Real Binary PDFs
+        env:
+          MIGRATOR_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/tradecloseout
+        run: pnpm db:seed
+
+      - name: Run Mandatory Negative Security & RLS Test Suite (05 §12)
+        env:
+          APP_DATABASE_URL: postgres://tc_app:tc_app_pass@127.0.0.1:5432/tradecloseout
+          MIGRATOR_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/tradecloseout
+        run: pnpm tsx apps/api/test/rls-and-integrity.spec.ts

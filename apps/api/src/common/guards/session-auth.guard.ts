@@ -47,6 +47,9 @@ export class SessionAuthGuard implements CanActivate {
     }
 
     // 4. Verify Route Tenant Context Isolation (AUD-014)
+    if (req.params?.orgId === 'current' && session.active_org_id) {
+      req.params.orgId = session.active_org_id;
+    }
     if (req.params?.orgId && session.active_org_id && req.params.orgId !== session.active_org_id) {
       throw new ForbiddenException('CROSS_TENANT_ACCESS_FORBIDDEN: Session not scoped to requested organisation');
     }

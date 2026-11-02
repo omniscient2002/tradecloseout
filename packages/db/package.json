@@ -19,10 +19,13 @@
   },
   "scripts": {
     "build": "tsc",
-    "dev": "tsc -w"
+    "dev": "tsc -w",
+    "migrate": "tsx ./src/run-migrations.ts",
+    "seed": "tsx ../../apps/api/scripts/seed-portfolio.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.40.1",
+    "pdf-lib": "^1.17.1",
     "pg": "^8.13.3",
     "uuidv7": "^1.0.2"
   },

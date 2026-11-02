@@ -1,134 +1,188 @@
 import { createHash } from 'crypto';
 
 export type ConfigLevel = 'PLATFORM' | 'TRADE' | 'ORG' | 'CLIENT_CONTRACT' | 'PROJECT';
-export type OverridePolicy = 'locked' | 'inherit_only' | 'overridable' | 'additive' | 'keyed_merge';
+export type OverridePolicy = 'LOCKED' | 'INHERIT_ONLY' | 'REPLACE' | 'APPEND' | 'MERGE_MAP';
 
-export interface FieldSchemaRule {
+export interface FieldSchema {
+  path: string;
+  type: 'scalar' | 'keyed_array' | 'unkeyed_array' | 'map';
   overridePolicy: OverridePolicy;
   ownerLevel?: ConfigLevel;
   mergeKey?: string;
 }
 
-export interface ConfigLayerInput {
+export const ConfigSchemaRegistry: Record<string, Record<string, FieldSchema>> = {
+  'v1.0': {
+    'security.max_file_size_bytes': {
+      path: 'security.max_file_size_bytes',
+      type: 'scalar',
+      overridePolicy: 'LOCKED',
+      ownerLevel: 'PLATFORM',
+    },
+    'security.allowed_mime_types': {
+      path: 'security.allowed_mime_types',
+      type: 'unkeyed_array',
+      overridePolicy: 'LOCKED',
+      ownerLevel: 'PLATFORM',
+    },
+    'security.retention_days': {
+      path: 'security.retention_days',
+      type: 'scalar',
+      overridePolicy: 'LOCKED',
+      ownerLevel: 'PLATFORM',
+    },
+    'branding.primary_color': {
+      path: 'branding.primary_color',
+      type: 'scalar',
+      overridePolicy: 'INHERIT_ONLY',
+      ownerLevel: 'ORG',
+    },
+    'naming.pattern': {
+      path: 'naming.pattern',
+      type: 'scalar',
+      overridePolicy: 'REPLACE',
+    },
+    'notifications.schedule': {
+      path: 'notifications.schedule',
+      type: 'unkeyed_array',
+      overridePolicy: 'REPLACE',
+    },
+    'notifications.extra_recipients': {
+      path: 'notifications.extra_recipients',
+      type: 'unkeyed_array',
+      overridePolicy: 'APPEND',
+    },
+    'checklist.groups': {
+      path: 'checklist.groups',
+      type: 'keyed_array',
+      overridePolicy: 'MERGE_MAP',
+      mergeKey: 'key',
+    },
+    'checklist.requirements': {
+      path: 'checklist.requirements',
+      type: 'keyed_array',
+      overridePolicy: 'MERGE_MAP',
+      mergeKey: 'key',
+    },
+    'handover.sections': {
+      path: 'handover.sections',
+      type: 'keyed_array',
+      overridePolicy: 'MERGE_MAP',
+      mergeKey: 'key',
+    },
+  },
+};
+
+export interface ConfigLayerRecord {
   level: ConfigLevel;
   versionId: string;
-  payload: Record<string, any>;
+  schemaVersion: string;
+  payload: Record<string, unknown>;
 }
 
-export interface ConflictRecord {
+export interface ConfigConflict {
   path: string;
-  attemptedAtLevel: ConfigLevel;
-  lockedAtLevel: ConfigLevel;
+  level: ConfigLevel;
   message: string;
 }
 
-const CONFIG_SCHEMA: Record<string, FieldSchemaRule> = {
-  maxFileSizeBytes: { overridePolicy: 'locked', ownerLevel: 'PLATFORM' },
-  allowedMimeTypes: { overridePolicy: 'locked', ownerLevel: 'PLATFORM' },
-  requireMalwareScan: { overridePolicy: 'locked', ownerLevel: 'PLATFORM' },
-  packageIncludeApprovalSummary: { overridePolicy: 'locked', ownerLevel: 'TRADE' },
-  branding: { overridePolicy: 'inherit_only', ownerLevel: 'ORG' },
-  namingPattern: { overridePolicy: 'overridable' },
-  reminderSchedule: { overridePolicy: 'overridable' },
-  extraAllowedFormats: { overridePolicy: 'additive' },
-  groups: { overridePolicy: 'keyed_merge', mergeKey: 'key' },
-  requirements: { overridePolicy: 'keyed_merge', mergeKey: 'key' },
-  packageSections: { overridePolicy: 'keyed_merge', mergeKey: 'key' },
-};
-
-export function resolveConfigurationHierarchy(layers: ConfigLayerInput[]) {
+export function resolveConfigV021(
+  layersByLevel: Partial<Record<ConfigLevel, ConfigLayerRecord>>,
+  isPreview = false,
+) {
   const result: Record<string, any> = {};
   const provenance: Record<string, { level: ConfigLevel; versionId: string }> = {};
-  const conflicts: ConflictRecord[] = [];
+  const conflicts: ConfigConflict[] = [];
 
-  for (const layer of layers) {
-    for (const [key, incomingVal] of Object.entries(layer.payload)) {
-      if (incomingVal === undefined || incomingVal === null) continue;
+  // RT-019: Installed orgs iterate [PLATFORM, ORG, CLIENT_CONTRACT, PROJECT]; preview iterates [PLATFORM, TRADE]
+  const orderedLevels: ConfigLevel[] = isPreview
+    ? ['PLATFORM', 'TRADE']
+    : ['PLATFORM', 'ORG', 'CLIENT_CONTRACT', 'PROJECT'];
 
-      const rule: FieldSchemaRule = CONFIG_SCHEMA[key] ?? { overridePolicy: 'overridable' };
-      const existingOrigin = provenance[key];
+  for (const level of orderedLevels) {
+    const cfg = layersByLevel[level];
+    if (!cfg) continue;
 
-      // 1. Locked field guard (07 §4.3 & §5)
-      if (rule.overridePolicy === 'locked' && existingOrigin) {
-        if (JSON.stringify(incomingVal) !== JSON.stringify(result[key])) {
+    const registry = ConfigSchemaRegistry[cfg.schemaVersion] ?? ConfigSchemaRegistry['v1.0']!;
+
+    for (const [path, rawVal] of Object.entries(cfg.payload)) {
+      if (rawVal === undefined || rawVal === null) continue;
+
+      const schema: FieldSchema = registry[path] ?? {
+        path,
+        type: 'scalar',
+        overridePolicy: 'REPLACE',
+      };
+
+      // 1. LOCKED policy guard
+      if (schema.overridePolicy === 'LOCKED' && provenance[path]) {
+        if (JSON.stringify(rawVal) !== JSON.stringify(result[path])) {
           conflicts.push({
-            path: key,
-            attemptedAtLevel: layer.level,
-            lockedAtLevel: existingOrigin.level,
-            message: `Field '${key}' is locked at ${existingOrigin.level} and cannot be overridden at ${layer.level}.`,
+            path,
+            level,
+            message: `Field '${path}' is LOCKED by ${provenance[path]!.level} and cannot be overridden at ${level}.`,
           });
         }
         continue;
       }
 
-      // 2. Inherit-only guard
-      if (rule.overridePolicy === 'inherit_only' && rule.ownerLevel && layer.level !== rule.ownerLevel) {
+      // 2. INHERIT_ONLY policy guard
+      if (schema.overridePolicy === 'INHERIT_ONLY' && schema.ownerLevel && level !== schema.ownerLevel) {
+        conflicts.push({
+          path,
+          level,
+          message: `Field '${path}' is INHERIT_ONLY at ${schema.ownerLevel} and cannot be modified at ${level}.`,
+        });
         continue;
       }
 
-      // 3. Merge semantics by policy (07 §4.4)
-      if (rule.overridePolicy === 'additive' && Array.isArray(incomingVal)) {
-        const currentArr = Array.isArray(result[key]) ? result[key] : [];
-        result[key] = Array.from(new Set([...currentArr, ...incomingVal]));
-      } else if (rule.overridePolicy === 'keyed_merge' && Array.isArray(incomingVal)) {
-        const mergeKey = rule.mergeKey ?? 'key';
-        result[key] = mergeKeyedArray(result[key] ?? [], incomingVal, mergeKey, layer.level, conflicts);
+      // 3. Apply merge semantics
+      if (schema.overridePolicy === 'APPEND' && Array.isArray(rawVal)) {
+        const existingArr = Array.isArray(result[path]) ? result[path] : [];
+        result[path] = Array.from(new Set([...existingArr, ...rawVal]));
+      } else if (schema.overridePolicy === 'MERGE_MAP' && Array.isArray(rawVal)) {
+        const keyField = schema.mergeKey ?? 'key';
+        result[path] = mergeKeyedObjects(result[path] ?? [], rawVal, keyField, level, conflicts);
       } else {
-        if (incomingVal && typeof incomingVal === 'object' && incomingVal.$clear === true) {
-          result[key] = null;
+        if (typeof rawVal === 'object' && (rawVal as any).$clear === true) {
+          result[path] = null;
         } else {
-          result[key] = structuredClone(incomingVal);
+          result[path] = structuredClone(rawVal);
         }
       }
 
-      provenance[key] = { level: layer.level, versionId: layer.versionId };
+      provenance[path] = { level, versionId: cfg.versionId };
     }
   }
 
-  // Enforce complexity limits (07 §5.1)
-  if (Array.isArray(result.requirements) && result.requirements.length > 1000) {
-    conflicts.push({
-      path: 'requirements',
-      attemptedAtLevel: 'PROJECT',
-      lockedAtLevel: 'PLATFORM',
-      message: `Requirements count (${result.requirements.length}) exceeds limit of 1,000.`,
-    });
-  }
+  const canonical = JSON.stringify(sortDeepKeys(result));
+  const checksum = createHash('sha256').update(canonical).digest('hex');
 
-  const canonicalJson = JSON.stringify(sortObjectKeys(result));
-  const checksum = createHash('sha256').update(canonicalJson).digest('hex');
-
-  return {
-    payload: result,
-    provenance,
-    conflicts,
-    checksum,
-  };
+  return { payload: result, provenance, conflicts, checksum };
 }
 
-function mergeKeyedArray(
-  baseList: Record<string, any>[],
-  incomingList: Record<string, any>[],
+function mergeKeyedObjects(
+  baseArr: Record<string, any>[],
+  patchArr: Record<string, any>[],
   keyField: string,
   level: ConfigLevel,
-  conflicts: ConflictRecord[],
+  conflicts: ConfigConflict[],
 ): Record<string, any>[] {
   const map = new Map<string, Record<string, any>>();
-  for (const item of baseList) {
+  for (const item of baseArr) {
     map.set(String(item[keyField]), structuredClone(item));
   }
 
-  for (const patch of incomingList) {
+  for (const patch of patchArr) {
     const k = String(patch[keyField]);
-    const existing = map.get(k);
+    const current = map.get(k);
 
     if (patch.$remove === true) {
-      if (existing?.locked === true) {
+      if (current?.locked === true) {
         conflicts.push({
           path: `${keyField}:${k}`,
-          attemptedAtLevel: level,
-          lockedAtLevel: 'PLATFORM',
-          message: `Cannot remove locked item '${k}' at level ${level}.`,
+          level,
+          message: `Locked item '${k}' cannot be removed at ${level}.`,
         });
       } else {
         map.delete(k);
@@ -136,17 +190,16 @@ function mergeKeyedArray(
       continue;
     }
 
-    if (existing) {
-      if (existing.locked === true && patch.mandatory === false && existing.mandatory === true) {
+    if (current) {
+      if (current.locked === true && patch.mandatory === false && current.mandatory === true) {
         conflicts.push({
           path: `${keyField}:${k}.mandatory`,
-          attemptedAtLevel: level,
-          lockedAtLevel: 'PLATFORM',
-          message: `Cannot mark locked mandatory item '${k}' as optional at level ${level}.`,
+          level,
+          message: `Locked mandatory item '${k}' cannot be made optional at ${level}.`,
         });
         continue;
       }
-      map.set(k, { ...existing, ...patch, provenanceLevel: level });
+      map.set(k, { ...current, ...patch, provenanceLevel: level });
     } else {
       map.set(k, { ...patch, provenanceLevel: level });
     }
@@ -155,15 +208,46 @@ function mergeKeyedArray(
   return Array.from(map.values());
 }
 
-function sortObjectKeys(obj: any): any {
-  if (Array.isArray(obj)) return obj.map(sortObjectKeys);
-  if (obj !== null && typeof obj === 'object') {
-    return Object.keys(obj)
+function sortDeepKeys(val: any): any {
+  if (Array.isArray(val)) return val.map(sortDeepKeys);
+  if (val !== null && typeof val === 'object') {
+    return Object.keys(val)
       .sort()
-      .reduce((acc: Record<string, any>, key) => {
-        acc[key] = sortObjectKeys(obj[key]);
+      .reduce((acc: Record<string, any>, k) => {
+        acc[k] = sortDeepKeys(val[k]);
         return acc;
       }, {});
   }
-  return obj;
+  return val;
+}
+
+// Backward compatibility layer for checklists.service.ts
+export interface ConfigLayerInput {
+  level: ConfigLevel;
+  versionId: string;
+  payload: Record<string, any>;
+}
+
+export function resolveConfigurationHierarchy(layers: ConfigLayerInput[]) {
+  const byLevel: Partial<Record<ConfigLevel, ConfigLayerRecord>> = {};
+  for (const layer of layers) {
+    byLevel[layer.level] = {
+      level: layer.level,
+      versionId: layer.versionId,
+      schemaVersion: 'v1.0',
+      payload: layer.payload,
+    };
+  }
+  const res = resolveConfigV021(byLevel, false);
+  return {
+    payload: res.payload,
+    provenance: res.provenance,
+    conflicts: res.conflicts.map((c) => ({
+      path: c.path,
+      attemptedAtLevel: c.level,
+      lockedAtLevel: 'PLATFORM' as ConfigLevel,
+      message: c.message,
+    })),
+    checksum: res.checksum,
+  };
 }

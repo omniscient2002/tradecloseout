@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
 import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
@@ -11,7 +12,7 @@ async function bootstrap() {
   app.useGlobalFilters(new ProblemJsonExceptionFilter());
   app.useGlobalInterceptors(new VisibilityProjectionInterceptor());
   app.enableCors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    origin: process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : ['http://localhost:3000', 'http://localhost:3002'],
     credentials: true,
   });
 

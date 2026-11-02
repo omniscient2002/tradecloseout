@@ -210,6 +210,7 @@ export class IdentityController {
 
       if (existingIdentities.length > 0) {
         userId = existingIdentities[0].user_id;
+        await client.query(`SELECT set_config('app.current_user', $1, true)`, [userId]);
         await client.query(
           `UPDATE user_identities SET verified_at = COALESCE(verified_at, now()) WHERE type = $1 AND value = $2`,
           [idType, rawId],
@@ -217,9 +218,10 @@ export class IdentityController {
         await client.query(`UPDATE users SET last_login_at = now() WHERE id = $1`, [userId]);
 
         const { rows: memberships } = await client.query(
-          `SELECT org_id FROM memberships WHERE user_id = $1 AND status = 'ACTIVE' ORDER BY created_at ASC LIMIT 1`,
+          `SELECT org_id FROM memberships WHERE user_id = $1 AND status = 'ACTIVE' ORDER BY joined_at DESC LIMIT 1`,
           [userId],
         );
+        console.log('[DEBUG verifyOtp]', { rawId, idType, userId, membershipsCount: memberships.length, memberships });
         if (memberships.length === 0) {
           throw new UnauthorizedException({
             code: 'NO_ACTIVE_ORG',
@@ -417,17 +419,34 @@ export class IdentityController {
 
   /**
    * API-004: POST /api/v1/auth/logout
-   * Revokes the current session immediately.
+   * Revokes the current session immediately and clears HttpOnly cookie.
    */
   @Post('logout')
-  @UseGuards(SessionCsrfGuard)
-  @HttpCode(HttpStatus.NO_CONTENT)
-  async logout(@Req() req: AuthenticatedRequest, @Res({ passthrough: true }) res: Response) {
-    await this.pool.query(
-      `UPDATE sessions SET revoked_at = now() WHERE id = $1`,
-      [req.auth.sessionId],
-    );
-    res.clearCookie('tc_session', { path: '/' });
+  @HttpCode(HttpStatus.OK)
+  async logout(@Req() req: any, @Res({ passthrough: true }) res: Response) {
+    const rawSessionToken =
+      req.cookies?.['tc_session'] ||
+      req.headers['authorization']?.replace(/^Bearer\s+/i, '');
+    if (rawSessionToken && typeof rawSessionToken === 'string') {
+      const tokenHash = createHash('sha256').update(rawSessionToken).digest('hex');
+      await this.pool.query(
+        `UPDATE sessions SET revoked_at = now() WHERE session_token_hash = $1`,
+        [tokenHash],
+      ).catch(() => {});
+    }
+    res.clearCookie('tc_session', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+    });
+    return { ok: true, message: 'Logged out successfully' };
+  }
+
+  @Get('logout')
+  @HttpCode(HttpStatus.OK)
+  async logoutGet(@Req() req: any, @Res({ passthrough: true }) res: Response) {
+    return this.logout(req, res);
   }
 }
 

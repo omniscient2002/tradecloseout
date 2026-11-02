@@ -19,16 +19,26 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('otp/request')
-  async requestOtp(@Body() dto: OtpRequestDto) {
-    return this.authService.requestOtp(dto);
+  async requestOtp(@Body() dto: any) {
+    const res = await this.authService.requestOtp(dto);
+    return {
+      channel: dto.identifier?.includes('@') ? 'EMAIL' : 'SMS',
+      expiresInSeconds: 300,
+      devOtpPreview: (res as any).debugOtp || (res as any).devOtpPreview,
+      ...res,
+    };
   }
 
   @Post('otp/verify')
   async verifyOtp(
-    @Body() dto: OtpVerifyDto,
+    @Body() dto: any,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.authService.verifyOtp(dto);
+    const normalizedDto = {
+      ...dto,
+      code: dto.code || dto.otp,
+    };
+    const result = await this.authService.verifyOtp(normalizedDto);
 
     // Set HTTP-only session cookie
     res.cookie('tc_session', result.sessionToken, {
@@ -72,6 +82,28 @@ export class AuthController {
       activeOrgId: session.active_org_id,
       orgRole: session.org_role,
     };
+  }
+
+  @Post('logout')
+  async logout(@Res({ passthrough: true }) res: Response) {
+    res.clearCookie('tc_session', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+    });
+    return { ok: true, message: 'Logged out successfully' };
+  }
+
+  @Get('logout')
+  async logoutGet(@Res({ passthrough: true }) res: Response) {
+    res.clearCookie('tc_session', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+    });
+    return { ok: true, message: 'Logged out successfully' };
   }
 
   private async extractSession(req: Request) {

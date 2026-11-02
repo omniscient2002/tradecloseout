@@ -61,6 +61,42 @@ export class ReviewsController {
     return this.reviewsService.decideReview(req.userContext, id, dto);
   }
 
+  @Post('projects/:projectId/reviews')
+  @RequirePermission('review.decide')
+  async recordProjectReview(
+    @Req() req: any,
+    @Param('projectId') projectId: string,
+    @Body() dto: { documentVersionId: string; decision: any; comment?: string; method?: any },
+  ) {
+    return this.reviewsService.recordVersionReview(req.userContext, projectId, dto);
+  }
+
+  @Get('projects/:projectId/document-versions/:versionId')
+  @RequirePermission('document.read')
+  async getVersionReviewDetail(
+    @Req() req: any,
+    @Param('projectId') projectId: string,
+    @Param('versionId') versionId: string,
+  ) {
+    return this.reviewsService.getVersionReviewDetail(req.userContext, projectId, versionId);
+  }
+
+  @Post('projects/:projectId/document-versions/:versionId/decision')
+  @RequirePermission('review.decide')
+  async decideVersionReview(
+    @Req() req: any,
+    @Param('projectId') projectId: string,
+    @Param('versionId') versionId: string,
+    @Body() dto: { method: string; decision: any; comment?: string },
+  ) {
+    return this.reviewsService.recordVersionReview(req.userContext, projectId, {
+      documentVersionId: versionId,
+      decision: dto.decision,
+      comment: dto.comment,
+      method: dto.method,
+    });
+  }
+
   @Post('reviews/:id/comments')
   @RequirePermission('review.decide')
   async addComment(

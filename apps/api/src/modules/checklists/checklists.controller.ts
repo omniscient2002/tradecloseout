@@ -45,6 +45,25 @@ export class ChecklistsController {
     return this.checklistsService.createSnapshot(req.userContext, projectId, dto);
   }
 
+  @Post('projects/:projectId/checklists/import-l3')
+  @RequirePermission('project.manage')
+  async importL3Checklist(
+    @Req() req: any,
+    @Param('projectId') projectId: string,
+    @Body()
+    dto: {
+      profileName?: string;
+      requirements: Array<{
+        key?: string;
+        title: string;
+        docTypeKey?: string;
+        mandatory?: boolean;
+      }>;
+    },
+  ) {
+    return this.checklistsService.importL3Checklist(req.userContext, projectId, dto);
+  }
+
   @Post('projects/:projectId/requirements/:id/change-requests')
   @RequirePermission('requirement.manage')
   async requestChange(

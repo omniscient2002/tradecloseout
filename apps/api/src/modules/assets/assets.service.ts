@@ -343,8 +343,8 @@ export class AssetsService {
       await client.query(
         `INSERT INTO requirements
           (id, org_id, project_id, current_snapshot_id, requirement_key, scope_key,
-           group_key, title, description, doc_type_key, mandatory, reviewer_role, status)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'NOT_STARTED')
+           asset_id, group_key, title, description, doc_type_key, mandatory, reviewer_role, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'NOT_STARTED')
          ON CONFLICT (project_id, requirement_key, scope_key) WHERE superseded_at IS NULL
          DO NOTHING`,
         [
@@ -354,6 +354,7 @@ export class AssetsService {
           snapshot.id,
           def.key,
           scopeKey,
+          assetId,
           def.groupKey || 'EQUIPMENT_DOCS',
           def.title,
           def.description ?? null,

@@ -102,15 +102,18 @@ export async function executeReviewDecision(
     // 5. Reviewer role match (FR-REV-002 / AUD-005) & Self-Approval Guard (FR-REV-009)
     const userRoles = new Set([ctx.orgRole, ...ctx.projectRoles]);
     const isOwnerOrAdmin = userRoles.has('R-OWNER') || userRoles.has('R-ADMIN');
-    if (row.reviewer_role && !userRoles.has(row.reviewer_role) && !isOwnerOrAdmin) {
-      throw new ForbiddenException({
-        code: 'FORBIDDEN',
-        detail: `Requirement requires reviewer role ${row.reviewer_role}.`,
-      });
+    for (const vRow of versionRows) {
+      if (vRow.reviewer_role && !userRoles.has(vRow.reviewer_role) && !isOwnerOrAdmin) {
+        throw new ForbiddenException({
+          code: 'FORBIDDEN',
+          detail: `Requirement requires reviewer role ${vRow.reviewer_role}.`,
+        });
+      }
     }
     if (row.uploaded_by === ctx.userId && !input.isOverride) {
       throw new ForbiddenException({
         code: 'SELF_APPROVAL_DENIED',
+        message: 'SELF_APPROVAL_DENIED: Uploaders cannot approve their own uploaded document version (FR-REV-009).',
         detail: 'Uploaders cannot approve their own uploaded document version (FR-REV-009).',
       });
     }
@@ -174,18 +177,23 @@ export async function executeReviewDecision(
       );
     }
 
-    await client.query(
-      `UPDATE requirements
-          SET status = $4, row_version = row_version + 1, updated_at = now()
-        WHERE org_id = $1 AND project_id = $2 AND id = $3`,
-      [ctx.activeOrgId, input.projectId, row.requirement_id, nextVersionStatus],
-    );
+    // FIX 1 / Bug 1: Lock and atomically update ALL linked requirements for this document (FR-DOC-011)
+    const requirementIds = Array.from(new Set(versionRows.map((r) => r.requirement_id).filter(Boolean)));
+    if (requirementIds.length > 0) {
+      await client.query(
+        `UPDATE requirements
+            SET status = $4, row_version = row_version + 1, updated_at = now()
+          WHERE org_id = $1 AND project_id = $2 AND id = ANY($3::uuid[])`,
+        [ctx.activeOrgId, input.projectId, requirementIds, nextVersionStatus],
+      );
+    }
 
     await client.query('COMMIT');
     return {
       documentVersionId: input.documentVersionId,
       documentVersionStatus: nextVersionStatus,
       requirementStatus: nextVersionStatus,
+      affectedRequirementIds: requirementIds,
       method: input.method,
       rowVersion: row.row_version + 1,
     };

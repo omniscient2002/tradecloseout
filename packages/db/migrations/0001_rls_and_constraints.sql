@@ -36,9 +36,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trg_audit_events_immutable ON audit_events;
 CREATE TRIGGER trg_audit_events_immutable
   BEFORE UPDATE OR DELETE ON audit_events
-  FOR EACH ROW EXECUTE FUNCTION forbid_audit_mutation();
+  FOR EACH STATEMENT EXECUTE FUNCTION forbid_audit_mutation();
 
 -- 2. Partial Unique Indexes & Integrity Constraints (08 §5.3, §5.4, §6, §8)
 CREATE UNIQUE INDEX IF NOT EXISTS document_versions_one_approved_current
@@ -59,19 +60,24 @@ CREATE UNIQUE INDEX IF NOT EXISTS notifications_dedup_uq
   ON notifications (org_id, dedup_key, channel, COALESCE(recipient_user_id, recipient_party_id));
 
 ALTER TABLE document_versions
+  DROP CONSTRAINT IF EXISTS dv_approved_requires_ready_chk,
   ADD CONSTRAINT dv_approved_requires_ready_chk
   CHECK (review_status <> 'APPROVED' OR file_status = 'READY');
 
 ALTER TABLE storage_objects
+  DROP CONSTRAINT IF EXISTS storage_ready_requires_sha256_chk,
   ADD CONSTRAINT storage_ready_requires_sha256_chk
   CHECK (status <> 'READY' OR sha256 IS NOT NULL);
 
 ALTER TABLE handover_packages
+  DROP CONSTRAINT IF EXISTS pkg_snapshot_checksum_chk,
   ADD CONSTRAINT pkg_snapshot_checksum_chk
   CHECK (status = 'DRAFT' OR snapshot_checksum IS NOT NULL);
 
 -- 3. Cross-Project Composite Foreign Keys (AUD-004 / 08 §5.5)
 ALTER TABLE package_items
+  DROP CONSTRAINT IF EXISTS package_items_same_project_pkg_fk,
+  DROP CONSTRAINT IF EXISTS package_items_same_project_ver_fk,
   ADD CONSTRAINT package_items_same_project_pkg_fk
     FOREIGN KEY (org_id, project_id, package_id)
     REFERENCES handover_packages (org_id, project_id, id) ON DELETE CASCADE,
@@ -80,6 +86,8 @@ ALTER TABLE package_items
     REFERENCES document_versions (org_id, project_id, id);
 
 ALTER TABLE document_requirements
+  DROP CONSTRAINT IF EXISTS dr_same_project_doc_fk,
+  DROP CONSTRAINT IF EXISTS dr_same_project_req_fk,
   ADD CONSTRAINT dr_same_project_doc_fk
     FOREIGN KEY (org_id, project_id, document_id)
     REFERENCES documents (org_id, project_id, id) ON DELETE CASCADE,
@@ -88,6 +96,8 @@ ALTER TABLE document_requirements
     REFERENCES requirements (org_id, project_id, id) ON DELETE CASCADE;
 
 ALTER TABLE document_assets
+  DROP CONSTRAINT IF EXISTS da_same_project_doc_fk,
+  DROP CONSTRAINT IF EXISTS da_same_project_asset_fk,
   ADD CONSTRAINT da_same_project_doc_fk
     FOREIGN KEY (org_id, project_id, document_id)
     REFERENCES documents (org_id, project_id, id) ON DELETE CASCADE,

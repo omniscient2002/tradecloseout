@@ -1,7 +1,7 @@
 // apps/api/src/database/tenant-db.service.ts
 // Spike 1 & RT-005: Forced RLS Transaction Context Wrapper (CB-007)
 
-import { Injectable, ForbiddenException } from '@nestjs/common';
+import { Injectable, Optional, ForbiddenException } from '@nestjs/common';
 import { Pool, PoolClient } from 'pg';
 
 export interface ExecutionContext {
@@ -15,15 +15,19 @@ export interface ExecutionContext {
 export class TenantDbService {
   private pool: Pool;
 
-  constructor() {
-    this.pool = new Pool({
-      host: process.env.DB_HOST || '127.0.0.1',
-      port: Number(process.env.DB_PORT) || 5432,
-      database: process.env.DB_NAME || 'tradecloseout',
-      user: process.env.DB_USER || 'tc_app',
-      password: process.env.DB_PASSWORD || 'app_local_pw',
-      max: 20,
-    });
+  constructor(@Optional() existingPool?: any) {
+    if (existingPool) {
+      this.pool = existingPool;
+    } else {
+      this.pool = new Pool({
+        host: process.env.DB_HOST || '127.0.0.1',
+        port: Number(process.env.DB_PORT) || 5432,
+        database: process.env.DB_NAME || 'tradecloseout',
+        user: process.env.DB_USER || 'tc_app',
+        password: process.env.DB_PASSWORD || 'app_local_pw',
+        max: 20,
+      });
+    }
   }
 
   getPool(): Pool {

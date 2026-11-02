@@ -36,6 +36,161 @@ export class OrganisationsService {
   /**
    * API-010: GET /api/v1/orgs/:orgId
    */
+  async getDashboard(ctx: TenantActorContext, targetOrgId: string) {
+    const orgId = targetOrgId === 'current' ? ctx.orgId : targetOrgId;
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+      // 1. Fetch Org and Profile
+      const { rows: orgRows } = await client.query(
+        `SELECT o.id, o.legal_name, o.display_name, o.state, op.gstin
+           FROM organisations o
+           LEFT JOIN org_profiles op ON op.org_id = o.id
+          WHERE o.id = $1 LIMIT 1`,
+        [orgId],
+      );
+      if (orgRows.length === 0) {
+        throw new NotFoundException({ code: 'NOT_FOUND', detail: 'Organisation not found.' });
+      }
+      const org = orgRows[0];
+
+      // 2. Fetch User & Membership
+      const { rows: userRows } = await client.query(
+        `SELECT u.id, u.name, m.role
+           FROM users u
+           JOIN memberships m ON m.user_id = u.id AND m.org_id = $1
+          WHERE u.id = $2 LIMIT 1`,
+        [orgId, ctx.userId],
+      );
+      const user = userRows[0] || { id: ctx.userId, name: 'Team Member', role: 'R-SITE' };
+
+      // 3. Fetch Projects with Contracts, Counterparties & Requirement Counts
+      const { rows: projRows } = await client.query(
+        `SELECT
+           p.id, p.code, p.name, p.status, p.target_handover_date,
+           p.site_json->>'city' as city,
+           COALESCE(c.value_paise, 0)::text as contract_value_paise,
+           COALESCE(ROUND((c.value_paise * c.retention_bps) / 10000), 0)::text as retention_at_risk_paise,
+           p_client.name as client_name,
+           p_mc.name as mc_name,
+           p_pmc.name as pmc_name,
+           COUNT(r.id) FILTER (WHERE r.status != 'NOT_APPLICABLE' AND r.superseded_at IS NULL) as applicable_count,
+           COUNT(r.id) FILTER (WHERE r.status IN ('APPROVED', 'APPROVED_EXTERNAL') AND r.superseded_at IS NULL) as approved_count,
+           COUNT(r.id) FILTER (WHERE r.status IN ('NOT_STARTED', 'REQUESTED', 'CHANGES_REQUESTED', 'EXPIRED') AND r.superseded_at IS NULL) as missing_count,
+           COUNT(r.id) FILTER (WHERE r.status IN ('UPLOADED', 'IN_REVIEW') AND r.superseded_at IS NULL) as in_review_count
+         FROM projects p
+         LEFT JOIN contracts c ON c.project_id = p.id AND c.org_id = p.org_id
+         LEFT JOIN parties p_client ON p_client.id = p.client_party_id
+         LEFT JOIN parties p_mc ON p_mc.id = p.mc_party_id
+         LEFT JOIN parties p_pmc ON p_pmc.id = p.consultant_party_id
+         LEFT JOIN requirements r ON r.project_id = p.id AND r.org_id = p.org_id
+        WHERE p.org_id = $1
+        GROUP BY p.id, c.value_paise, c.retention_bps, p_client.name, p_mc.name, p_pmc.name
+        ORDER BY p.created_at DESC`,
+        [orgId],
+      );
+
+      const projects = projRows.map((p) => ({
+        id: p.id,
+        code: p.code,
+        name: p.name,
+        status: p.status,
+        clientName: p.client_name || '—',
+        mcName: p.mc_name || '—',
+        pmcName: p.pmc_name || '—',
+        city: p.city || 'Hyderabad',
+        targetHandoverDate: p.target_handover_date || '',
+        contractValuePaise: p.contract_value_paise,
+        retentionAtRiskPaise: p.retention_at_risk_paise,
+        approvedCount: Number(p.approved_count || 0),
+        applicableCount: Number(p.applicable_count || 0),
+        missingCount: Number(p.missing_count || 0),
+        inReviewCount: Number(p.in_review_count || 0),
+      }));
+
+      // 4. Compute High-Level KPIs
+      let totalRetentionAtRisk = 0n;
+      let totalMissingOrExpired = 0;
+      let awaitingReview = 0;
+      let activeProjects = 0;
+
+      for (const p of projects) {
+        if (['ACTIVE', 'HANDOVER'].includes(p.status)) {
+          activeProjects++;
+          totalRetentionAtRisk += BigInt(p.retentionAtRiskPaise || '0');
+        }
+        totalMissingOrExpired += p.missingCount;
+        awaitingReview += p.inReviewCount;
+      }
+
+      // Expiring in next 30 days
+      const { rows: expiringRows } = await client.query(
+        `SELECT COUNT(*) as count
+           FROM document_versions dv
+          WHERE dv.org_id = $1
+            AND dv.expiry_date IS NOT NULL
+            AND dv.expiry_date BETWEEN (now() AT TIME ZONE 'Asia/Kolkata')::date
+                                   AND ((now() AT TIME ZONE 'Asia/Kolkata') + interval '30 days')::date`,
+        [orgId],
+      );
+      const expiringSoonCount = Number(expiringRows[0]?.count || 0);
+
+      // 5. Immediate Attention Requirements
+      const { rows: attentionRows } = await client.query(
+        `SELECT r.id as requirement_id, r.project_id, p.code as project_code,
+                r.requirement_key, r.title, r.status, r.due_at,
+                a.tag as asset_tag, u.name as owner_name
+           FROM requirements r
+           JOIN projects p ON p.id = r.project_id
+           LEFT JOIN assets a ON a.id = r.asset_id
+           LEFT JOIN users u ON u.id = r.owner_user_id
+          WHERE r.org_id = $1
+            AND r.status IN ('EXPIRED', 'CHANGES_REQUESTED', 'IN_REVIEW', 'REQUESTED', 'NOT_STARTED')
+            AND r.superseded_at IS NULL
+          ORDER BY r.due_at ASC NULLS LAST, r.created_at DESC
+          LIMIT 5`,
+        [orgId],
+      );
+
+      const needsAttention = attentionRows.map((r) => ({
+        requirementId: r.requirement_id,
+        projectId: r.project_id,
+        projectCode: r.project_code,
+        requirementKey: r.requirement_key,
+        title: r.title,
+        assetTag: r.asset_tag || null,
+        status: r.status,
+        dueDate: r.due_at ? new Date(r.due_at).toLocaleDateString('en-IN') : 'ASAP',
+        ownerName: r.owner_name || 'Unassigned',
+      }));
+
+      return {
+        org: {
+          id: org.id,
+          legalName: org.legal_name,
+          displayName: org.display_name || org.legal_name,
+          gstin: org.gstin || null,
+          state: org.state || 'TS',
+        },
+        user: {
+          id: user.id,
+          name: user.name,
+          role: user.role,
+        },
+        kpis: {
+          activeProjectsCount: activeProjects,
+          totalMissingOrExpiredCount: totalMissingOrExpired,
+          awaitingMyReviewCount: awaitingReview,
+          expiringSoonCount,
+          totalRetentionAtRiskPaise: totalRetentionAtRisk.toString(),
+        },
+        projects,
+        needsAttention,
+      };
+    });
+  }
+
+  /**
+   * API-010: GET /api/v1/orgs/:orgId
+   */
   async getOrganisation(ctx: TenantActorContext, orgId: string) {
     if (orgId !== ctx.orgId) {
       throw new NotFoundException({

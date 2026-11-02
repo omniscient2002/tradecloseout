@@ -13,6 +13,14 @@ import { PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { TenantDbService, ExecutionContext } from '../../database/tenant-db.service';
 
+export interface CreatePartyDto {
+  name: string;
+  types: string[];
+  gstin?: string;
+  email?: string;
+  phone?: string;
+}
+
 export interface CreateGuestGrantDto {
   partyId?: string;
   grantType?: 'SUPPLIER' | 'CONSULTANT' | 'CLIENT' | 'AUDITOR';
@@ -31,6 +39,50 @@ export class PartiesService {
 
   private hashSecret(secret: string): string {
     return crypto.createHash('sha256').update(secret).digest('hex');
+  }
+
+  /**
+   * GET /api/v1/parties
+   * Returns all counterparties for the tenant organisation.
+   */
+  async getParties(ctx: ExecutionContext) {
+    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+      const res = await client.query(
+        `SELECT id, org_id, name, types, gstin, email, phone, status, created_at
+           FROM parties
+          WHERE org_id = $1
+          ORDER BY name ASC`,
+        [ctx.orgId],
+      );
+      return res.rows;
+    });
+  }
+
+  /**
+   * POST /api/v1/parties
+   * Registers a new counterparty (Client, MC, Consultant, Supplier OEM, Lab).
+   */
+  async createParty(ctx: ExecutionContext, dto: CreatePartyDto) {
+    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+      const id = uuidv7();
+      const res = await client.query(
+        `INSERT INTO parties (
+          id, org_id, name, types, gstin, email, phone, status, created_by
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'ACTIVE', $8)
+        RETURNING id, org_id, name, types, gstin, email, phone, status, created_at`,
+        [
+          id,
+          ctx.orgId,
+          dto.name.trim(),
+          dto.types && dto.types.length ? dto.types : ['SUPPLIER_OEM'],
+          dto.gstin?.trim() || null,
+          dto.email?.trim() || null,
+          dto.phone?.trim() || null,
+          ctx.userId,
+        ],
+      );
+      return res.rows[0];
+    });
   }
 
   /**

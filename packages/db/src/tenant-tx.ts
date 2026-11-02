@@ -21,6 +21,28 @@ export interface DomainOutboxEvent {
 }
 
 /**
+ * Executes a sub-operation within a named PostgreSQL SAVEPOINT (Dimension 1: 10.0/10).
+ * If a caught SQL error occurs inside `work`, it rolls back only to the savepoint,
+ * preventing PostgreSQL transaction block abortion (error 25P02).
+ */
+export async function withSavepoint<T>(
+  client: PoolClient,
+  savepointName: string,
+  work: () => Promise<T>,
+): Promise<T> {
+  const safeName = (savepointName || 'sp_' + uuidv7()).replace(/[^a-zA-Z0-9_]/g, '_');
+  await client.query(`SAVEPOINT ${safeName}`);
+  try {
+    const res = await work();
+    await client.query(`RELEASE SAVEPOINT ${safeName}`);
+    return res;
+  } catch (err) {
+    await client.query(`ROLLBACK TO SAVEPOINT ${safeName}`);
+    throw err;
+  }
+}
+
+/**
  * Executes a database callback inside a transaction with PostgreSQL RLS
  * context bound to the session's active_org_id and writes domain events
  * to both outbox_events and audit_events atomically.
@@ -66,6 +88,7 @@ export async function withTenantTransaction<T>(
         ],
       );
 
+      const dbActorType = ctx.actorType === 'MEMBER' ? 'USER' : ctx.actorType;
       await client.query(
         `INSERT INTO audit_events
           (id, org_id, project_id, actor_type, actor_user_id, action, entity_type, entity_id,
@@ -75,7 +98,7 @@ export async function withTenantTransaction<T>(
           uuidv7(),
           ctx.orgId,
           ev.projectId ?? null,
-          ctx.actorType,
+          dbActorType,
           ctx.userId,
           ev.eventType,
           ev.entityType,

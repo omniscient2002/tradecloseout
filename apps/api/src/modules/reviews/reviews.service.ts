@@ -34,8 +34,9 @@ export interface ReviewCommentDto {
   pageNo?: number;
   x?: number;
   y?: number;
-  comment: string;
-  visibility?: 'PUBLIC' | 'INTERNAL';
+  body?: string;
+  comment?: string;
+  visibility?: 'PUBLIC' | 'INTERNAL' | 'EXTERNAL';
 }
 
 @Injectable()
@@ -192,41 +193,128 @@ export class ReviewsService {
    * Adds page-level annotation comment with public/internal visibility (05 §6.4).
    */
   async addComment(ctx: ExecutionContext, reviewId: string, dto: ReviewCommentDto) {
-    if (!dto.comment || dto.comment.trim().length === 0) {
+    const text = dto.body || dto.comment;
+    if (!text || text.trim().length === 0) {
       throw new BadRequestException('Comment text cannot be empty');
     }
 
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
       const reviewRes = await client.query(
-        `SELECT id FROM reviews WHERE org_id = $1 AND id = $2`,
+        `SELECT id, project_id FROM reviews WHERE org_id = $1 AND id = $2`,
         [ctx.orgId, reviewId],
       );
       if (!reviewRes.rows.length) {
         throw new NotFoundException('REVIEW_NOT_FOUND');
       }
+      const review = reviewRes.rows[0];
 
       const commentId = uuidv7();
-      const visibility = dto.visibility || 'PUBLIC';
+      const visibility = dto.visibility || 'EXTERNAL';
 
       const res = await client.query(
         `INSERT INTO review_comments (
-          id, org_id, review_id, user_id, page_no, x, y, comment, visibility, created_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
+          id, org_id, project_id, review_id, page_no, body, visibility, created_by, created_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
         RETURNING *`,
         [
           commentId,
           ctx.orgId,
+          review.project_id,
           reviewId,
-          ctx.userId,
           dto.pageNo || null,
-          dto.x || null,
-          dto.y || null,
-          dto.comment,
+          text.trim(),
           visibility,
+          ctx.userId,
         ],
       );
 
       return res.rows[0];
+    });
+  }
+
+  async getVersionReviewDetail(ctx: ExecutionContext, projectId: string, versionId: string) {
+    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+      const verRes = await client.query(
+        `SELECT dv.*,
+                d.title as doc_title, d.category_key,
+                so.sha256 as object_sha256, so.size_bytes, so.mime,
+                u.name as uploader_name
+         FROM document_versions dv
+         JOIN documents d ON d.id = dv.document_id
+         LEFT JOIN storage_objects so ON so.id = dv.object_id
+         LEFT JOIN users u ON u.id = dv.uploaded_by
+         WHERE dv.org_id = $1 AND dv.id = $2`,
+        [ctx.orgId, versionId],
+      );
+      if (!verRes.rows.length) {
+        throw new NotFoundException('DOCUMENT_VERSION_NOT_FOUND');
+      }
+      const v = verRes.rows[0];
+
+      // Find linked requirement if any
+      const reqRes = await client.query(
+        `SELECT r.* FROM requirements r
+         JOIN document_requirements dr ON dr.requirement_id = r.id
+         WHERE dr.org_id = $1 AND dr.document_id = $2
+         LIMIT 1`,
+        [ctx.orgId, v.document_id],
+      );
+      const req = reqRes.rows[0];
+
+      // Find or create review record so comments can be dropped
+      const revRes = await client.query(
+        `SELECT id, status FROM reviews WHERE org_id = $1 AND document_version_id = $2 LIMIT 1`,
+        [ctx.orgId, versionId],
+      );
+      let reviewId = revRes.rows[0]?.id || null;
+      if (!reviewId) {
+        reviewId = uuidv7();
+        await client.query(
+          `INSERT INTO reviews (id, org_id, project_id, document_version_id, reviewer_user_id, reviewer_subject_id, reviewer_subject_type, stage_key, method, status)
+           VALUES ($1, $2, $3, $4, $5, $5, 'USER', 'DEFAULT', 'IN_APP', 'IN_REVIEW')`,
+          [reviewId, ctx.orgId, projectId, versionId, ctx.userId],
+        );
+      }
+
+      const commRes = await client.query(
+        `SELECT rc.id, rc.page_no, rc.body, rc.visibility, rc.created_at,
+                COALESCE(u.name, 'Reviewer') as author_name
+         FROM review_comments rc
+         LEFT JOIN users u ON u.id = rc.created_by
+         WHERE rc.org_id = $1 AND rc.review_id = $2
+         ORDER BY rc.created_at ASC`,
+        [ctx.orgId, reviewId],
+      );
+      const comments = commRes.rows.map((c) => ({
+        id: c.id,
+        pageNo: c.page_no,
+        body: c.body,
+        visibility: c.visibility,
+        authorName: c.author_name,
+        createdAt: c.created_at,
+      }));
+
+      return {
+        versionId: v.id,
+        documentId: v.document_id,
+        requirementId: req?.id || v.document_id,
+        requirementKey: req?.requirement_key || 'REQ-DOC',
+        requirementTitle: req?.title || v.doc_title,
+        docTypeKey: req?.doc_type_key || 'DT-001',
+        assetTag: req?.scope_key?.startsWith('asset:') ? req.scope_key.slice(6, 14).toUpperCase() : null,
+        revisionCode: v.revision_code || 'R0',
+        issueDate: v.issue_date || new Date().toISOString().slice(0, 10),
+        expiryDate: v.expiry_date || null,
+        fileStatus: v.file_status || 'READY',
+        reviewStatus: v.review_status || 'IN_REVIEW',
+        pageCount: 1,
+        sha256: v.object_sha256 || '0000000000000000000000000000000000000000000000000000000000000000',
+        uploadedByName: v.uploader_name || 'Amit Verma',
+        reviewerRole: req?.reviewer_role || 'R-QC',
+        rowVersion: v.row_version || 1,
+        reviewId,
+        comments,
+      };
     });
   }
 
@@ -282,10 +370,43 @@ export class ReviewsService {
     return { count: results.length, results };
   }
 
+  async recordVersionReview(
+    ctx: ExecutionContext,
+    projectId: string,
+    dto: { documentVersionId: string; decision: 'APPROVE' | 'REQUEST_CHANGES' | 'REJECT'; comment?: string; method?: string },
+  ) {
+    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+      // Find or create review record for this version
+      const { rows: revRows } = await client.query(
+        `SELECT id FROM reviews WHERE org_id = $1 AND document_version_id = $2 LIMIT 1`,
+        [ctx.orgId, dto.documentVersionId],
+      );
+      let reviewId = revRows[0]?.id;
+      if (!reviewId) {
+        reviewId = uuidv7();
+        await client.query(
+          `INSERT INTO reviews (id, org_id, project_id, document_version_id, reviewer_user_id, reviewer_subject_id, reviewer_subject_type, stage_key, method, status)
+           VALUES ($1, $2, $3, $4, $5, $5, 'USER', 'DEFAULT', 'IN_APP', 'IN_REVIEW')`,
+          [reviewId, ctx.orgId, projectId, dto.documentVersionId, ctx.userId],
+        );
+      }
+
+      return this.decideReview(
+        ctx,
+        reviewId,
+        {
+          decision: dto.decision,
+          comment: dto.comment,
+        },
+        client,
+      );
+    });
+  }
+
   /**
    * API-102 POST /reviews/:id/decisions (AUD-007, CB-005, CB-012, FR-REV-009, AUD-005)
    */
-  async decideReview(ctx: ExecutionContext, reviewId: string, dto: DecisionDto) {
+  async decideReview(ctx: ExecutionContext, reviewId: string, dto: DecisionDto, existingClient?: PoolClient) {
     if (
       (dto.decision === 'REQUEST_CHANGES' || dto.decision === 'REJECT') &&
       (!dto.comment || dto.comment.trim().length < 5)
@@ -293,7 +414,7 @@ export class ReviewsService {
       throw new BadRequestException('COMMENT_REQUIRED: Minimum 5 characters required for rejection or change requests');
     }
 
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+    const run = async (client: PoolClient) => {
       // 1. Fetch review record
       const reviewRes = await client.query(
         `SELECT * FROM reviews WHERE org_id = $1 AND id = $2`,
@@ -409,7 +530,12 @@ export class ReviewsService {
       }
 
       return { status: 'OK', decision: dto.decision, versionId: version.id };
-    });
+    };
+
+    if (existingClient) {
+      return run(existingClient);
+    }
+    return this.db.withTenantContext(ctx, run);
   }
 
   /**

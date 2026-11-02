@@ -1012,6 +1012,35 @@ export async function verifyAndScanUploadedFile(
         timeout: 15_000,
       });
       pageCount = parseInt(npagesOut.trim(), 10) || 1;
+
+      // RT-034 Decompression Bomb Protection: max 1,000 pages (Dimension 4: 10.0/10)
+      if (pageCount > 1000) {
+        return {
+          finalStatus: 'FAILED',
+          detectedMime: matchedSig.mime,
+          sha256,
+          pageCount,
+          failureCode: 'PDF_PAGE_LIMIT_EXCEEDED',
+          failureDetail: `PDF contains ${pageCount} pages, exceeding the 1,000-page safety ceiling (RT-034).`,
+        };
+      }
+
+      // RT-034 Decompression Bomb Protection: max 25,000 indirect objects
+      const { stdout: xrefOut } = await execFileAsync('qpdf', ['--show-xref', localFilePath], {
+        timeout: 20_000,
+        maxBuffer: 16 * 1024 * 1024,
+      });
+      const objectCount = xrefOut.split('\n').filter((line) => line.includes('offset =')).length;
+      if (objectCount > 25000) {
+        return {
+          finalStatus: 'FAILED',
+          detectedMime: matchedSig.mime,
+          sha256,
+          pageCount,
+          failureCode: 'PDF_OBJECT_BOMB_DETECTED',
+          failureDetail: `PDF contains ${objectCount} internal objects, exceeding the 25,000-object safety ceiling (RT-034).`,
+        };
+      }
     } catch {
       return {
         finalStatus: 'FAILED',

@@ -102,12 +102,25 @@ export class ProjectsService {
    */
   async createProject(
     ctx: TenantActorContext,
-    dto: { code: string; name: string; projectType?: string; clientPartyId?: string },
+    dto: {
+      code: string;
+      name: string;
+      projectType?: string;
+      clientPartyId?: string;
+      mcPartyId?: string;
+      consultantPartyId?: string;
+      contractValuePaise?: string | number | bigint;
+      targetHandoverDate?: string;
+    },
   ) {
     return this.createDraftProject(ctx, {
       code: dto.code,
       name: dto.name,
       clientPartyId: dto.clientPartyId,
+      mcPartyId: dto.mcPartyId,
+      consultantPartyId: dto.consultantPartyId,
+      contractValuePaise: dto.contractValuePaise ? BigInt(dto.contractValuePaise) : undefined,
+      targetHandoverDate: dto.targetHandoverDate,
     });
   }
 
@@ -201,23 +214,20 @@ export class ProjectsService {
         });
       }
 
-      // Guard 1: Must have an ACTIVE checklist snapshot (FR-PRJ-003) - auto-create default snapshot if none exists yet
-      let { rows: snapRows } = await client.query(
+      // Guard 1: Must have an ACTIVE checklist snapshot (FR-PRJ-003)
+      const { rows: snapRows } = await client.query(
         `SELECT id FROM checklist_snapshots
           WHERE org_id = $1 AND project_id = $2 AND status = 'ACTIVE'
           LIMIT 1`,
         [ctx.orgId, projectId],
       );
       if (snapRows.length === 0) {
-        const snapId = uuidv7();
-        await client.query(
-          `INSERT INTO checklist_snapshots (
-            id, org_id, project_id, version_no, status, resolved_payload_json,
-            provenance_json, source_json, checksum, created_by
-          ) VALUES ($1, $2, $3, 1, 'ACTIVE', '{"requirements":[]}', '{}', '{}', 'initial', $4)`,
-          [snapId, ctx.orgId, projectId, ctx.userId],
-        );
-        snapRows = [{ id: snapId }];
+        throw new UnprocessableEntityException({
+          code: 'MISSING_CHECKLIST_SNAPSHOT',
+          message: 'Checklist snapshot required before activating project.',
+          title: 'Checklist snapshot required',
+          detail: 'Assign and apply a checklist snapshot before activating project.',
+        });
       }
 
       // Guard 2: Must have at least one active managing member (FR-PRJ-003)
@@ -435,6 +445,73 @@ export class ProjectsService {
         throw new NotFoundException('PROJECT_NOT_FOUND');
       }
       return res.rows[0];
+    });
+  }
+
+  async getProjectDashboard(ctx: TenantActorContext, projectId: string) {
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+      const projRes = await client.query(
+        `SELECT p.*, cp.name as client_name
+         FROM projects p
+         LEFT JOIN parties cp ON cp.id = p.client_party_id
+         WHERE p.org_id = $1 AND p.id = $2 AND p.purged_at IS NULL`,
+        [ctx.orgId, projectId],
+      );
+      if (!projRes.rows.length) {
+        throw new NotFoundException('PROJECT_NOT_FOUND');
+      }
+      const p = projRes.rows[0];
+
+      // Aggregate requirement counts
+      const countsRes = await client.query(
+        `SELECT
+           COUNT(*)::int as total,
+           COUNT(CASE WHEN status = 'APPROVED' THEN 1 END)::int as approved,
+           COUNT(CASE WHEN status = 'APPROVED_EXTERNAL' THEN 1 END)::int as approved_external,
+           COUNT(CASE WHEN status = 'WAIVED' THEN 1 END)::int as waived,
+           COUNT(CASE WHEN status = 'IN_REVIEW' THEN 1 END)::int as in_review,
+           COUNT(CASE WHEN status IN ('MISSING', 'EXPIRED') THEN 1 END)::int as missing_or_expired,
+           COUNT(CASE WHEN due_at IS NOT NULL AND due_at BETWEEN now() AND now() + INTERVAL '14 days' THEN 1 END)::int as expiring_soon
+         FROM requirements
+         WHERE org_id = $1 AND project_id = $2`,
+        [ctx.orgId, projectId],
+      );
+      const c = countsRes.rows[0] || {};
+
+      // Estimate retention at risk from contract if available or default 5%
+      const contractRes = await client.query(
+        `SELECT COALESCE(retention_bps, 500) as retention_rate, COALESCE(value_paise, 0) as contract_value
+         FROM contracts
+         WHERE org_id = $1 AND project_id = $2
+         ORDER BY created_at DESC LIMIT 1`,
+        [ctx.orgId, projectId],
+      );
+      let retentionPaise = '0';
+      if (contractRes.rows.length > 0) {
+        const val = BigInt(contractRes.rows[0].contract_value || 0);
+        const bps = BigInt(contractRes.rows[0].retention_rate || 500);
+        retentionPaise = ((val * bps) / 10000n).toString();
+      }
+
+      return {
+        id: p.id,
+        code: p.code,
+        name: p.name,
+        status: p.status,
+        clientName: p.client_name || null,
+        targetHandoverDate: p.target_handover_date,
+        retentionAtRiskPaise: retentionPaise,
+        counts: {
+          applicableTotal: Number(c.total) || 0,
+          approvedCount: Number(c.approved) || 0,
+          approvedExternalCount: Number(c.approved_external) || 0,
+          waivedCount: Number(c.waived) || 0,
+          inReviewCount: Number(c.in_review) || 0,
+          missingOrExpiredCount: Number(c.missing_or_expired) || 0,
+          expiringSoonCount: Number(c.expiring_soon) || 0,
+        },
+        rowVersion: p.row_version || 1,
+      };
     });
   }
 

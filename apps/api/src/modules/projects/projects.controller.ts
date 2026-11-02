@@ -31,7 +31,17 @@ export class ProjectsController {
   @RequirePermission('project.create')
   async createProject(
     @Req() req: any,
-    @Body() dto: { code: string; name: string; projectType?: string; clientPartyId?: string },
+    @Body()
+    dto: {
+      code: string;
+      name: string;
+      projectType?: string;
+      clientPartyId?: string;
+      mcPartyId?: string;
+      consultantPartyId?: string;
+      contractValuePaise?: string | number | bigint;
+      targetHandoverDate?: string;
+    },
   ) {
     return this.projectsService.createProject(req.userContext, dto);
   }
@@ -40,6 +50,12 @@ export class ProjectsController {
   @RequirePermission('project.read')
   async getProject(@Req() req: any, @Param('id') id: string) {
     return this.projectsService.getProject(req.userContext, id);
+  }
+
+  @Get(':id/dashboard')
+  @RequirePermission('project.read')
+  async getProjectDashboard(@Req() req: any, @Param('id') id: string) {
+    return this.projectsService.getProjectDashboard(req.userContext, id);
   }
 
   @Patch(':id')

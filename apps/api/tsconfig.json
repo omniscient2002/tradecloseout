@@ -17,7 +17,15 @@
     "noImplicitAny": true,
     "strictBindCallApply": true,
     "forceConsistentCasingInFileNames": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+    "paths": {
+      "@tradecloseout/shared/*": ["../../packages/shared/src/*"],
+      "@tradecloseout/shared": ["../../packages/shared/src"],
+      "@tradecloseout/db/*": ["../../packages/db/src/*"],
+      "@tradecloseout/db": ["../../packages/db/src"],
+      "@tradecloseout/pdf-engine/*": ["../../packages/pdf-engine/src/*"],
+      "@tradecloseout/pdf-engine": ["../../packages/pdf-engine/src"]
+    }
   },
   "include": ["src/**/*", "test/**/*"]
 }

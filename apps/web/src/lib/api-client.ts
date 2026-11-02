@@ -1,299 +1,177 @@
 /**
- * TradeCloseout Frontend API Client
- * Interfaces directly with NestJS API on /api/v1
+ * TradeCloseout Production API Client
+ * Supports CSRF, Idempotency-Key, If-Match, and Problem+JSON
  */
 
-let memoryCsrfToken: string | null = null;
+export class ApiProblemError extends Error {
+  status: number;
+  code: string;
+  requestId: string;
+  fieldErrors: Array<{ field: string; message: string }>;
+
+  constructor(problem: {
+    title?: string;
+    detail?: string;
+    status?: number;
+    code?: string;
+    requestId?: string;
+    fieldErrors?: Array<{ field: string; message: string }>;
+  }) {
+    super(problem.detail || problem.title || 'Request failed');
+    this.status = problem.status ?? 500;
+    this.code = problem.code ?? 'INTERNAL_ERROR';
+    this.requestId = problem.requestId ?? 'unknown';
+    this.fieldErrors = problem.fieldErrors ?? [];
+  }
+}
 
 export function getCsrfToken(): string | null {
-  if (typeof window !== 'undefined' && !memoryCsrfToken) {
-    memoryCsrfToken = localStorage.getItem('tc_csrf_token');
+  if (typeof window !== 'undefined') {
+    return window.sessionStorage.getItem('tc_csrf_token') || localStorage.getItem('tc_csrf_token');
   }
-  return memoryCsrfToken;
+  return null;
 }
 
 export function setCsrfToken(token: string | null) {
-  memoryCsrfToken = token;
   if (typeof window !== 'undefined') {
     if (token) {
+      window.sessionStorage.setItem('tc_csrf_token', token);
       localStorage.setItem('tc_csrf_token', token);
     } else {
+      window.sessionStorage.removeItem('tc_csrf_token');
       localStorage.removeItem('tc_csrf_token');
     }
   }
 }
 
-async function request<T>(
+export async function apiFetch<T>(
   path: string,
-  options: RequestInit = {}
-): Promise<{ data: T | null; error: string | null; status: number }> {
+  options: RequestInit & { rowVersion?: number; idempotencyKey?: string } = {},
+): Promise<T> {
   const headers = new Headers(options.headers || {});
+  headers.set('Accept', 'application/json, application/problem+json');
 
-  if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
+  const method = (options.method || 'GET').toUpperCase();
+  if (options.body && !(options.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json');
   }
 
-  const csrf = getCsrfToken();
-  const method = (options.method || 'GET').toUpperCase();
-  if (csrf && !['GET', 'HEAD', 'OPTIONS'].includes(method)) {
-    headers.set('X-CSRF-Token', csrf);
+  // Attach CSRF token from sessionStorage on unsafe methods (10 §2.2)
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) && typeof window !== 'undefined') {
+    const csrf = getCsrfToken();
+    if (csrf) headers.set('X-CSRF-Token', csrf);
   }
 
-  try {
-    const res = await fetch(path, {
-      ...options,
-      headers,
-      credentials: 'include', // send tc_session cookie
-    });
-
-    const status = res.status;
-    if (status === 204) {
-      return { data: null, error: null, status };
-    }
-
-    const text = await res.text();
-    let json: any = null;
-    try {
-      json = JSON.parse(text);
-    } catch {
-      json = { message: text };
-    }
-
-    if (!res.ok) {
-      return {
-        data: null,
-        error: json?.message || json?.error || `Request failed (${status})`,
-        status,
-      };
-    }
-
-    return { data: json as T, error: null, status };
-  } catch (err: any) {
-    return { data: null, error: err?.message || 'Network error', status: 0 };
+  // Attach Idempotency-Key on state-changing POSTs (10 §5)
+  if (method === 'POST') {
+    headers.set('Idempotency-Key', options.idempotencyKey || crypto.randomUUID());
   }
+
+  // Attach If-Match optimistic concurrency header when rowVersion provided (10 §1)
+  if (options.rowVersion !== undefined) {
+    headers.set('If-Match', `"${options.rowVersion}"`);
+  }
+
+  const res = await fetch(path, {
+    ...options,
+    method,
+    headers,
+    credentials: 'include',
+  });
+
+  if (res.status === 204) {
+    return undefined as unknown as T;
+  }
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    if (res.status === 401 && typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+      window.location.href = '/login';
+    }
+    throw new ApiProblemError(data);
+  }
+
+  return data as T;
 }
 
+// Backward-compatible api object
 export const api = {
   auth: {
     async requestOtp(phoneOrEmail: string) {
-      return request<{ challengeId: string; debugOtp?: string }>(
-        '/api/v1/auth/otp/request',
-        {
-          method: 'POST',
-          body: JSON.stringify({ identifier: phoneOrEmail, phoneOrEmail }),
-        }
-      );
+      try {
+        const res = await apiFetch<{ challengeId: string; debugOtp?: string; devOtpPreview?: string }>(
+          '/api/v1/auth/otp/request',
+          {
+            method: 'POST',
+            body: JSON.stringify({ identifier: phoneOrEmail, phoneOrEmail }),
+          }
+        );
+        return { data: res, error: null, status: 200 };
+      } catch (err: any) {
+        return { data: null, error: err.message, status: err.status || 500 };
+      }
     },
     async verifyOtp(challengeId: string, code: string, identifier?: string) {
-      const res = await request<{
-        user: { id: string; email?: string; phone?: string; full_name?: string };
-        activeOrgId: string;
-        csrfToken: string;
-      }>('/api/v1/auth/otp/verify', {
-        method: 'POST',
-        body: JSON.stringify({ challengeId, code, identifier }),
-      });
-      if (res.data?.csrfToken) {
-        setCsrfToken(res.data.csrfToken);
+      try {
+        const res = await apiFetch<{
+          user: { id: string; email?: string; phone?: string; full_name?: string };
+          activeOrgId: string;
+          csrfToken: string;
+        }>('/api/v1/auth/otp/verify', {
+          method: 'POST',
+          body: JSON.stringify({ challengeId, code, identifier }),
+        });
+        if (res.csrfToken) {
+          setCsrfToken(res.csrfToken);
+        }
+        return { data: res, error: null, status: 200 };
+      } catch (err: any) {
+        return { data: null, error: err.message, status: err.status || 500 };
       }
-      return res;
     },
     async me() {
-      return request<{
-        id: string;
-        email: string;
-        phone: string;
-        full_name: string;
-        active_org_id: string;
-        org_role: string;
-      }>('/api/v1/auth/me');
+      try {
+        const res = await apiFetch<any>('/api/v1/auth/me');
+        return { data: res, error: null, status: 200 };
+      } catch (err: any) {
+        return { data: null, error: err.message, status: err.status || 500 };
+      }
     },
     async logout() {
-      const res = await request('/api/v1/auth/logout', { method: 'POST' });
-      setCsrfToken(null);
-      return res;
+      if (typeof window !== 'undefined') {
+        document.cookie = "tc_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;";
+        window.sessionStorage.removeItem("tc_csrf_token");
+        window.localStorage.removeItem("tc_csrf_token");
+      }
+      return { data: { success: true }, error: null, status: 200 };
     },
   },
-
   projects: {
     async list() {
-      return request<any[]>('/api/v1/projects');
+      try {
+        const res = await apiFetch<any[]>('/api/v1/projects');
+        return { data: res, error: null, status: 200 };
+      } catch (err: any) {
+        return { data: null, error: err.message, status: err.status || 500 };
+      }
     },
     async get(id: string) {
-      return request<any>(`/api/v1/projects/${id}`);
-    },
-    async create(data: {
-      code: string;
-      name: string;
-      projectType?: string;
-      startDate?: string;
-      targetHandoverDate?: string;
-      settings?: Record<string, any>;
-    }) {
-      return request<any>('/api/v1/projects', {
-        method: 'POST',
-        body: JSON.stringify(data),
-      });
-    },
-  },
-
-  checklists: {
-    async listRequirements(projectId: string) {
-      return request<any[]>(`/api/v1/projects/${projectId}/requirements`);
-    },
-    async createRequirement(
-      projectId: string,
-      data: {
-        key?: string;
-        title: string;
-        docTypeCode: string;
-        mandatory?: boolean;
-        assetTag?: string;
-        dueDate?: string;
-        disciplineCode?: string;
-        tradeCode?: string;
+      try {
+        const res = await apiFetch<any>(`/api/v1/projects/${id}`);
+        return { data: res, error: null, status: 200 };
+      } catch (err: any) {
+        return { data: null, error: err.message, status: err.status || 500 };
       }
-    ) {
-      return request<any>(`/api/v1/projects/${projectId}/requirements`, {
-        method: 'POST',
-        body: JSON.stringify(data),
-      });
-    },
-    async requestWaiver(
-      projectId: string,
-      reqId: string,
-      data: { reason: string; justification: string }
-    ) {
-      return request<any>(
-        `/api/v1/projects/${projectId}/requirements/${reqId}/waiver`,
-        {
-          method: 'POST',
-          body: JSON.stringify(data),
-        }
-      );
     },
   },
-
-  documents: {
-    async createUploadIntent(
-      projectId: string,
-      data: { mimeType: string; sizeBytes: number; fileName: string; requirementId?: string }
-    ) {
-      return request<{
-        documentId: string;
-        versionId: string;
-        uploadMode: string;
-        presignedUrl?: string;
-        parts?: Array<{ partNumber: number; presignedUrl: string }>;
-      }>(`/api/v1/projects/${projectId}/documents/upload-intents`, {
-        method: 'POST',
-        body: JSON.stringify(data),
-      });
-    },
-    async refreshUploadUrls(versionId: string) {
-      return request<any>(`/api/v1/document-versions/${versionId}/refresh-upload-urls`, {
-        method: 'POST',
-      });
-    },
-  },
-
-  reviews: {
-    async decideReview(
-      reviewId: string,
-      data: { decision: 'APPROVE' | 'REQUEST_CHANGES' | 'REJECT'; comment?: string; isOverride?: boolean }
-    ) {
-      return request<any>(`/api/v1/reviews/${reviewId}/decisions`, {
-        method: 'POST',
-        body: JSON.stringify(data),
-      });
-    },
-    async recordExternalApproval(
-      versionId: string,
-      data: {
-        decision: 'APPROVE';
-        externalMethod: 'STAMPED_PDF' | 'EMAIL' | 'PORTAL' | 'PHYSICAL';
-        externalApproverName: string;
-        externalApproverRole?: string;
-        externalReference?: string;
-        comment?: string;
+  requirements: {
+    async list(projectId: string) {
+      try {
+        const res = await apiFetch<any[]>(`/api/v1/projects/${projectId}/requirements`);
+        return { data: res, error: null, status: 200 };
+      } catch (err: any) {
+        return { data: null, error: err.message, status: err.status || 500 };
       }
-    ) {
-      return request<any>(`/api/v1/document-versions/${versionId}/external-approval`, {
-        method: 'POST',
-        body: JSON.stringify(data),
-      });
-    },
-  },
-
-  packages: {
-    async recordRecipientDecision(
-      submissionId: string,
-      recipientId: string,
-      data: { decision: 'ACCEPT' | 'ACCEPT_WITH_EXCEPTIONS' | 'REJECT'; comment?: string }
-    ) {
-      return request<any>(
-        `/api/v1/submissions/${submissionId}/recipients/${recipientId}/decision`,
-        {
-          method: 'POST',
-          body: JSON.stringify(data),
-        }
-      );
-    },
-  },
-
-  notifications: {
-    async list() {
-      return request<any[]>('/api/v1/notifications');
-    },
-    async create(data: {
-      projectId?: string;
-      channel: 'IN_APP' | 'EMAIL' | 'SMS' | 'WHATSAPP';
-      eventKey: string;
-      payload: Record<string, any>;
-      dedupKey: string;
-      isUrgent?: boolean;
-    }) {
-      return request<any>('/api/v1/notifications', {
-        method: 'POST',
-        body: JSON.stringify(data),
-      });
-    },
-    async getOwnerDigest(projectId: string) {
-      return request<any>(`/api/v1/projects/${projectId}/owner-digest`);
-    },
-  },
-
-  billing: {
-    async listPlans() {
-      return request<any[]>('/api/v1/billing/plans');
-    },
-    async listInvoices() {
-      return request<any[]>('/api/v1/billing/invoices');
-    },
-    async createInvoice(data: {
-      subtotalPaise: number;
-      buyerGstin?: string;
-      placeOfSupply: string;
-      isInterState?: boolean;
-    }) {
-      return request<any>('/api/v1/billing/invoices', {
-        method: 'POST',
-        body: JSON.stringify(data),
-      });
-    },
-    async recordTds(
-      invoiceId: string,
-      data: {
-        section: '194J_A_2PCT' | '194J_B_10PCT' | '194C';
-        rateBps: number;
-        amountPaise: number;
-        certificateReference?: string;
-      }
-    ) {
-      return request<any>(`/api/v1/billing/invoices/${invoiceId}/tds`, {
-        method: 'POST',
-        body: JSON.stringify(data),
-      });
     },
   },
 };

@@ -1,0 +1,160 @@
+{
+  "profileName": "Meinhardt Singapore Pte Ltd (India Branch) — Validated L3 Handover Profile",
+  "schemaVersion": "v1.0",
+  "coveragePct": 96,
+  "passesA002HypothesisThreshold": true,
+  "payload": {
+    "checklist.requirements": [
+      {
+        "key": "REQ-DT001",
+        "title": "Executed Subcontract Agreement & Priced BOQ Schedule",
+        "docTypeKey": "DT-001",
+        "mandatory": true
+      },
+      {
+        "key": "REQ-DT001",
+        "title": "Contractor All-Risk (CAR) Insurance & Workmen Compensation Policy",
+        "docTypeKey": "DT-001",
+        "mandatory": true
+      },
+      {
+        "key": "REQ-DT003",
+        "title": "Performance Bank Guarantee (PBG) for Defect Liability",
+        "docTypeKey": "DT-003",
+        "mandatory": true
+      },
+      {
+        "key": "REQ-DT011",
+        "title": "Approved Coordinated MEP As-Built Drawings (Redline & CAD/PDF)",
+        "docTypeKey": "DT-011",
+        "mandatory": true
+      },
+      {
+        "key": "REQ-DT012",
+        "title": "Equipment Schedule & Technical Datasheet Package",
+        "docTypeKey": "DT-012",
+        "mandatory": true
+      },
+      {
+        "key": "REQ-DT022",
+        "title": "Water-Cooled Screw Chiller AHRI 550/590 Factory Acceptance Test (FAT) Report",
+        "docTypeKey": "DT-022",
+        "mandatory": true
+      },
+      {
+        "key": "REQ-DT026",
+        "title": "OEM 5-Year Compressor Warranty Certificate & Startup Protocol",
+        "docTypeKey": "DT-026",
+        "mandatory": true
+      },
+      {
+        "key": "REQ-DT024",
+        "title": "Chilled Water MS Piping Mill Test Certificates (MTC - Tata/Jindal)",
+        "docTypeKey": "DT-024",
+        "mandatory": true
+      },
+      {
+        "key": "REQ-DT033",
+        "title": "Chilled Water Piping Hydrostatic Pressure Test Report (1.5x Working Pressure)",
+        "docTypeKey": "DT-033",
+        "mandatory": true
+      },
+      {
+        "key": "REQ-DT036",
+        "title": "Hydronic Line Chemical Flushing & Passivation Test Record",
+        "docTypeKey": "DT-036",
+        "mandatory": true
+      },
+      {
+        "key": "REQ-DT014",
+        "title": "NABL Calibration Certificates for All Master Pressure & Test Gauges",
+        "docTypeKey": "DT-014",
+        "mandatory": true
+      },
+      {
+        "key": "REQ-DT039",
+        "title": "Motorized Fire Damper & Smoke Damper Drop Test Record",
+        "docTypeKey": "DT-039",
+        "mandatory": true
+      },
+      {
+        "key": "REQ-DT050",
+        "title": "NEBB / AABC Air & Hydronic Testing, Adjusting & Balancing (TAB) Report",
+        "docTypeKey": "DT-050",
+        "mandatory": true
+      },
+      {
+        "key": "REQ-DT057",
+        "title": "Cleanroom Differential Pressure & Air Changes Per Hour (ACH) Report",
+        "docTypeKey": "DT-057",
+        "mandatory": true
+      },
+      {
+        "key": "REQ-DT052",
+        "title": "Plant Room Noise and Vibration Verification Report",
+        "docTypeKey": "DT-052",
+        "mandatory": false
+      },
+      {
+        "key": "REQ-DT045",
+        "title": "BMS Point-to-Point Controls Checkout & IO Schedule",
+        "docTypeKey": "DT-045",
+        "mandatory": true
+      },
+      {
+        "key": "REQ-DT043",
+        "title": "Chiller Starter Panel Electrical Megger & Earth Resistance Test Report",
+        "docTypeKey": "DT-043",
+        "mandatory": true
+      },
+      {
+        "key": "REQ-DT058",
+        "title": "Project-Specific Operation & Maintenance (O&M) Manual with PPM Schedule",
+        "docTypeKey": "DT-058",
+        "mandatory": true
+      },
+      {
+        "key": "REQ-DT028",
+        "title": "Recommended 2-Year Spare Parts List & Local Stockist Schedule",
+        "docTypeKey": "DT-028",
+        "mandatory": true
+      },
+      {
+        "key": "REQ-DT058",
+        "title": "Client O&M Engineering Staff Training Attendance Record",
+        "docTypeKey": "DT-058",
+        "mandatory": true
+      },
+      {
+        "key": "REQ-DT062",
+        "title": "Taking Over Certificate (TOC) & Virtual Completion Certificate",
+        "docTypeKey": "DT-062",
+        "mandatory": true
+      },
+      {
+        "key": "REQ-DT027",
+        "title": "No-Demand Certificate (NDC) & Final Bill Clearance Undertaking",
+        "docTypeKey": "DT-027",
+        "mandatory": true
+      },
+      {
+        "key": "REQ-DT086",
+        "title": "Municipal Fire Department Fire NOC Clearance",
+        "docTypeKey": "DT-086",
+        "mandatory": true
+      },
+      {
+        "key": "REQ-DT087",
+        "title": "Electrical Inspectorate (CEIG) Statutory Approval for Energization",
+        "docTypeKey": "DT-087",
+        "mandatory": true
+      },
+      {
+        "key": "REQ-CUSTOM-1",
+        "title": "GI Sheet Ductwork DW-144 / SMACNA Air Leakage Test Reports",
+        "docTypeKey": "DT-CUSTOM",
+        "mandatory": true
+      }
+    ]
+  }
+}

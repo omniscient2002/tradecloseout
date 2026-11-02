@@ -1,0 +1,26 @@
+{
+  "name": "@tradecloseout/worker",
+  "version": "0.2.1",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch ./src/main.ts",
+    "build": "tsc",
+    "start": "node ./dist/main.js"
+  },
+  "dependencies": {
+    "@tradecloseout/db": "workspace:*",
+    "@tradecloseout/pdf-engine": "workspace:*",
+    "@tradecloseout/shared": "workspace:*",
+    "bullmq": "^5.15.0",
+    "ioredis": "^5.4.1",
+    "pdf-lib": "^1.17.1",
+    "pg": "^8.13.3",
+    "uuidv7": "^1.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.9",
+    "@types/pg": "^8.11.11",
+    "tsx": "^4.23.15",
+    "typescript": "^5.8.2"
+  }
+}

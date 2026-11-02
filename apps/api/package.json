@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "build": "nest build",
-    "start": "nest start",
+    "start": "node dist/apps/api/src/main.js",
     "start:dev": "nest start --watch",
     "test": "jest",
     "test:rls": "jest test/rls-isolation.spec.ts",
@@ -22,6 +22,7 @@
     "dotenv": "^16.4.7",
     "drizzle-orm": "^0.40.0",
     "ioredis": "^6.0.0",
+    "pdf-lib": "^1.17.1",
     "pg": "^8.13.3",
     "rxjs": "^7.8.2",
     "uuidv7": "^1.0.2",

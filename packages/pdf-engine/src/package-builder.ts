@@ -1,7 +1,7 @@
 // packages/pdf-engine/src/package-builder.ts
 // Pure-Node PDF Handover Package Compilation Pipeline (RT-006, RT-025, RT-034, CB-013)
 
-import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
+import { PDFDocument, rgb, StandardFonts, PDFName, PDFString } from 'pdf-lib';
 import * as fs from 'node:fs/promises';
 import archiver from 'archiver';
 import { createWriteStream } from 'node:fs';
@@ -277,4 +277,52 @@ export class PackageBuilder {
       })),
     };
   }
+}
+
+/**
+ * Injects hierarchical PDF Bookmarks (/Outlines) into the PDF catalog (FR-HND-004)
+ */
+export async function injectPdfBookmarks(
+  pdfPath: string,
+  bookmarks: Array<{ title: string; pageIndex: number }>,
+): Promise<void> {
+  const bytes = await fs.readFile(pdfPath);
+  const doc = await PDFDocument.load(bytes);
+  const pages = doc.getPages();
+  if (pages.length === 0 || bookmarks.length === 0) return;
+
+  const outlinesDictRef = doc.context.nextRef();
+  const itemRefs: any[] = bookmarks.map(() => doc.context.nextRef());
+
+  for (let i = 0; i < bookmarks.length; i++) {
+    const bm = bookmarks[i];
+    const pageIdx = Math.min(Math.max(bm.pageIndex, 0), pages.length - 1);
+    const targetPage = pages[pageIdx];
+
+    const itemDict: Record<string, any> = {
+      Title: PDFString.of(bm.title.slice(0, 95)),
+      Parent: outlinesDictRef,
+      Dest: [targetPage.ref, PDFName.of('XYZ'), null, 842, null],
+    };
+    if (i > 0) {
+      itemDict.Prev = itemRefs[i - 1];
+    }
+    if (i < bookmarks.length - 1) {
+      itemDict.Next = itemRefs[i + 1];
+    }
+
+    doc.context.assign(itemRefs[i], doc.context.obj(itemDict));
+  }
+
+  const outlinesDict = doc.context.obj({
+    Type: 'Outlines',
+    Count: bookmarks.length,
+    First: itemRefs[0],
+    Last: itemRefs[itemRefs.length - 1],
+  });
+
+  doc.context.assign(outlinesDictRef, outlinesDict);
+  doc.catalog.set(PDFName.of('Outlines'), outlinesDictRef);
+
+  await fs.writeFile(pdfPath, await doc.save());
 }

@@ -8,16 +8,20 @@
     "dev": "turbo run dev",
     "lint": "turbo run lint",
     "test": "turbo run test",
+    "db:migrate": "pnpm --filter @tradecloseout/db migrate",
+    "db:seed": "pnpm --filter @tradecloseout/db seed",
     "test:rls": "pnpm --filter @tradecloseout/api test:rls",
     "test:rbac": "pnpm --filter @tradecloseout/api test:rbac",
     "test:smoke": "ts-node scripts/test-e2e-smoke.ts",
     "verify:traceability": "ts-node scripts/verify-traceability.ts"
   },
   "devDependencies": {
+    "@types/node": "^22.13.9",
+    "fast-glob": "^3.3.3",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.23.15",
     "turbo": "^2.4.4",
     "typescript": "^5.8.2",
-    "@types/node": "^22.13.9",
-    "ts-node": "^10.9.2",
-    "fast-glob": "^3.3.3"
+    "xlsx": "^0.18.5"
   }
 }

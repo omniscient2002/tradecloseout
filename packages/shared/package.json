@@ -19,6 +19,10 @@
     "./status-enums": {
       "types": "./dist/status-enums.d.ts",
       "default": "./dist/status-enums.js"
+    },
+    "./env": {
+      "types": "./dist/env.d.ts",
+      "default": "./dist/env.js"
     }
   },
   "scripts": {

@@ -11,7 +11,9 @@ import {
   Body,
   Req,
   UseGuards,
+  Res,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { DocumentsService } from './documents.service';
 import { SessionAuthGuard } from '../../common/guards/session-auth.guard';
 import { PermissionGuard, RequirePermission } from '../../common/guards/permission.guard';
@@ -102,6 +104,27 @@ export class DocumentsController {
     return this.documentsService.getPreviewUrl(req.userContext, id);
   }
 
+  @Get('projects/:projectId/document-versions/:versionId/stream')
+  @RequirePermission('document.read')
+  async streamProjectPdf(
+    @Param('projectId') projectId: string,
+    @Param('versionId') versionId: string,
+    @Req() req: any,
+    @Res() res: Response,
+  ) {
+    return this.documentsService.streamDocumentVersion(req.userContext, projectId, versionId, res);
+  }
+
+  @Get('document-versions/:versionId/stream')
+  @RequirePermission('document.read')
+  async streamDirectPdf(
+    @Param('versionId') versionId: string,
+    @Req() req: any,
+    @Res() res: Response,
+  ) {
+    return this.documentsService.streamDocumentVersion(req.userContext, undefined, versionId, res);
+  }
+
   @Delete('documents/:id')
   @RequirePermission('document.delete')
   async deleteDocument(@Req() req: any, @Param('id') id: string) {
@@ -146,5 +169,55 @@ export class DocumentsController {
   @RequirePermission('document.bulk_import')
   async commitBulkImport(@Req() req: any, @Param('id') id: string) {
     return this.documentsService.commitBulkImport(req.userContext, id);
+  }
+
+  @Post('projects/:projectId/documents/:documentId/batch-links')
+  @RequirePermission('document.upload')
+  async linkBatchEvidence(
+    @Req() req: any,
+    @Param('projectId') projectId: string,
+    @Param('documentId') documentId: string,
+    @Body() dto: { assetIds: string[]; requirementIds: string[] },
+  ) {
+    return this.documentsService.linkBatchEvidence(
+      req.userContext,
+      projectId,
+      documentId,
+      dto.assetIds || [],
+      dto.requirementIds || [],
+    );
+  }
+
+  @Post('projects/:projectId/transmittals/generate')
+  @RequirePermission('document.upload')
+  async generateTransmittalPack(
+    @Req() req: any,
+    @Param('projectId') projectId: string,
+    @Body() dto: { documentIds: string[]; notes?: string },
+  ) {
+    return this.documentsService.generateSubmittalTransmittalPack(
+      req.userContext,
+      projectId,
+      dto.documentIds,
+      dto.notes,
+    );
+  }
+
+  @Post('projects/:projectId/transmittals/stamp-back')
+  @RequirePermission('review.submit_decision')
+  async processTransmittalStampBack(
+    @Req() req: any,
+    @Param('projectId') projectId: string,
+    @Body()
+    dto: {
+      transmittalNo: string;
+      approverName: string;
+      approverRoleOrg: string;
+      decisionDate: string;
+      evidenceObjectId?: string;
+      versionIds: string[];
+    },
+  ) {
+    return this.documentsService.processTransmittalStampBack(req.userContext, projectId, dto);
   }
 }

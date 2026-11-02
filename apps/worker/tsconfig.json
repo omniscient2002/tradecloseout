@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "module": "CommonJS",
+    "declaration": true,
+    "removeComments": true,
+    "allowSyntheticDefaultImports": true,
+    "target": "ES2022",
+    "sourceMap": true,
+    "outDir": "./dist",
+    "baseUrl": "./",
+    "skipLibCheck": true,
+    "strict": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "paths": {
+      "@tradecloseout/shared/*": ["../../packages/shared/src/*"],
+      "@tradecloseout/shared": ["../../packages/shared/src"],
+      "@tradecloseout/db/*": ["../../packages/db/src/*"],
+      "@tradecloseout/db": ["../../packages/db/src"],
+      "@tradecloseout/pdf-engine/*": ["../../packages/pdf-engine/src/*"],
+      "@tradecloseout/pdf-engine": ["../../packages/pdf-engine/src"]
+    }
+  },
+  "include": ["src/**/*"]
+}

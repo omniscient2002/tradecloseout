@@ -1,0 +1,26 @@
+Sr No,Trade / System,Item Description / Submittal Title,Governing Standard,Stage,Reviewer,Mandatory,Consultant Remarks
+1.1,Commercial & Statutory,Executed Subcontract Agreement & Priced BOQ Schedule,FIDIC / Contract Clause 12,Pre-Construction,Main Contractor Commercial,YES,Fully signed & stamped on ₹500 non-judicial stamp paper
+1.2,Commercial & Statutory,Contractor All-Risk (CAR) Insurance & Workmen Compensation Policy,Labour Ministry / IRDAI,Pre-Construction,PMC Safety Lead,YES,Valid for full contract duration + 60 days extension
+1.3,Commercial & Statutory,Performance Bank Guarantee (PBG) for Defect Liability,Banking / Contract Cl 4.2,Handover,Client Accounts Lead,YES,5% contract value bank guarantee from scheduled commercial bank
+2.1,Engineering Drawings,Approved Coordinated MEP As-Built Drawings (Redline & CAD/PDF),NBC 2016 Part 8,Handover,Consultant Lead Architect,YES,"Includes all site clashes, rerouting, and invert level updates"
+2.2,Engineering Drawings,Equipment Schedule & Technical Datasheet Package,ASHRAE 90.1 / Project Spec,Submittals,Consultant Lead MEP,YES,Cross-checked against approved make list
+3.1,HVAC Chillers,Water-Cooled Screw Chiller AHRI 550/590 Factory Acceptance Test (FAT) Report,AHRI 550/590 / ISHRAE,Factory,Consultant MEP Engineer,YES,"Witnessed test for capacity, power consumption (IKW/TR), and vibration"
+3.2,HVAC Chillers,OEM 5-Year Compressor Warranty Certificate & Startup Protocol,Manufacturer Standard,Commissioning,Client Maintenance Lead,YES,Must include serial numbers of compressors #1 and #2
+4.1,Hydronic Piping,Chilled Water MS Piping Mill Test Certificates (MTC - Tata/Jindal),IS 1239 / IS 3589,Site Delivery,QC Inspector,YES,Heavy grade Class-C pipe chemical composition verified
+4.2,Hydronic Piping,Chilled Water Piping Hydrostatic Pressure Test Report (1.5x Working Pressure),NBC 2016 / ASME B31.9,Testing,Consultant Lead Plumbing/HVAC,YES,24-hour pressure gauge chart witness sign-off with zero pressure loss
+4.3,Hydronic Piping,Hydronic Line Chemical Flushing & Passivation Test Record,BSRIA BG 29/2020,Testing,Consultant Water Specialist,YES,Water clarity and iron ppm within acceptable limits
+4.4,Hydronic Piping,NABL Calibration Certificates for All Master Pressure & Test Gauges,ISO/IEC 17025,Testing,Consultant Lead QC,YES,Calibration must be valid on the exact day pressure test was conducted
+5.1,Ductwork & Air Distribution,GI Sheet Ductwork DW-144 / SMACNA Air Leakage Test Reports,DW-144 Class B/C,Testing,Consultant HVAC Lead,YES,Light test plus calibrated orifice blower leakage verification
+5.2,Ductwork & Air Distribution,Motorized Fire Damper & Smoke Damper Drop Test Record,UL 555 / NBC 2016 Part 4,Testing,Fire Safety Consultant,YES,Integrated interlock test with Fire Alarm Control Panel (FACP)
+6.1,Commissioning & Balancing,"NEBB / AABC Air & Hydronic Testing, Adjusting & Balancing (TAB) Report",NEBB Procedural Standards,Commissioning,Independent TAB Agency,YES,Branch duct CFM and terminal diffuser balancing within ±10%
+6.2,Cleanroom Validation,Cleanroom Differential Pressure & Air Changes Per Hour (ACH) Report,ISO 14644-1 / WHO-GMP,Commissioning,Pharma Validation Auditor,YES,Room cascade: +15 Pa sterile filling vs +10 Pa buffer airlock
+6.3,Acoustics & Vibration,Plant Room Noise and Vibration Verification Report,ASHRAE Handbook Chapter 48,Commissioning,Consultant MEP Engineer,NO,Decibel measurement at 1.5m boundary from chiller foundation
+7.1,Building Automation,BMS Point-to-Point Controls Checkout & IO Schedule,BACnet / ASHRAE 135,Commissioning,Controls Specialist,YES,Physical temperature sensors cross-checked against workstation graphic UI
+8.1,Electrical Compliance,Chiller Starter Panel Electrical Megger & Earth Resistance Test Report,IS 3043 / IS 732,Testing,Consultant Electrical Lead,YES,Earth pit resistance <= 1.0 Ohm
+9.1,Closeout & Handover,Project-Specific Operation & Maintenance (O&M) Manual with PPM Schedule,BSRIA BG 1/2007,Handover,Client Facilities Director,YES,"Includes valve charts, lubrication schedules, and OEM contact details"
+9.2,Closeout & Handover,Recommended 2-Year Spare Parts List & Local Stockist Schedule,Project Specification,Handover,Facilities Manager,YES,"Pricing & Indian part numbers for bearings, gaskets, and filters"
+9.3,Closeout & Handover,Client O&M Engineering Staff Training Attendance Record,Contract Cl 14.1,Handover,Client HR / Operations,YES,Signed by 4 client duty engineers after 3-day classroom & site walkthrough
+9.4,Closeout & Handover,Taking Over Certificate (TOC) & Virtual Completion Certificate,FIDIC Red Book Cl 10,Handover,Project Director / PMC,YES,Marks physical handover and begins 12-month Defect Liability Period
+9.5,Closeout & Handover,No-Demand Certificate (NDC) & Final Bill Clearance Undertaking,Contract Cl 14.11,Handover,Client Commercial / Finance,YES,Signed on ₹100 stamp paper releasing all future claims against employer
+10.1,Statutory Approvals,Municipal Fire Department Fire NOC Clearance,Telangana Fire Services Act,Handover,Fire Officer / PMC,YES,Statutory prerequisite before occupancy
+10.2,Statutory Approvals,Electrical Inspectorate (CEIG) Statutory Approval for Energization,Central Electricity Authority,Handover,Chief Electrical Inspector,YES,Statutory approval for HT switchgear & chiller VFD starters

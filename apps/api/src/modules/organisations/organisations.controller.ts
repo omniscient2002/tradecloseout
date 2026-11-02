@@ -21,6 +21,12 @@ import { PermissionGuard, RequirePermission } from '../../common/guards/permissi
 export class OrganisationsController {
   constructor(private readonly orgsService: OrganisationsService) {}
 
+  @Get('dashboard')
+  @RequirePermission('org.read')
+  async getDashboard(@Req() req: any, @Param('orgId') orgId: string) {
+    return this.orgsService.getDashboard(req.userContext, orgId);
+  }
+
   @Get()
   @RequirePermission('org.read')
   async getOrganisation(@Req() req: any, @Param('orgId') orgId: string) {
