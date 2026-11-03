@@ -11,11 +11,11 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
-import { SessionAuthGuard } from '../../common/guards/session-auth.guard';
+import { SessionCsrfGuard } from '../../common/guards/session-csrf.guard';
 import { PermissionGuard, RequirePermission } from '../../common/guards/permission.guard';
 
 @Controller('api/v1')
-@UseGuards(SessionAuthGuard, PermissionGuard)
+@UseGuards(SessionCsrfGuard, PermissionGuard)
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
 

@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
+import { ValidationPipe } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { ProblemJsonExceptionFilter } from './common/filters/problem-json.filter';
@@ -9,6 +10,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   app.use(cookieParser());
+  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   app.useGlobalFilters(new ProblemJsonExceptionFilter());
   app.useGlobalInterceptors(new VisibilityProjectionInterceptor());
   app.enableCors({
@@ -16,7 +18,7 @@ async function bootstrap() {
     credentials: true,
   });
 
-  const port = process.env.PORT || 3001;
+  const port = process.env.API_PORT || process.env.PORT || 3001;
   await app.listen(port);
   console.log(`TradeCloseout API is running on http://localhost:${port}`);
 }

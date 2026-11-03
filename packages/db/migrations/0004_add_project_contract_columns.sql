@@ -1,0 +1,5 @@
+SET ROLE tc_migrator;
+
+ALTER TABLE projects
+  ADD COLUMN IF NOT EXISTS contract_value_paise BIGINT,
+  ADD COLUMN IF NOT EXISTS retention_bps INTEGER NOT NULL DEFAULT 500;

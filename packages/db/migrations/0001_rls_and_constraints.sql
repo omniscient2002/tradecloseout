@@ -1,9 +1,12 @@
+-- packages/db/migrations/0001_rls_and_constraints.sql
+SET ROLE tc_migrator;
+
 -- 1. Create Monthly-Partitioned Append-Only Audit Table (08 §5.6)
 CREATE TABLE IF NOT EXISTS audit_events (
   id              UUID NOT NULL,
   org_id          UUID,
   project_id      UUID,
-  actor_type      TEXT NOT NULL CHECK (actor_type IN ('MEMBER','GUEST','SYSTEM','ADMIN')),
+  actor_type      TEXT NOT NULL CHECK (actor_type IN ('USER','MEMBER','GUEST','SYSTEM','ADMIN')),
   actor_user_id   UUID,
   action          TEXT NOT NULL,
   entity_type     TEXT NOT NULL,
@@ -139,15 +142,19 @@ DECLARE
   ];
 BEGIN
   FOREACH tbl IN ARRAY tenant_tables LOOP
-    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY;', tbl);
-    EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY;', tbl);
-    EXECUTE format('DROP POLICY IF EXISTS %I_tenant_isolation ON %I;', tbl, tbl);
-    EXECUTE format(
-      'CREATE POLICY %I_tenant_isolation ON %I
-         USING (org_id = NULLIF(current_setting(''app.current_org'', true), '''')::uuid)
-         WITH CHECK (org_id = NULLIF(current_setting(''app.current_org'', true), '''')::uuid);',
-      tbl, tbl
-    );
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = tbl) THEN
+      EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY;', tbl);
+      EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY;', tbl);
+      EXECUTE format('DROP POLICY IF EXISTS %I_tenant_isolation ON %I;', tbl, tbl);
+      EXECUTE format(
+        'CREATE POLICY %I_tenant_isolation ON %I
+           USING (org_id = NULLIF(current_setting(''app.current_org'', true), '''')::uuid)
+           WITH CHECK (org_id = NULLIF(current_setting(''app.current_org'', true), '''')::uuid);',
+        tbl, tbl
+      );
+    END IF;
   END LOOP;
 END
 $$;
+
+RESET ROLE;

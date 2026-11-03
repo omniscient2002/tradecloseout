@@ -113,7 +113,7 @@ export default function StandaloneGuestPortalPage() {
     try {
       await apiFetch(`/api/v1/guest/${encodeURIComponent(token)}/otp/verify`, {
         method: "POST",
-        body: JSON.stringify({ otp: otpCode.trim() }),
+        body: JSON.stringify({ otp: otpCode.trim(), code: otpCode.trim() }),
       });
       await loadGuestContext();
     } catch (err: any) {

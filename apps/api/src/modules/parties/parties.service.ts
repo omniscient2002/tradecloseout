@@ -232,7 +232,54 @@ export class PartiesService {
       if (grant.cooldown_until && new Date(grant.cooldown_until) > new Date()) {
         throw new ForbiddenException(`RATE_LIMIT_COOLDOWN_ACTIVE: Try again after ${grant.cooldown_until}`);
       }
-      return grant;
+
+      // Query contractor org and project metadata
+      const metaRes = await client.query(
+        `SELECT o.display_name AS contractor_name, op.brand_color, p.name AS project_name, p.code AS project_code
+           FROM organisations o
+           LEFT JOIN org_profiles op ON op.org_id = o.id
+           LEFT JOIN projects p ON p.org_id = o.id AND p.id = $2
+          WHERE o.id = $1`,
+        [grant.org_id, grant.project_id],
+      );
+      const meta = metaRes.rows[0] || {};
+
+      let assignedRequirements: any[] = [];
+      const allowedReqIds: string[] = Array.isArray(grant.scope_json?.requirementIds)
+        ? grant.scope_json.requirementIds
+        : [];
+      if (allowedReqIds.length > 0) {
+        const reqRes = await client.query(
+          `SELECT id, requirement_key, title, doc_type_key, status, due_at
+             FROM requirements
+            WHERE org_id = $1 AND project_id = $2 AND id = ANY($3::uuid[])
+              AND superseded_at IS NULL`,
+          [grant.org_id, grant.project_id, allowedReqIds],
+        );
+        assignedRequirements = reqRes.rows.map((r: any) => ({
+          id: r.id,
+          requirementKey: r.requirement_key,
+          title: r.title,
+          docTypeKey: r.doc_type_key,
+          status: r.status,
+          dueAt: r.due_at,
+        }));
+      }
+
+      return {
+        ...grant,
+        grantId: grant.id,
+        grantType: grant.grant_type,
+        projectId: grant.project_id,
+        contractorName: meta.contractor_name || 'TradeCloseout Contractor',
+        brandColor: meta.brand_color || '#0F172A',
+        projectName: meta.project_name || 'Project Closeout',
+        projectCode: meta.project_code || '',
+        otpRequired: grant.otp_required,
+        otpVerified: !grant.otp_required,
+        supportContactText: `Contact ${meta.contractor_name || 'the contractor'} for assistance.`,
+        assignedRequirements,
+      };
     });
   }
 

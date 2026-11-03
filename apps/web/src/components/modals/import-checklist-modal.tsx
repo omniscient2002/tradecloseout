@@ -12,6 +12,7 @@ import {
   Loader2,
   ArrowRight,
 } from "lucide-react";
+import { apiFetch, ApiProblemError } from "../../lib/api-client";
 
 interface ImportChecklistModalProps {
   open: boolean;
@@ -164,35 +165,15 @@ export function ImportChecklistModal({
         })),
       };
 
-      const res = await fetch(`/api/projects/${projectId}/checklists/import-l3`, {
+      await apiFetch(`/api/v1/projects/${encodeURIComponent(projectId)}/checklists/import-l3`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-
-      if (!res.ok) {
-        // Fallback to local snapshot endpoint if using base path
-        const fallbackRes = await fetch(
-          `http://127.0.0.1:3000/api/v1/projects/${projectId}/checklists/import-l3`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(payload),
-          }
-        );
-        if (!fallbackRes.ok) {
-          throw new Error("Server rejected checklist import.");
-        }
-      }
 
       onImportSuccess();
       onClose();
     } catch (err: any) {
-      // In local SSR preview mode, notify success
-      onImportSuccess();
-      onClose();
+      setError(err?.message || "Failed to import checklist.");
     } finally {
       setApplying(false);
     }

@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "lib": ["ES2022", "DOM"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": true,
+    "baseUrl": ".",
+    "paths": {
+      "@tradecloseout/shared": ["packages/shared/src/index.ts"],
+      "@tradecloseout/shared/*": ["packages/shared/src/*"],
+      "@tradecloseout/db": ["packages/db/src/index.ts"],
+      "@tradecloseout/db/*": ["packages/db/src/*"],
+      "@tradecloseout/pdf-engine": ["packages/pdf-engine/src/index.ts"],
+      "@tradecloseout/pdf-engine/*": ["packages/pdf-engine/src/*"]
+    }
+  }
+}

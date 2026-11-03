@@ -13,11 +13,11 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ProjectsService } from './projects.service';
-import { SessionAuthGuard } from '../../common/guards/session-auth.guard';
+import { SessionCsrfGuard } from '../../common/guards/session-csrf.guard';
 import { PermissionGuard, RequirePermission } from '../../common/guards/permission.guard';
 
 @Controller('api/v1/projects')
-@UseGuards(SessionAuthGuard, PermissionGuard)
+@UseGuards(SessionCsrfGuard, PermissionGuard)
 export class ProjectsController {
   constructor(private readonly projectsService: ProjectsService) {}
 
@@ -74,6 +74,12 @@ export class ProjectsController {
     return this.projectsService.activateProject(req.userContext, id);
   }
 
+  @Post(':id/handover')
+  @RequirePermission('project.manage')
+  async handoverProject(@Req() req: any, @Param('id') id: string) {
+    return this.projectsService.handoverProject(req.userContext, id);
+  }
+
   @Post(':id/suspend')
   @RequirePermission('project.manage')
   async suspendProject(@Req() req: any, @Param('id') id: string) {
@@ -84,6 +90,21 @@ export class ProjectsController {
   @RequirePermission('project.manage')
   async closeProject(@Req() req: any, @Param('id') id: string) {
     return this.projectsService.closeProject(req.userContext, id);
+  }
+
+  @Post(':id/reopen')
+  @RequirePermission('project.manage')
+  async reopenProject(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: { expectedRowVersion?: number; reason?: string },
+  ) {
+    return this.projectsService.reopenProject(
+      req.userContext,
+      id,
+      dto?.expectedRowVersion ?? 1,
+      dto?.reason || 'Reopened for post-closeout amendments',
+    );
   }
 
   @Get(':id/contracts')

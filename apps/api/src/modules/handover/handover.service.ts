@@ -7,6 +7,7 @@ import {
 import { Pool } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { withTenantTransaction, consumePlanQuota, TenantActorContext } from '@tradecloseout/db/tenant-tx';
+import { PackageBuilder, PackageMetadata } from '@tradecloseout/pdf-engine';
 
 @Injectable()
 export class HandoverService {
@@ -433,6 +434,156 @@ export class HandoverService {
           assetTag: r.asset_tag,
         })),
       };
+    });
+  }
+
+  async listPackages(ctx: TenantActorContext, projectId: string) {
+    return withTenantTransaction(this.pool, ctx, async (client) => {
+      const { rows } = await client.query(
+        `SELECT hp.*,
+                (SELECT count(*) FROM package_items pi WHERE pi.package_id = hp.id) AS item_count
+           FROM handover_packages hp
+          WHERE hp.org_id = $1 AND hp.project_id = $2
+          ORDER BY hp.version_no DESC`,
+        [ctx.orgId, projectId],
+      );
+      return rows;
+    });
+  }
+
+  async getPackage(ctx: TenantActorContext, packageId: string) {
+    return withTenantTransaction(this.pool, ctx, async (client) => {
+      const { rows } = await client.query(
+        `SELECT * FROM handover_packages WHERE org_id = $1 AND id = $2`,
+        [ctx.orgId, packageId],
+      );
+      if (!rows.length) {
+        throw new NotFoundException('Package not found');
+      }
+      const pkg = rows[0];
+      const { rows: items } = await client.query(
+        `SELECT pi.*, dv.revision_code, dv.file_status, d.title AS document_title
+           FROM package_items pi
+           JOIN document_versions dv ON dv.id = pi.document_version_id
+           JOIN documents d ON d.id = dv.document_id
+          WHERE pi.org_id = $1 AND pi.package_id = $2
+          ORDER BY pi.sort_order ASC`,
+        [ctx.orgId, packageId],
+      );
+      return { ...pkg, items };
+    });
+  }
+
+  async createSubmission(
+    ctx: TenantActorContext,
+    projectId: string,
+    dto: {
+      packageId?: string;
+      recipients: Array<{
+        partyId?: string;
+        email: string;
+        name: string;
+        isRequiredApprover?: boolean;
+        role?: string;
+      }>;
+      coverNote?: string;
+    },
+  ) {
+    return withTenantTransaction(this.pool, ctx, async (client, emit) => {
+      let packageId = dto.packageId;
+      if (!packageId) {
+        const { rows: latestPkg } = await client.query(
+          `SELECT id FROM handover_packages WHERE org_id = $1 AND project_id = $2 ORDER BY version_no DESC LIMIT 1`,
+          [ctx.orgId, projectId],
+        );
+        if (!latestPkg.length) {
+          throw new NotFoundException('No compiled package found for project');
+        }
+        packageId = latestPkg[0].id;
+      }
+
+      const submissionId = uuidv7();
+      await client.query(
+        `INSERT INTO submissions (id, org_id, project_id, package_id, status, submitted_by, submitted_at, cover_note)
+         VALUES ($1, $2, $3, $4, 'SUBMITTED', $5, now(), $6)`,
+        [submissionId, ctx.orgId, projectId, packageId, ctx.userId, dto.coverNote || null],
+      );
+
+      for (const rec of dto.recipients) {
+        await client.query(
+          `INSERT INTO submission_recipients
+             (id, org_id, project_id, submission_id, party_id, name, email, role, is_required_approver, status)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'SENT')`,
+          [
+            uuidv7(),
+            ctx.orgId,
+            projectId,
+            submissionId,
+            rec.partyId || null,
+            rec.name,
+            rec.email,
+            rec.role || 'CLIENT',
+            rec.isRequiredApprover ?? true,
+          ],
+        );
+      }
+
+      emit({
+        eventType: 'SUBMISSION_DISPATCHED',
+        projectId,
+        entityType: 'SUBMISSION',
+        entityId: submissionId,
+        afterJson: { packageId, recipientCount: dto.recipients.length },
+      });
+
+      return {
+        submissionId,
+        packageId,
+        status: 'SUBMITTED',
+        recipientsCount: dto.recipients.length,
+      };
+    });
+  }
+
+  async generateDossierPdf(ctx: TenantActorContext, projectId: string): Promise<Uint8Array> {
+    return withTenantTransaction(this.pool, ctx, async (client) => {
+      const projRes = await client.query(
+        `SELECT * FROM projects WHERE org_id = $1 AND id = $2 AND purged_at IS NULL`,
+        [ctx.orgId, projectId],
+      );
+      if (!projRes.rows.length) {
+        throw new NotFoundException('PROJECT_NOT_FOUND');
+      }
+      const proj = projRes.rows[0];
+
+      const reqRes = await client.query(
+        `SELECT * FROM requirements WHERE org_id = $1 AND project_id = $2 AND superseded_at IS NULL ORDER BY created_at ASC`,
+        [ctx.orgId, projectId],
+      );
+
+      const itemsWithPages = reqRes.rows.map((r: any, idx: number) => ({
+        itemId: r.id,
+        documentTitle: r.title,
+        docTypeKey: r.doc_type_key || 'DT-001',
+        revisionCode: 'R1',
+        issueDate: new Date().toISOString().split('T')[0],
+        filePath: '',
+        sortOrder: idx + 1,
+        pageStart: idx * 2 + 3,
+        pageEnd: idx * 2 + 4,
+      }));
+
+      const meta: PackageMetadata = {
+        packageId: uuidv7(),
+        packageTitle: 'Statutory & Technical Handover Dossier',
+        projectCode: proj.code,
+        projectName: proj.name,
+        clientName: proj.site_json?.client_name || 'Project Authority',
+        contractorName: proj.site_json?.contractor_name || 'Main MEP Contractor',
+        generatedAt: new Date(),
+      };
+
+      return PackageBuilder.generateFrontMatterPdf(meta, itemsWithPages);
     });
   }
 }

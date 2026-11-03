@@ -21,7 +21,8 @@
     "build": "tsc",
     "dev": "tsc -w",
     "migrate": "tsx ./src/run-migrations.ts",
-    "seed": "tsx ../../apps/api/scripts/seed-portfolio.ts"
+    "seed": "tsx ../../apps/api/scripts/seed-portfolio.ts",
+    "seed:vayuputra": "tsx ./src/seed-vayuputra-story.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.40.1",

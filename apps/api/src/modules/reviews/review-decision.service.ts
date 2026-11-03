@@ -183,8 +183,9 @@ export async function executeReviewDecision(
       await client.query(
         `UPDATE requirements
             SET status = $4, row_version = row_version + 1, updated_at = now()
-          WHERE org_id = $1 AND project_id = $2 AND id = ANY($3::uuid[])`,
-        [ctx.activeOrgId, input.projectId, requirementIds, nextVersionStatus],
+          WHERE org_id = $1 AND project_id = $2
+            AND (id = ANY($3::uuid[]) OR id IN (SELECT requirement_id FROM document_requirements WHERE org_id = $1 AND project_id = $2 AND document_id = $5))`,
+        [ctx.activeOrgId, input.projectId, requirementIds, nextVersionStatus, row.document_id],
       );
     }
 

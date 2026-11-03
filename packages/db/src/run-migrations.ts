@@ -30,6 +30,7 @@ async function main() {
       console.error(`  ✗ Migration failed on ${file}:`, err);
       throw err;
     } finally {
+      await client.query('RESET ROLE').catch(() => {});
       client.release();
     }
   }

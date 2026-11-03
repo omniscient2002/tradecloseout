@@ -52,6 +52,7 @@ export class SessionCsrfGuard implements CanActivate {
               s.active_org_id,
               s.csrf_token_hash,
               s.expires_at,
+              s.guest_grant_id,
               u.name AS user_name,
               u.status AS user_status,
               o.status AS org_status
@@ -74,39 +75,66 @@ export class SessionCsrfGuard implements CanActivate {
 
     const session = sessionRows[0];
 
-    // 2. Query memberships with tenant RLS context set (FR-IAM-007, AUD-014)
-    const client = await this.pool.connect();
     let orgRole = 'R-OWNER';
     let membershipStatus = 'ACTIVE';
-    try {
-      await client.query('BEGIN');
-      await client.query(`SELECT set_config('app.current_org', $1, true)`, [session.active_org_id]);
-      await client.query(`SELECT set_config('app.current_user', $1, true)`, [session.user_id]);
+    let guestCapabilities: string[] | undefined = undefined;
+    let guestScope: any = undefined;
 
-      const { rows: mRows } = await client.query(
-        `SELECT role AS org_role, status AS membership_status
-           FROM memberships
-          WHERE org_id = $1 AND user_id = $2
+    if (session.guest_grant_id) {
+      const { rows: gRows } = await this.pool.query(
+        `SELECT role, capabilities, scope_json, status, expires_at
+           FROM guest_grants
+          WHERE id = $1 AND org_id = $2
           LIMIT 1`,
-        [session.active_org_id, session.user_id],
+        [session.guest_grant_id, session.active_org_id],
       );
-      await client.query('COMMIT');
-
-      if (mRows.length === 0) {
+      if (
+        gRows.length === 0 ||
+        gRows[0].status !== 'ACTIVE' ||
+        new Date(gRows[0].expires_at).getTime() <= Date.now()
+      ) {
         throw new UnauthorizedException({
-          code: 'SESSION_EXPIRED',
-          title: 'Session invalid or membership revoked',
-          detail: 'No active membership found in target organisation.',
+          code: 'GUEST_GRANT_EXPIRED',
+          title: 'Guest link expired or revoked',
+          detail: 'Your external guest grant is no longer active.',
         });
       }
+      orgRole = gRows[0].role;
+      guestCapabilities = gRows[0].capabilities;
+      guestScope = gRows[0].scope_json;
+    } else {
+      // 2. Query memberships with tenant RLS context set (FR-IAM-007, AUD-014)
+      const client = await this.pool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query(`SELECT set_config('app.current_org', $1, true)`, [session.active_org_id]);
+        await client.query(`SELECT set_config('app.current_user', $1, true)`, [session.user_id]);
 
-      orgRole = mRows[0].org_role;
-      membershipStatus = mRows[0].membership_status;
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
+        const { rows: mRows } = await client.query(
+          `SELECT role AS org_role, status AS membership_status
+             FROM memberships
+            WHERE org_id = $1 AND user_id = $2
+            LIMIT 1`,
+          [session.active_org_id, session.user_id],
+        );
+        await client.query('COMMIT');
+
+        if (mRows.length === 0) {
+          throw new UnauthorizedException({
+            code: 'SESSION_EXPIRED',
+            title: 'Session invalid or membership revoked',
+            detail: 'No active membership found in target organisation.',
+          });
+        }
+
+        orgRole = mRows[0].org_role;
+        membershipStatus = mRows[0].membership_status;
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
     }
 
     if (
@@ -176,13 +204,16 @@ export class SessionCsrfGuard implements CanActivate {
       name: session.user_name,
       orgId: session.active_org_id,
       orgRole: orgRole,
+      guestCapabilities: guestCapabilities,
+      guestScope: guestScope,
+      guestGrantId: session.guest_grant_id,
       docControllerOrgWideDownload: false,
     };
 
     (req as any).userContext = {
       orgId: session.active_org_id,
       userId: session.user_id,
-      actorType: 'USER',
+      actorType: session.guest_grant_id ? 'GUEST' : 'USER',
       requestId: authData.requestId,
     };
 

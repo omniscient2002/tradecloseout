@@ -5,10 +5,9 @@ import { PartiesService } from './parties.service';
 import { SupplierGuestService } from './supplier-guest.service';
 import { PartiesController } from './parties.controller';
 import { DatabaseModule } from '../../database/database.module';
-import { AuthModule } from '../auth/auth.module';
 
 @Module({
-  imports: [DatabaseModule, AuthModule],
+  imports: [DatabaseModule],
   controllers: [PartiesController],
   providers: [PartiesService, SupplierGuestService],
   exports: [PartiesService, SupplierGuestService],

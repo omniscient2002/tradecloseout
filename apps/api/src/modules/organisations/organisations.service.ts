@@ -783,4 +783,21 @@ export class OrganisationsService {
       byProject: Array.from(projectMap.values()),
     };
   }
+
+  async getAuditLog(ctx: TenantActorContext, orgId: string) {
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+      const { rows } = await client.query(
+        `SELECT a.id, a.org_id, a.project_id, a.actor_type, a.actor_user_id, a.action, a.entity_type, a.entity_id,
+                a.before_json, a.after_json, a.ip, a.user_agent, a.request_id, a.prev_hash, a.hash, a.chain_seq, a.created_at,
+                u.name AS actor_name
+           FROM audit_events a
+           LEFT JOIN users u ON u.id = a.actor_user_id
+          WHERE a.org_id = $1
+          ORDER BY a.chain_seq DESC
+          LIMIT 100`,
+        [ctx.orgId],
+      );
+      return rows;
+    });
+  }
 }

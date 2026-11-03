@@ -13,7 +13,8 @@ import {
 } from '@nestjs/common';
 import { BillingService } from './billing.service';
 import { GstEinvoiceTdsService } from './gst-einvoice-tds.service';
-import { SessionAuthGuard } from '../../common/guards/session-auth.guard';
+import { WarrantyAndBillingService } from './warranty-and-billing.service';
+import { SessionCsrfGuard } from '../../common/guards/session-csrf.guard';
 import { PermissionGuard, RequirePermission } from '../../common/guards/permission.guard';
 
 @Controller('api/v1')
@@ -21,6 +22,7 @@ export class BillingController {
   constructor(
     private readonly billingService: BillingService,
     private readonly gstEinvoiceService: GstEinvoiceTdsService,
+    private readonly warrantyAndBillingService: WarrantyAndBillingService,
   ) {}
 
   @Get('billing/plans')
@@ -28,15 +30,22 @@ export class BillingController {
     return this.billingService.listPlans();
   }
 
-  @Get('billing/invoices')
-  @UseGuards(SessionAuthGuard, PermissionGuard)
+  @Get(['billing/invoices', 'orgs/current/invoices'])
+  @UseGuards(SessionCsrfGuard, PermissionGuard)
   @RequirePermission('billing.manage')
   async listInvoices(@Req() req: any) {
     return this.billingService.listInvoices(req.userContext);
   }
 
-  @Post('billing/invoices')
-  @UseGuards(SessionAuthGuard, PermissionGuard)
+  @Get('orgs/current/subscription')
+  @UseGuards(SessionCsrfGuard, PermissionGuard)
+  @RequirePermission('billing.manage')
+  async getCurrentSubscription(@Req() req: any) {
+    return this.warrantyAndBillingService.getSubscription(req.userContext);
+  }
+
+  @Post(['billing/invoices', 'orgs/current/invoices'])
+  @UseGuards(SessionCsrfGuard, PermissionGuard)
   @RequirePermission('billing.manage')
   async createInvoice(
     @Req() req: any,
@@ -51,8 +60,8 @@ export class BillingController {
     return this.billingService.createInvoice(req.userContext, dto);
   }
 
-  @Post('billing/invoices/:id/tds')
-  @UseGuards(SessionAuthGuard, PermissionGuard)
+  @Post(['billing/invoices/:id/tds', 'orgs/current/tds'])
+  @UseGuards(SessionCsrfGuard, PermissionGuard)
   @RequirePermission('billing.manage')
   async recordTds(
     @Req() req: any,
@@ -63,13 +72,84 @@ export class BillingController {
       rateBps: number;
       amountPaise: number;
       certificateReference?: string;
+      invoiceId?: string;
     },
   ) {
-    return this.billingService.recordTds(req.userContext, invoiceId, dto);
+    return this.billingService.recordTds(req.userContext, invoiceId || dto.invoiceId || '', dto);
+  }
+
+  @Post('projects/:id/warranty-events')
+  @UseGuards(SessionCsrfGuard, PermissionGuard)
+  @RequirePermission('document.upload')
+  async recordWarrantyEvent(
+    @Req() req: any,
+    @Param('id') projectId: string,
+    @Body()
+    dto: {
+      assetId: string;
+      eventType: 'REGISTRATION' | 'CONFIRMATION' | 'CLAIM' | 'EXTENSION';
+      oemReference: string;
+      registeredAt: string;
+      warrantyStart: string;
+      warrantyEnd: string;
+      basis: 'COMMISSIONING' | 'HANDOVER' | 'ACCEPTANCE' | 'SUPPLY';
+      evidenceObjectId?: string;
+    },
+  ) {
+    return this.warrantyAndBillingService.recordWarrantyEvent(req.userContext, projectId, dto);
+  }
+
+  @Get('projects/:id/warranty-events')
+  @UseGuards(SessionCsrfGuard, PermissionGuard)
+  @RequirePermission('document.read')
+  async listWarrantyEvents(@Req() req: any, @Param('id') projectId: string) {
+    return this.warrantyAndBillingService.listWarrantyEvents(req.userContext, projectId);
+  }
+
+  @Get('projects/:id/defects')
+  @UseGuards(SessionCsrfGuard, PermissionGuard)
+  @RequirePermission('document.read')
+  async listDefects(@Req() req: any, @Param('id') projectId: string) {
+    return this.warrantyAndBillingService.listDefects(req.userContext, projectId);
+  }
+
+  @Post('projects/:id/defects')
+  @UseGuards(SessionCsrfGuard, PermissionGuard)
+  @RequirePermission('document.upload')
+  async createDefect(
+    @Req() req: any,
+    @Param('id') projectId: string,
+    @Body()
+    dto: {
+      title: string;
+      description?: string;
+      assetId?: string;
+      severity?: 'MINOR' | 'MAJOR' | 'CRITICAL';
+      location?: string;
+    },
+  ) {
+    return this.warrantyAndBillingService.createDefect(req.userContext, projectId, dto);
+  }
+
+  @Post(['defects/:id/close', 'projects/:projectId/defects/:id/close'])
+  @UseGuards(SessionCsrfGuard, PermissionGuard)
+  @RequirePermission('document.upload')
+  async closeDefect(
+    @Req() req: any,
+    @Param('id') defectId: string,
+    @Param('projectId') projectId: string,
+    @Body() dto: { closureEvidenceObjectId: string },
+  ) {
+    return this.warrantyAndBillingService.closeDefect(
+      req.userContext,
+      projectId || '',
+      defectId,
+      dto.closureEvidenceObjectId,
+    );
   }
 
   @Post('billing/rule46-invoices')
-  @UseGuards(SessionAuthGuard, PermissionGuard)
+  @UseGuards(SessionCsrfGuard, PermissionGuard)
   @RequirePermission('billing.manage')
   async issueRule46GstInvoice(
     @Req() req: any,
@@ -92,7 +172,7 @@ export class BillingController {
   }
 
   @Post('billing/tds/:id/reconcile')
-  @UseGuards(SessionAuthGuard, PermissionGuard)
+  @UseGuards(SessionCsrfGuard, PermissionGuard)
   @RequirePermission('billing.manage')
   async reconcileForm16a(
     @Req() req: any,

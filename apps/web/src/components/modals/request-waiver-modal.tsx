@@ -9,6 +9,7 @@ import {
   Loader2,
   ShieldAlert,
 } from "lucide-react";
+import { apiFetch, ApiProblemError } from "../../lib/api-client";
 
 interface RequestWaiverModalProps {
   open: boolean;
@@ -33,7 +34,6 @@ export function RequestWaiverModal({
 }: RequestWaiverModalProps) {
   const [waiverType, setWaiverType] = useState<"WAIVE" | "NOT_APPLICABLE">("WAIVE");
   const [reason, setReason] = useState("");
-  const [secondApprover, setSecondApprover] = useState("0192e000-0000-7000-8000-000000000101");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -50,30 +50,19 @@ export function RequestWaiverModal({
     setError(null);
 
     try {
-      const res = await fetch(`/api/v1/requirements/${encodeURIComponent(requirement.id)}/waivers`, {
+      await apiFetch(`/api/v1/requirements/${encodeURIComponent(requirement.id)}/waivers`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           type: waiverType,
           reason: reason.trim(),
-          secondApproverUserId: requirement.mandatory ? secondApprover : undefined,
         }),
       });
-
-      if (!res.ok) {
-        // Optimistic UI feedback in mock preview
-        onWaiverSuccess();
-        onClose();
-        setReason("");
-        return;
-      }
 
       onWaiverSuccess();
       onClose();
       setReason("");
     } catch (err: any) {
-      onWaiverSuccess();
-      onClose();
+      setError(err?.message || "Failed to submit waiver request.");
     } finally {
       setSubmitting(false);
     }
@@ -157,22 +146,9 @@ export function RequestWaiverModal({
 
         {/* Mandatory Two-Approver Rule (FR-CHK-016) */}
         {requirement.mandatory && (
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Select Second Approver (Mandatory for Two-Step Sign-off)
-            </label>
-            <select
-              value={secondApprover}
-              onChange={(e) => setSecondApprover(e.target.value)}
-              className="w-full rounded border border-slate-300 p-2 text-xs bg-white focus:border-blue-600 focus:outline-none"
-            >
-              <option value="0192e000-0000-7000-8000-000000000101">
-                Vikramaditya Reddy (Managing Director / R-OWNER)
-              </option>
-              <option value="0192e000-0000-7000-8000-000000000102">
-                Meera Deshmukh (Senior Project Manager / R-PM)
-              </option>
-            </select>
+          <div className="rounded-lg bg-amber-50 border border-amber-200 p-2.5 text-[11px] text-amber-900">
+            <strong>Mandatory Two-Approver Rule:</strong> Upon submission, this requirement enters{" "}
+            <span className="font-mono font-semibold">PENDING_SECOND_APPROVAL</span> status, requiring countersignature from Managing Director (R-OWNER).
           </div>
         )}
 

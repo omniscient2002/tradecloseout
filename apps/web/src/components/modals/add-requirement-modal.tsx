@@ -27,8 +27,8 @@ export function AddRequirementModal({
 }: AddRequirementModalProps) {
   const [key, setKey] = useState(nextKeySuggestion);
   const [title, setTitle] = useState("");
-  const [docTypeCode, setDocTypeCode] = useState("TEST_REPORT");
-  const [milestoneKey, setMilestoneKey] = useState("HANDOVER");
+  const [docTypeCode, setDocTypeCode] = useState("DT-022");
+  const [milestoneKey, setMilestoneKey] = useState("COMMISSIONING");
   const [mandatory, setMandatory] = useState(true);
   const [assetTag, setAssetTag] = useState("");
   const [reviewerRole, setReviewerRole] = useState("R-QC");
@@ -92,13 +92,16 @@ export function AddRequirementModal({
               onChange={(e) => setDocTypeCode(e.target.value)}
               className="w-full rounded-md border border-[#E5E7EB] p-2 text-xs text-[#111827] focus:border-[#3157D5] focus:outline-none"
             >
-              <option value="TEST_REPORT">Test & Commissioning Report</option>
-              <option value="AS_BUILT_DRAWING">As-Built Drawing (CAD/BIM)</option>
-              <option value="WARRANTY_CERTIFICATE">OEM Warranty Certificate</option>
-              <option value="O_AND_M_MANUAL">Operation & Maintenance Manual</option>
-              <option value="STATUTORY_NOC">Statutory Authority NOC / Approval</option>
-              <option value="TRAINING_RECORD">Client Training Sign-Off Record</option>
-              <option value="SPARE_PARTS_LIST">Attic Stock & Spare Parts Ledger</option>
+              <option value="DT-022">DT-022: Factory Acceptance Test (AHRI/FAT)</option>
+              <option value="DT-033">DT-033: Hydrostatic / Line Pressure Test</option>
+              <option value="DT-035">DT-035: Duct Air Leakage Test (DW/144)</option>
+              <option value="DT-050">DT-050: Testing, Adjusting & Balancing (TAB)</option>
+              <option value="DT-011">DT-011: As-Built Engineering Drawing</option>
+              <option value="DT-026">DT-026: OEM Manufacturer Warranty Certificate</option>
+              <option value="DT-058">DT-058: Operation & Maintenance (O&M) Manual</option>
+              <option value="DT-086">DT-086: Statutory CFO Final Fire NOC</option>
+              <option value="DT-028">DT-028: Attic Stock & Critical Spares Handover</option>
+              <option value="DT-061">DT-061: Client Engineering Operations Training</option>
             </select>
           </div>
         </div>
@@ -127,14 +130,14 @@ export function AddRequirementModal({
               onChange={(e) => setMilestoneKey(e.target.value)}
               className="w-full rounded-md border border-[#E5E7EB] p-2 text-xs text-[#111827] focus:border-[#3157D5] focus:outline-none"
             >
-              <option value="MOBILISATION">Mobilisation</option>
-              <option value="SUBSTRUCTURE">Substructure</option>
-              <option value="SUPERSTRUCTURE">Superstructure</option>
-              <option value="MEP_FIRST_FIX">MEP 1st Fix</option>
-              <option value="MEP_SECOND_FIX">MEP 2nd Fix</option>
-              <option value="TESTING_COMMISSIONING">Testing & Commissioning</option>
-              <option value="HANDOVER">Handover</option>
-              <option value="DLP_END">DLP End</option>
+              <option value="MOBILISATION">MOBILISATION (Advance Release)</option>
+              <option value="SUBMISSION">SUBMISSION (Technical Reviews)</option>
+              <option value="DELIVERY">DELIVERY (Factory & Material Inspection)</option>
+              <option value="INSTALLATION">INSTALLATION (Erection & Pressure Tests)</option>
+              <option value="COMMISSIONING">COMMISSIONING (TAB & Functional Tests)</option>
+              <option value="HANDOVER">HANDOVER (Interim Handover Dossier)</option>
+              <option value="FINAL_BILL">FINAL_BILL (Final Commercial Closeout)</option>
+              <option value="DLP_END">DLP_END (Defect Liability Expiry)</option>
             </select>
           </div>
 

@@ -39,28 +39,13 @@ export default function PartiesDirectoryPage() {
 
   const fetchParties = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const data = await apiFetch<PartyDto[]>("/api/v1/parties");
-      if (Array.isArray(data) && data.length > 0) {
-        setParties(data);
-      } else {
-        // Fallback default portfolio stakeholders
-        setParties([
-          { id: "1", name: "Aurobindo Biologics & Pharma Ltd", types: ["CLIENT"], gstin: "36AABCA1234F1Z1", email: "projects@aurobindo.in", phone: "+914066721200", status: "ACTIVE" },
-          { id: "2", name: "L&T Construction (Buildings & Factories)", types: ["MC"], gstin: "27AAACL0123E1Z2", email: "mep.hyd@lntecc.com", phone: "+914066725000", status: "ACTIVE" },
-          { id: "3", name: "Meinhardt Singapore Pte Ltd (India)", types: ["CONSULTANT"], gstin: "36AAACM9988G1Z3", email: "hvac.review@meinhardt.in", phone: "+914066728800", status: "ACTIVE" },
-          { id: "4", name: "Blue Star Limited (Commercial Air Conditioning)", types: ["SUPPLIER_OEM"], gstin: "27AAACB0001A1Z9", email: "chiller.certs@bluestarindia.com", phone: "+919820044556", status: "ACTIVE" },
-          { id: "5", name: "Vimta Labs Ltd (NABL Accredited TC-5401)", types: ["LAB"], gstin: "36AAACV4455B1Z8", email: "calibration@vimta.com", phone: "+914067404040", status: "ACTIVE" },
-        ]);
-      }
-    } catch {
-      setParties([
-        { id: "1", name: "Aurobindo Biologics & Pharma Ltd", types: ["CLIENT"], gstin: "36AABCA1234F1Z1", email: "projects@aurobindo.in", phone: "+914066721200", status: "ACTIVE" },
-        { id: "2", name: "L&T Construction (Buildings & Factories)", types: ["MC"], gstin: "27AAACL0123E1Z2", email: "mep.hyd@lntecc.com", phone: "+914066725000", status: "ACTIVE" },
-        { id: "3", name: "Meinhardt Singapore Pte Ltd (India)", types: ["CONSULTANT"], gstin: "36AAACM9988G1Z3", email: "hvac.review@meinhardt.in", phone: "+914066728800", status: "ACTIVE" },
-        { id: "4", name: "Blue Star Limited (Commercial Air Conditioning)", types: ["SUPPLIER_OEM"], gstin: "27AAACB0001A1Z9", email: "chiller.certs@bluestarindia.com", phone: "+919820044556", status: "ACTIVE" },
-        { id: "5", name: "Vimta Labs Ltd (NABL Accredited TC-5401)", types: ["LAB"], gstin: "36AAACV4455B1Z8", email: "calibration@vimta.com", phone: "+914067404040", status: "ACTIVE" },
-      ]);
+      const list = Array.isArray(data) ? data : (data as any)?.data || [];
+      setParties(list);
+    } catch (err: any) {
+      setError(err?.message || "Failed to load parties directory.");
     } finally {
       setLoading(false);
     }

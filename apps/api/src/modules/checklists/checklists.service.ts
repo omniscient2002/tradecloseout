@@ -560,7 +560,7 @@ export class ChecklistsService {
   async countersignWaiver(ctx: TenantActorContext, waiverId: string) {
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
       const waiverRes = await client.query(
-        `SELECT * FROM waivers WHERE org_id = $1 AND id = $2 FOR UPDATE`,
+        `SELECT * FROM waivers WHERE org_id = $1 AND (id = $2 OR requirement_id = $2) ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,
         [ctx.orgId, waiverId],
       );
       if (!waiverRes.rows.length) {

@@ -163,7 +163,30 @@ export async function consumePlanQuota(
   );
 }
 
-function redactSensitiveFields(obj: Record<string, unknown>): Record<string, unknown> {
+export async function reconcileStorageQuotaOnFileStatusChange(
+  client: PoolClient,
+  orgId: string,
+  sizeBytes: bigint,
+  transition: 'MARKED_READY' | 'DELETED_OR_PURGED',
+): Promise<void> {
+  const delta = transition === 'MARKED_READY' ? sizeBytes : -sizeBytes;
+  await client.query(
+    `INSERT INTO usage_counters (id, org_id, metric, period, value)
+     VALUES ($1, $2, 'STORAGE_BYTES', 'ALL_TIME', 0)
+     ON CONFLICT (org_id, metric, period) DO NOTHING`,
+    [uuidv7(), orgId],
+  );
+
+  await client.query(
+    `UPDATE usage_counters
+        SET value = GREATEST(0::numeric, value::numeric + $2)::text,
+            updated_at = now()
+      WHERE org_id = $1 AND metric = 'STORAGE_BYTES' AND period = 'ALL_TIME'`,
+    [orgId, delta.toString()],
+  );
+}
+
+export function redactSensitiveFields(obj: Record<string, unknown>): Record<string, unknown> {
   const REDACTED_KEYS = new Set(['token', 'token_hash', 'otp', 'password', 'secret', 'qr_payload']);
   const clone: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(obj)) {

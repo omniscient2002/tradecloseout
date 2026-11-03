@@ -1,3 +1,4 @@
+-- packages/db/migrations/0002_v021_redteam_patches.sql
 SET ROLE tc_migrator;
 
 -- 1. RT-002: Allow nullable active_org_id on sessions during pre-org onboarding (SCR-003 -> SCR-004)
@@ -7,17 +8,14 @@ ALTER TABLE sessions ALTER COLUMN active_org_id DROP NOT NULL;
 ALTER TABLE guest_grants
   ADD COLUMN IF NOT EXISTS target_phone_e164 TEXT,
   ADD COLUMN IF NOT EXISTS target_email TEXT,
+  ADD COLUMN IF NOT EXISTS failed_otp_count INTEGER NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS otp_attempts_count INTEGER NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS cooldown_until TIMESTAMPTZ;
 
 -- 3. RT-003, RT-008, RT-040: Add asset_id FK, milestone_key, and PENDING_WAIVER support on requirements
 ALTER TABLE requirements
   ADD COLUMN IF NOT EXISTS asset_id UUID,
-  ADD COLUMN IF NOT EXISTS milestone_key TEXT NOT NULL DEFAULT 'HANDOVER'
-    CHECK (milestone_key IN (
-      'MOBILISATION','SUBMISSION','DELIVERY','INSTALLATION',
-      'COMMISSIONING','HANDOVER','FINAL_BILL','DLP_END'
-    ));
+  ADD COLUMN IF NOT EXISTS milestone_key TEXT NOT NULL DEFAULT 'HANDOVER';
 
 ALTER TABLE requirements
   DROP CONSTRAINT IF EXISTS requirements_asset_same_project_fk,
@@ -26,6 +24,7 @@ ALTER TABLE requirements
     REFERENCES assets (org_id, project_id, id) ON DELETE RESTRICT;
 
 ALTER TABLE requirements
+  DROP CONSTRAINT IF EXISTS requirements_scope_key_consistency_chk,
   DROP CONSTRAINT IF EXISTS requirements_scope_key_asset_consistency_chk,
   ADD CONSTRAINT requirements_scope_key_asset_consistency_chk
     CHECK (
@@ -46,7 +45,7 @@ ALTER TABLE requirements
 ALTER TABLE waivers
   DROP CONSTRAINT IF EXISTS waivers_status_v021_chk,
   ADD CONSTRAINT waivers_status_v021_chk
-    CHECK (status IN ('PENDING_SECOND_APPROVAL','ACTIVE','REJECTED','SUPERSEDED'));
+    CHECK (status IN ('PENDING_SECOND_APPROVAL','ACTIVE','REJECTED','SUPERSEDED','REVOKED'));
 
 -- 5. RT-011: Replace blanket revision_code unique index with active-only partial unique index
 DROP INDEX IF EXISTS document_versions_doc_rev_code_uq;
@@ -54,7 +53,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS document_versions_active_rev_code_uq
   ON document_versions (document_id, upper(revision_code))
   WHERE deleted_at IS NULL
     AND file_status NOT IN ('FAILED', 'QUARANTINED')
-    AND review_status <> 'REJECTED';
+    AND review_status NOT IN ('REJECTED', 'WITHDRAWN');
 
 -- 6. RT-001: Create bulk_import_jobs table for stateful ZIP + manifest bulk imports (SCR-055)
 CREATE TABLE IF NOT EXISTS bulk_import_jobs (
@@ -63,6 +62,7 @@ CREATE TABLE IF NOT EXISTS bulk_import_jobs (
   project_id          UUID NOT NULL,
   zip_object_id       UUID NOT NULL REFERENCES storage_objects(id),
   manifest_object_id  UUID REFERENCES storage_objects(id),
+  mapping_object_id   UUID REFERENCES storage_objects(id),
   status              TEXT NOT NULL DEFAULT 'UPLOADED'
                         CHECK (status IN ('UPLOADED','DRY_RUN_READY','PROCESSING','COMPLETED','FAILED')),
   dry_run_report_json JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -70,10 +70,16 @@ CREATE TABLE IF NOT EXISTS bulk_import_jobs (
   row_version         INTEGER NOT NULL DEFAULT 1,
   created_by          UUID NOT NULL REFERENCES users(id),
   created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
   completed_at        TIMESTAMPTZ,
   CONSTRAINT bulk_import_jobs_project_fk
     FOREIGN KEY (org_id, project_id) REFERENCES projects(org_id, id) ON DELETE CASCADE
 );
+
+ALTER TABLE bulk_import_jobs
+  ADD COLUMN IF NOT EXISTS manifest_object_id UUID REFERENCES storage_objects(id),
+  ADD COLUMN IF NOT EXISTS mapping_object_id UUID REFERENCES storage_objects(id),
+  ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
 
 ALTER TABLE bulk_import_jobs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bulk_import_jobs FORCE ROW LEVEL SECURITY;
@@ -110,10 +116,18 @@ ALTER TABLE handover_packages
 
 -- 9. RT-030 & RT-015: Asynchronous Form 16A TDS status & configurable tax configuration table
 ALTER TABLE invoice_tds
-  ALTER COLUMN certificate_reference DROP NOT NULL,
-  ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'DEDUCTED_PENDING_CERT'
-    CHECK (status IN ('DEDUCTED_PENDING_CERT','CERT_UPLOADED','RECONCILED')),
+  ALTER COLUMN certificate_reference DROP NOT NULL;
+
+ALTER TABLE invoice_tds
   ADD COLUMN IF NOT EXISTS certificate_object_id UUID REFERENCES storage_objects(id);
+
+ALTER TABLE invoice_tds
+  ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'PENDING_CERTIFICATE';
+
+ALTER TABLE invoice_tds
+  DROP CONSTRAINT IF EXISTS invoice_tds_status_chk,
+  ADD CONSTRAINT invoice_tds_status_chk
+    CHECK (status IN ('PENDING_CERTIFICATE','DEDUCTED_PENDING_CERT','CERTIFICATE_UPLOADED','CERT_UPLOADED','RECONCILED'));
 
 CREATE TABLE IF NOT EXISTS billing_tax_configs (
   id                          UUID PRIMARY KEY,

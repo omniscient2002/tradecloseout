@@ -11,11 +11,11 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ChecklistsService } from './checklists.service';
-import { SessionAuthGuard } from '../../common/guards/session-auth.guard';
+import { SessionCsrfGuard } from '../../common/guards/session-csrf.guard';
 import { PermissionGuard, RequirePermission } from '../../common/guards/permission.guard';
 
 @Controller('api/v1')
-@UseGuards(SessionAuthGuard, PermissionGuard)
+@UseGuards(SessionCsrfGuard, PermissionGuard)
 export class ChecklistsController {
   constructor(private readonly checklistsService: ChecklistsService) {}
 
@@ -35,7 +35,7 @@ export class ChecklistsController {
     return this.checklistsService.createRequirement(req.userContext, projectId, dto);
   }
 
-  @Post('projects/:projectId/snapshots')
+  @Post(['projects/:projectId/snapshots', 'projects/:projectId/checklist/snapshots'])
   @RequirePermission('project.manage')
   async createSnapshot(
     @Req() req: any,
@@ -45,7 +45,7 @@ export class ChecklistsController {
     return this.checklistsService.createSnapshot(req.userContext, projectId, dto);
   }
 
-  @Post('projects/:projectId/checklists/import-l3')
+  @Post(['projects/:projectId/checklists/import-l3', 'projects/:projectId/checklist/import-l3'])
   @RequirePermission('project.manage')
   async importL3Checklist(
     @Req() req: any,
@@ -102,7 +102,7 @@ export class ChecklistsController {
     return this.checklistsService.requestWaiver(req.userContext, id, reason, type);
   }
 
-  @Post('waivers/:id/countersign')
+  @Post(['waivers/:id/countersign', 'requirements/:id/waivers/countersign', 'requirements/:id/waivers/approve'])
   @RequirePermission('requirement.waive_second')
   async countersignWaiver(@Req() req: any, @Param('id') id: string) {
     return this.checklistsService.countersignWaiver(req.userContext, id);

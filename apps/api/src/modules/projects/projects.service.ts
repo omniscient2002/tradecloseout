@@ -417,6 +417,45 @@ export class ProjectsService {
     });
   }
 
+  async handoverProject(ctx: TenantActorContext, projectId: string) {
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      const { rows } = await client.query(
+        `SELECT id, status, row_version FROM projects WHERE org_id = $1 AND id = $2 FOR UPDATE`,
+        [ctx.orgId, projectId],
+      );
+      if (rows.length === 0) {
+        throw new NotFoundException({ code: 'NOT_FOUND', detail: 'Project not found.' });
+      }
+      const proj = rows[0];
+      if (proj.status !== 'ACTIVE' && proj.status !== 'HANDOVER') {
+        throw new ConflictException({
+          code: 'INVALID_STATE_TRANSITION',
+          detail: 'Only ACTIVE projects can transition to HANDOVER.',
+        });
+      }
+
+      await client.query(
+        `UPDATE projects
+            SET status = 'HANDOVER',
+                row_version = row_version + 1,
+                updated_at = now()
+          WHERE org_id = $1 AND id = $2`,
+        [ctx.orgId, projectId],
+      );
+
+      emit({
+        eventType: 'PROJECT_HANDOVER_INITIATED',
+        projectId,
+        entityType: 'PROJECT',
+        entityId: projectId,
+        beforeJson: { status: proj.status },
+        afterJson: { status: 'HANDOVER' },
+      });
+
+      return { projectId, status: 'HANDOVER' };
+    });
+  }
+
   /**
    * API-030 GET /projects
    */

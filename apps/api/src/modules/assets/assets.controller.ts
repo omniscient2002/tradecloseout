@@ -14,11 +14,11 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AssetsService } from './assets.service';
-import { SessionAuthGuard } from '../../common/guards/session-auth.guard';
+import { SessionCsrfGuard } from '../../common/guards/session-csrf.guard';
 import { PermissionGuard, RequirePermission } from '../../common/guards/permission.guard';
 
 @Controller('api/v1/projects/:projectId/assets')
-@UseGuards(SessionAuthGuard, PermissionGuard)
+@UseGuards(SessionCsrfGuard, PermissionGuard)
 export class AssetsController {
   constructor(private readonly assetsService: AssetsService) {}
 

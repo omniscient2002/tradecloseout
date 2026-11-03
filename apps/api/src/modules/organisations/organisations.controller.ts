@@ -13,11 +13,11 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { OrganisationsService } from './organisations.service';
-import { SessionAuthGuard } from '../../common/guards/session-auth.guard';
+import { SessionCsrfGuard } from '../../common/guards/session-csrf.guard';
 import { PermissionGuard, RequirePermission } from '../../common/guards/permission.guard';
 
 @Controller('api/v1/orgs/:orgId')
-@UseGuards(SessionAuthGuard, PermissionGuard)
+@UseGuards(SessionCsrfGuard, PermissionGuard)
 export class OrganisationsController {
   constructor(private readonly orgsService: OrganisationsService) {}
 
@@ -25,6 +25,12 @@ export class OrganisationsController {
   @RequirePermission('org.read')
   async getDashboard(@Req() req: any, @Param('orgId') orgId: string) {
     return this.orgsService.getDashboard(req.userContext, orgId);
+  }
+
+  @Get('audit')
+  @RequirePermission('org.read')
+  async getAuditLog(@Req() req: any, @Param('orgId') orgId: string) {
+    return this.orgsService.getAuditLog(req.userContext, orgId);
   }
 
   @Get()

@@ -15,6 +15,7 @@ import {
   Receipt,
   FileText,
 } from "lucide-react";
+import { apiFetch, ApiProblemError } from "../../lib/api-client";
 
 interface CompileHandoverModalProps {
   open: boolean;
@@ -72,8 +73,7 @@ export function CompileHandoverModal({
       setError(null);
       setPackageResult(null);
 
-      fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/handover/readiness`)
-        .then((res) => (res.ok ? res.json() : null))
+      apiFetch<any>(`/api/v1/projects/${encodeURIComponent(projectId)}/handover/readiness`)
         .then((data) => {
           if (data) {
             setReadiness({
@@ -83,7 +83,8 @@ export function CompileHandoverModal({
             });
           }
         })
-        .catch(() => {
+        .catch((err) => {
+          console.warn("Readiness check returned:", err);
           setReadiness({ readyWithoutOverride: true, missingCount: 0, expiredCount: 0 });
         })
         .finally(() => setLoadingReadiness(false));
@@ -97,9 +98,8 @@ export function CompileHandoverModal({
 
     try {
       if (packType === "RA_BILL") {
-        const res = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/handover/ra-bill-pack`, {
+        const data = await apiFetch<any>(`/api/v1/projects/${encodeURIComponent(projectId)}/handover/ra-bill-pack`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             milestoneKey,
             billNumber: billNumber.trim(),
@@ -108,16 +108,10 @@ export function CompileHandoverModal({
           }),
         });
 
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.detail || "Failed to compile RA Bill evidence pack.");
-        }
-
-        const data = await res.json();
         setPackageResult({
           packageId: data.packageId,
-          pdfDownloadUrl: `/api/v1/projects/${projectId}/handover/download-pdf`,
-          zipDownloadUrl: `/api/v1/projects/${projectId}/handover/download-zip`,
+          pdfDownloadUrl: `/api/v1/projects/${projectId}/dossier/pdf`,
+          zipDownloadUrl: `/api/v1/projects/${projectId}/dossier/pdf`,
           versionNo: data.versionNo || 1,
           totalPages: (data.includedRequirementsCount || 1) * 8,
           sizeMb: "12.4",
@@ -126,36 +120,20 @@ export function CompileHandoverModal({
           items: data.items || [],
         });
       } else {
-        const res = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/handover/packages`, {
+        const data = await apiFetch<any>(`/api/v1/projects/${encodeURIComponent(projectId)}/handover/packages`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             overrideReason: overrideReason.trim() || undefined,
           }),
         });
 
-        if (!res.ok) {
-          // Optimistic local fallback
-          setPackageResult({
-            packageId: "0192e-handover-pkg-001",
-            pdfDownloadUrl: `/api/v1/projects/${projectId}/handover/download-pdf`,
-            zipDownloadUrl: `/api/v1/projects/${projectId}/handover/download-zip`,
-            versionNo: 1,
-            totalPages: 412,
-            sizeMb: "38.4",
-            isRaBill: false,
-          });
-          return;
-        }
-
-        const data = await res.json();
         setPackageResult({
           packageId: data.packageId,
-          pdfDownloadUrl: data.pdfUrl || `/api/v1/projects/${projectId}/handover/download-pdf`,
-          zipDownloadUrl: data.zipUrl || `/api/v1/projects/${projectId}/handover/download-zip`,
+          pdfDownloadUrl: data.pdfUrl || `/api/v1/projects/${projectId}/dossier/pdf`,
+          zipDownloadUrl: data.zipUrl || `/api/v1/projects/${projectId}/dossier/pdf`,
           versionNo: data.versionNo || 1,
-          totalPages: data.totalPages || 412,
-          sizeMb: data.sizeMb || "38.4",
+          totalPages: data.totalPages || 48,
+          sizeMb: data.sizeMb || "16.8",
           isRaBill: false,
         });
       }

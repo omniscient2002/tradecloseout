@@ -65,10 +65,16 @@ function ProjectsDirectoryContent() {
   const fetchProjects = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await apiFetch<any>("/api/v1/orgs/current/dashboard");
-      setProjects(data.projects || []);
+      const data = await apiFetch<any>("/api/v1/projects");
+      const list = Array.isArray(data) ? data : data?.projects || data?.data || [];
+      setProjects(list);
     } catch (err: any) {
-      console.error(err);
+      try {
+        const d = await apiFetch<any>("/api/v1/orgs/current/dashboard");
+        setProjects(d?.projects || []);
+      } catch (e) {
+        console.error(e);
+      }
     } finally {
       setLoading(false);
     }

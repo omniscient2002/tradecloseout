@@ -66,7 +66,9 @@ export const RevisionCodeSchema = z
 
 export const CreateUploadIntentSchema = z.object({
   requirementId: z.string().uuid(),
+  requirementIds: z.array(z.string().uuid()).optional(),
   assetId: z.string().uuid().optional().nullable(),
+  assetIds: z.array(z.string().uuid()).optional(),
   filename: z
     .string()
     .min(1)

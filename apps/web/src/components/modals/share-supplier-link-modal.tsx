@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Modal } from "../ui/modal";
 import {
   Send,
@@ -11,7 +11,9 @@ import {
   MessageSquare,
   Loader2,
   AlertCircle,
+  Building2,
 } from "lucide-react";
+import { apiFetch, ApiProblemError } from "../../lib/api-client";
 
 interface ShareSupplierLinkModalProps {
   open: boolean;
@@ -28,9 +30,12 @@ export function ShareSupplierLinkModal({
   requirementId,
   requirementTitle,
 }: ShareSupplierLinkModalProps) {
-  const [supplierName, setSupplierName] = useState("Blue Star / Daikin Representative");
+  const [parties, setParties] = useState<any[]>([]);
+  const [selectedPartyId, setSelectedPartyId] = useState<string>("");
+  const [supplierName, setSupplierName] = useState("Blue Star Representative");
   const [phone, setPhone] = useState("+919848011100");
   const [generating, setGenerating] = useState(false);
+  const [loadingParties, setLoadingParties] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -40,53 +45,67 @@ export function ShareSupplierLinkModal({
     projectPin: string;
   } | null>(null);
 
+  useEffect(() => {
+    if (open) {
+      setLoadingParties(true);
+      setError(null);
+      setGeneratedResult(null);
+
+      apiFetch<any[]>("/api/v1/parties")
+        .then((data) => {
+          const list = Array.isArray(data) ? data : (data as any)?.data || [];
+          setParties(list);
+          const supplier = list.find((p: any) =>
+            Array.isArray(p.types) ? p.types.includes("SUPPLIER_OEM") : p.type === "SUPPLIER_OEM"
+          ) || list[0];
+          if (supplier) {
+            setSelectedPartyId(supplier.id);
+            setSupplierName(supplier.name);
+            if (supplier.phone) setPhone(supplier.phone);
+          }
+        })
+        .catch((err) => {
+          console.warn("Could not load parties:", err);
+        })
+        .finally(() => setLoadingParties(false));
+    }
+  }, [open]);
+
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!requirementId) {
+      setError("No requirement selected.");
+      return;
+    }
+    if (!selectedPartyId) {
+      setError("Please select a supplier party.");
+      return;
+    }
+
     setGenerating(true);
     setError(null);
 
     try {
-      const res = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/supplier-links`, {
+      const data = await apiFetch<any>(`/api/v1/projects/${encodeURIComponent(projectId)}/supplier-links`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          supplierPartyId: "0192e000-0000-7000-8000-000000000201",
-          requirementIds: requirementId ? [requirementId] : ["0192e000-0000-7000-8000-000000000501"],
-          phone: phone.trim() || undefined,
+          supplierPartyId: selectedPartyId,
+          requirementIds: [requirementId],
           expiresInDays: 30,
           otpRequired: false, // Zero-friction supplier access
         }),
       });
 
-      if (!res.ok) {
-        // Fallback demo result if simulated offline
-        const pin = String(Math.floor(1000 + Math.random() * 9000));
-        const token = "0192e-supplier-" + Date.now();
-        const guestUrl = `http://localhost:3002/guest/${token}#pin=${pin}`;
-        const messageText = `Hi ${supplierName}, please upload the requested technical certificate/warranty on TradeCloseout: ${guestUrl} (Project PIN: ${pin})`;
-        setGeneratedResult({
-          guestUrl,
-          whatsappDeepLink: `https://wa.me/${phone.replace(/[^0-9]/g, "")}?text=${encodeURIComponent(messageText)}`,
-          projectPin: pin,
-        });
-        return;
-      }
-
-      const data = await res.json();
+      const messageText = `Hi ${supplierName}, please upload the requested technical certificate/warranty on TradeCloseout: ${data.guestUrl} (Project PIN: ${data.projectPin}). No login required.`;
       setGeneratedResult({
         guestUrl: data.guestUrl,
-        whatsappDeepLink: data.whatsappDeepLink,
+        whatsappDeepLink: phone
+          ? `https://wa.me/${phone.replace(/[^0-9]/g, "")}?text=${encodeURIComponent(messageText)}`
+          : data.whatsappDeepLink || `https://wa.me/?text=${encodeURIComponent(messageText)}`,
         projectPin: data.projectPin,
       });
     } catch (err: any) {
-      const pin = "6088";
-      const token = "guest-token-preview";
-      const guestUrl = `http://localhost:3002/guest/${token}#pin=${pin}`;
-      setGeneratedResult({
-        guestUrl,
-        whatsappDeepLink: `https://wa.me/?text=${encodeURIComponent(`Upload technical evidence: ${guestUrl} (PIN: ${pin})`)}`,
-        projectPin: pin,
-      });
+      setError(err?.message || "Failed to generate supplier upload link.");
     } finally {
       setGenerating(false);
     }
@@ -122,14 +141,43 @@ export function ShareSupplierLinkModal({
 
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Supplier / Contact Person Name
+              Select Supplier / OEM Organization
+            </label>
+            {loadingParties ? (
+              <div className="h-9 w-full animate-pulse rounded bg-slate-100" />
+            ) : (
+              <select
+                value={selectedPartyId}
+                onChange={(e) => {
+                  setSelectedPartyId(e.target.value);
+                  const p = parties.find((item) => item.id === e.target.value);
+                  if (p) {
+                    setSupplierName(p.name);
+                    if (p.phone) setPhone(p.phone);
+                  }
+                }}
+                required
+                className="w-full rounded border border-slate-300 p-2 text-xs bg-white focus:border-blue-600 focus:outline-none"
+              >
+                {parties.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({Array.isArray(p.types) ? p.types.join(", ") : p.type || "SUPPLIER"})
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Contact Person / Representative Name
             </label>
             <input
               type="text"
               required
               value={supplierName}
               onChange={(e) => setSupplierName(e.target.value)}
-              placeholder="e.g. Ramesh Kumar (Daikin Sales)"
+              placeholder="e.g. Naveen Kumar (Blue Star Service)"
               className="w-full rounded border border-slate-300 p-2 text-xs focus:border-blue-600 focus:outline-none"
             />
           </div>
@@ -160,7 +208,7 @@ export function ShareSupplierLinkModal({
 
           {error && (
             <div className="rounded bg-red-50 p-2 text-xs text-red-800 flex items-center gap-1.5">
-              <AlertCircle className="w-4 h-4 text-red-600" />
+              <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
               <span>{error}</span>
             </div>
           )}
@@ -175,8 +223,8 @@ export function ShareSupplierLinkModal({
             </button>
             <button
               type="submit"
-              disabled={generating}
-              className="inline-flex items-center gap-1.5 rounded bg-[#16A34A] px-4 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 transition-all cursor-pointer shadow-xs"
+              disabled={generating || !selectedPartyId}
+              className="inline-flex items-center gap-1.5 rounded bg-[#16A34A] px-4 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 transition-all cursor-pointer shadow-xs disabled:opacity-50"
             >
               {generating ? (
                 <>

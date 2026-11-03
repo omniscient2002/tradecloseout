@@ -15,11 +15,12 @@ import {
 import { Response } from 'express';
 import { PartiesService, CreateGuestGrantDto } from './parties.service';
 import { SupplierGuestService } from './supplier-guest.service';
-import { SessionAuthGuard } from '../../common/guards/session-auth.guard';
+import { SessionCsrfGuard } from '../../common/guards/session-csrf.guard';
 import { PermissionGuard, RequirePermission } from '../../common/guards/permission.guard';
 
 export interface VerifyGuestOtpDto {
-  code: string;
+  code?: string;
+  otp?: string;
 }
 
 @Controller('api/v1')
@@ -33,7 +34,7 @@ export class PartiesController {
    * API-021 GET /api/v1/parties
    */
   @Get('parties')
-  @UseGuards(SessionAuthGuard, PermissionGuard)
+  @UseGuards(SessionCsrfGuard, PermissionGuard)
   @RequirePermission('party.read')
   async getParties(@Req() req: any) {
     return this.partiesService.getParties(req.userContext);
@@ -43,7 +44,7 @@ export class PartiesController {
    * API-022 POST /api/v1/parties
    */
   @Post('parties')
-  @UseGuards(SessionAuthGuard, PermissionGuard)
+  @UseGuards(SessionCsrfGuard, PermissionGuard)
   @RequirePermission('party.manage')
   async createParty(
     @Req() req: any,
@@ -63,7 +64,7 @@ export class PartiesController {
    * API-027 POST /api/v1/projects/:projectId/supplier-links
    */
   @Post('projects/:projectId/supplier-links')
-  @UseGuards(SessionAuthGuard, PermissionGuard)
+  @UseGuards(SessionCsrfGuard, PermissionGuard)
   @RequirePermission('document.upload')
   async createSupplierLink(
     @Req() req: any,
@@ -83,7 +84,7 @@ export class PartiesController {
    * API-024 POST /api/v1/projects/:projectId/guest-grants
    */
   @Post('projects/:projectId/guest-grants')
-  @UseGuards(SessionAuthGuard, PermissionGuard)
+  @UseGuards(SessionCsrfGuard, PermissionGuard)
   @RequirePermission('party.manage')
   async createGuestGrant(
     @Req() req: any,
@@ -97,7 +98,7 @@ export class PartiesController {
    * API-025 POST /api/v1/guest-grants/:id/revoke
    */
   @Post('guest-grants/:id/revoke')
-  @UseGuards(SessionAuthGuard, PermissionGuard)
+  @UseGuards(SessionCsrfGuard, PermissionGuard)
   @RequirePermission('party.manage')
   async revokeGuestGrant(@Req() req: any, @Param('id') id: string) {
     return this.partiesService.revokeGuestGrant(req.userContext, id);
@@ -107,7 +108,7 @@ export class PartiesController {
    * API-026 POST /api/v1/projects/:projectId/supplier-upload-links
    */
   @Post('projects/:projectId/supplier-upload-links')
-  @UseGuards(SessionAuthGuard, PermissionGuard)
+  @UseGuards(SessionCsrfGuard, PermissionGuard)
   @RequirePermission('document.upload')
   async createSupplierUploadLink(
     @Req() req: any,
@@ -149,11 +150,12 @@ export class PartiesController {
     @Body() body: VerifyGuestOtpDto,
     @Res({ passthrough: true }) res: Response,
   ) {
-    if (!body?.code) {
+    const code = body?.code || (body as any)?.otp;
+    if (!code) {
       throw new BadRequestException('OTP code is required');
     }
 
-    const result = await this.partiesService.verifyGuestOtp(token, body.code);
+    const result = await this.partiesService.verifyGuestOtp(token, code);
 
     // Set HTTP-only guest session cookie
     res.cookie('tc_session', result.sessionToken, {

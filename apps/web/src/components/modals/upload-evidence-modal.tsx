@@ -10,7 +10,7 @@ import {
   Loader2,
   Image as ImageIcon,
 } from "lucide-react";
-import { enqueueFieldUpload } from "../../lib/offline-upload-queue";
+import { enqueueFieldUpload, compressImageForFieldUpload } from "../../lib/offline-upload-queue";
 
 interface UploadEvidenceModalProps {
   open: boolean;
@@ -77,10 +77,16 @@ export function UploadEvidenceModal({
     setError(null);
 
     try {
+      let uploadFile = file;
+      if (file.type.startsWith("image/")) {
+        const { processedFile } = await compressImageForFieldUpload(file);
+        uploadFile = processedFile;
+      }
+
       await enqueueFieldUpload({
         projectId,
         requirementId: requirement.id,
-        file,
+        file: uploadFile,
         revisionCode: revisionCode.trim().toUpperCase(),
         issueDate,
         title: requirement.title,

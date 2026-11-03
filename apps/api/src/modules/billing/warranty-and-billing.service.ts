@@ -148,6 +148,108 @@ export class WarrantyAndBillingService {
     });
   }
 
+  async listWarrantyEvents(ctx: TenantActorContext, projectId: string) {
+    return withTenantTransaction(this.pool, ctx, async (client) => {
+      const { rows } = await client.query(
+        `SELECT we.*, a.tag AS asset_tag, a.name AS asset_name
+           FROM warranty_events we
+           LEFT JOIN assets a ON a.id = we.asset_id
+          WHERE we.org_id = $1 AND we.project_id = $2
+          ORDER BY we.created_at DESC`,
+        [ctx.orgId, projectId],
+      );
+      return rows;
+    });
+  }
+
+  async listDefects(ctx: TenantActorContext, projectId: string) {
+    return withTenantTransaction(this.pool, ctx, async (client) => {
+      const { rows } = await client.query(
+        `SELECT d.*, a.tag AS asset_tag, u.name AS raised_by_name
+           FROM defects d
+           LEFT JOIN assets a ON a.id = d.asset_id
+           LEFT JOIN users u ON u.id = d.raised_by
+          WHERE d.org_id = $1 AND d.project_id = $2
+          ORDER BY d.created_at DESC`,
+        [ctx.orgId, projectId],
+      );
+      return rows;
+    });
+  }
+
+  async createDefect(
+    ctx: TenantActorContext,
+    projectId: string,
+    input: {
+      title: string;
+      description?: string;
+      assetId?: string;
+      severity?: 'MINOR' | 'MAJOR' | 'CRITICAL';
+      location?: string;
+    },
+  ) {
+    return withTenantTransaction(this.pool, ctx, async (client, emit) => {
+      const defectId = uuidv7();
+      await client.query(
+        `INSERT INTO defects
+           (id, org_id, project_id, asset_id, title, description, severity, status, location, raised_by, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'OPEN', $8, $9, now())`,
+        [
+          defectId,
+          ctx.orgId,
+          projectId,
+          input.assetId || null,
+          input.title,
+          input.description || null,
+          input.severity || 'MINOR',
+          input.location || null,
+          ctx.userId,
+        ],
+      );
+
+      emit({
+        eventType: 'DEFECT_RAISED',
+        projectId,
+        entityType: 'DEFECT',
+        entityId: defectId,
+        afterJson: { title: input.title, severity: input.severity || 'MINOR' },
+      });
+
+      return { defectId, status: 'OPEN' };
+    });
+  }
+
+  async getSubscription(ctx: TenantActorContext) {
+    const { rows } = await this.pool.query(
+      `SELECT s.*, p.name AS plan_name, p.code AS plan_tier, p.limits_json, p.price_paise, p.interval
+         FROM subscriptions s
+         JOIN plans p ON p.id = s.plan_id
+        WHERE s.org_id = $1
+        ORDER BY s.created_at DESC LIMIT 1`,
+      [ctx.orgId],
+    );
+    if (!rows.length) {
+      return {
+        id: uuidv7(),
+        planName: 'Growth Plan',
+        planTier: 'GROWTH',
+        status: 'ACTIVE',
+        seatLimit: 20,
+        storageQuotaBytes: 100 * 1024 * 1024 * 1024,
+        pricePaise: 999900,
+        limitsJson: { maxActiveProjects: 15, maxSeats: 20, maxStorageBytes: 100 * 1024 * 1024 * 1024 },
+      };
+    }
+    const sub = rows[0];
+    const limits = sub.limits_json || {};
+    return {
+      ...sub,
+      seatLimit: limits.maxSeats || 20,
+      storageQuotaBytes: limits.maxStorageBytes || 100 * 1024 * 1024 * 1024,
+      maxActiveProjects: limits.maxActiveProjects || 15,
+    };
+  }
+
   /**
    * API-160: POST /api/v1/webhooks/razorpay
    * Verifies Razorpay HMAC-SHA256 signature, deduplicates by event_id (10 §12.1),
