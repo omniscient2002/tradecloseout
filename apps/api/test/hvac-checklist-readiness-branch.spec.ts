@@ -75,6 +75,53 @@ describe('HVAC checklist and readiness release gates', () => {
     expect(result.configurationBlocker).toBe('ACTIVE_CHECKLIST_WITH_MANDATORY_REQUIREMENTS_REQUIRED');
   });
 
+  it('persists HOSPITAL project type used by applicable closeout rules', async () => {
+    const { pool, client } = mockPool(() => undefined);
+    const svc = new ProjectsService(pool);
+    await svc.createProject(ctx, { code: 'HOSPITAL01', name: 'Hospital HVAC', projectType: 'HOSPITAL' });
+    const insert = client.query.mock.calls.find(([sql]: any[]) => sql.includes('INSERT INTO projects'));
+    expect(insert).toBeDefined();
+    expect(insert![0]).toContain('project_type');
+    expect(insert![1][insert![1].length - 1]).toBe('HOSPITAL');
+  });
+
+  it('rejects unrecognised project types before touching the database', async () => {
+    const { pool } = mockPool(() => undefined);
+    await expect(new ProjectsService(pool).createProject(ctx, {
+      code: 'PROJECT01', name: 'Unknown Type', projectType: 'UNSAFE_UNKNOWN_TYPE',
+    })).rejects.toThrow(UnprocessableEntityException);
+  });
+
+  it('blocks submission of a package that has not finished generation', async () => {
+    const { pool } = mockPool((sql) => sql.includes('FROM handover_packages hp')
+      ? { rows: [{ id: 'pkg-1', status: 'QUEUED' }] } : undefined);
+    const svc = new HandoverService(pool, {} as any);
+    await expect(svc.createSubmission(ctx, projectId, {
+      packageId: 'pkg-1',
+      recipients: [{ name: 'Client', email: 'client@example.com', isRequiredApprover: true }],
+    })).rejects.toThrow(ConflictException);
+  });
+
+  it('resolves the package-only submission route to its actual project', async () => {
+    const { pool, client } = mockPool((sql) => {
+      if (sql.includes('SELECT project_id FROM handover_packages')) {
+        return { rows: [{ project_id: projectId }] };
+      }
+      if (sql.includes('FROM handover_packages hp')) {
+        return { rows: [{ id: 'pkg-1', status: 'READY' }] };
+      }
+      return undefined;
+    });
+    const svc = new HandoverService(pool, {} as any);
+    const res = await svc.createSubmission(ctx, '', {
+      packageId: 'pkg-1',
+      recipients: [{ name: 'Client', email: 'client@example.com', isRequiredApprover: true }],
+    });
+    expect(res.status).toBe('SUBMITTED');
+    const insert = client.query.mock.calls.find(([sql]: any[]) => sql.includes('INSERT INTO submissions'));
+    expect(insert![1][2]).toBe(projectId);
+  });
+
   it('requires accepted, not partially accepted, submissions before project closure', async () => {
     const { pool } = mockPool((sql) => {
       if (sql.includes('SELECT id, status, row_version FROM projects')) {
