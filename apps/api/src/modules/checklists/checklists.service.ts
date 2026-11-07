@@ -15,9 +15,7 @@ import {
   withTenantTransaction,
   TenantActorContext,
   DomainOutboxEvent,
-  evaluateCatalogueApplicability,
   ProjectApplicabilityContext,
-  DocumentTypeCatalogueEntry,
 } from '@tradecloseout/db';
 import {
   resolveConfigurationHierarchy,
@@ -141,16 +139,20 @@ export class ChecklistsService {
 
       // Query project attributes to drive deterministic rule evaluation (04 §7 R-001..R-013, Bug 5: 10.0/10)
       const { rows: projRows } = await client.query(
-        `SELECT project_type, client_type, settings_json FROM projects WHERE org_id = $1 AND id = $2`,
+        `SELECT project_type, settings_json FROM projects WHERE org_id = $1 AND id = $2`,
         [ctx.orgId, projectId],
       );
       const proj = projRows[0];
-      const settings = (proj?.settings_json || {}) as Record<string, any>;
+      if (!proj) {
+        throw new NotFoundException({ code: 'PROJECT_NOT_FOUND', detail: 'Project not found.' });
+      }
+      const settings = (proj.settings_json || {}) as Record<string, any>;
       const presentAssetCategories = Array.from(new Set(projectAssets.map((a: any) => a.category_key)));
 
       const applicabilityCtx: ProjectApplicabilityContext = {
-        projectType: proj?.project_type || 'PRIVATE_COMMERCIAL',
-        clientType: proj?.client_type || 'PRIVATE',
+        projectType: proj.project_type === 'GOVT_PWD' ? 'GOVERNMENT' : proj.project_type,
+        clientType: ['PRIVATE', 'GOVERNMENT', 'CPWD', 'PSU'].includes(settings.clientType)
+          ? settings.clientType : 'PRIVATE',
         contractHasBms: !!settings.contractHasBms,
         contractDlpMonths: Number(settings.contractDlpMonths ?? 12),
         maxRefrigerantChargeKg: Number(settings.maxRefrigerantChargeKg ?? 10),
@@ -160,18 +162,12 @@ export class ChecklistsService {
         hasManufacturerWarranty: settings.hasManufacturerWarranty !== false,
       };
 
-      // Filter requirement specs: mandatory specs always pass, conditional specs evaluate against R-001..R-013
-      const filteredSpecs = reqSpecs.filter((spec) => {
-        if (spec.mandatory) return true;
-        const entry: DocumentTypeCatalogueEntry = {
-          code: spec.docTypeKey,
-          title: spec.title,
-          obligation: 'C',
-          categoryKey: spec.groupKey,
-        };
-        const kept = evaluateCatalogueApplicability([entry], applicabilityCtx);
-        return kept.length > 0;
-      });
+      // Requirements in an explicitly approved contract/consultant checklist
+      // are already applicable. In particular, optional consultant records
+      // must not vanish merely because they are not in the platform's generic
+      // conditional catalogue. Conditional rules belong in template resolution,
+      // before the resulting project checklist is approved and snapshotted.
+      const filteredSpecs = reqSpecs;
 
       // Expand requirement definitions into concrete (requirement_key, scope_key) tuples
       const targetInstances: Array<{
@@ -193,6 +189,12 @@ export class ChecklistsService {
           const matchingAssets = projectAssets.filter(
             (a: any) => a.category_key === spec.assetCategoryKey,
           );
+          if (matchingAssets.length === 0 && spec.mandatory) {
+            throw new UnprocessableEntityException({
+              code: 'MANDATORY_ASSET_CATEGORY_MISSING',
+              detail: `Mandatory checklist requirement '${spec.key}' targets an equipment category absent from the project asset register.`,
+            });
+          }
           for (const asset of matchingAssets) {
             targetInstances.push({ spec, scopeKey: `asset:${asset.id}` });
           }
