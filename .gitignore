@@ -10,3 +10,5 @@ coverage/
 *.tsbuildinfo
 *.zip
 .DS_Store
+playwright-report/
+test-results/

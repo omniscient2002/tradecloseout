@@ -22,8 +22,9 @@ import {
   FileSpreadsheet,
 } from "lucide-react";
 import { apiFetch, setCsrfToken } from "../../lib/api-client";
+import { setOfflineActorPartition } from "../../lib/offline-upload-queue";
 
-export const REAL_DECCAN_PERSONAS = [
+const REAL_DECCAN_PERSONAS = [
   {
     id: "vikram",
     name: "Vikramaditya Reddy",
@@ -72,11 +73,13 @@ export default function ContractorLayout({ children }: { children: React.ReactNo
   const [user, setUser] = useState<{ id: string; name: string; orgRole: string; activeOrgId: string } | null>(null);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [switching, setSwitching] = useState<string | null>(null);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
 
   useEffect(() => {
     apiFetch<any>("/api/v1/auth/me")
       .then((data) => {
         setUser(data);
+        setOfflineActorPartition(`member:${data.activeOrgId || data.active_org_id}:${data.userId || data.user_id}`);
       })
       .catch(() => {
         // middleware handles redirection if unauthenticated
@@ -84,17 +87,15 @@ export default function ContractorLayout({ children }: { children: React.ReactNo
   }, []);
 
   const handleLogout = async () => {
+    setLogoutError(null);
     try {
-      await fetch("/api/v1/auth/logout", {
-        method: "POST",
-        credentials: "include",
-      });
-    } catch {
-      // ignore
+      await apiFetch<void>("/api/v1/auth/logout", { method: "POST" });
+    } catch (err: any) {
+      setLogoutError(err?.message || "Could not confirm logout. Please retry.");
+      return;
     }
-    document.cookie = "tc_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;";
-    window.sessionStorage.removeItem("tc_csrf_token");
-    localStorage.removeItem("tc_csrf_token");
+    setCsrfToken(null);
+    setOfflineActorPartition(null);
     window.location.href = "/login";
   };
 
@@ -277,52 +278,59 @@ export default function ContractorLayout({ children }: { children: React.ReactNo
           </div>
         </div>
 
-        {/* 1-Click Interactive Enterprise Persona Dock */}
-        <div className="bg-slate-900 text-white px-4 py-2 border-t border-slate-800 text-xs flex flex-wrap items-center justify-between gap-2 shadow-inner">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              Active Persona (1-Click Switch):
-            </span>
-            <div className="flex items-center gap-1.5 flex-wrap">
-              {REAL_DECCAN_PERSONAS.map((p) => {
-                const isCurrent = user?.name === p.name;
-                const isBusy = switching === p.id;
-                return (
-                  <button
-                    key={p.id}
-                    onClick={() => handleQuickSwitch(p)}
-                    disabled={Boolean(switching)}
-                    title={`Switch immediately to ${p.name} (${p.roleTitle})`}
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-all font-medium cursor-pointer ${
-                      isCurrent
-                        ? "bg-blue-600 text-white font-bold ring-2 ring-blue-400 ring-offset-1 ring-offset-slate-900 shadow-sm"
-                        : "bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white"
-                    } ${isBusy ? "opacity-50" : ""}`}
-                  >
-                    <span
-                      className={`h-2 w-2 rounded-full ${
-                        isCurrent ? "bg-emerald-400 animate-pulse" : "bg-slate-500"
-                      }`}
-                    />
-                    <span>{p.name.split(" ")[0]}</span>
-                    <span className="font-mono text-[10px] opacity-75">({p.role})</span>
-                  </button>
-                );
-              })}
+        {/* 1-Click Interactive Enterprise Persona Dock (Gated in production - TC2-033) */}
+        {(process.env.NEXT_PUBLIC_ENABLE_DEV_PERSONAS === 'true' || process.env.NODE_ENV === 'development') && (
+          <div className="bg-slate-900 text-white px-4 py-2 border-t border-slate-800 text-xs flex flex-wrap items-center justify-between gap-2 shadow-inner">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                Active Persona (Dev 1-Click Switch):
+              </span>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {REAL_DECCAN_PERSONAS.map((p) => {
+                  const isCurrent = user?.name === p.name;
+                  const isBusy = switching === p.id;
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => handleQuickSwitch(p)}
+                      disabled={Boolean(switching)}
+                      title={`Switch immediately to ${p.name} (${p.roleTitle})`}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-all font-medium cursor-pointer ${
+                        isCurrent
+                          ? "bg-blue-600 text-white font-bold ring-2 ring-blue-400 ring-offset-1 ring-offset-slate-900 shadow-sm"
+                          : "bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white"
+                      } ${isBusy ? "opacity-50" : ""}`}
+                    >
+                      <span
+                        className={`h-2 w-2 rounded-full ${
+                          isCurrent ? "bg-emerald-400 animate-pulse" : "bg-slate-500"
+                        }`}
+                      />
+                      <span>{p.name.split(" ")[0]}</span>
+                      <span className="font-mono text-[10px] opacity-75">({p.role})</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
 
-          {currentPersona && (
-            <div className="hidden lg:flex items-center gap-2 text-[11px] text-slate-300">
-              <span className="font-semibold text-emerald-400">Duty & Authority:</span>
-              <span className="text-slate-300">{currentPersona.dutySummary}</span>
-            </div>
-          )}
-        </div>
+            {currentPersona && (
+              <div className="hidden lg:flex items-center gap-2 text-[11px] text-slate-300">
+                <span className="font-semibold text-emerald-400">Duty & Authority:</span>
+                <span className="text-slate-300">{currentPersona.dutySummary}</span>
+              </div>
+            )}
+          </div>
+        )}
       </header>
 
       {/* Main Content Viewport */}
       <main className="flex-1">
+        {logoutError && (
+          <div role="alert" className="mx-4 mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+            {logoutError}
+          </div>
+        )}
         {children}
       </main>
     </div>

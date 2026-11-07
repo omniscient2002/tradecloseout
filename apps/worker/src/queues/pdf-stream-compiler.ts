@@ -1,13 +1,73 @@
-import { PDFDocument, StandardFonts, rgb, PDFName, PDFString } from 'pdf-lib';
+import { PDFDocument, StandardFonts, rgb, PDFName, PDFString, PDFDict } from 'pdf-lib';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { createHash } from 'crypto';
 import { createReadStream } from 'fs';
 import { writeFile, readFile, unlink, stat, copyFile } from 'fs/promises';
 import path from 'path';
+import { sanitizePdfDoc } from '@tradecloseout/pdf-engine';
 import { sanitisePdfText, PackageCompileInput } from './pdf.processor';
 
 const execFileAsync = promisify(execFile);
+
+// Font candidates for Devanagari / Unicode coverage (PQ01)
+const SYSTEM_FONT_CANDIDATES = [
+  '/usr/share/fonts/noto/NotoSansDevanagari-Regular.ttf',
+  '/usr/share/fonts/truetype/noto/NotoSansDevanagari-Regular.ttf',
+  '/usr/share/fonts/TTF/DejaVuSans.ttf',
+  '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+];
+
+async function loadUnicodeFont(pdfDoc: PDFDocument): Promise<any | null> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fontkit = require('fontkit');
+    pdfDoc.registerFontkit(fontkit);
+    for (const candidate of SYSTEM_FONT_CANDIDATES) {
+      try {
+        const fontBytes = await readFile(candidate);
+        const font = await pdfDoc.embedFont(fontBytes);
+        if (font) return font;
+      } catch {}
+    }
+  } catch {}
+  return null;
+}
+
+function drawSafePdfText(
+  page: any,
+  text: string,
+  options: {
+    x: number;
+    y: number;
+    size: number;
+    color?: any;
+    fontRegular: any;
+    fontBold?: any;
+    unicodeFont?: any | null;
+    isBold?: boolean;
+  },
+) {
+  const hasUnicode = /[^\u0020-\u007E\u00A0-\u00FF]/.test(text);
+  let font = (options.isBold && options.fontBold) ? options.fontBold : options.fontRegular;
+  let finalText = text;
+
+  if (hasUnicode) {
+    if (options.unicodeFont) {
+      font = options.unicodeFont;
+    } else {
+      finalText = text.normalize('NFKD').replace(/[^\u0020-\u007E]/g, '?');
+    }
+  }
+
+  page.drawText(finalText, {
+    x: options.x,
+    y: options.y,
+    size: options.size,
+    font,
+    color: options.color,
+  });
+}
 
 export interface PdfBombAndSanitizeResult {
   safe: boolean;
@@ -80,13 +140,24 @@ export async function sanitizeAndCheckPdfBomb(
       };
     }
 
-    // 4. Inspect JSON structure for active content (/JS, /JavaScript, /Launch, /OpenAction, /AA)
+    // 4. Inspect JSON structure for active content (/JS, /JavaScript, /Launch, /OpenAction, /AA) (TC2-028)
     const { stdout: jsonOut } = await execFileAsync('qpdf', ['--json', inputPath], {
       timeout: 25_000,
       maxBuffer: 32 * 1024 * 1024,
     });
     const dangerousMatches =
       jsonOut.match(/"\/(JS|JavaScript|Launch|EmbeddedFiles|RichMedia)"/g) ?? [];
+
+    if (jsonOut.includes('"/Launch"') || jsonOut.includes('"/OpenAction"')) {
+      return {
+        safe: false,
+        pageCount,
+        objectCount: objectLines,
+        strippedScriptsCount: dangerousMatches.length,
+        failureCode: 'MALICIOUS_PDF_ACTIVE_CONTENT',
+        failureDetail: 'Executable launch or active OpenAction detected in PDF.',
+      };
+    }
 
     // 5. Rewrite & linearize PDF via qpdf, flattening annotations and removing attachments
     await execFileAsync(
@@ -112,7 +183,17 @@ export async function sanitizeAndCheckPdfBomb(
       // Fallback: If qpdf binary is not present in local environment, sanitize via pdf-lib
       try {
         const fileBytes = await readFile(inputPath);
-        const doc = await PDFDocument.load(fileBytes, { ignoreEncryption: true });
+        const doc = await PDFDocument.load(fileBytes, { ignoreEncryption: false });
+        if (doc.isEncrypted) {
+          return {
+            safe: false,
+            pageCount: 0,
+            objectCount: 0,
+            strippedScriptsCount: 0,
+            failureCode: 'PDF_ENCRYPTED',
+            failureDetail: 'Encrypted PDFs are not permitted.',
+          };
+        }
         const count = doc.getPageCount();
         if (count > maxPages) {
           return {
@@ -124,11 +205,27 @@ export async function sanitizeAndCheckPdfBomb(
             failureDetail: `PDF contains ${count} pages, exceeding limit of ${maxPages} pages.`,
           };
         }
-        await writeFile(sanitizedOutputPath, await doc.save());
+
+        const objectCount = doc.context.enumerateIndirectObjects().length;
+        if (objectCount > maxObjects) {
+          return {
+            safe: false,
+            pageCount: count,
+            objectCount,
+            strippedScriptsCount: 0,
+            failureCode: 'PDF_OBJECT_BOMB_DETECTED',
+            failureDetail: `PDF contains ${objectCount} internal objects, exceeding the ${maxObjects} object safety ceiling (RT-034).`,
+          };
+        }
+
+        // Strip active content in fallback (OpenAction, AA, JavaScript, Names, Launch, Annotations, Chained actions) (FV04, FV07)
+        sanitizePdfDoc(doc);
+
+        await writeFile(sanitizedOutputPath, await doc.save({ useObjectStreams: true }));
         return {
           safe: true,
           pageCount: count,
-          objectCount: count * 10,
+          objectCount,
           strippedScriptsCount: 0,
         };
       } catch (innerErr: any) {
@@ -205,6 +302,7 @@ export async function compileHandoverDossierStreamingQpdf(
     const fontBold = await headerPdf.embedFont(StandardFonts.HelveticaBold);
     const fontRegular = await headerPdf.embedFont(StandardFonts.Helvetica);
     const fontMono = await headerPdf.embedFont(StandardFonts.Courier);
+    const unicodeFont = await loadUnicodeFont(headerPdf);
 
     const cover = headerPdf.addPage([595.28, 841.89]);
     const { width, height } = cover.getSize();
@@ -217,11 +315,14 @@ export async function compileHandoverDossierStreamingQpdf(
       color: rgb(0.059, 0.161, 0.259),
     });
 
-    cover.drawText(sanitisePdfText(input.orgLegalName, 80).toUpperCase(), {
+    drawSafePdfText(cover, sanitisePdfText(input.orgLegalName, 80), {
       x: 48,
       y: height - 72,
       size: 11,
-      font: fontBold,
+      fontRegular,
+      fontBold,
+      unicodeFont,
+      isBold: true,
       color: rgb(0.059, 0.161, 0.259),
     });
 
@@ -267,11 +368,13 @@ export async function compileHandoverDossierStreamingQpdf(
     let y = height - 145;
     for (const [k, v] of metaLines) {
       cover.drawText(`${k}:`, { x: 48, y, size: 9, font: fontBold, color: rgb(0.28, 0.33, 0.41) });
-      cover.drawText(v, {
+      drawSafePdfText(cover, v, {
         x: 205,
         y,
         size: 9,
-        font: k.includes('SHA-256') || k.includes('URL') ? fontMono : fontRegular,
+        fontRegular: k.includes('SHA-256') || k.includes('URL') ? fontMono : fontRegular,
+        fontBold,
+        unicodeFont,
         color: rgb(0.06, 0.09, 0.16),
       });
       y -= 20;
@@ -323,7 +426,7 @@ export async function compileHandoverDossierStreamingQpdf(
           req.statusAtGeneration,
           18,
         )}`;
-        idxPage.drawText(line, { x: 48, y: rowY, size: 8, font: fontMono });
+        drawSafePdfText(idxPage, line, { x: 48, y: rowY, size: 8, fontRegular: fontMono, unicodeFont });
         rowY -= 18;
       }
     }
@@ -365,24 +468,32 @@ export async function compileHandoverDossierStreamingQpdf(
       const pageInfo = itemPageRanges[idx];
       const pageStart = pageInfo ? pageInfo.pageStart - 1 : 2;
       bookmarks.push({
-        title: `${idx + 1}. [${src.documentVersionId.slice(0, 8)}] Submittal Document (${pageInfo?.pageStart ?? 1}-${pageInfo?.pageEnd ?? 1})`,
+        title: `${idx + 1}. [${src.sectionKey}] ${src.title || 'Submittal Document'} (Pages ${pageInfo?.pageStart ?? 1}-${pageInfo?.pageEnd ?? 1})`,
         pageIndex: pageStart,
       });
     });
 
-    try {
-      await injectPdfBookmarks(outputPath, bookmarks);
-    } catch {
-      // Non-fatal if bookmark injection fails, preservation of merged file is prioritized
-    }
-
     const pdfSha256 = await streamSha256(outputPath);
     const fileStats = await stat(outputPath);
 
+    // The current bookmark writer loads the entire merged dossier into V8. Keep that
+    // optional post-process bounded so large dossiers retain the streaming memory profile.
+    if (fileStats.size <= 64 * 1024 * 1024) {
+      try {
+        await injectPdfBookmarks(outputPath, bookmarks);
+      } catch {
+        // The artifact itself remains valid; bookmarks are a navigation enhancement.
+      }
+    }
+    const finalPdfSha256 = fileStats.size <= 64 * 1024 * 1024
+      ? await streamSha256(outputPath)
+      : pdfSha256;
+    const finalFileStats = await stat(outputPath);
+
     return {
       totalPages: runningPageCursor - 1,
-      pdfSha256,
-      sizeBytes: fileStats.size,
+      pdfSha256: finalPdfSha256,
+      sizeBytes: finalFileStats.size,
       itemPageRanges,
     };
   } finally {

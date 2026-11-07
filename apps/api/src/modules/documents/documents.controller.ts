@@ -17,6 +17,8 @@ import { Response } from 'express';
 import { DocumentsService } from './documents.service';
 import { SessionCsrfGuard } from '../../common/guards/session-csrf.guard';
 import { PermissionGuard, RequirePermission } from '../../common/guards/permission.guard';
+import { RequireIdempotency } from '../../common/decorators/idempotency.decorator';
+import { CreateUploadIntentDto, CompleteUploadDto } from './dto/upload-intent.dto';
 
 @Controller('api/v1')
 @UseGuards(SessionCsrfGuard, PermissionGuard)
@@ -49,23 +51,13 @@ export class DocumentsController {
     return this.documentsService.getDocument(req.userContext, id);
   }
 
-  @Post('projects/:projectId/documents/upload-intents')
+  @Post(['projects/:projectId/documents/upload-intents', 'projects/:projectId/upload-intents'])
   @RequirePermission('document.upload')
+  @RequireIdempotency()
   async createUploadIntent(
     @Req() req: any,
     @Param('projectId') projectId: string,
-    @Body()
-    dto: {
-      mimeType: string;
-      sizeBytes: number;
-      fileName: string;
-      categoryKey?: string;
-      docTypeKey?: string;
-      revisionCode?: string;
-      requirementId?: string;
-      assetId?: string;
-      documentId?: string;
-    },
+    @Body() dto: CreateUploadIntentDto,
   ) {
     return this.documentsService.createUploadIntent(req.userContext, projectId, dto);
   }
@@ -76,12 +68,17 @@ export class DocumentsController {
     return this.documentsService.refreshUploadUrls(req.userContext, id);
   }
 
-  @Post(['document-versions/:id/complete', 'document-versions/:id/complete-upload'])
+  @Post([
+    'document-versions/:id/complete',
+    'document-versions/:id/complete-upload',
+    'projects/:projectId/document-versions/:id/complete-upload',
+  ])
   @RequirePermission('document.upload')
+  @RequireIdempotency()
   async completeUpload(
     @Req() req: any,
     @Param('id') id: string,
-    @Body() dto: { checksumSha256?: string; isEicarTestVirus?: boolean; samplePayload?: string },
+    @Body() dto: CompleteUploadDto,
   ) {
     return this.documentsService.completeUpload(req.userContext, id, dto);
   }
@@ -93,36 +90,36 @@ export class DocumentsController {
   }
 
   @Get('document-versions/:id/download-url')
-  @RequirePermission('document.read')
+  @RequirePermission('document.download')
   async getDownloadUrl(@Req() req: any, @Param('id') id: string) {
     return this.documentsService.getDownloadUrl(req.userContext, id);
   }
 
   @Get('document-versions/:id/preview-url')
-  @RequirePermission('document.read')
+  @RequirePermission('document.download')
   async getPreviewUrl(@Req() req: any, @Param('id') id: string) {
     return this.documentsService.getPreviewUrl(req.userContext, id);
   }
 
   @Get('projects/:projectId/document-versions/:versionId/stream')
-  @RequirePermission('document.read')
+  @RequirePermission('document.download')
   async streamProjectPdf(
     @Param('projectId') projectId: string,
     @Param('versionId') versionId: string,
     @Req() req: any,
     @Res() res: Response,
   ) {
-    return this.documentsService.streamDocumentVersion(req.userContext, projectId, versionId, res);
+    return this.documentsService.streamDocumentVersion(req.userContext, projectId, versionId, req, res);
   }
 
   @Get('document-versions/:versionId/stream')
-  @RequirePermission('document.read')
+  @RequirePermission('document.download')
   async streamDirectPdf(
     @Param('versionId') versionId: string,
     @Req() req: any,
     @Res() res: Response,
   ) {
-    return this.documentsService.streamDocumentVersion(req.userContext, undefined, versionId, res);
+    return this.documentsService.streamDocumentVersion(req.userContext, undefined, versionId, req, res);
   }
 
   @Delete('documents/:id')
@@ -190,6 +187,7 @@ export class DocumentsController {
 
   @Post('projects/:projectId/transmittals/generate')
   @RequirePermission('document.upload')
+  @RequireIdempotency()
   async generateTransmittalPack(
     @Req() req: any,
     @Param('projectId') projectId: string,
@@ -204,7 +202,7 @@ export class DocumentsController {
   }
 
   @Post('projects/:projectId/transmittals/stamp-back')
-  @RequirePermission('review.submit_decision')
+  @RequirePermission('review.record_external')
   async processTransmittalStampBack(
     @Req() req: any,
     @Param('projectId') projectId: string,

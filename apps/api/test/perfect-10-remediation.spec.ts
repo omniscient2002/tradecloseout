@@ -85,7 +85,7 @@ describe('Perfect 10 Remediation & Hardening Test Suite', () => {
   // FIX 2 & Bug 1: 1-to-Many Document Approval Deadlock Resolution
   // --------------------------------------------------------------------------
   describe('Fix 2 & Bug 1: 1-to-Many Document Approval (FR-DOC-011)', () => {
-    it('executeReviewDecision atomically approves ALL linked requirements for the document', async () => {
+    it('approves the document version without approving linked requirements', async () => {
       const docVerId = uuidv7();
       const docId = uuidv7();
       const reqId1 = uuidv7();
@@ -171,19 +171,11 @@ describe('Perfect 10 Remediation & Hardening Test Suite', () => {
       );
 
       expect(result.documentVersionStatus).toBe('APPROVED');
-      expect(result.requirementStatus).toBe('APPROVED');
-      expect(result.affectedRequirementIds).toEqual(
-        expect.arrayContaining([reqId1, reqId2, reqId3]),
+      // Approving a document revision must not mark every linked requirement satisfied.
+      const requirementStatusUpdate = executedQueries.find((q) =>
+        q.sql.includes('UPDATE requirements') && q.sql.includes("status = 'APPROVED'"),
       );
-
-      // Verify that the requirements update query targeted ANY of all 3 requirements
-      const reqUpdateQuery = executedQueries.find((q) =>
-        q.sql.includes('UPDATE requirements') && q.sql.includes('ANY($3::uuid[])'),
-      );
-      expect(reqUpdateQuery).toBeDefined();
-      expect(reqUpdateQuery?.params[2]).toEqual(
-        expect.arrayContaining([reqId1, reqId2, reqId3]),
-      );
+      expect(requirementStatusUpdate).toBeUndefined();
     });
   });
 
@@ -377,32 +369,17 @@ describe('Perfect 10 Remediation & Hardening Test Suite', () => {
   });
 
   // --------------------------------------------------------------------------
-  // Dimension 7: PDF /ByteRange Placeholder Injector for Class 3 DSC / PKCS#7
+  // Dimension 7: Do not claim signature capability without a verified provider.
   // --------------------------------------------------------------------------
-  describe('Dimension 7: PDF /ByteRange Placeholder Injector', () => {
-    it('injects /ByteRange placeholder and prepares PDF for Adobe Acrobat native signature', async () => {
-      const dummyDoc = await PDFDocument.create();
-      dummyDoc.addPage([595, 842]);
-      const pdfBytes = Buffer.from(await dummyDoc.save());
-
+  describe('Dimension 7: Cryptographic signature fail-closed behaviour', () => {
+    it('does not prepare a fake PDF signature placeholder or embed caller-supplied bytes', async () => {
       const sigService = new DigitalSignatureService({} as any);
-      const prepared = await sigService.injectByteRangePlaceholder(pdfBytes, {
+      await expect(sigService.injectByteRangePlaceholder(Buffer.from('%PDF-'), {
         signerName: 'Vikramaditya Reddy',
-        reason: 'Technical Closeout Dossier Approval',
+      })).rejects.toMatchObject({
+        response: { code: 'PDF_SIGNATURE_PREPARATION_UNAVAILABLE' },
       });
-
-      expect(prepared.byteRange).toBeDefined();
-      expect(prepared.byteRange.length).toBe(4);
-      expect(prepared.byteRange[0]).toBe(0);
-      expect(prepared.byteRange[1]).toBeGreaterThan(0);
-      expect(prepared.byteRange[2]).toBeGreaterThan(prepared.byteRange[1]);
-      expect(prepared.byteRange[3]).toBeGreaterThan(0);
-      expect(prepared.hashToSign).toMatch(/^[a-f0-9]{64}$/);
-
-      // Embed dummy PKCS#7 hex
-      const dummyPkcs7 = '308201'.padEnd(500, 'a');
-      const signed = sigService.embedPkcs7Signature(prepared.preparedPdf, dummyPkcs7);
-      expect(signed.length).toBe(prepared.preparedPdf.length);
+      expect(() => sigService.embedPkcs7Signature(Buffer.from('%PDF-'), '308201')).toThrow();
     });
   });
 
@@ -410,7 +387,7 @@ describe('Perfect 10 Remediation & Hardening Test Suite', () => {
   // Business Risk 2: Two-Tier Supplier Link Friction & Project PIN
   // --------------------------------------------------------------------------
   describe('Business Risk 2: Two-Tier Supplier Link Friction', () => {
-    it('creates supplier upload link with otpRequired = false by default and 4-digit projectPin', async () => {
+    it('creates an OTP-protected supplier upload link without a project PIN', async () => {
       const reqId = uuidv7();
       const partyId = uuidv7();
 
@@ -421,7 +398,7 @@ describe('Perfect 10 Remediation & Hardening Test Suite', () => {
               return Promise.resolve({ rows: [{ id: reqId, requirement_key: 'CHLR-FAT', title: 'FAT' }] });
             }
             if (sql.includes('SELECT email')) {
-              return Promise.resolve({ rows: [{ email: 'oem@carrier.in', phone: '+919848011100' }] });
+              return Promise.resolve({ rows: [{ email: 'oem@carrier.in', phone: '+919848011100', status: 'ACTIVE', deleted_at: null }] });
             }
             return Promise.resolve({ rows: [] });
           }),
@@ -444,9 +421,9 @@ describe('Perfect 10 Remediation & Hardening Test Suite', () => {
         requirementIds: [reqId],
       });
 
-      expect(linkResult.otpRequired).toBe(false); // Default is false to allow WhatsApp forwarding!
-      expect(linkResult.projectPin).toMatch(/^[0-9]{4}$/);
-      expect(decodeURIComponent(linkResult.whatsappDeepLink)).toContain(`Project PIN: ${linkResult.projectPin}`);
+      expect(linkResult.otpRequired).toBe(true);
+      expect(linkResult.projectPin).toBe('OTP required');
+      expect(decodeURIComponent(linkResult.whatsappDeepLink)).not.toContain('Project PIN:');
     });
   });
 
@@ -454,7 +431,7 @@ describe('Perfect 10 Remediation & Hardening Test Suite', () => {
   // Business Risk 3: Submittal Transmittal Pack Generator (DT-079)
   // --------------------------------------------------------------------------
   describe('Business Risk 3: Outbound Transmittal Generation & Stamp-Back Loop', () => {
-    it('generates a numbered Transmittal with per-document QR payloads', async () => {
+    it('generates a numbered transmittal without claiming an unimplemented QR verification payload', async () => {
       const docId1 = uuidv7();
       const docId2 = uuidv7();
 
@@ -467,8 +444,8 @@ describe('Perfect 10 Remediation & Hardening Test Suite', () => {
             if (sql.includes('SELECT d.id AS document_id')) {
               return Promise.resolve({
                 rows: [
-                  { document_id: docId1, title: 'Chiller Test', doc_type_key: 'DT-030', version_id: 'v1', version_no: 1, revision_code: 'R0' },
-                  { document_id: docId2, title: 'AHU Test', doc_type_key: 'DT-031', version_id: 'v2', version_no: 1, revision_code: 'R0' },
+                  { document_id: docId1, title: 'Chiller Test', doc_type_key: 'DT-030', version_id: 'v1', version_no: 1, revision_code: 'R0', file_status: 'READY' },
+                  { document_id: docId2, title: 'AHU Test', doc_type_key: 'DT-031', version_id: 'v2', version_no: 1, revision_code: 'R0', file_status: 'READY' },
                 ],
               });
             }
@@ -492,8 +469,8 @@ describe('Perfect 10 Remediation & Hardening Test Suite', () => {
 
       expect(transmittal.transmittalNo).toMatch(/^TRN-PRJ-HYD-04-\d+$/);
       expect(transmittal.documentCount).toBe(2);
-      expect(transmittal.items[0].qrPayload).toContain(transmittal.transmittalNo);
-      expect(transmittal.items[1].qrPayload).toContain(transmittal.transmittalNo);
+      expect(transmittal.items[0]).not.toHaveProperty('qrPayload');
+      expect(transmittal.items[1]).not.toHaveProperty('qrPayload');
     });
   });
 
@@ -543,7 +520,7 @@ describe('Perfect 10 Remediation & Hardening Test Suite', () => {
         }),
       };
 
-      const handoverService = new HandoverService(mockPool as any);
+      const handoverService = new HandoverService(mockPool as any, {} as any);
       const ctx = {
         orgId,
         userId,

@@ -2,6 +2,8 @@ import { Pool } from 'pg';
 import Redis from 'ioredis';
 import { createHash } from 'crypto';
 import { uuidv7 } from 'uuidv7';
+import { deliverNotification } from './notification-delivery';
+import { isIndiaQuietHour, sumPaise } from '@tradecloseout/shared';
 
 export class TradeCloseoutScheduler {
   constructor(
@@ -10,16 +12,93 @@ export class TradeCloseoutScheduler {
   ) {}
 
   /**
-   * Acquires a distributed Redis leader lock before executing any scheduled job (15 §2).
+   * Acquires a distributed Redis leader lock before executing any scheduled job (15 §2, TC2-026).
+   * Uses unique owner token and atomic compare-and-delete via Lua to prevent lock stealing.
    */
   async runWithLeaderLock(lockKey: string, ttlSeconds: number, fn: () => Promise<void>) {
-    const acquired = await this.redis.set(`lock:sched:${lockKey}`, '1', 'EX', ttlSeconds, 'NX');
+    const fullKey = `lock:sched:${lockKey}`;
+    const ownerToken = uuidv7();
+    const acquired = await this.redis.set(fullKey, ownerToken, 'EX', ttlSeconds, 'NX');
     if (!acquired) return;
     try {
       await fn();
     } finally {
-      await this.redis.del(`lock:sched:${lockKey}`);
+      const releaseLua = `
+        if redis.call("get", KEYS[1]) == ARGV[1] then
+          return redis.call("del", KEYS[1])
+        else
+          return 0
+        end
+      `;
+      try {
+        await this.redis.eval(releaseLua, 1, fullKey, ownerToken);
+      } catch (err) {
+        console.error(`[Scheduler Lock Release Error] Key ${fullKey}:`, err);
+      }
     }
+  }
+
+  /** Suppresses duplicate schedule slots after successful completion; jobs remain safe to repeat after Redis loss. */
+  async runWithPeriodLock(
+    lockKey: string,
+    completedKey: string,
+    lockTtlSeconds: number,
+    completedTtlSeconds: number,
+    fn: () => Promise<void>,
+  ): Promise<void> {
+    if (await this.redis.exists(completedKey)) return;
+    const fullKey = `lock:sched:${lockKey}`;
+    const ownerToken = uuidv7();
+    const acquired = await this.redis.set(fullKey, ownerToken, 'EX', lockTtlSeconds, 'NX');
+    if (!acquired) return;
+    try {
+      if (await this.redis.exists(completedKey)) return;
+      await fn();
+      await this.redis.set(completedKey, '1', 'EX', completedTtlSeconds);
+    } finally {
+      const releaseLua = `
+        if redis.call("get", KEYS[1]) == ARGV[1] then
+          return redis.call("del", KEYS[1])
+        else
+          return 0
+        end
+      `;
+      try {
+        await this.redis.eval(releaseLua, 1, fullKey, ownerToken);
+      } catch (err) {
+        console.error(`[Scheduler Lock Release Error] Key ${fullKey}:`, err);
+      }
+    }
+  }
+
+  /** Returns the current India-local schedule period without relying on host timezone. */
+  getIndiaSchedulePeriods(now = new Date()) {
+    const parts = Object.fromEntries(
+      new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Asia/Kolkata',
+        weekday: 'short',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        hourCycle: 'h23',
+      }).formatToParts(now).map((part) => [part.type, part.value]),
+    ) as Record<string, string>;
+    const day = `${parts.year}-${parts.month}-${parts.day}`;
+    const localUtcDate = new Date(Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day)));
+    const weekday = (localUtcDate.getUTCDay() + 6) % 7;
+    localUtcDate.setUTCDate(localUtcDate.getUTCDate() - weekday + 3);
+    const isoYear = localUtcDate.getUTCFullYear();
+    const firstThursday = new Date(Date.UTC(isoYear, 0, 4));
+    firstThursday.setUTCDate(firstThursday.getUTCDate() - ((firstThursday.getUTCDay() + 6) % 7) + 3);
+    const week = 1 + Math.round((localUtcDate.getTime() - firstThursday.getTime()) / (7 * 24 * 60 * 60 * 1000));
+    return {
+      day,
+      hour: Number(parts.hour),
+      weekday: parts.weekday,
+      week: `${isoYear}-W${String(week).padStart(2, '0')}`,
+      hourSlot: `${day}-${parts.hour}`,
+    };
   }
 
   /**
@@ -37,7 +116,10 @@ export class TradeCloseoutScheduler {
 
       for (const org of orgs) {
         await client.query('BEGIN');
-        await client.query(`SELECT set_config('app.current_org', $1, true)`, [org.id]);
+        await client.query(
+          `SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`,
+          [org.id],
+        );
 
         const { rowCount } = await client.query(
           `UPDATE requirements r
@@ -85,35 +167,41 @@ export class TradeCloseoutScheduler {
           WHERE o.status = 'ACTIVE'`,
       );
 
-      const weekKey = new Date().toISOString().slice(0, 10);
+      const weekKey = this.getIndiaSchedulePeriods().week;
 
       for (const org of activeOrgs) {
         await client.query('BEGIN');
-        await client.query(`SELECT set_config('app.current_org', $1, true)`, [org.org_id]);
+        await client.query(
+          `SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`,
+          [org.org_id],
+        );
 
         // Calculate missing/expired counts and retention money gated per active project (RT-029)
         const { rows: projectRisks } = await client.query(
           `SELECT p.id AS project_id,
                   p.code AS project_code,
                   p.name AS project_name,
-                  COALESCE(SUM(c.value_paise * c.retention_bps / 10000), 0)::bigint AS retention_at_risk_paise,
-                  COUNT(r.id) FILTER (
-                    WHERE r.status = 'EXPIRED'
-                       OR (r.due_at IS NOT NULL AND r.due_at < now()
-                           AND r.status NOT IN ('APPROVED','WAIVED','NOT_APPLICABLE','HANDED_OVER'))
-                  )::int AS missing_or_expired_count
+                  COALESCE(c.retention_at_risk_paise, 0)::bigint AS retention_at_risk_paise,
+                  COALESCE(r.missing_or_expired_count, 0)::int AS missing_or_expired_count
              FROM projects p
-             LEFT JOIN contracts c ON c.org_id = p.org_id AND c.project_id = p.id AND c.status = 'ACTIVE'
-             LEFT JOIN requirements r ON r.org_id = p.org_id AND r.project_id = p.id AND r.superseded_at IS NULL
+             LEFT JOIN LATERAL (
+               SELECT SUM(value_paise * retention_bps / 10000) AS retention_at_risk_paise
+                 FROM contracts
+                WHERE org_id = p.org_id AND project_id = p.id AND status = 'ACTIVE'
+             ) c ON true
+             LEFT JOIN LATERAL (
+               SELECT COUNT(*) AS missing_or_expired_count
+                 FROM requirements
+                WHERE org_id = p.org_id AND project_id = p.id AND superseded_at IS NULL
+                  AND (status = 'EXPIRED' OR (due_at IS NOT NULL AND due_at < now()
+                       AND status NOT IN ('APPROVED','WAIVED','NOT_APPLICABLE','HANDED_OVER')))
+             ) r ON true
             WHERE p.org_id = $1 AND p.status IN ('ACTIVE', 'HANDOVER')
-            GROUP BY p.id, p.code, p.name`,
+            `,
           [org.org_id],
         );
 
-        const totalRetentionAtRiskPaise = projectRisks.reduce(
-          (acc, p) => acc + BigInt(p.retention_at_risk_paise ?? 0),
-          0n,
-        );
+        const totalRetentionAtRiskPaise = sumPaise(projectRisks.map(p => String(p.retention_at_risk_paise ?? 0)));
 
         await client.query(
           `INSERT INTO notifications
@@ -162,10 +250,27 @@ export class TradeCloseoutScheduler {
 
       for (const org of orgs) {
         await client.query('BEGIN');
-        await client.query(`SELECT set_config('app.current_org', $1, true)`, [org.id]);
+        await client.query(
+          `SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`,
+          [org.id],
+        );
 
         const { rows: events } = await client.query(
-          `SELECT id, chain_seq, prev_hash, hash
+          `SELECT id, chain_seq, prev_hash, hash,
+                  encode(digest(prev_hash || '||' || jsonb_build_object(
+                    'id', id,
+                    'org_id', org_id,
+                    'project_id', project_id,
+                    'actor_type', actor_type,
+                    'actor_user_id', actor_user_id,
+                    'action', action,
+                    'entity_type', entity_type,
+                    'entity_id', entity_id,
+                    'before_json', before_json,
+                    'after_json', after_json,
+                    'request_id', request_id,
+                    'created_at', to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
+                  )::text, 'sha256'), 'hex') AS computed_hash
              FROM audit_events
             WHERE org_id = $1
             ORDER BY chain_seq ASC`,
@@ -178,6 +283,11 @@ export class TradeCloseoutScheduler {
           if (prevHash !== null && ev.prev_hash !== prevHash) {
             throw new Error(
               `AUDIT_HASH_CHAIN_CORRUPT: Tampering detected for org ${org.id} at chain_seq ${ev.chain_seq}. Expected prev_hash ${prevHash}, got ${ev.prev_hash}`,
+            );
+          }
+          if (ev.computed_hash && ev.hash !== ev.computed_hash) {
+            throw new Error(
+              `AUDIT_CONTENT_TAMPERED: Payload tampering detected for org ${org.id} at chain_seq ${ev.chain_seq} (id: ${ev.id}). Stored hash ${ev.hash} does not match computed hash ${ev.computed_hash}`,
             );
           }
           prevHash = ev.hash;
@@ -201,5 +311,161 @@ export class TradeCloseoutScheduler {
   async computeAuditHashChainBatch(): Promise<number> {
     const res = await this.verifyAuditHashChainIntegrity();
     return res.verifiedEvents;
+  }
+
+  /**
+   * Top 25 Item 25: Storage & Temporary Artifacts Lifecycle Cleanup
+   * Safely purges abandoned upload intents (file_status = 'PENDING_UPLOAD' older than 24h)
+   * and unattached storage objects in status 'PENDING' older than 24h, preventing storage quota leaks
+   * without ever modifying or deleting verified original evidence objects.
+   */
+  async runStorageLifecycleCleanup(): Promise<{ purgedPendingVersions: number; purgedPendingObjects: number }> {
+    const client = await this.pool.connect();
+    try {
+      const { rows: orgs } = await client.query(`SELECT id FROM organisations WHERE status = 'ACTIVE'`);
+      let purgedPendingVersions = 0;
+      let purgedPendingObjects = 0;
+
+      for (const org of orgs) {
+        await client.query('BEGIN');
+        await client.query(
+          `SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`,
+          [org.id],
+        );
+
+        // 1. Purge stale uncompleted upload intents older than 24 hours
+        const { rowCount: vCount } = await client.query(
+          `DELETE FROM document_versions
+           WHERE org_id = $1
+             AND file_status = 'PENDING_UPLOAD'
+             AND created_at < now() - interval '24 hours'`,
+          [org.id],
+        );
+        purgedPendingVersions += vCount ?? 0;
+
+        // 2. Purge unattached storage objects in PENDING status older than 24 hours
+        const { rowCount: oCount } = await client.query(
+          `DELETE FROM storage_objects so
+           WHERE so.org_id = $1
+             AND so.status = 'PENDING'
+             AND so.created_at < now() - interval '24 hours'
+             AND NOT EXISTS (
+               SELECT 1 FROM document_versions dv WHERE dv.object_id = so.id
+             )`,
+          [org.id],
+        );
+        purgedPendingObjects += oCount ?? 0;
+
+        await client.query('COMMIT');
+      }
+
+      return { purgedPendingVersions, purgedPendingObjects };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Purges expired completed receipts only. Unresolved claims require outcome
+   * reconciliation; age alone cannot prove that their commands did not commit.
+   */
+  async reconcileIdempotencyClaims(): Promise<number> {
+    const client = await this.pool.connect();
+    try {
+      const { rows: orgs } = await client.query(`SELECT id FROM organisations WHERE status = 'ACTIVE'`);
+      let reconciled = 0;
+
+      for (const org of orgs) {
+        await client.query('BEGIN');
+        await client.query(
+          `SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`,
+          [org.id],
+        );
+
+        const { rowCount } = await client.query(
+          `DELETE FROM idempotency_keys
+            WHERE org_id = $1
+              AND expires_at <= now() AND response_status <> 0`,
+          [org.id],
+        );
+        reconciled += rowCount ?? 0;
+        await client.query('COMMIT');
+      }
+      return reconciled;
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * T11: Dispatches queued notifications honoring IST quiet hours (22:00 - 08:00 IST).
+   * External messages stay queued until a deduplicating gateway acknowledges them.
+   */
+  async dispatchQueuedNotifications(): Promise<number> {
+    const isQuietHour = isIndiaQuietHour();
+    const client = await this.pool.connect();
+    let sentCount = 0;
+
+    try {
+      const { rows: orgs } = await client.query(`SELECT id FROM organisations WHERE status = 'ACTIVE'`);
+
+      for (const org of orgs) {
+        await client.query('BEGIN');
+        await client.query(
+          `SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`,
+          [org.id],
+        );
+
+        // Fetch queued notifications (NP06: filter quiet-hour restricted channels before LIMIT to avoid head-of-line starvation)
+        const { rows: queued } = await client.query(
+          `SELECT id, org_id, channel, event_key, payload_json, recipient_user_id, recipient_party_id
+             FROM notifications
+            WHERE org_id = $1
+              AND status = 'QUEUED'
+              AND ($2::boolean = false OR channel NOT IN ('SMS', 'WHATSAPP'))
+            ORDER BY created_at ASC
+            LIMIT 25
+            FOR UPDATE SKIP LOCKED`,
+          [org.id, isQuietHour],
+        );
+
+        for (const notif of queued) {
+          const isQuietDeferral = (notif.channel === 'SMS' || notif.channel === 'WHATSAPP') && isQuietHour;
+          if (isQuietDeferral) {
+            // Keep in QUEUED until quiet hours conclude at 08:00 IST
+            continue;
+          }
+
+          try {
+            if (!await deliverNotification(notif)) continue;
+          } catch {
+            // Keep retryable delivery queued; do not log provider secrets/payloads.
+            continue;
+          }
+          await client.query(
+            `UPDATE notifications
+                SET status = 'SENT',
+                    sent_at = now()
+              WHERE org_id = $1 AND id = $2`,
+            [org.id, notif.id],
+          );
+          sentCount++;
+        }
+
+        await client.query('COMMIT');
+      }
+      return sentCount;
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 }

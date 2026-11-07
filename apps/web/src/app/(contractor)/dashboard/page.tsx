@@ -32,6 +32,7 @@ import {
   Award,
 } from "lucide-react";
 import { apiFetch } from "../../../lib/api-client";
+import { enqueueFieldUpload } from "../../../lib/offline-upload-queue";
 
 export interface OrgDashboardDto {
   org: {
@@ -102,9 +103,63 @@ export default function CompanyHomeDashboardPage() {
   const [siteAsset, setSiteAsset] = useState("CH-01");
   const [siteDocType, setSiteDocType] = useState("DT-018");
   const [siteUploadSuccess, setSiteUploadSuccess] = useState<string | null>(null);
+  const [siteUploading, setSiteUploading] = useState(false);
+  const [siteUploadError, setSiteUploadError] = useState<string | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
 
-  // Owner 2nd Waiver Sign-off State
+  // Owner 2nd Waiver Sign-off State (TC2-029)
   const [waiverSigned, setWaiverSigned] = useState(false);
+  const [signingWaiver, setSigningWaiver] = useState(false);
+  const [waiverError, setWaiverError] = useState<string | null>(null);
+
+  const handleSiteFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSiteUploading(true);
+    setSiteUploadError(null);
+    setSiteUploadSuccess(null);
+    try {
+      const activeProject = data?.projects?.[0];
+      if (!activeProject) {
+        throw new Error("No active project available for site upload.");
+      }
+      await enqueueFieldUpload({
+        projectId: activeProject.id,
+        requirementId: siteAsset,
+        file,
+        title: `${siteAsset} - ${siteDocType}`,
+        revisionCode: "R0",
+        issueDate: new Date().toISOString().slice(0, 10),
+      });
+      setSiteUploadSuccess(`✓ Evidence file "${file.name}" queued into offline upload pipeline for ${siteAsset} (${siteDocType}).`);
+      setTimeout(() => setSiteUploadSuccess(null), 6000);
+    } catch (err: any) {
+      setSiteUploadError(err.message || "Failed to queue site upload.");
+    } finally {
+      setSiteUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleCountersignWaiver = async () => {
+    setSigningWaiver(true);
+    setWaiverError(null);
+    try {
+      await apiFetch(`/api/v1/requirements/HYD-BIO-09-DT028/waivers/countersign`, {
+        method: "POST",
+        body: JSON.stringify({ justification: "MD 2nd approver countersignature executed." }),
+      });
+      setWaiverSigned(true);
+    } catch (err: any) {
+      if (err?.status === 404) {
+        setWaiverError("No pending waiver found for this requirement in active database.");
+      } else {
+        setWaiverError(err?.message || "Waiver countersignature failed.");
+      }
+    } finally {
+      setSigningWaiver(false);
+    }
+  };
 
   const loadDashboard = useCallback(async () => {
     setLoading(true);
@@ -257,6 +312,21 @@ export default function CompanyHomeDashboardPage() {
             </div>
           )}
 
+          {siteUploadError && (
+            <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-xs text-red-900 flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 text-red-600" />
+              <span>{siteUploadError}</span>
+            </div>
+          )}
+
+          <input
+            type="file"
+            ref={fileInputRef}
+            className="hidden"
+            accept=".pdf,.jpg,.jpeg,.png,.webp,.docx,.xlsx,.dwg,.zip"
+            onChange={handleSiteFileSelect}
+          />
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
             <div>
               <label className="block font-semibold text-slate-700 mb-1">Target MEP Equipment Tag</label>
@@ -288,14 +358,13 @@ export default function CompanyHomeDashboardPage() {
 
             <div className="flex items-end">
               <button
-                onClick={() => {
-                  setSiteUploadSuccess(`✓ Evidence file for ${siteAsset} (${siteDocType}) queued and uploaded to AWS S3 storage with SHA-256 integrity hash.`);
-                  setTimeout(() => setSiteUploadSuccess(null), 6000);
-                }}
-                className="w-full inline-flex items-center justify-center gap-2 rounded-md bg-blue-700 py-2 px-4 font-semibold text-white hover:bg-blue-800 transition-colors cursor-pointer"
+                type="button"
+                disabled={siteUploading}
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full inline-flex items-center justify-center gap-2 rounded-md bg-blue-700 py-2 px-4 font-semibold text-white hover:bg-blue-800 disabled:opacity-50 transition-colors cursor-pointer"
               >
                 <UploadCloud className="h-4 w-4" />
-                <span>Upload Field Test Certificate</span>
+                <span>{siteUploading ? "Enqueuing Upload…" : "Select & Upload Test File"}</span>
               </button>
             </div>
           </div>
@@ -689,6 +758,13 @@ export default function CompanyHomeDashboardPage() {
             </span>
           </div>
 
+          {waiverError && (
+            <div className="mx-5 mt-4 rounded-lg border border-red-300 bg-red-50 p-3 text-xs text-red-900 flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 text-red-600 shrink-0" />
+              <span>{waiverError}</span>
+            </div>
+          )}
+
           {!waiverSigned ? (
             <div className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div className="space-y-1">
@@ -704,13 +780,13 @@ export default function CompanyHomeDashboardPage() {
 
               <div className="flex items-center gap-2 shrink-0">
                 <button
-                  onClick={() => {
-                    setWaiverSigned(true);
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-md bg-purple-700 px-4 py-2 text-xs font-bold text-white hover:bg-purple-800 transition-colors cursor-pointer"
+                  type="button"
+                  disabled={signingWaiver}
+                  onClick={handleCountersignWaiver}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-purple-700 px-4 py-2 text-xs font-bold text-white hover:bg-purple-800 disabled:opacity-50 transition-colors cursor-pointer"
                 >
                   <Stamp className="h-3.5 w-3.5" />
-                  <span>Countersign & Seal Waiver</span>
+                  <span>{signingWaiver ? "Countersigning…" : "Countersign & Seal Waiver"}</span>
                 </button>
               </div>
             </div>

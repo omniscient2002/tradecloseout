@@ -6,7 +6,9 @@
     "dev": "next dev -p 3002",
     "build": "next build",
     "start": "next start -p 3002",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test": "playwright test --project=archive",
+    "test:e2e": "playwright test --project=application"
   },
   "dependencies": {
     "@tradecloseout/shared": "workspace:*",
@@ -17,9 +19,10 @@
     "next": "^15.1.7",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "xlsx": "^0.18.5"
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "@types/node": "^22.13.9",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",

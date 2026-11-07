@@ -26,7 +26,7 @@ export class SupplierGuestService {
       supplierPartyId: string;
       requirementIds: string[];
       expiresInDays?: number;
-      otpRequired?: boolean; // Defaults to true per 05 §6.2
+      otpRequired?: boolean;
     },
   ) {
     if (!input.requirementIds || input.requirementIds.length === 0 || input.requirementIds.length > 20) {
@@ -37,10 +37,7 @@ export class SupplierGuestService {
     }
 
     const expiryDays = Math.min(Math.max(input.expiresInDays ?? 30, 1), 90);
-    // Fix Business Risk 2 (Two-Tier Friction): Default otp_required = false for suppliers so WhatsApp forwarding works
-    // Files uploaded without OTP enter SUPPLIER_QUARANTINE_REVIEW until contractor PM accepts them.
-    const otpRequired = input.otpRequired ?? false;
-    const projectPin = String(Math.floor(1000 + Math.random() * 9000));
+    const otpRequired = true;
 
     return withTenantTransaction(this.pool, ctx, async (client, emit) => {
       // Verify all requirementIds belong to this project and assign supplier party
@@ -71,11 +68,22 @@ export class SupplierGuestService {
       );
 
       const { rows: partyRows } = await client.query(
-        `SELECT email, COALESCE(phone_e164, phone) AS phone FROM parties WHERE org_id = $1 AND id = $2`,
+        `SELECT email, COALESCE(phone_e164, phone) AS phone, status, deleted_at
+           FROM parties WHERE org_id = $1 AND id = $2`,
         [ctx.orgId, input.supplierPartyId],
       );
-      const targetEmail = partyRows[0]?.email || 'supplier@tradecloseout.in';
-      const targetPhone = partyRows[0]?.phone || '+919999999999';
+      const party = partyRows[0];
+      if (!party || party.status !== 'ACTIVE' || party.deleted_at) {
+        throw new NotFoundException('ACTIVE_SUPPLIER_PARTY_NOT_FOUND');
+      }
+      const targetEmail = party.email?.trim() || null;
+      const targetPhone = party.phone?.trim() || null;
+      if (!targetEmail && !targetPhone) {
+        throw new UnprocessableEntityException({
+          code: 'SUPPLIER_VERIFIED_CONTACT_REQUIRED',
+          detail: 'Add a supplier email or phone before issuing an OTP-protected upload link.',
+        });
+      }
 
       const rawToken = randomBytes(24).toString('hex'); // 192-bit entropy (>= 128-bit requirement)
       const tokenHash = createHash('sha256').update(rawToken).digest('hex');
@@ -95,7 +103,7 @@ export class SupplierGuestService {
           input.supplierPartyId,
           targetEmail,
           targetPhone,
-          JSON.stringify({ requirementIds: input.requirementIds, projectPin, workflowQueue: 'SUPPLIER_QUARANTINE_REVIEW' }),
+          JSON.stringify({ requirementIds: input.requirementIds, workflowQueue: 'SUPPLIER_QUARANTINE_REVIEW' }),
           otpRequired,
           tokenHash,
           String(expiryDays),
@@ -112,20 +120,17 @@ export class SupplierGuestService {
           supplierPartyId: input.supplierPartyId,
           requirementCount: input.requirementIds.length,
           otpRequired,
-          projectPin,
           expiryDays,
         },
       });
 
       const guestUrl = `${process.env.PUBLIC_APP_URL || 'https://app.tradecloseout.com'}/guest/${rawToken}`;
-      const shareMessage = otpRequired
-        ? `Please upload the requested HVAC project documents via this secure link: ${guestUrl}`
-        : `Please upload the requested HVAC project documents here: ${guestUrl} (Project PIN: ${projectPin}). No app download or account needed.`;
+      const shareMessage = `Please upload the requested HVAC project documents via this secure link: ${guestUrl}`;
 
       return {
         grantId,
         guestUrl,
-        projectPin,
+        projectPin: 'OTP required',
         whatsappDeepLink: `https://wa.me/?text=${encodeURIComponent(shareMessage)}`,
         otpRequired,
       };

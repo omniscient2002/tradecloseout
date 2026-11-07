@@ -334,19 +334,41 @@ export class ChecklistsService {
       }>;
     },
   ) {
+    // TC2-020: Load existing active snapshot requirements to avoid destroying scope
+    const { rows: currentSnapshots } = await this.pool.query(
+      `SELECT snapshot_json FROM checklist_snapshots
+        WHERE org_id = $1 AND project_id = $2
+        ORDER BY version_no DESC LIMIT 1`,
+      [ctx.orgId, projectId],
+    );
+
+    let existingReqs: any[] = [];
+    if (currentSnapshots.length > 0) {
+      const snap = currentSnapshots[0].snapshot_json;
+      existingReqs = snap?.requirements || snap?.checklist?.requirements || [];
+    }
+
+    const newReqs = dto.requirements.map((r, idx) => ({
+      key: r.key || `REQ-${(r.docTypeKey || 'DT001').replace('-', '')}-${Date.now()}-${idx + 1}`,
+      groupKey: 'G1',
+      title: r.title,
+      docTypeKey: r.docTypeKey || 'DT-001',
+      mandatory: r.mandatory !== false,
+      scopeType: 'PROJECT',
+    }));
+
+    const existingKeys = new Set(existingReqs.map((r) => r.key));
+    const combinedReqs = [
+      ...existingReqs,
+      ...newReqs.filter((r) => !existingKeys.has(r.key)),
+    ];
+
     const layers: ConfigLayerInput[] = [
       {
         level: 'PROJECT',
         versionId: uuidv7(),
         payload: {
-          requirements: dto.requirements.map((r, idx) => ({
-            key: r.key || `REQ-${(r.docTypeKey || 'DT001').replace('-', '')}-${idx + 1}`,
-            groupKey: 'G1',
-            title: r.title,
-            docTypeKey: r.docTypeKey || 'DT-001',
-            mandatory: r.mandatory !== false,
-            scopeType: 'PROJECT',
-          })),
+          requirements: combinedReqs.length > 0 ? combinedReqs : newReqs,
         },
       },
     ];
@@ -768,7 +790,7 @@ export class ChecklistsService {
 
       const res = await client.query(
         `UPDATE requirement_change_requests
-            SET status = $1, decided_by = $2, decided_at = now(), updated_at = now()
+            SET status = $1, approved_by = $2, decided_at = now()
           WHERE org_id = $3 AND id = $4
           RETURNING *`,
         [dto.decision, ctx.userId, ctx.orgId, changeRequestId],

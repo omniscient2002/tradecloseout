@@ -8,9 +8,8 @@ import {
   AlertCircle,
   FileText,
   Loader2,
-  Image as ImageIcon,
 } from "lucide-react";
-import { enqueueFieldUpload, compressImageForFieldUpload } from "../../lib/offline-upload-queue";
+import { enqueueFieldUpload } from "../../lib/offline-upload-queue";
 
 interface UploadEvidenceModalProps {
   open: boolean;
@@ -39,7 +38,6 @@ export function UploadEvidenceModal({
   const [externalComment, setExternalComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [compressionNotice, setCompressionNotice] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!requirement) return null;
@@ -57,13 +55,6 @@ export function UploadEvidenceModal({
     setError(null);
     setFile(selected);
 
-    if (selected.type.startsWith("image/") && selected.size > 1024 * 1024) {
-      setCompressionNotice(
-        `High-resolution site photo (${(selected.size / (1024 * 1024)).toFixed(1)} MB). Client-side WebP compression will reduce this to ~600 KB before transmission.`
-      );
-    } else {
-      setCompressionNotice(null);
-    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -77,16 +68,10 @@ export function UploadEvidenceModal({
     setError(null);
 
     try {
-      let uploadFile = file;
-      if (file.type.startsWith("image/")) {
-        const { processedFile } = await compressImageForFieldUpload(file);
-        uploadFile = processedFile;
-      }
-
       await enqueueFieldUpload({
         projectId,
         requirementId: requirement.id,
-        file: uploadFile,
+        file,
         revisionCode: revisionCode.trim().toUpperCase(),
         issueDate,
         title: requirement.title,
@@ -147,13 +132,6 @@ export function UploadEvidenceModal({
             </div>
           </div>
         </div>
-
-        {compressionNotice && (
-          <div className="rounded-md bg-blue-50 border border-blue-200 p-2.5 text-[11px] text-blue-800 flex items-center gap-2">
-            <ImageIcon className="w-4 h-4 shrink-0 text-blue-600" />
-            <span>{compressionNotice}</span>
-          </div>
-        )}
 
         {error && (
           <div className="rounded-md bg-red-50 border border-red-200 p-2.5 text-xs text-red-800 flex items-center gap-2">

@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   HttpCode,
+  HttpException,
   HttpStatus,
   NotFoundException,
   Post,
@@ -12,7 +13,7 @@ import {
   UnprocessableEntityException,
   UseGuards,
 } from '@nestjs/common';
-import { createHash, randomBytes, randomInt, timingSafeEqual } from 'crypto';
+import { createHash, randomBytes, randomInt } from 'crypto';
 import { Response } from 'express';
 import { Pool } from 'pg';
 import Redis from 'ioredis';
@@ -25,6 +26,7 @@ export abstract class DltSmsGateway {
 
 export abstract class TransactionalMailGateway {
   abstract sendMagicLinkEmail(email: string, magicUrl: string): Promise<void>;
+  abstract sendOtpEmail(email: string, otp: string, purpose: string): Promise<void>;
 }
 
 @Controller('api/v1/auth')
@@ -38,13 +40,12 @@ export class IdentityController {
 
   /**
    * API-001: POST /api/v1/auth/otp/request
-   * Sends a 6-digit OTP via DLT SMS or Email, falling back automatically to Email Magic Link
-   * after 2 SMS failures (FR-IAM-002 / FR-INT-012 / RB-11).
+   * Sends a 6-digit OTP through the configured delivery adapter.
    */
   @Post('otp/request')
   @HttpCode(HttpStatus.CREATED)
   async requestOtp(
-    @Body() body: { identifier?: string; phoneOrEmail?: string; fallbackEmail?: string },
+    @Body() body: { identifier?: string; phoneOrEmail?: string },
     @Req() req: AuthenticatedRequest,
   ) {
     const rawId = (body.identifier || body.phoneOrEmail || '').trim().toLowerCase();
@@ -59,25 +60,57 @@ export class IdentityController {
       });
     }
 
-    // Rate limit: max 5 OTP requests / hour / identifier (10 §10)
+    // Rate limit: max 5 OTP requests / hour / identifier (10 §10), atomic Lua increment and expiry
+    const isProductionLike = process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging';
+    const isExplicitDebug = process.env.ENABLE_DEBUG_OTP === 'true' && !isProductionLike;
     const rateKey = `rl:otp:req:${rawId}`;
-    const count = await this.redis.incr(rateKey);
-    if (count === 1) await this.redis.expire(rateKey, 3600);
-    if (count > 5) {
+    const count = Number(await this.redis.eval(
+      `local c = redis.call('INCR', KEYS[1])
+       if c == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
+       return c`,
+      1,
+      rateKey,
+      3600,
+    ));
+    if (count > 5 || !Number.isFinite(count)) {
       throw new HttpExceptionWithRetry(429, 'RATE_LIMITED', 'Too many OTP requests. Try again later.', 300);
     }
 
+    const challengeId = uuidv7();
     const otp = String(randomInt(100000, 999999));
-    const otpHash = createHash('sha256').update(`${rawId}:${otp}`).digest('hex');
+    const salt = randomBytes(16).toString('hex');
+    const otpHash = createHash('sha1').update(`${salt}:${otp}`).digest('hex');
+    const challengePayload = JSON.stringify({ id: challengeId, identifier: rawId, salt, otpHash, attempts: 0 });
 
-    await this.redis.set(
-      `otp:challenge:${rawId}`,
-      JSON.stringify({ otpHash, attempts: 0 }),
-      'EX',
-      300, // 5-minute expiry (10 §2.1)
+    // Atomic issuance & supersession (V01, N02): Atomically delete old generation and register new challenge
+    await this.redis.eval(
+      `local oldId = redis.call('GET', KEYS[1])
+       if oldId and oldId ~= '' then
+         redis.call('DEL', 'otp:challenge:' .. oldId)
+         redis.call('DEL', 'otp:attempts:' .. oldId)
+       end
+       redis.call('SET', KEYS[2], ARGV[2], 'EX', ARGV[3])
+       redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[3])
+       redis.call('SET', 'otp:challenge:' .. ARGV[4], ARGV[1], 'EX', ARGV[3])
+       return 'OK'`,
+      2,
+      `otp:alias:${rawId}`,
+      `otp:challenge:${challengeId}`,
+      challengeId,
+      challengePayload,
+      300,
+      rawId,
     );
 
-    const isNonProd = process.env.NODE_ENV !== 'production';
+    if (isExplicitDebug) {
+      return {
+        challengeId,
+        channel: 'DEBUG',
+        fallbackTriggered: false,
+        expiresInSeconds: 300,
+        debugOtp: otp,
+      };
+    }
 
     if (isPhone) {
       const smsFailKey = `sms:fail:${rawId}`;
@@ -86,54 +119,72 @@ export class IdentityController {
         if (!res.delivered) throw new Error('DLT_DELIVERY_FAILED');
         await this.redis.del(smsFailKey);
         return {
-          challengeId: rawId,
+          challengeId,
           channel: 'SMS',
           fallbackTriggered: false,
           expiresInSeconds: 300,
-          debugOtp: isNonProd ? otp : undefined,
+          debugOtp: isExplicitDebug ? otp : undefined,
         };
       } catch {
+        // Atomic generation-safe cleanup (PA10): only delete alias/raw challenge if it still points to this challengeId
+        const cleanupScript = `
+          if redis.call('GET', KEYS[1]) == ARGV[1] then
+            redis.call('DEL', KEYS[1])
+            redis.call('DEL', KEYS[2])
+          end
+          redis.call('DEL', KEYS[3])
+          return 1
+        `;
+        await this.redis.eval(
+          cleanupScript,
+          3,
+          `otp:alias:${rawId}`,
+          `otp:challenge:${rawId}`,
+          `otp:challenge:${challengeId}`,
+          challengeId,
+        );
         const fails = await this.redis.incr(smsFailKey);
         await this.redis.expire(smsFailKey, 900);
 
-        // Automatic fallback to email magic link after 2 failed SMS attempts (FR-IAM-002)
-        if (fails >= 2 && body.fallbackEmail) {
-          const magicToken = randomBytes(32).toString('hex');
-          const magicHash = createHash('sha256').update(magicToken).digest('hex');
-          await this.redis.set(
-            `magic:link:${magicHash}`,
-            JSON.stringify({ identifier: body.fallbackEmail.trim().toLowerCase() }),
-            'EX',
-            900, // 15-minute expiry (10 §2.1)
-          );
-          await this.mailGateway.sendMagicLinkEmail(
-            body.fallbackEmail,
-            `${process.env.PUBLIC_APP_URL}/auth/magic-link?token=${magicToken}`,
-          );
-          return {
-            challengeId: rawId,
-            channel: 'EMAIL_MAGIC_LINK_FALLBACK',
-            fallbackTriggered: true,
-            expiresInSeconds: 900,
-            debugOtp: isNonProd ? otp : undefined,
-          };
-        }
         throw new UnprocessableEntityException({
           code: 'SMS_DELIVERY_FAILED',
           title: 'SMS delivery failed',
-          detail: 'Could not deliver SMS OTP. Provide your business email to use a login link.',
+          detail: fails >= 2
+            ? 'Could not deliver SMS OTP. Request a new code using your verified email address.'
+            : 'Could not deliver SMS OTP. Try again or use your verified email address.',
         });
       }
     }
 
     // Email OTP / Magic Link
-    await this.mailGateway.sendMagicLinkEmail(rawId, `Your TradeCloseout verification code is ${otp}`);
+    try {
+      await this.mailGateway.sendOtpEmail(rawId, otp, 'SIGN_IN');
+    } catch (err) {
+      // Atomic generation-safe cleanup (PA10): only delete alias/raw challenge if it still points to this challengeId
+      const cleanupScript = `
+        if redis.call('GET', KEYS[1]) == ARGV[1] then
+          redis.call('DEL', KEYS[1])
+          redis.call('DEL', KEYS[2])
+        end
+        redis.call('DEL', KEYS[3])
+        return 1
+      `;
+      await this.redis.eval(
+        cleanupScript,
+        3,
+        `otp:alias:${rawId}`,
+        `otp:challenge:${rawId}`,
+        `otp:challenge:${challengeId}`,
+        challengeId,
+      );
+      throw err;
+    }
     return {
-      challengeId: rawId,
+      challengeId,
       channel: 'EMAIL',
       fallbackTriggered: false,
       expiresInSeconds: 300,
-      debugOtp: isNonProd ? otp : undefined,
+      debugOtp: isExplicitDebug ? otp : undefined,
     };
   }
 
@@ -155,44 +206,146 @@ export class IdentityController {
     @Req() req: AuthenticatedRequest,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const rawId = (body.identifier || body.challengeId || '').trim().toLowerCase();
+    let rawId = (body.identifier || '').trim().toLowerCase();
     const candidateCode = (body.otp || body.code || '').trim();
+    const challengeParam = (body.challengeId || '').trim();
 
-    const rawChallenge = await this.redis.get(`otp:challenge:${rawId}`);
-    if (!rawChallenge) {
+    const inputKey = challengeParam
+      ? `otp:challenge:${challengeParam}`
+      : (rawId ? `otp:challenge:${rawId}` : '');
+    const aliasKey = rawId ? `otp:alias:${rawId}` : '';
+
+    if (!inputKey && !aliasKey) {
       throw new UnauthorizedException({
         code: 'OTP_EXPIRED',
+        message: 'OTP_EXPIRED',
         title: 'Verification code expired',
         detail: 'Request a new verification code.',
       });
     }
 
-    const challenge = JSON.parse(rawChallenge) as { otpHash: string; attempts: number };
-    if (challenge.attempts >= 5) {
-      await this.redis.del(`otp:challenge:${rawId}`);
+    const candidateHash = rawId ? createHash('sha256').update(`${rawId}:${candidateCode}`).digest('hex') : '';
+
+    const rawResult = await this.redis.eval(
+      `local raw = redis.call('GET', KEYS[1])
+       local realChallengeId = nil
+       local challengeJson = nil
+
+       if raw then
+         if string.sub(raw, 1, 1) == '{' then
+           challengeJson = raw
+         else
+           realChallengeId = raw
+           challengeJson = redis.call('GET', 'otp:challenge:' .. realChallengeId)
+         end
+       elseif KEYS[2] ~= '' then
+         local aliasTarget = redis.call('GET', KEYS[2])
+         if aliasTarget then
+           realChallengeId = aliasTarget
+           challengeJson = redis.call('GET', 'otp:challenge:' .. realChallengeId)
+         end
+       end
+
+       if not challengeJson or string.sub(challengeJson, 1, 1) ~= '{' then
+         return 'EXPIRED'
+       end
+
+       local ok, challenge = pcall(cjson.decode, challengeJson)
+       if not ok or type(challenge) ~= 'table' or not challenge.identifier then
+         return 'EXPIRED'
+       end
+
+       realChallengeId = challenge.id or realChallengeId
+
+       -- Generation Binding (V01): Reject obsolete or superseded challenges
+       local currentActiveId = redis.call('GET', 'otp:alias:' .. challenge.identifier)
+       if not currentActiveId or currentActiveId ~= realChallengeId then
+         return 'EXPIRED'
+       end
+
+       local attemptsKey = 'otp:attempts:' .. (realChallengeId or 'default')
+       local challengeKey = 'otp:challenge:' .. (realChallengeId or 'default')
+
+       local attempts = redis.call('INCR', attemptsKey)
+       if attempts == 1 then
+         redis.call('EXPIRE', attemptsKey, 300)
+       end
+
+       if attempts > 5 then
+         redis.call('DEL', challengeKey)
+         redis.call('DEL', attemptsKey)
+         if currentActiveId == realChallengeId then
+           redis.call('DEL', 'otp:alias:' .. challenge.identifier)
+           redis.call('DEL', 'otp:challenge:' .. challenge.identifier)
+         end
+         return 'MAX'
+       end
+
+       -- Hash-only validation (V01): Compute SHA-1 over salt:candidateCode
+       if not challenge.salt or not challenge.otpHash then
+         return 'EXPIRED'
+       end
+
+       local computedHash = redis.sha1hex(challenge.salt .. ':' .. ARGV[1])
+       if challenge.otpHash ~= computedHash then
+         return 'INVALID'
+       end
+
+       -- Success: Atomically consume authoritative challenge, shared attempts, and clean alias only if current
+       redis.call('DEL', challengeKey)
+       redis.call('DEL', attemptsKey)
+       local activeId = redis.call('GET', 'otp:alias:' .. challenge.identifier)
+       if activeId == realChallengeId then
+         redis.call('DEL', 'otp:alias:' .. challenge.identifier)
+         redis.call('DEL', 'otp:challenge:' .. challenge.identifier)
+       end
+       return cjson.encode({ status = 'OK', identifier = challenge.identifier })`,
+      2,
+      inputKey || aliasKey,
+      aliasKey || inputKey,
+      candidateCode,
+    );
+
+    let verifyOutcome = 'EXPIRED';
+    if (typeof rawResult === 'string') {
+      try {
+        const parsed = JSON.parse(rawResult);
+        if (parsed && parsed.status === 'OK') {
+          verifyOutcome = 'OK';
+          if (parsed.identifier) rawId = parsed.identifier;
+        } else {
+          verifyOutcome = rawResult;
+        }
+      } catch {
+        verifyOutcome = rawResult;
+      }
+    }
+
+    if (verifyOutcome === 'EXPIRED') {
+      throw new UnauthorizedException({
+        code: 'OTP_EXPIRED',
+        message: 'OTP_EXPIRED',
+        title: 'Verification code expired',
+        detail: 'Request a new verification code.',
+      });
+    }
+    if (verifyOutcome === 'MAX') {
       throw new UnauthorizedException({
         code: 'OTP_MAX_ATTEMPTS',
+        message: 'OTP_MAX_ATTEMPTS',
         title: 'Too many failed attempts',
         detail: 'Maximum verification attempts exceeded. Request a new code.',
       });
     }
 
-    const candidateHash = createHash('sha256').update(`${rawId}:${candidateCode}`).digest('hex');
-    const expectedBuf = Buffer.from(challenge.otpHash, 'hex');
-    const candidateBuf = Buffer.from(candidateHash, 'hex');
-
-    if (expectedBuf.length !== candidateBuf.length || !timingSafeEqual(expectedBuf, candidateBuf)) {
-      challenge.attempts += 1;
-      await this.redis.set(`otp:challenge:${rawId}`, JSON.stringify(challenge), 'KEEPTTL');
+    if (verifyOutcome !== 'OK') {
       throw new UnauthorizedException({
         code: 'OTP_INVALID',
+        message: 'OTP_INVALID',
         title: 'Invalid verification code',
         detail: 'The verification code entered is incorrect.',
       });
     }
-
-    // Single-use token: delete immediately on match (NFR-SEC-004)
-    await this.redis.del(`otp:challenge:${rawId}`);
 
     const client = await this.pool.connect();
     try {
@@ -221,7 +374,6 @@ export class IdentityController {
           `SELECT org_id FROM memberships WHERE user_id = $1 AND status = 'ACTIVE' ORDER BY joined_at DESC LIMIT 1`,
           [userId],
         );
-        console.log('[DEBUG verifyOtp]', { rawId, idType, userId, membershipsCount: memberships.length, memberships });
         if (memberships.length === 0) {
           throw new UnauthorizedException({
             code: 'NO_ACTIVE_ORG',
@@ -288,8 +440,8 @@ export class IdentityController {
           sessionTokenHash,
           csrfTokenHash,
           activeOrgId,
-          req.ip || '0.0.0.0',
-          req.headers['user-agent'] || 'unknown',
+          req?.ip || '0.0.0.0',
+          req?.headers?.['user-agent'] || 'unknown',
         ],
       );
 
@@ -300,18 +452,18 @@ export class IdentityController {
           uuidv7(),
           activeOrgId,
           userId,
-          req.ip || '0.0.0.0',
-          req.headers['user-agent'] || 'unknown',
-          (req.headers['x-request-id'] as string) || 'req_auth',
+          req?.ip || '0.0.0.0',
+          req?.headers?.['user-agent'] || 'unknown',
+          (req?.headers?.['x-request-id'] as string) || 'req_auth',
         ],
       );
 
       await client.query('COMMIT');
 
-      const isProd = process.env.NODE_ENV === 'production';
+      const isProductionLike = process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging';
       res.cookie('tc_session', rawSessionToken, {
         httpOnly: true,
-        secure: isProd,
+        secure: isProductionLike,
         sameSite: 'lax',
         path: '/',
         maxAge: 30 * 24 * 60 * 60 * 1000,
@@ -321,7 +473,7 @@ export class IdentityController {
         userId,
         activeOrgId,
         csrfToken: rawCsrfToken,
-        sessionToken: rawSessionToken,
+        sessionToken: isProductionLike ? undefined : rawSessionToken,
         user: {
           id: userId,
           email: idType === 'EMAIL' ? rawId : undefined,
@@ -375,14 +527,33 @@ export class IdentityController {
   @Get('orgs')
   @UseGuards(SessionCsrfGuard)
   async getOrgs(@Req() req: AuthenticatedRequest) {
-    const { rows } = await this.pool.query(
-      `SELECT o.id, o.legal_name, o.display_name, m.role
-         FROM memberships m
-         JOIN organisations o ON o.id = m.org_id
-        WHERE m.user_id = $1 AND m.status = 'ACTIVE'`,
-      [req.auth.userId],
-    );
-    return rows;
+    if ((req as any).userContext?.actorType === 'GUEST' || !req.auth?.userId) {
+      return [];
+    }
+
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `SELECT set_config('app.current_user', $1, true),
+                set_config('app.current_org', $2, true)`,
+        [req.auth.userId, req.auth.activeOrgId || '00000000-0000-0000-0000-000000000000'],
+      );
+      const { rows } = await client.query(
+        `SELECT o.id, o.legal_name, o.display_name, m.role
+           FROM memberships m
+           JOIN organisations o ON o.id = m.org_id
+          WHERE m.user_id = $1 AND m.status = 'ACTIVE'`,
+        [req.auth.userId],
+      );
+      await client.query('COMMIT');
+      return rows;
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
   /**
@@ -391,30 +562,58 @@ export class IdentityController {
    */
   @Post('switch-org')
   @UseGuards(SessionCsrfGuard)
-  @HttpCode(HttpStatus.NO_CONTENT)
+  @HttpCode(HttpStatus.OK)
   async switchActiveOrg(
     @Body() body: { targetOrgId: string },
     @Req() req: AuthenticatedRequest,
   ) {
-    const { rows } = await this.pool.query(
-      `SELECT id FROM memberships
-        WHERE org_id = $1 AND user_id = $2 AND status = 'ACTIVE'
-        LIMIT 1`,
-      [body.targetOrgId, req.auth.userId],
-    );
-
-    if (rows.length === 0) {
-      throw new NotFoundException({
-        code: 'NOT_FOUND',
-        title: 'Organisation membership not found',
-        detail: 'You do not have an active membership in the requested organisation.',
-      });
+    if ((req as any).userContext?.actorType === 'GUEST') {
+      throw new UnauthorizedException('GUEST_ORGANISATION_SWITCH_DENIED');
+    }
+    if (!body?.targetOrgId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.targetOrgId)) {
+      throw new UnprocessableEntityException({ code: 'INVALID_TARGET_ORGANISATION' });
     }
 
-    await this.pool.query(
-      `UPDATE sessions SET active_org_id = $1 WHERE id = $2`,
-      [body.targetOrgId, req.auth.sessionId],
-    );
+    const client = await this.pool.connect();
+    const csrfToken = randomBytes(32).toString('hex');
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `SELECT set_config('app.current_org', $1, true),
+                set_config('app.current_org_id', $1, true),
+                set_config('app.current_user', $2, true)`,
+        [body.targetOrgId, req.auth.userId],
+      );
+      const { rows: memberships } = await client.query(
+        `SELECT m.id FROM memberships m
+          JOIN organisations o ON o.id = m.org_id AND o.status = 'ACTIVE'
+          WHERE m.org_id = $1 AND m.user_id = $2 AND m.status = 'ACTIVE'
+          LIMIT 1`,
+        [body.targetOrgId, req.auth.userId],
+      );
+      if (!memberships.length) {
+        throw new NotFoundException({
+          code: 'NOT_FOUND',
+          title: 'Organisation membership not found',
+          detail: 'You do not have an active membership in the requested organisation.',
+        });
+      }
+
+      const { rowCount } = await client.query(
+        `UPDATE sessions
+            SET active_org_id = $1, csrf_token_hash = $2
+          WHERE id = $3 AND user_id = $4 AND revoked_at IS NULL AND expires_at > now()`,
+        [body.targetOrgId, createHash('sha256').update(csrfToken).digest('hex'), req.auth.sessionId, req.auth.userId],
+      );
+      if (!rowCount) throw new UnauthorizedException('SESSION_EXPIRED');
+      await client.query('COMMIT');
+      return { activeOrgId: body.targetOrgId, csrfToken };
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
   /**
@@ -422,7 +621,8 @@ export class IdentityController {
    * Revokes the current session immediately and clears HttpOnly cookie.
    */
   @Post('logout')
-  @HttpCode(HttpStatus.OK)
+  @UseGuards(SessionCsrfGuard)
+  @HttpCode(HttpStatus.NO_CONTENT)
   async logout(@Req() req: any, @Res({ passthrough: true }) res: Response) {
     const rawSessionToken =
       req.cookies?.['tc_session'] ||
@@ -430,28 +630,26 @@ export class IdentityController {
     if (rawSessionToken && typeof rawSessionToken === 'string') {
       const tokenHash = createHash('sha256').update(rawSessionToken).digest('hex');
       await this.pool.query(
-        `UPDATE sessions SET revoked_at = now() WHERE session_token_hash = $1`,
+        `UPDATE sessions SET revoked_at = now() WHERE token_hash = $1 AND revoked_at IS NULL`,
         [tokenHash],
-      ).catch(() => {});
+      );
     }
     res.clearCookie('tc_session', {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging',
       sameSite: 'lax',
       path: '/',
     });
-    return { ok: true, message: 'Logged out successfully' };
+    return undefined;
   }
 
-  @Get('logout')
-  @HttpCode(HttpStatus.OK)
-  async logoutGet(@Req() req: any, @Res({ passthrough: true }) res: Response) {
-    return this.logout(req, res);
-  }
 }
 
-class HttpExceptionWithRetry extends UnauthorizedException {
+class HttpExceptionWithRetry extends HttpException {
   constructor(status: number, code: string, detail: string, retryAfterSeconds: number) {
-    super({ status, code, title: 'Rate limit exceeded', detail, retryable: true, retryAfterSeconds });
+    super(
+      { status, code, title: 'Rate limit exceeded', detail, retryable: true, retryAfterSeconds },
+      HttpStatus.TOO_MANY_REQUESTS,
+    );
   }
 }

@@ -9,6 +9,12 @@ export interface TenantActorContext {
   ip: string;
   userAgent: string;
   requestId: string;
+  orgRole?: string;
+  projectRole?: string;
+  guestGrantId?: string;
+  guestProjectId?: string;
+  guestCapabilities?: string[];
+  guestScope?: Record<string, any>;
 }
 
 export interface DomainOutboxEvent {
@@ -63,7 +69,7 @@ export async function withTenantTransaction<T>(
     await client.query('BEGIN');
 
     // Bind transaction-local settings for PostgreSQL RLS policies (08 §5.2)
-    await client.query(`SELECT set_config('app.current_org', $1, true)`, [ctx.orgId]);
+    await client.query(`SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`, [ctx.orgId]);
     await client.query(`SELECT set_config('app.current_user', $1, true)`, [ctx.userId]);
 
     const result = await work(client, (ev) => stagedEvents.push(ev));
@@ -80,10 +86,15 @@ export async function withTenantTransaction<T>(
           ev.projectId ?? null,
           ev.eventType,
           JSON.stringify({
+            eventId,
+            orgId: ctx.orgId,
+            projectId: ev.projectId ?? null,
             entityType: ev.entityType,
             entityId: ev.entityId,
+            packageId: ev.entityType === 'HANDOVER_PACKAGE' ? ev.entityId : undefined,
             actorUserId: ctx.userId,
             requestId: ctx.requestId,
+            ...(ev.afterJson || {}),
           }),
         ],
       );

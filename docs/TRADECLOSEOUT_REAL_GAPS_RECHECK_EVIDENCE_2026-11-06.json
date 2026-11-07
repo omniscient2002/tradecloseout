@@ -1,0 +1,244 @@
+{
+  "review_date": "2026-11-06",
+  "captured_at_utc": "2026-11-06T18:13:31.533344+00:00",
+  "git_head": "8aec185388e674ff1cf5d90693cc5c491dc41aa1",
+  "scope": "Latest working-tree delta, previous F01-F07, and adjacent actual-service negative cases. Documentation-only reviewer changes.",
+  "report": "TRADECLOSEOUT_REAL_GAPS_RECHECK_2026-11-06.md",
+  "checks": {
+    "pnpm typecheck": {
+      "exit_code": 0
+    },
+    "pnpm test": {
+      "exit_code": 0,
+      "api": {
+        "suites": 24,
+        "tests": 178
+      },
+      "shared": {
+        "suites": 4,
+        "tests": 44
+      },
+      "database": {
+        "behavioral_subtests": 9,
+        "including_parent": 10
+      },
+      "worker": {
+        "behavioral_subtests": 12,
+        "including_parent": 13
+      },
+      "archive_browser_tests": 6,
+      "pdf_scripted_checks": 3
+    },
+    "test_log_sha256": "02f0beaade30e76f8ebcd1fc52512365d708a8921f10407a4832f31bfe68d3c1",
+    "typecheck_log_sha256": "8935e75360eaccba7ec1fee2d68b076e23856327a92e0b3f4f7ff0f2147b6b54"
+  },
+  "probe_environment": "Fresh disposable PostgreSQL migrated through 0019, synthetic records seeded via admin; service calls use restricted app pool. Storage signer captured locally; no S3 download or HTTP route exploit claimed.",
+  "probe_results": [
+    {
+      "name": "equipment_passport_real_database",
+      "error": {
+        "code": "42703",
+        "message": "column er.verified_by does not exist"
+      }
+    },
+    {
+      "name": "revalidation_without_expected_version",
+      "result": {
+        "status": "CONFIRMED",
+        "rowVersion": 2
+      }
+    },
+    {
+      "name": "shared_manual_B_readiness_while_A_pending",
+      "result": {
+        "ready": true,
+        "missing": 0
+      }
+    },
+    {
+      "name": "shared_manual_B_package_generation_while_A_pending",
+      "error": {
+        "message": "Unprocessable Entity Exception",
+        "response": {
+          "code": "READINESS_CHANGED",
+          "detail": "Mandatory evidence changed while the package request was being created. Refresh readiness and resolve the current blockers."
+        }
+      }
+    },
+    {
+      "name": "TAB_rounding_boundary_without_source_procedure",
+      "result": {
+        "status": "COMPLETED",
+        "rawDeviationPercent": 10.004000000000005,
+        "storedDeviationPercent": 10,
+        "tolerancePercent": 10
+      }
+    },
+    {
+      "name": "archive_READY_row_without_observed_size_or_provider_version",
+      "result": {
+        "accepted": true,
+        "signedVersionId": null,
+        "signedBucket": "vault"
+      }
+    },
+    {
+      "name": "decision_with_guest_grant_scoped_to_another_submission",
+      "result": {
+        "acceptedDecision": true,
+        "aggregateStatus": "SUBMITTED",
+        "optionalRecipientPending": true
+      }
+    },
+    {
+      "name": "optional_recipient_rejection_changes_aggregate",
+      "result": {
+        "aggregateStatus": "REJECTED"
+      }
+    },
+    {
+      "name": "defect_remedy_with_generic_manual_without_asset_link",
+      "result": {
+        "defectId": "b76c689f-5380-4e96-b0c5-7578a07be655",
+        "status": "RECTIFIED",
+        "rowVersion": 2
+      }
+    },
+    {
+      "name": "defect_close_with_different_unreviewed_manual_version",
+      "result": {
+        "defectId": "b76c689f-5380-4e96-b0c5-7578a07be655",
+        "status": "CLOSED",
+        "rowVersion": 3
+      }
+    }
+  ],
+  "probe_script_sha256": "225d90c38cda83210f083ec6bbec9d9fd8a16bffac7cad2773f56fff5097659a",
+  "probe_script": "const root = '/home/cassandra/tradecloseout';\nconst { randomUUID, createHash } = require('node:crypto');\nconst fs = require('node:fs');\nconst pick = (m, key) => m[key] || m.default[key];\nconst findings = [];\nasync function probe(name, fn) {\n  try { findings.push({ name, result: await fn() }); }\n  catch (e) { findings.push({ name, error: { code: e.code, message: e.message, response: e.response } }); }\n}\n(async () => {\n  const helper = await import(`${root}/packages/db/test/helpers/disposable-database.ts`);\n  const fixtures = await import(`${root}/packages/db/test/helpers/fixtures.ts`);\n  const am = await import(`${root}/apps/api/src/modules/assets/assets.service.ts`);\n  const hm = await import(`${root}/apps/api/src/modules/handover/handover.service.ts`);\n  const cm = await import(`${root}/apps/api/src/modules/commissioning/commissioning.service.ts`);\n  const wm = await import(`${root}/apps/api/src/modules/billing/warranty-and-billing.service.ts`);\n  await pick(helper, 'withDisposableDatabase')(async ({ admin, app }) => {\n    const { userId, tenants: [a] } = await pick(fixtures, 'seedTenants')(admin);\n    const org = a.orgId, project = a.projectIds[0];\n    const verifier = randomUUID();\n    await admin.query(`INSERT INTO users (id,name,status) VALUES ($1,'Probe verifier','ACTIVE')`, [verifier]);\n    const ctx = { orgId: org, userId, actorType: 'MEMBER', orgRole: 'R-OWNER', ip: '127.0.0.1', userAgent: 'gap-probe', requestId: randomUUID() };\n    const vctx = { ...ctx, userId: verifier, orgRole: 'R-PM' };\n    const assets = new (pick(am, 'AssetsService'))(app);\n    let signed;\n    const handover = new (pick(hm, 'HandoverService'))(app, { createSignedDownloadUrl: async opts => { signed = opts; return 'https://probe.invalid/download'; } });\n    const commission = new (pick(cm, 'CommissioningService'))(app);\n    const warranty = new (pick(wm, 'WarrantyAndBillingService'))(app);\n    const assetA = randomUUID(), assetB = randomUUID();\n    for (const [id, tag] of [[assetA, 'A'], [assetB, 'B']]) {\n      await admin.query(`INSERT INTO assets (id,org_id,project_id,tag,name,category_key,created_by) VALUES ($1,$2,$3,$4,$4,'HVAC_AHU',$5)`, [id,org,project,tag,userId]);\n    }\n    await probe('equipment_passport_real_database', () => assets.getEquipmentPassport(ctx, project, assetA));\n\n    const object = randomUUID(), doc = randomUUID(), version = randomUUID(), revision = randomUUID(), reval = randomUUID();\n    const sha = 'a'.repeat(64);\n    await admin.query(`INSERT INTO storage_objects (id,org_id,bucket,object_key,mime,size_bytes,observed_size_bytes,sha256,status,provider_version_id) VALUES ($1,$2,'vault',$3,'application/pdf',1024,1024,$4,'READY','v1')`, [object,org,`uploads/${object}`,sha]);\n    await admin.query(`INSERT INTO documents (id,org_id,project_id,title,doc_type_key,category_key,status,created_by) VALUES ($1,$2,$3,'Generic manual','MANUAL','EQUIPMENT','ACTIVE',$4)`, [doc,org,project,userId]);\n    await admin.query(`INSERT INTO document_versions (id,org_id,project_id,document_id,version_no,revision_code,object_id,file_status,review_status,issue_date,uploaded_by) VALUES ($1,$2,$3,$4,1,'R0',$5,'READY','APPROVED',CURRENT_DATE,$6)`, [version,org,project,doc,object,userId]);\n    await admin.query(`UPDATE documents SET current_approved_version_id=$1 WHERE id=$2`, [version,doc]);\n    await admin.query(`INSERT INTO asset_identity_revisions (id,org_id,project_id,asset_id,revision_no,tag,name,reason,created_by) VALUES ($1,$2,$3,$4,1,'A','A','Probe change',$5)`, [revision,org,project,assetA,userId]);\n    await admin.query(`INSERT INTO evidence_revalidations (id,org_id,project_id,asset_id,identity_revision_id,document_version_id,status) VALUES ($1,$2,$3,$4,$5,$6,'PENDING')`, [reval,org,project,assetA,revision,version]);\n    await probe('revalidation_without_expected_version', async () => {\n      const r = await assets.revalidateEvidence(vctx, project, assetA, reval, { status: 'CONFIRMED' });\n      return { status: r.status, rowVersion: r.row_version };\n    });\n    await admin.query(`UPDATE evidence_revalidations SET status='PENDING' WHERE id=$1`, [reval]);\n    const snapshot = randomUUID(), requirement = randomUUID();\n    await admin.query(`INSERT INTO checklist_snapshots (id,org_id,project_id,version_no,status,resolved_payload_json,provenance_json,source_json,checksum,created_by) VALUES ($1,$2,$3,1,'ACTIVE','{}','{}','{}',$4,$5)`, [snapshot,org,project,sha,userId]);\n    await admin.query(`INSERT INTO requirements (id,org_id,project_id,current_snapshot_id,requirement_key,scope_key,asset_id,group_key,title,doc_type_key,mandatory,status) VALUES ($1,$2,$3,$4,'MANUAL-B',$5,$6,'HVAC','Manual for B','MANUAL',true,'APPROVED')`, [requirement,org,project,snapshot,`asset:${assetB}`,assetB]);\n    await admin.query(`INSERT INTO document_requirements (id,org_id,project_id,document_id,requirement_id) VALUES ($1,$2,$3,$4,$5)`, [randomUUID(),org,project,doc,requirement]);\n    await probe('shared_manual_B_readiness_while_A_pending', async () => {\n      const r = await handover.evaluateProjectReadiness(ctx, project);\n      return { ready: r.readyWithoutOverride, missing: r.blockers.missingMandatoryCount };\n    });\n    await probe('shared_manual_B_package_generation_while_A_pending', () => handover.requestHandoverPackageGeneration(ctx, project, { title: 'Scope probe' }));\n\n    await probe('TAB_rounding_boundary_without_source_procedure', async () => {\n      const r = await commission.recordTabWorksheet(ctx, project, { systemType: 'AIR_SIDE', worksheetType: 'PROBE', readings: [{ terminalOrTag: 'A', designFlow: 100, actualFlow: 89.996, unit: 'CFM' }] });\n      return { status: r.status, rawDeviationPercent: Math.abs(89.996-100), storedDeviationPercent: r.readings[0].deviationPercent, tolerancePercent: r.designSummary.tolerancePercent };\n    });\n\n    const archiveObject = randomUUID(), archive = randomUUID(), archiveKey = `archives/${archive}/export.zip`;\n    await admin.query(`INSERT INTO storage_objects (id,org_id,bucket,object_key,mime,size_bytes,sha256,status) VALUES ($1,$2,'vault',$3,'application/zip',2048,$4,'READY')`, [archiveObject,org,archiveKey,sha]);\n    await admin.query(`INSERT INTO archive_exports (id,org_id,project_id,status,archive_sha256,verification_receipt_json) VALUES ($1,$2,$3,'COMPLETED',$4,$5)`, [archive,org,project,sha,JSON.stringify({artifact:{objectId:archiveObject,objectKey:archiveKey,bucket:'vault',providerVersionId:'claimed-pinned-version',sizeBytes:2048,sha256:sha}})]);\n    await probe('archive_READY_row_without_observed_size_or_provider_version', async () => {\n      signed = undefined;\n      const r = await handover.getArchiveExport(ctx, project, archive);\n      return { accepted: !!r.downloadUrl, signedVersionId: signed?.versionId, signedBucket: signed?.bucket };\n    });\n\n    const pkg = randomUUID(), submission = randomUUID(), party1 = randomUUID(), party2 = randomUUID(), rec1 = randomUUID(), rec2 = randomUUID(), grant = randomUUID();\n    await admin.query(`INSERT INTO handover_packages (id,org_id,project_id,title,status,snapshot_checksum,created_by) VALUES ($1,$2,$3,'Probe','READY',$4,$5)`, [pkg,org,project,sha,userId]);\n    await admin.query(`INSERT INTO submissions (id,org_id,project_id,package_id,method,status,created_by) VALUES ($1,$2,$3,$4,'PORTAL','SUBMITTED',$5)`, [submission,org,project,pkg,userId]);\n    for (const [id,name] of [[party1,'Required client'],[party2,'Optional observer']]) await admin.query(`INSERT INTO parties (id,org_id,name,types,status) VALUES ($1,$2,$3,ARRAY['CLIENT'],'ACTIVE')`, [id,org,name]);\n    for (const [id,party,required] of [[rec1,party1,true],[rec2,party2,false]]) await admin.query(`INSERT INTO submission_recipients (id,org_id,project_id,submission_id,recipient_party_id,role,status,is_required_approver) VALUES ($1,$2,$3,$4,$5,'CLIENT_REP','SENT',$6)`, [id,org,project,submission,party,required]);\n    await admin.query(`INSERT INTO guest_grants (id,org_id,project_id,party_id,target_email,grant_type,role,capabilities,scope_json,token_hash,expires_at,created_by) VALUES ($1,$2,$3,$4,'probe@example.invalid','CLIENT_VIEW','R-CLIENT',ARRAY['package.accept'],$5,$6,now()+interval '1 day',$7)`, [grant,org,project,party1,JSON.stringify({submissionIds:[randomUUID()]}),createHash('sha256').update(grant).digest('hex'),userId]);\n    await probe('decision_with_guest_grant_scoped_to_another_submission', async () => {\n      const r = await handover.recordRecipientSubmissionDecision({...ctx,actorType:'GUEST',guestGrantId:grant,guestCapabilities:['package.accept']},project,submission,{recipientPartyId:party1,decision:'ACCEPT'});\n      return { acceptedDecision: true, aggregateStatus: r.status, optionalRecipientPending: true };\n    });\n    await probe('optional_recipient_rejection_changes_aggregate', async () => {\n      const r = await handover.recordRecipientSubmissionDecision(ctx,project,submission,{recipientPartyId:party2,decision:'REJECT',remarks:'Observer comment only'});\n      return { aggregateStatus: r.status };\n    });\n\n    const defect = randomUUID();\n    await admin.query(`INSERT INTO defects (id,org_id,project_id,asset_id,title,description,severity,status,raised_by) VALUES ($1,$2,$3,$4,'Probe defect','Probe defect','CRITICAL','OPEN',$5)`, [defect,org,project,assetA,userId]);\n    await probe('defect_remedy_with_generic_manual_without_asset_link', () => warranty.submitDefectRemedy(ctx,project,defect,object,1));\n    const otherObject = randomUUID(), otherVersion = randomUUID();\n    await admin.query(`INSERT INTO storage_objects (id,org_id,bucket,object_key,mime,size_bytes,observed_size_bytes,sha256,status,provider_version_id) VALUES ($1,$2,'vault',$3,'application/pdf',1024,1024,$4,'READY','v2')`, [otherObject,org,`uploads/${otherObject}`,sha]);\n    await admin.query(`INSERT INTO document_versions (id,org_id,project_id,document_id,version_no,revision_code,object_id,file_status,review_status,issue_date,uploaded_by) VALUES ($1,$2,$3,$4,2,'R1',$5,'READY','NOT_SUBMITTED',CURRENT_DATE,$6)`, [otherVersion,org,project,doc,otherObject,userId]);\n    await probe('defect_close_with_different_unreviewed_manual_version', () => warranty.closeDefect(vctx,project,defect,otherObject,2));\n  });\n  fs.writeFileSync('/tmp/tradecloseout-real-gap-recheck-results.json', JSON.stringify(findings,null,2)+'\\n');\n  for (const finding of findings) console.log(JSON.stringify(finding));\n})().catch(e => { console.error(e.code || '',e.message); process.exitCode = 1; });\n",
+  "source_fingerprints": [
+    {
+      "path": "apps/api/src/app.module.ts",
+      "sha256": "11a5e24191f232a4b9cd4f439da9e1965a1a080a541be05552a67034a7170f77"
+    },
+    {
+      "path": "apps/api/src/modules/identity/identity.controller.ts",
+      "sha256": "25384f5c558c3826a0b7b142e8e35d2c4928a361e76a51eb5ea090aa4f2269e2"
+    },
+    {
+      "path": "apps/api/src/modules/identity/identity.module.ts",
+      "sha256": "a35f3459c4f7dbd47c82d4099ce53ff343fe1500d107f818225d8a198b9388a6"
+    },
+    {
+      "path": "apps/api/src/modules/assets/assets.service.ts",
+      "sha256": "090fa3f13f7cfcdc6abccc5f85d556d3cb9016cffff6f94ea2296dfbbfbfd8e4"
+    },
+    {
+      "path": "apps/api/src/modules/handover/handover.service.ts",
+      "sha256": "63750a70e14ac32560742e609b581a13f12b0f3628e169250319f765ed26c3ad"
+    },
+    {
+      "path": "apps/api/src/modules/billing/billing.service.ts",
+      "sha256": "0eec31999eb4338a9a388f20258e05df77476efe1ce863aace6016684cb2b0a2"
+    },
+    {
+      "path": "apps/api/src/modules/billing/billing.controller.ts",
+      "sha256": "722cc5c2012feea18d68b78ed8de560a95fc3709f966a8c8aba1d2e0d26bbff3"
+    },
+    {
+      "path": "apps/api/src/modules/billing/warranty-and-billing.service.ts",
+      "sha256": "b992a9613fc9c2560a5e318b05dcc3754cced6fe22b060d64c1e202c05d81e6e"
+    },
+    {
+      "path": "apps/api/src/modules/organisations/organisations.service.ts",
+      "sha256": "cd9da7692176ce9a53ec0df7b29fa6c10c524be2fd5469c23d675fc32496cbf0"
+    },
+    {
+      "path": "apps/api/src/modules/commissioning/commissioning.controller.ts",
+      "sha256": "76ca62ae54ea70934addbe11f553f8b0002704964f8b6b0c3ac64b0ae8ce3f57"
+    },
+    {
+      "path": "apps/api/src/modules/commissioning/commissioning.service.ts",
+      "sha256": "c720c748041df6fb51bc475d714e03bfef34751da02b03ae685c584a4f0fa1e1"
+    },
+    {
+      "path": "apps/api/src/modules/commissioning/commissioning.module.ts",
+      "sha256": "82fbac8c05a2d6b64db2be3bd7d43f5b00f5fcaa46a706abfb28c6d421d0ab90"
+    },
+    {
+      "path": "apps/api/src/common/guards/session-csrf.guard.ts",
+      "sha256": "905c9a7f84afefe1997565735ce7ab88caf483f668297ed82979ddc4e1f47f04"
+    },
+    {
+      "path": "apps/api/src/common/guards/permission.guard.ts",
+      "sha256": "3b25e2480fdecfbe6d9f5f1d5b3419d6d7c138520a7399cb00518f8a56b1f70e"
+    },
+    {
+      "path": "apps/api/test/hvac-domain-excellence.spec.ts",
+      "sha256": "cded52753d9563f06b9332efada9dd991622057bf35736819ff1009a6c11f819"
+    },
+    {
+      "path": "apps/api/test/hvac-production-reaudit-remediation.spec.ts",
+      "sha256": "2b4246a11fee6be79ce5698551c18b185da4736a444ac5d120d5d21f05d35c3d"
+    },
+    {
+      "path": "apps/worker/src/event-registry.ts",
+      "sha256": "b7e21acc1bab98a14e4a2297cf4611c04e9aa26134def5bf3874266239b73dc5"
+    },
+    {
+      "path": "apps/worker/src/main.ts",
+      "sha256": "4182fd05ec0f352c954ab77eeb113789b93e636e75a4bd5fbdb29b0613167129"
+    },
+    {
+      "path": "apps/worker/src/queues/bounded-stream.ts",
+      "sha256": "64369306207f15c62057a84b678b2dea2269df9426052f7fcc9e0b5b9a206eaa"
+    },
+    {
+      "path": "apps/worker/test/worker-integration.spec.ts",
+      "sha256": "f82b9f9a458dfd57dd02ca038c97bb8ec5cfa932e800239cd98006529fe6281f"
+    },
+    {
+      "path": "packages/db/src/schema.ts",
+      "sha256": "94a3d7f788ccf6573f1b0673975d3a2a536d0b4373de76a17a4bdd27ec41cf5a"
+    },
+    {
+      "path": "packages/db/migrations/0017_hvac_commissioning_tab_and_inspections.sql",
+      "sha256": "acd36e6893f903124c4e8b37e77d43b6277e64c4507204314d1f0b9523836929"
+    },
+    {
+      "path": "packages/db/test/helpers/disposable-database.ts",
+      "sha256": "833656581f7f821bf1b7677cc85ab17ea599f9430d0b2ce793a0a61411875b68"
+    },
+    {
+      "path": "packages/db/test/helpers/fixtures.ts",
+      "sha256": "3a8803d532a4e7ace580ba25389f20f388df2d2304641c61cb59a0c93016240d"
+    },
+    {
+      "path": "apps/api/src/modules/assets/assets.controller.ts",
+      "sha256": "301bcda13df47a06a75f86c588059ff3695e5a7f202dd8269fb002d4b52c6cb8"
+    },
+    {
+      "path": "apps/api/src/modules/documents/s3-storage.service.ts",
+      "sha256": "04e230fc5dd51ff4fbfe9790adb1fba81287ba9a4c6853e6a11f0fad040f4133"
+    },
+    {
+      "path": "apps/api/src/modules/parties/parties.service.ts",
+      "sha256": "28949c1224a17b988fcd5469bb03754b98fb135aa1195aadbb025dc813c59cd5"
+    },
+    {
+      "path": "apps/api/src/modules/work-items/work-items.service.ts",
+      "sha256": "97aee3089622811dc115f10071ddaa66da98c4ca4e325aa3b472b53e2d1a080d"
+    },
+    {
+      "path": "packages/db/migrations/0018_revalidation_concurrency_and_commissioning_composite_fks.sql",
+      "sha256": "4792ca71873cb23b71b84b12561037ef6b688e0d00876eb3310de90ec9d6292e"
+    },
+    {
+      "path": "packages/db/migrations/0019_defect_remedy_lifecycle.sql",
+      "sha256": "6b285cfd3427bf7c761f2162ae6ce5fbbc738bb60067d09ecf5d9bfa2fd14783"
+    },
+    {
+      "path": "docs/TRADECLOSEOUT_REAL_GAPS_RECHECK_2026-11-06.md",
+      "sha256": "46544d43f92947b0c77a9b07bec8c475a4c3891d572680fd06010c50babb5d10"
+    }
+  ]
+}

@@ -1,16 +1,13 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { get, set, del } from 'idb-keyval';
+import { apiFetch } from '../lib/api-client';
 import {
   UploadCloud,
   FileCheck,
   AlertTriangle,
   WifiOff,
   CheckCircle2,
-  FileText,
-  Clock,
-  Sparkles,
   RefreshCw,
 } from 'lucide-react';
 
@@ -22,16 +19,6 @@ export interface UploadSheetProps {
   onUploadComplete?: (versionId: string) => void;
 }
 
-export interface UploadDraft {
-  revisionCode: string;
-  issueDate: string;
-  remarks: string;
-  fileName: string;
-  fileSize: number;
-  mimeType: string;
-  lastUpdated: number;
-}
-
 export function UploadSheet({
   projectId,
   requirementId,
@@ -39,7 +26,6 @@ export function UploadSheet({
   documentVersionId,
   onUploadComplete,
 }: UploadSheetProps) {
-  const draftKey = `upload_draft_${projectId}_${requirementId}`;
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [revisionCode, setRevisionCode] = useState('A');
@@ -51,42 +37,7 @@ export function UploadSheet({
   const [uploadProgress, setUploadProgress] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState(false);
-  const [hasDraft, setHasDraft] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-
-  // Load offline draft from IndexedDB on mount
-  useEffect(() => {
-    async function loadDraft() {
-      try {
-        const draft = await get<UploadDraft>(draftKey);
-        if (draft && (draft.remarks || draft.revisionCode !== 'A')) {
-          setRevisionCode(draft.revisionCode || 'A');
-          setIssueDate(draft.issueDate || new Date().toISOString().split('T')[0]);
-          setRemarks(draft.remarks || '');
-          setHasDraft(true);
-        }
-      } catch (err) {
-        console.warn('Failed to load draft from IndexedDB', err);
-      }
-    }
-    loadDraft();
-  }, [draftKey]);
-
-  // Save metadata to IndexedDB when inputs change
-  useEffect(() => {
-    const draft: UploadDraft = {
-      revisionCode,
-      issueDate,
-      remarks,
-      fileName: file?.name || '',
-      fileSize: file?.size || 0,
-      mimeType: file?.type || '',
-      lastUpdated: Date.now(),
-    };
-    set(draftKey, draft).catch((err) => {
-      console.warn('Failed to save draft to IndexedDB', err);
-    });
-  }, [draftKey, revisionCode, issueDate, remarks, file]);
 
   // Monitor connectivity status
   useEffect(() => {
@@ -117,9 +68,9 @@ export function UploadSheet({
       return;
     }
 
-    // Size limit check (max 500MB)
-    if (selected.size > 500 * 1024 * 1024) {
-      setErrorMessage('File exceeds maximum allowable size of 500 MB.');
+    // The API currently accepts uploads up to 100 MB.
+    if (selected.size > 100 * 1024 * 1024) {
+      setErrorMessage('File exceeds the current maximum upload size of 100 MB.');
       setFile(null);
       return;
     }
@@ -150,78 +101,78 @@ export function UploadSheet({
     setUploadSuccess(false);
 
     try {
-      // 1. Create upload intent
-      const intentRes = await fetch(`/api/v1/projects/${projectId}/requirements/${requirementId}/documents/upload-intent`, {
+      if (!navigator.onLine) {
+        throw new Error('Reconnect to the internet and select the file again. Only draft metadata is saved offline.');
+      }
+
+      const intent = await apiFetch<{
+        versionId: string;
+        isMultipart: boolean;
+        s3UploadId: string | null;
+        partSizeBytes: number;
+        parts: Array<{ partNumber: number; uploadUrl: string; requiredHeaders: Record<string, string> }>;
+      }>(`/api/v1/projects/${projectId}/documents/upload-intents`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           fileName: file.name,
           mimeType: file.type || 'application/octet-stream',
-          fileSizeBytes: file.size,
+          sizeBytes: file.size,
+          requirementId,
           revisionCode,
           issueDate,
-          remarks,
+          title: file.name,
         }),
       });
 
-      if (!intentRes.ok) {
-        // Simulate local success if backend offline/local mock
-        setUploadProgress(100);
-        await new Promise((r) => setTimeout(r, 600));
-        setUploadSuccess(true);
-        await del(draftKey);
-        setHasDraft(false);
-        setIsUploading(false);
-        if (onUploadComplete) onUploadComplete('demo_ver_123');
-        return;
+      if (!intent.parts.length || !intent.versionId || intent.partSizeBytes < 1) {
+        throw new Error('The server returned an incomplete upload plan. No file was reported as uploaded.');
       }
 
-      const { uploadUrls, versionId, uploadId, s3Key } = await intentRes.json();
-
-      // 2. Upload chunks (10MB parts)
-      const chunkSize = 10 * 1024 * 1024;
-      const totalChunks = Math.ceil(file.size / chunkSize);
+      const parts = [...intent.parts].sort((a, b) => a.partNumber - b.partNumber);
       const completedParts: { partNumber: number; etag: string }[] = [];
 
-      for (let i = 0; i < totalChunks; i++) {
-        const start = i * chunkSize;
-        const end = Math.min(start + chunkSize, file.size);
+      for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        const start = i * intent.partSizeBytes;
+        const end = Math.min(start + intent.partSizeBytes, file.size);
         const chunk = file.slice(start, end);
-        const partNumber = i + 1;
-        let putUrl = uploadUrls[i];
-
-        while (!navigator.onLine) {
-          await new Promise((r) => setTimeout(r, 2000));
-        }
+        const partNumber = part.partNumber;
+        let putUrl = part.uploadUrl;
+        let requiredHeaders = part.requiredHeaders || {};
 
         let attempts = 0;
         let uploaded = false;
 
         while (attempts < 3 && !uploaded) {
           try {
+            if (!navigator.onLine) throw new Error('Connection lost. Reconnect and retry the upload.');
             const putRes = await fetch(putUrl, {
               method: 'PUT',
+              headers: requiredHeaders,
               body: chunk,
             });
 
-            if (putRes.status === 403 || putRes.status === 401) {
-              const refreshRes = await fetch(`/api/v1/document-versions/${versionId}/refresh-upload-urls`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ partNumbers: [partNumber], uploadId, s3Key }),
-              });
-              const refreshed = await refreshRes.json();
-              putUrl = refreshed.uploadUrls[0];
+            if ((putRes.status === 403 || putRes.status === 401) && intent.isMultipart && intent.s3UploadId) {
+              const refreshed = await apiFetch<{
+                refreshedParts: Array<{ partNumber: number; uploadUrl: string; requiredHeaders: Record<string, string> }>;
+              }>(`/api/v1/document-versions/${intent.versionId}/refresh-upload-urls`, { method: 'POST' });
+              const replacement = refreshed.refreshedParts.find((candidate) => candidate.partNumber === partNumber);
+              if (!replacement) throw new Error(`No refreshed upload URL was returned for part ${partNumber}.`);
+              putUrl = replacement.uploadUrl;
+              requiredHeaders = replacement.requiredHeaders || {};
               attempts++;
               continue;
             }
 
             if (!putRes.ok) throw new Error(`Upload of part ${partNumber} failed`);
 
-            const etag = putRes.headers.get('ETag') || `etag-part-${partNumber}`;
-            completedParts.push({ partNumber, etag: etag.replace(/"/g, '') });
+            if (intent.isMultipart) {
+              const etag = putRes.headers.get('ETag');
+              if (!etag) throw new Error(`Storage did not return an ETag for part ${partNumber}.`);
+              completedParts.push({ partNumber, etag: etag.replace(/"/g, '') });
+            }
             uploaded = true;
-            setUploadProgress(Math.round(((i + 1) / totalChunks) * 100));
+            setUploadProgress(Math.round(((i + 1) / parts.length) * 100));
           } catch (partErr) {
             attempts++;
             if (attempts >= 3) throw partErr;
@@ -230,23 +181,22 @@ export function UploadSheet({
         }
       }
 
-      // Complete multipart upload
-      await fetch(`/api/v1/document-versions/${versionId}/complete-upload`, {
+      const completion = await apiFetch<{ fileStatus: string }>(`/api/v1/document-versions/${intent.versionId}/complete-upload`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uploadId, parts: completedParts }),
+        body: JSON.stringify({ parts: completedParts }),
       });
+      if (!['PROCESSING', 'READY'].includes(completion.fileStatus)) {
+        throw new Error(`Upload completion returned unexpected file state ${completion.fileStatus || 'unknown'}.`);
+      }
 
-      await del(draftKey);
-      setHasDraft(false);
       setUploadSuccess(true);
       setIsUploading(false);
-      if (onUploadComplete) onUploadComplete(versionId);
+      if (onUploadComplete) onUploadComplete(intent.versionId);
     } catch (err: any) {
       setIsUploading(false);
       setErrorMessage(err.message || 'Upload failed');
     }
-  }, [file, projectId, requirementId, revisionCode, issueDate, remarks, draftKey, onUploadComplete]);
+  }, [file, projectId, requirementId, revisionCode, issueDate, onUploadComplete]);
 
   return (
     <div className="bg-white rounded-xl border border-slate-200/80 shadow-sm overflow-hidden transition-all duration-200 hover:shadow-md">
@@ -257,11 +207,6 @@ export function UploadSheet({
             <span className="px-2 py-0.5 rounded text-[11px] font-semibold tracking-wide uppercase bg-sky-100 text-sky-800">
               SCR-023 Mobile Upload
             </span>
-            {hasDraft && (
-              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                <Clock className="w-3 h-3" /> Draft restored from IndexedDB
-              </span>
-            )}
           </div>
           <h3 className="text-base font-semibold text-slate-900">{requirementTitle}</h3>
         </div>
@@ -278,7 +223,7 @@ export function UploadSheet({
             <div>
               <p className="font-semibold">Offline Mode Active</p>
               <p className="text-amber-700 mt-0.5">
-                Your draft metadata is safely persisted in browser IndexedDB. Upload will auto-resume on reconnection.
+                Upload is unavailable offline. The selected file remains only in this open page; reconnect before starting or retrying the upload.
               </p>
             </div>
           </div>
@@ -300,8 +245,8 @@ export function UploadSheet({
           <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-lg flex items-start gap-2.5">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
             <div>
-              <p className="font-semibold">Document Version Uploaded Successfully</p>
-              <p className="text-emerald-700 mt-0.5">Queued for ClamAV virus scanning & PDF sanitisation.</p>
+              <p className="font-semibold">Upload received — verification pending</p>
+              <p className="text-emerald-700 mt-0.5">The file is being scanned. It is not available for review until verification completes.</p>
             </div>
           </div>
         )}
@@ -325,7 +270,7 @@ export function UploadSheet({
             type="file"
             onChange={handleFileChange}
             disabled={isUploading}
-            accept=".pdf,.png,.jpg,.jpeg,.dwg,.xlsx"
+            accept=".pdf,.png,.jpg,.jpeg,.webp,.docx,.xlsx,.dwg,.zip"
             className="hidden"
           />
 
@@ -348,7 +293,7 @@ export function UploadSheet({
                 Tap to upload or drag & drop files here
               </p>
               <p className="text-xs text-slate-400">
-                PDF, DWG, XLSX, PNG, JPG (SVG strictly prohibited per RT-006)
+                PDF, DWG, DOCX, XLSX, ZIP, PNG, JPG, WebP (SVG is not supported)
               </p>
             </div>
           )}
@@ -382,7 +327,7 @@ export function UploadSheet({
 
         {/* Remarks */}
         <div>
-          <label className="block text-xs font-semibold text-slate-600 mb-1">Engineer Remarks & Context</label>
+          <label className="block text-xs font-semibold text-slate-600 mb-1">Draft-only notes (not included with this upload)</label>
           <textarea
             value={remarks}
             onChange={(e) => setRemarks(e.target.value)}

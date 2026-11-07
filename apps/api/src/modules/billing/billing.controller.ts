@@ -106,6 +106,13 @@ export class BillingController {
     return this.warrantyAndBillingService.listWarrantyEvents(req.userContext, projectId);
   }
 
+  @Get('projects/:id/commercial-readiness')
+  @UseGuards(SessionCsrfGuard, PermissionGuard)
+  @RequirePermission('document.read')
+  async getCommercialReadiness(@Req() req: any, @Param('id') projectId: string) {
+    return this.warrantyAndBillingService.getCommercialReadiness(req.userContext, projectId);
+  }
+
   @Get('projects/:id/defects')
   @UseGuards(SessionCsrfGuard, PermissionGuard)
   @RequirePermission('document.read')
@@ -131,6 +138,24 @@ export class BillingController {
     return this.warrantyAndBillingService.createDefect(req.userContext, projectId, dto);
   }
 
+  @Post(['defects/:id/remedy', 'projects/:projectId/defects/:id/remedy'])
+  @UseGuards(SessionCsrfGuard, PermissionGuard)
+  @RequirePermission('document.upload')
+  async submitDefectRemedy(
+    @Req() req: any,
+    @Param('id') defectId: string,
+    @Param('projectId') projectId: string,
+    @Body() dto: { remedyEvidenceObjectId: string; expectedRowVersion?: number },
+  ) {
+    return this.warrantyAndBillingService.submitDefectRemedy(
+      req.userContext,
+      projectId || '',
+      defectId,
+      dto.remedyEvidenceObjectId,
+      dto.expectedRowVersion,
+    );
+  }
+
   @Post(['defects/:id/close', 'projects/:projectId/defects/:id/close'])
   @UseGuards(SessionCsrfGuard, PermissionGuard)
   @RequirePermission('document.upload')
@@ -138,13 +163,14 @@ export class BillingController {
     @Req() req: any,
     @Param('id') defectId: string,
     @Param('projectId') projectId: string,
-    @Body() dto: { closureEvidenceObjectId: string },
+    @Body() dto: { closureEvidenceObjectId: string; expectedRowVersion?: number },
   ) {
     return this.warrantyAndBillingService.closeDefect(
       req.userContext,
       projectId || '',
       defectId,
       dto.closureEvidenceObjectId,
+      dto.expectedRowVersion,
     );
   }
 

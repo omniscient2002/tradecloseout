@@ -1,0 +1,214 @@
+{
+  "review_date": "2026-11-06",
+  "captured_at_utc": "2026-11-06T15:23:52.091948+00:00",
+  "git_head": "8aec185388e674ff1cf5d90693cc5c491dc41aa1",
+  "scope": "Changed working tree compared with previous verification; V01-V09 and new commissioning foundation. Documentation-only changes by reviewer.",
+  "report": "TRADECLOSEOUT_HVAC_IMPLEMENTATION_FOLLOWUP_2026-11-06.md",
+  "previous_evidence": "TRADECLOSEOUT_HVAC_IMPLEMENTATION_VERIFICATION_EVIDENCE_2026-11-06.json",
+  "checks": {
+    "pnpm typecheck": {
+      "exit_code": 0
+    },
+    "pnpm test": {
+      "exit_code": 0,
+      "api": {
+        "suites": 24,
+        "tests": 177
+      },
+      "shared": {
+        "suites": 4,
+        "tests": 44
+      },
+      "database": {
+        "behavioral_subtests": 9,
+        "including_parent": 10
+      },
+      "worker": {
+        "behavioral_subtests": 12,
+        "including_parent": 13
+      },
+      "archive_browser_tests": 6,
+      "pdf_scripted_checks": 3
+    },
+    "literal_emit_inventory": {
+      "distinct_types": 30,
+      "registry_entries": 67,
+      "missing": [],
+      "limitation": "Literal emit object producers only; not exhaustive dynamic-event proof."
+    }
+  },
+  "probes": [
+    {
+      "id": "F01",
+      "dependency": "Fresh disposable migrated PostgreSQL",
+      "operation": "Exact SELECT extracted from revalidateEvidence source",
+      "result": {
+        "sqlstate": "42703",
+        "message": "column dv.created_by does not exist"
+      }
+    },
+    {
+      "id": "F01-followup",
+      "dependency": "Same disposable database",
+      "operation": "Same query replacing dv.created_by with dv.uploaded_by only",
+      "result": {
+        "sqlstate": "0A000",
+        "message": "FOR UPDATE cannot be applied to the nullable side of an outer join"
+      }
+    },
+    {
+      "id": "F01-schema",
+      "dependency": "Migrated information_schema",
+      "result": {
+        "evidence_revalidations_columns": [
+          "id",
+          "org_id",
+          "project_id",
+          "asset_id",
+          "identity_revision_id",
+          "document_version_id",
+          "status",
+          "revalidation_notes",
+          "reviewed_by",
+          "reviewed_at",
+          "created_at"
+        ],
+        "has_row_version": false
+      }
+    },
+    {
+      "id": "F03",
+      "dependency": "Actual CommissioningService with restricted runtime role and synthetic fixtures in disposable database",
+      "operation": "recordQualityInspection with checklistItems=[]",
+      "result": "PASSED persisted"
+    },
+    {
+      "id": "F02",
+      "dependency": "Actual CommissioningService with restricted runtime role and synthetic fixtures in disposable database",
+      "operation": "recordQualityInspection and createSeasonalSchedule from tenant A/project A0, referencing asset in project A1 and then tenant B",
+      "result": {
+        "same_tenant_other_project": {
+          "inspection": "ACCEPTED PASSED",
+          "seasonal_schedule": "ACCEPTED SCHEDULED"
+        },
+        "foreign_tenant": {
+          "inspection": "ACCEPTED PASSED",
+          "seasonal_schedule": "ACCEPTED SCHEDULED"
+        }
+      }
+    },
+    {
+      "id": "F04",
+      "dependency": "Actual CommissioningService calculations with controlled SQL dependency, not real persistence",
+      "operation": "AIR_SIDE worksheet with design=actual=100 for one CFM reading and one GPM reading, no tolerance supplied",
+      "result": {
+        "status": "COMPLETED",
+        "totalDesignFlow": 200,
+        "totalActualFlow": 200,
+        "tolerancePercent": 10
+      }
+    }
+  ],
+  "source_fingerprints": [
+    {
+      "path": "apps/api/src/app.module.ts",
+      "sha256": "11a5e24191f232a4b9cd4f439da9e1965a1a080a541be05552a67034a7170f77"
+    },
+    {
+      "path": "apps/api/src/modules/identity/identity.controller.ts",
+      "sha256": "25384f5c558c3826a0b7b142e8e35d2c4928a361e76a51eb5ea090aa4f2269e2"
+    },
+    {
+      "path": "apps/api/src/modules/identity/identity.module.ts",
+      "sha256": "a35f3459c4f7dbd47c82d4099ce53ff343fe1500d107f818225d8a198b9388a6"
+    },
+    {
+      "path": "apps/api/src/modules/assets/assets.service.ts",
+      "sha256": "efde51eb62c99abd7ddbecaabff00cfc103720b393898927c446d501eee93849"
+    },
+    {
+      "path": "apps/api/src/modules/handover/handover.service.ts",
+      "sha256": "ed3645a3b9508d012c5b1727f386ffe8def5e464bf402d254acfa5c014dd7c93"
+    },
+    {
+      "path": "apps/api/src/modules/billing/billing.service.ts",
+      "sha256": "0eec31999eb4338a9a388f20258e05df77476efe1ce863aace6016684cb2b0a2"
+    },
+    {
+      "path": "apps/api/src/modules/billing/billing.controller.ts",
+      "sha256": "722cc5c2012feea18d68b78ed8de560a95fc3709f966a8c8aba1d2e0d26bbff3"
+    },
+    {
+      "path": "apps/api/src/modules/billing/warranty-and-billing.service.ts",
+      "sha256": "51c2ab77bfb6691d9729608e531e74789216636326b817e27cd4890d00c47d65"
+    },
+    {
+      "path": "apps/api/src/modules/organisations/organisations.service.ts",
+      "sha256": "cd9da7692176ce9a53ec0df7b29fa6c10c524be2fd5469c23d675fc32496cbf0"
+    },
+    {
+      "path": "apps/api/src/modules/commissioning/commissioning.controller.ts",
+      "sha256": "76ca62ae54ea70934addbe11f553f8b0002704964f8b6b0c3ac64b0ae8ce3f57"
+    },
+    {
+      "path": "apps/api/src/modules/commissioning/commissioning.service.ts",
+      "sha256": "a88b61ccc84d048cf8581977452026d75626b155ca358c1cd8191c3413e2820d"
+    },
+    {
+      "path": "apps/api/src/modules/commissioning/commissioning.module.ts",
+      "sha256": "82fbac8c05a2d6b64db2be3bd7d43f5b00f5fcaa46a706abfb28c6d421d0ab90"
+    },
+    {
+      "path": "apps/api/src/common/guards/session-csrf.guard.ts",
+      "sha256": "905c9a7f84afefe1997565735ce7ab88caf483f668297ed82979ddc4e1f47f04"
+    },
+    {
+      "path": "apps/api/src/common/guards/permission.guard.ts",
+      "sha256": "3b25e2480fdecfbe6d9f5f1d5b3419d6d7c138520a7399cb00518f8a56b1f70e"
+    },
+    {
+      "path": "apps/api/test/hvac-domain-excellence.spec.ts",
+      "sha256": "5b5e0e1400ba950f25b0c02dbc3d19a8d9729d807c033b4cb74c0ac756628030"
+    },
+    {
+      "path": "apps/api/test/hvac-production-reaudit-remediation.spec.ts",
+      "sha256": "9242b609b43188b01d04a3c34bb80b34af3fb6f8f6a49def5525e43cb0734f57"
+    },
+    {
+      "path": "apps/worker/src/event-registry.ts",
+      "sha256": "b7e21acc1bab98a14e4a2297cf4611c04e9aa26134def5bf3874266239b73dc5"
+    },
+    {
+      "path": "apps/worker/src/main.ts",
+      "sha256": "4182fd05ec0f352c954ab77eeb113789b93e636e75a4bd5fbdb29b0613167129"
+    },
+    {
+      "path": "apps/worker/src/queues/bounded-stream.ts",
+      "sha256": "64369306207f15c62057a84b678b2dea2269df9426052f7fcc9e0b5b9a206eaa"
+    },
+    {
+      "path": "apps/worker/test/worker-integration.spec.ts",
+      "sha256": "f82b9f9a458dfd57dd02ca038c97bb8ec5cfa932e800239cd98006529fe6281f"
+    },
+    {
+      "path": "packages/db/src/schema.ts",
+      "sha256": "94a3d7f788ccf6573f1b0673975d3a2a536d0b4373de76a17a4bdd27ec41cf5a"
+    },
+    {
+      "path": "packages/db/migrations/0017_hvac_commissioning_tab_and_inspections.sql",
+      "sha256": "acd36e6893f903124c4e8b37e77d43b6277e64c4507204314d1f0b9523836929"
+    },
+    {
+      "path": "packages/db/test/helpers/disposable-database.ts",
+      "sha256": "833656581f7f821bf1b7677cc85ab17ea599f9430d0b2ce793a0a61411875b68"
+    },
+    {
+      "path": "packages/db/test/helpers/fixtures.ts",
+      "sha256": "3a8803d532a4e7ace580ba25389f20f388df2d2304641c61cb59a0c93016240d"
+    },
+    {
+      "path": "docs/TRADECLOSEOUT_HVAC_IMPLEMENTATION_FOLLOWUP_2026-11-06.md",
+      "sha256": "f9073541f3d76767c3f7eafa34a30d7061133383f51fccfaf0487c89d129e815"
+    }
+  ]
+}

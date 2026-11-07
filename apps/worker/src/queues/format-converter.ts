@@ -29,11 +29,25 @@ export async function convertSupportingFormatToPdf(params: {
     const pdfDoc = await PDFDocument.create();
     const fontMono = await pdfDoc.embedFont(StandardFonts.Courier);
 
+    let finalImgBytes = imgBytes;
+    let isJpeg = detectedMime === 'image/jpeg';
+
+    if (detectedMime === 'image/webp') {
+      try {
+        const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'webp-conv-'));
+        const tmpPng = path.join(tmpDir, 'converted.png');
+        await execFileAsync('convert', [sourcePath, tmpPng], { timeout: 10_000 });
+        finalImgBytes = await readFile(tmpPng);
+        await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+      } catch (convErr) {
+        throw new Error(`UNSUPPORTED_IMAGE_FORMAT: WebP format could not be converted to PNG: ${(convErr as Error).message}`);
+      }
+    }
+
     const page = pdfDoc.addPage([595.28, 841.89]); // A4 Portrait
-    const embeddedImg =
-      detectedMime === 'image/jpeg'
-        ? await pdfDoc.embedJpg(imgBytes)
-        : await pdfDoc.embedPng(imgBytes);
+    const embeddedImg = isJpeg
+      ? await pdfDoc.embedJpg(finalImgBytes)
+      : await pdfDoc.embedPng(finalImgBytes);
 
     const maxW = 595.28 - 72;
     const maxH = 841.89 - 120;

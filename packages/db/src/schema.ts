@@ -604,13 +604,19 @@ export const storageObjects = pgTable(
     provider: text('provider').notNull().default('S3'),
     bucket: text('bucket').notNull(),
     objectKey: text('object_key').notNull(),
+    originalFilename: text('original_filename').notNull().default('document'),
+    s3UploadId: text('s3_upload_id'),
     mime: text('mime').notNull(),
     sizeBytes: bigint('size_bytes', { mode: 'bigint' }).notNull(),
-    sha256: text('sha256'), // Required once READY (08 §8 Rule 16)
+    expectedSha256: text('expected_sha256'),
+    observedSizeBytes: bigint('observed_size_bytes', { mode: 'bigint' }),
+    providerVersionId: text('provider_version_id'),
+    sha256: text('sha256'), // Observed digest; required once READY (08 §8 Rule 16)
     status: text('status').notNull().default('PENDING'), // PENDING | READY | QUARANTINED | FAILED | DELETED
     retentionClass: text('retention_class').notNull().default('PROJECT_PLUS_8Y'),
     createdBy: uuid('created_by').references(() => users.id),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
     providerBucketKeyUq: uniqueIndex('storage_objects_bucket_key_uq').on(
@@ -684,7 +690,7 @@ export const documentVersions = pgTable(
     metadataJson: jsonb('metadata_json').notNull().default({}),
     checksJson: jsonb('checks_json').notNull().default({}),
     uploadedBy: uuid('uploaded_by').references(() => users.id),
-    uploadedByGuestGrantId: uuid('uploaded_by_guest_grant_id').references(() => guestGrants.id),
+    uploadedByGuestGrantId: uuid('uploaded_by_grant_id').references(() => guestGrants.id),
     submittedAt: timestamp('submitted_at', { withTimezone: true }),
     rowVersion: integer('row_version').notNull().default(1),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -750,6 +756,172 @@ export const documentAssets = pgTable(
   (t) => ({
     docAssetUq: uniqueIndex('document_assets_doc_asset_uq').on(t.documentId, t.assetId),
   }),
+);
+
+export const assetIdentityRevisions = pgTable(
+  'asset_identity_revisions',
+  {
+    id: uuid('id').primaryKey(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organisations.id),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    assetId: uuid('asset_id')
+      .notNull()
+      .references(() => assets.id, { onDelete: 'cascade' }),
+    revisionNo: integer('revision_no').notNull(),
+    tag: text('tag').notNull(),
+    name: text('name').notNull(),
+    make: text('make'),
+    model: text('model'),
+    serialNo: text('serial_no'),
+    location: text('location'),
+    changeType: text('change_type').notNull().default('CLERICAL_CORRECTION'),
+    reason: text('reason').notNull(),
+    effectiveFrom: timestamp('effective_from', { withTimezone: true }).notNull().defaultNow(),
+    effectiveTo: timestamp('effective_to', { withTimezone: true }),
+    createdBy: uuid('created_by').references(() => users.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    assetRevUq: uniqueIndex('asset_identity_rev_uq').on(t.assetId, t.revisionNo),
+  }),
+);
+
+export const evidenceRevalidations = pgTable(
+  'evidence_revalidations',
+  {
+    id: uuid('id').primaryKey(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organisations.id),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    assetId: uuid('asset_id')
+      .notNull()
+      .references(() => assets.id, { onDelete: 'cascade' }),
+    identityRevisionId: uuid('identity_revision_id')
+      .notNull()
+      .references(() => assetIdentityRevisions.id, { onDelete: 'cascade' }),
+    documentVersionId: uuid('document_version_id')
+      .notNull()
+      .references(() => documentVersions.id, { onDelete: 'cascade' }),
+    status: text('status').notNull().default('PENDING'),
+    revalidationNotes: text('revalidation_notes'),
+    reviewedBy: uuid('reviewed_by').references(() => users.id),
+    reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    docRevUq: uniqueIndex('evidence_reval_doc_rev_uq').on(t.identityRevisionId, t.documentVersionId),
+  }),
+);
+
+export const evidenceCompanionRules = pgTable(
+  'evidence_companion_rules',
+  {
+    id: uuid('id').primaryKey(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organisations.id),
+    ruleCode: text('rule_code').notNull(),
+    ruleName: text('rule_name').notNull(),
+    primaryDocType: text('primary_doc_type').notNull(),
+    companionDocType: text('companion_doc_type').notNull(),
+    description: text('description'),
+    isMandatory: boolean('is_mandatory').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    orgCodeUq: uniqueIndex('companion_rules_org_code_uq').on(t.orgId, t.ruleCode),
+  }),
+);
+
+export const procurementOrders = pgTable(
+  'procurement_orders',
+  {
+    id: uuid('id').primaryKey(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organisations.id),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    poNumber: text('po_number').notNull(),
+    supplierPartyId: uuid('supplier_party_id')
+      .notNull()
+      .references(() => parties.id),
+    status: text('status').notNull().default('ISSUED'),
+    orderedAt: date('ordered_at').notNull().defaultNow(),
+    promisedDeliveryAt: date('promised_delivery_at'),
+    totalAmountPaise: bigint('total_amount_paise', { mode: 'bigint' }),
+    notes: text('notes'),
+    createdBy: uuid('created_by').references(() => users.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    orgProjPoUq: uniqueIndex('procurement_orders_org_proj_po_uq').on(
+      t.orgId,
+      t.projectId,
+      t.poNumber,
+    ),
+  }),
+);
+
+export const procurementOrderLines = pgTable(
+  'procurement_order_lines',
+  {
+    id: uuid('id').primaryKey(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organisations.id),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    poId: uuid('po_id')
+      .notNull()
+      .references(() => procurementOrders.id, { onDelete: 'cascade' }),
+    lineNo: integer('line_no').notNull(),
+    assetCategoryKey: text('asset_category_key').notNull(),
+    description: text('description').notNull(),
+    quantity: integer('quantity').notNull().default(1),
+    assetId: uuid('asset_id').references(() => assets.id),
+    make: text('make'),
+    model: text('model'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    poLineUq: uniqueIndex('po_lines_po_line_uq').on(t.poId, t.lineNo),
+  }),
+);
+
+export const supplierDocumentObligations = pgTable(
+  'supplier_document_obligations',
+  {
+    id: uuid('id').primaryKey(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organisations.id),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    poLineId: uuid('po_line_id')
+      .notNull()
+      .references(() => procurementOrderLines.id, { onDelete: 'cascade' }),
+    docTypeKey: text('doc_type_key').notNull(),
+    stageKey: text('stage_key').notNull().default('FAT'),
+    title: text('title').notNull(),
+    dueDate: date('due_date'),
+    supplierPartyId: uuid('supplier_party_id').references(() => parties.id),
+    status: text('status').notNull().default('PENDING'),
+    requirementId: uuid('requirement_id').references(() => requirements.id),
+    documentVersionId: uuid('document_version_id').references(() => documentVersions.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
 );
 
 export const documentContracts = pgTable(
@@ -819,13 +991,19 @@ export const reviews = pgTable(
     method: text('method').notNull().default('IN_APP'), // IN_APP | EXTERNAL (AUD-010 / WF-23)
     externalMethod: text('external_method'), // STAMPED_PDF | EMAIL | PORTAL | PHYSICAL
     externalApproverName: text('external_approver_name'),
+    externalApproverRole: text('external_approver_role'),
     externalReference: text('external_reference'),
     evidenceObjectId: uuid('evidence_object_id').references(() => storageObjects.id),
+    externalProofVersionId: uuid('external_proof_version_id').references(() => documentVersions.id),
     status: text('status').notNull().default('PENDING'), // PENDING | IN_REVIEW | APPROVED | CHANGES_REQUESTED | REJECTED | CANCELLED
     decision: text('decision'), // APPROVE | REQUEST_CHANGES | REJECT
     comment: text('comment'),
     dueAt: timestamp('due_at', { withTimezone: true }),
     decidedAt: timestamp('decided_at', { withTimezone: true }),
+    occurredAt: timestamp('occurred_at', { withTimezone: true }),
+    occurredAtPrecision: text('occurred_at_precision').notNull().default('INSTANT'),
+    recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull().defaultNow(),
+    backdatingReason: text('backdating_reason'),
     onBehalfOfUserId: uuid('on_behalf_of_user_id').references(() => users.id),
     isOverride: boolean('is_override').notNull().default(false),
     rowVersion: integer('row_version').notNull().default(1),
@@ -976,6 +1154,59 @@ export const packageRequirements = pgTable('package_requirements', {
   decidedAt: timestamp('decided_at', { withTimezone: true }),
   decisionMethod: text('decision_method'),
 });
+
+export const transmittals = pgTable('transmittals', {
+  id: uuid('id').primaryKey(),
+  orgId: uuid('org_id').notNull().references(() => organisations.id, { onDelete: 'cascade' }),
+  projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  transmittalNo: text('transmittal_no').notNull(),
+  status: text('status').notNull().default('DRAFT'),
+  notes: text('notes'),
+  createdBy: uuid('created_by').notNull().references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  orgProjectIdUq: uniqueIndex('transmittals_org_project_id_uq').on(t.orgId, t.projectId, t.id),
+  projectNumberUq: uniqueIndex('transmittals_project_number_uq').on(t.orgId, t.projectId, t.transmittalNo),
+  projectCreatedIdx: index('transmittals_project_created_idx').on(t.orgId, t.projectId, t.createdAt),
+}));
+
+export const transmittalItems = pgTable('transmittal_items', {
+  id: uuid('id').primaryKey(),
+  orgId: uuid('org_id').notNull().references(() => organisations.id, { onDelete: 'cascade' }),
+  projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  transmittalId: uuid('transmittal_id').notNull().references(() => transmittals.id, { onDelete: 'cascade' }),
+  documentVersionId: uuid('document_version_id').notNull().references(() => documentVersions.id),
+  sortOrder: integer('sort_order').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  documentVersionUq: uniqueIndex('transmittal_items_version_uq').on(t.orgId, t.projectId, t.transmittalId, t.documentVersionId),
+}));
+
+export const archiveExports = pgTable(
+  'archive_exports',
+  {
+    id: uuid('id').primaryKey(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organisations.id),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    schemaVersion: text('schema_version').notNull().default('2.0'),
+    status: text('status').notNull().default('PENDING'),
+    archiveSha256: text('archive_sha256'),
+    totalObjects: integer('total_objects').notNull().default(0),
+    totalBytes: bigint('total_bytes', { mode: 'bigint' }).notNull().default(sql`0`),
+    manifestJson: jsonb('manifest_json').notNull().default({}),
+    verificationReceiptJson: jsonb('verification_receipt_json').notNull().default({}),
+    createdBy: uuid('created_by').references(() => users.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+  },
+  (t) => ({
+    orgProjStatusIdx: index('idx_archive_exports_proj').on(t.orgId, t.projectId, t.status),
+  }),
+);
 
 export const submissions = pgTable(
   'submissions',
@@ -1372,6 +1603,10 @@ export const warrantyEvents = pgTable('warranty_events', {
   basis: text('basis').notNull(), // COMMISSIONING | HANDOVER | ACCEPTANCE | SUPPLY
   evidenceObjectId: uuid('evidence_object_id').references(() => storageObjects.id),
   notes: text('notes'),
+  occurredAt: timestamp('occurred_at', { withTimezone: true }),
+  occurredAtPrecision: text('occurred_at_precision').notNull().default('DATE'),
+  recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull().defaultNow(),
+  backdatingReason: text('backdating_reason'),
   createdBy: uuid('created_by').notNull().references(() => users.id),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
@@ -1402,6 +1637,10 @@ export const defects = pgTable('defects', {
   ),
   closedAt: timestamp('closed_at', { withTimezone: true }),
   closedBy: uuid('closed_by').references(() => users.id),
+  occurredAt: timestamp('occurred_at', { withTimezone: true }),
+  occurredAtPrecision: text('occurred_at_precision').notNull().default('INSTANT'),
+  recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull().defaultNow(),
+  backdatingReason: text('backdating_reason'),
   rowVersion: integer('row_version').notNull().default(1),
 });
 

@@ -1,0 +1,6 @@
+{"probe":"witness_without_delegation","outcome":{"partyName":"Unverified synthetic consultant","representativeName":"Someone else","role":"CONSULTANT","signedByUserId":"37751219-0a54-409d-9e6d-a5db20187ff6","signedAt":"2026-11-07T16:54:21.283Z"}}
+{"probe":"seasonal_empty_completion","outcome":{"id":"01a1b6ee-bb70-7a88-b7f7-18c1db17a6ff","projectId":"1c60186e-c26e-46bd-b586-895244283632","status":"PERFORMED","completedAt":"2026-11-07T16:54:21.330Z","testResults":null}}
+{"probe":"negative_actual_flow","status":"NEEDS_REBALANCING","storedActualFlow":-10}
+{"probe":"confirmed_extension","extension":{"warrantyEventId":"01a1b6ee-bbe2-7ed4-ac81-88e5c5192974","status":"CONFIRMED","hasBasisConflict":false},"assetDates":{"warranty_end":"2027-11-06T18:30:00.000Z"}}
+{"probe":"subscription_without_row","outcome":{"id":"01a1b6ee-bbee-7d5e-9dd2-c111929ed5b9","planName":"Growth Plan","planTier":"GROWTH","status":"ACTIVE","seatLimit":20,"storageQuotaBytes":107374182400,"pricePaise":999900,"limitsJson":{"maxActiveProjects":15,"maxSeats":20,"maxStorageBytes":107374182400}}}
+{"probe":"quiet_hour_head_of_line_block","sent":0,"inAppStatus":"QUEUED"}

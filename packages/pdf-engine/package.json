@@ -5,17 +5,20 @@
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsc",
+    "test": "tsx test/pdf-engine.spec.ts",
     "dev": "tsc -w"
   },
   "dependencies": {
-    "pdf-lib": "^1.17.1",
-    "pdfmake": "^0.2.18",
+    "@pdf-lib/fontkit": "^1.1.1",
+    "@tradecloseout/shared": "workspace:*",
     "archiver": "^7.0.1",
-    "@tradecloseout/shared": "workspace:*"
+    "fontkit": "^2.0.4",
+    "pdf-lib": "^1.17.1",
+    "pdfmake": "^0.2.18"
   },
   "devDependencies": {
-    "@types/pdfmake": "^0.2.11",
     "@types/archiver": "^6.0.3",
+    "@types/pdfmake": "^0.2.11",
     "typescript": "^5.8.2"
   }
 }

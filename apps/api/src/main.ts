@@ -12,7 +12,6 @@ async function bootstrap() {
   app.use(cookieParser());
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   app.useGlobalFilters(new ProblemJsonExceptionFilter());
-  app.useGlobalInterceptors(new VisibilityProjectionInterceptor());
   app.enableCors({
     origin: process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : ['http://localhost:3000', 'http://localhost:3002'],
     credentials: true,

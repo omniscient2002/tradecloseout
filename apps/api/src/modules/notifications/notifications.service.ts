@@ -5,6 +5,7 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { TenantDbService, ExecutionContext } from '../../database/tenant-db.service';
+import { isIndiaQuietHour } from '@tradecloseout/shared';
 
 @Injectable()
 export class NotificationsService {
@@ -14,9 +15,7 @@ export class NotificationsService {
    * Checks whether the current time falls within IST quiet hours (22:00 - 08:00 IST)
    */
   isIstQuietHour(date: Date = new Date()): boolean {
-    const istString = date.toLocaleString('en-US', { timeZone: 'Asia/Kolkata', hour12: false });
-    const hour = parseInt(istString.split(', ')[1].split(':')[0], 10);
-    return hour >= 22 || hour < 8;
+    return isIndiaQuietHour(date);
   }
 
   /**
@@ -38,8 +37,11 @@ export class NotificationsService {
       const shouldDefer = (dto.channel === 'SMS' || dto.channel === 'WHATSAPP') && isQuiet && !dto.isUrgent;
 
       const notificationId = uuidv7();
-      const status = shouldDefer ? 'QUEUED' : 'SENT';
-      const sentAt = shouldDefer ? null : new Date();
+      // External channels without active delivery provider adapters must be recorded as QUEUED,
+      // never falsely reported as SENT (TC-F017 / Sol Part A1). IN_APP notifications are delivered in-app.
+      const isExternal = dto.channel === 'SMS' || dto.channel === 'WHATSAPP' || dto.channel === 'EMAIL';
+      const status = isExternal ? 'QUEUED' : (shouldDefer ? 'QUEUED' : 'SENT');
+      const sentAt = status === 'SENT' ? new Date() : null;
 
       const res = await client.query(
         `INSERT INTO notifications (
@@ -76,7 +78,7 @@ export class NotificationsService {
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
       const res = await client.query(
         `SELECT * FROM notifications
-         WHERE org_id = $1 AND (recipient_user_id = $2 OR channel = 'IN_APP')
+         WHERE org_id = $1 AND (recipient_user_id = $2 OR (channel = 'IN_APP' AND recipient_user_id IS NULL))
          ORDER BY created_at DESC LIMIT 50`,
         [ctx.orgId, ctx.userId],
       );
@@ -107,16 +109,35 @@ export class NotificationsService {
         [ctx.orgId, projectId],
       );
 
-      const contractValueInr = proj.site_json?.contract_value_inr || 15000000; // default ₹1.5 Cr
-      const retentionPercent = proj.site_json?.retention_percent || 5.0; // 5%
-      const retentionMoneyGatedInr = (contractValueInr * retentionPercent) / 100;
+      // Contract value in paise (integer) and retention basis points from project columns (T19, Finding N21)
+      const contractValuePaise = proj.contract_value_paise != null
+        ? BigInt(proj.contract_value_paise)
+        : (proj.site_json?.contract_value_inr != null ? BigInt(Math.round(Number(proj.site_json.contract_value_inr) * 100)) : null);
+
+      const retentionBps = proj.retention_bps != null
+        ? Number(proj.retention_bps)
+        : (proj.site_json?.retention_percent != null ? Math.round(Number(proj.site_json.retention_percent) * 100) : null);
+
+      const retentionMoneyGatedPaise = contractValuePaise != null && retentionBps != null
+        ? (contractValuePaise * BigInt(retentionBps)) / 10000n
+        : null;
+
+      const contractValueInr = contractValuePaise != null
+        ? Number(contractValuePaise) / 100
+        : null;
+
+      const retentionMoneyGatedInr = retentionMoneyGatedPaise != null
+        ? Number(retentionMoneyGatedPaise) / 100
+        : null;
 
       return {
         projectId: proj.id,
         projectCode: proj.code,
         projectName: proj.name,
         currency: 'INR',
+        contractValuePaise: contractValuePaise?.toString() || null,
         contractValueInr,
+        retentionMoneyGatedPaise: retentionMoneyGatedPaise?.toString() || null,
         retentionMoneyGatedInr,
         blockingRequirementsByMilestone: reqRes.rows,
         generatedAt: new Date(),

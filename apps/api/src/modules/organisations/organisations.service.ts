@@ -13,18 +13,21 @@ import { Pool, PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { randomBytes, createHash } from 'crypto';
 import { withTenantTransaction, TenantActorContext, DomainOutboxEvent } from '@tradecloseout/db';
-import { isValidIndianGstin, IndianPanSchema } from '@tradecloseout/shared';
+import { hasPermission, isValidIndianGstin, IndianPanSchema } from '@tradecloseout/shared';
 
 export interface OffboardingGapReport {
   targetUserId: string;
   openRequirementsCount: number;
   pendingReviewsCount: number;
   draftPackagesCount: number;
+  assignedDefectsCount?: number;
   byProject: Array<{
     projectId: string;
     projectCode: string;
     openRequirements: number;
     pendingReviews: number;
+    draftPackages?: number;
+    assignedDefects?: number;
     requiredReplacementRoles: string[];
   }>;
 }
@@ -38,6 +41,19 @@ export class OrganisationsService {
    */
   async getDashboard(ctx: TenantActorContext, targetOrgId: string) {
     const orgId = targetOrgId === 'current' ? ctx.orgId : targetOrgId;
+    if (ctx.guestGrantId) throw new NotFoundException('ORGANISATION_NOT_FOUND');
+    const projectRead = hasPermission({ orgRole: ctx.orgRole, projectRole: ctx.projectRole }, 'project.read');
+    if (!projectRead.allowed) throw new NotFoundException('ORGANISATION_NOT_FOUND');
+    const projectScopeClause = projectRead.scope === 'S'
+      ? `AND EXISTS (SELECT 1 FROM project_members pm
+                      WHERE pm.org_id = p.org_id AND pm.project_id = p.id
+                        AND pm.user_id = $2 AND pm.status = 'ACTIVE')`
+      : '';
+    const requirementsScopeClause = projectRead.scope === 'S'
+      ? `AND EXISTS (SELECT 1 FROM project_members pm
+                      WHERE pm.org_id = r.org_id AND pm.project_id = r.project_id
+                        AND pm.user_id = $2 AND pm.status = 'ACTIVE')`
+      : '';
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
       // 1. Fetch Org and Profile
       const { rows: orgRows } = await client.query(
@@ -62,30 +78,46 @@ export class OrganisationsService {
       );
       const user = userRows[0] || { id: ctx.userId, name: 'Team Member', role: 'R-SITE' };
 
-      // 3. Fetch Projects with Contracts, Counterparties & Requirement Counts
+      // 3. Fetch Projects with Pre-Aggregated Contracts, Counterparties & Requirement Counts (Finding N21)
       const { rows: projRows } = await client.query(
-        `SELECT
-           p.id, p.code, p.name, p.status, p.target_handover_date,
-           p.site_json->>'city' as city,
-           COALESCE(c.value_paise, 0)::text as contract_value_paise,
-           COALESCE(ROUND((c.value_paise * c.retention_bps) / 10000), 0)::text as retention_at_risk_paise,
-           p_client.name as client_name,
-           p_mc.name as mc_name,
-           p_pmc.name as pmc_name,
-           COUNT(r.id) FILTER (WHERE r.status != 'NOT_APPLICABLE' AND r.superseded_at IS NULL) as applicable_count,
-           COUNT(r.id) FILTER (WHERE r.status IN ('APPROVED', 'APPROVED_EXTERNAL') AND r.superseded_at IS NULL) as approved_count,
-           COUNT(r.id) FILTER (WHERE r.status IN ('NOT_STARTED', 'REQUESTED', 'CHANGES_REQUESTED', 'EXPIRED') AND r.superseded_at IS NULL) as missing_count,
-           COUNT(r.id) FILTER (WHERE r.status IN ('UPLOADED', 'IN_REVIEW') AND r.superseded_at IS NULL) as in_review_count
-         FROM projects p
-         LEFT JOIN contracts c ON c.project_id = p.id AND c.org_id = p.org_id
-         LEFT JOIN parties p_client ON p_client.id = p.client_party_id
-         LEFT JOIN parties p_mc ON p_mc.id = p.mc_party_id
-         LEFT JOIN parties p_pmc ON p_pmc.id = p.consultant_party_id
-         LEFT JOIN requirements r ON r.project_id = p.id AND r.org_id = p.org_id
-        WHERE p.org_id = $1
-        GROUP BY p.id, c.value_paise, c.retention_bps, p_client.name, p_mc.name, p_pmc.name
-        ORDER BY p.created_at DESC`,
-        [orgId],
+        `WITH contract_summary AS (
+           SELECT project_id, org_id,
+                  COALESCE(SUM(value_paise), 0) AS total_contract_value_paise,
+                  COALESCE(SUM(ROUND((value_paise * retention_bps) / 10000)), 0) AS total_retention_at_risk_paise
+             FROM contracts
+            WHERE status = 'ACTIVE'
+            GROUP BY project_id, org_id
+         ),
+         req_summary AS (
+           SELECT project_id, org_id,
+                  COUNT(id) FILTER (WHERE status != 'NOT_APPLICABLE' AND superseded_at IS NULL) as applicable_count,
+                  COUNT(id) FILTER (WHERE status IN ('APPROVED', 'APPROVED_EXTERNAL') AND superseded_at IS NULL) as approved_count,
+                  COUNT(id) FILTER (WHERE status IN ('NOT_STARTED', 'REQUESTED', 'CHANGES_REQUESTED', 'EXPIRED') AND superseded_at IS NULL) as missing_count,
+                  COUNT(id) FILTER (WHERE status IN ('UPLOADED', 'IN_REVIEW') AND superseded_at IS NULL) as in_review_count
+             FROM requirements
+            GROUP BY project_id, org_id
+         )
+         SELECT
+            p.id, p.code, p.name, p.status, p.target_handover_date,
+            p.site_json->>'city' as city,
+            COALESCE(cs.total_contract_value_paise, p.contract_value_paise, 0)::text as contract_value_paise,
+            COALESCE(cs.total_retention_at_risk_paise, p.retention_at_risk_paise, 0)::text as retention_at_risk_paise,
+            p_client.name as client_name,
+            p_mc.name as mc_name,
+            p_pmc.name as pmc_name,
+            COALESCE(rs.applicable_count, 0) as applicable_count,
+            COALESCE(rs.approved_count, 0) as approved_count,
+            COALESCE(rs.missing_count, 0) as missing_count,
+            COALESCE(rs.in_review_count, 0) as in_review_count
+          FROM projects p
+          LEFT JOIN contract_summary cs ON cs.project_id = p.id AND cs.org_id = p.org_id
+          LEFT JOIN req_summary rs ON rs.project_id = p.id AND rs.org_id = p.org_id
+          LEFT JOIN parties p_client ON p_client.id = p.client_party_id
+          LEFT JOIN parties p_mc ON p_mc.id = p.mc_party_id
+          LEFT JOIN parties p_pmc ON p_pmc.id = p.consultant_party_id
+         WHERE p.org_id = $1 ${projectScopeClause}
+         ORDER BY p.created_at DESC`,
+        [orgId, ctx.userId],
       );
 
       const projects = projRows.map((p) => ({
@@ -96,7 +128,7 @@ export class OrganisationsService {
         clientName: p.client_name || '—',
         mcName: p.mc_name || '—',
         pmcName: p.pmc_name || '—',
-        city: p.city || 'Hyderabad',
+        city: p.city || '—',
         targetHandoverDate: p.target_handover_date || '',
         contractValuePaise: p.contract_value_paise,
         retentionAtRiskPaise: p.retention_at_risk_paise,
@@ -126,10 +158,11 @@ export class OrganisationsService {
         `SELECT COUNT(*) as count
            FROM document_versions dv
           WHERE dv.org_id = $1
+            ${projectRead.scope === 'S' ? `AND EXISTS (SELECT 1 FROM project_members pm WHERE pm.org_id = dv.org_id AND pm.project_id = dv.project_id AND pm.user_id = $2 AND pm.status = 'ACTIVE')` : ''}
             AND dv.expiry_date IS NOT NULL
             AND dv.expiry_date BETWEEN (now() AT TIME ZONE 'Asia/Kolkata')::date
                                    AND ((now() AT TIME ZONE 'Asia/Kolkata') + interval '30 days')::date`,
-        [orgId],
+        [orgId, ctx.userId],
       );
       const expiringSoonCount = Number(expiringRows[0]?.count || 0);
 
@@ -143,11 +176,12 @@ export class OrganisationsService {
            LEFT JOIN assets a ON a.id = r.asset_id
            LEFT JOIN users u ON u.id = r.owner_user_id
           WHERE r.org_id = $1
+            ${requirementsScopeClause}
             AND r.status IN ('EXPIRED', 'CHANGES_REQUESTED', 'IN_REVIEW', 'REQUESTED', 'NOT_STARTED')
             AND r.superseded_at IS NULL
           ORDER BY r.due_at ASC NULLS LAST, r.created_at DESC
           LIMIT 5`,
-        [orgId],
+        [orgId, ctx.userId],
       );
 
       const needsAttention = attentionRows.map((r) => ({
@@ -191,7 +225,8 @@ export class OrganisationsService {
   /**
    * API-010: GET /api/v1/orgs/:orgId
    */
-  async getOrganisation(ctx: TenantActorContext, orgId: string) {
+  async getOrganisation(ctx: TenantActorContext, targetOrgId: string) {
+    const orgId = targetOrgId === 'current' ? ctx.orgId : targetOrgId;
     if (orgId !== ctx.orgId) {
       throw new NotFoundException({
         code: 'NOT_FOUND',
@@ -356,7 +391,8 @@ export class OrganisationsService {
   /**
    * API-013: GET /api/v1/orgs/:orgId/members
    */
-  async listMembers(ctx: TenantActorContext, orgId: string) {
+  async listMembers(ctx: TenantActorContext, targetOrgId: string) {
+    const orgId = targetOrgId === 'current' ? ctx.orgId : targetOrgId;
     if (orgId !== ctx.orgId) throw new NotFoundException('ORGANISATION_NOT_FOUND');
 
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
@@ -534,22 +570,25 @@ export class OrganisationsService {
         );
       }
 
-      // 2. Compute the WF-21 Gap Report across all active projects
+      // 2. Compute the WF-21 Gap Report across all active projects (Top 25 Item 19)
       const gapReport = await this.computeMemberGapReport(client, ctx.orgId, input.targetUserId);
       const hasOpenWork =
-        gapReport.openRequirementsCount > 0 || gapReport.pendingReviewsCount > 0;
+        gapReport.openRequirementsCount > 0 ||
+        gapReport.pendingReviewsCount > 0 ||
+        gapReport.draftPackagesCount > 0 ||
+        (gapReport.assignedDefectsCount ?? 0) > 0;
 
       if (hasOpenWork && !input.replacementUserId && input.action === 'REMOVE') {
         throw new ConflictException({
           code: 'OPEN_WORK_REQUIRES_REASSIGNMENT',
-          title: 'Member owns open requirements or reviews',
+          title: 'Member owns open requirements, reviews, packages or defects',
           detail:
-            'Reassign all open requirements and pending reviews to an eligible member before removing this user (WF-21 / AUD-P-12).',
+            'Reassign all open requirements, pending reviews, draft packages, and defects to an eligible member before removing this user (WF-21 / AUD-P-12).',
           fieldErrors: [{ field: 'replacementUserId', message: JSON.stringify(gapReport) }],
         });
       }
 
-      // 3. Perform Bulk Reassignment if replacementUserId is provided (FR-IAM-008 / SCR-056)
+      // 3. Perform Bulk Reassignment if replacementUserId is provided (FR-IAM-008 / SCR-056 / Top 25 Item 19)
       if (input.replacementUserId) {
         const { rows: repRows } = await client.query(
           `SELECT role, status FROM memberships WHERE org_id = $1 AND user_id = $2`,
@@ -573,9 +612,25 @@ export class OrganisationsService {
         await client.query(
           `UPDATE reviews
               SET reviewer_subject_id = $3, reviewer_user_id = $3,
-                  row_version = row_version + 1, updated_at = now()
+                  row_version = row_version + 1
             WHERE org_id = $1 AND reviewer_user_id = $2
               AND status IN ('PENDING', 'IN_REVIEW')`,
+          [ctx.orgId, input.targetUserId, input.replacementUserId],
+        );
+
+        await client.query(
+          `UPDATE handover_packages
+              SET requested_by = $3, updated_at = now()
+            WHERE org_id = $1 AND requested_by = $2
+              AND status IN ('DRAFT', 'QUEUED', 'GENERATING')`,
+          [ctx.orgId, input.targetUserId, input.replacementUserId],
+        );
+
+        await client.query(
+          `UPDATE defects
+              SET assigned_user_id = $3
+            WHERE org_id = $1 AND assigned_user_id = $2
+              AND status IN ('OPEN', 'IN_PROGRESS')`,
           [ctx.orgId, input.targetUserId, input.replacementUserId],
         );
       }
@@ -736,6 +791,26 @@ export class OrganisationsService {
       [orgId, targetUserId],
     );
 
+    const { rows: pkgRows } = await client.query(
+      `SELECT p.id AS project_id, p.code AS project_code, COUNT(hp.id)::int AS draft_packages
+         FROM handover_packages hp
+         JOIN projects p ON p.org_id = hp.org_id AND p.id = hp.project_id
+        WHERE hp.org_id = $1 AND hp.requested_by = $2
+          AND hp.status IN ('DRAFT', 'QUEUED', 'GENERATING')
+        GROUP BY p.id, p.code`,
+      [orgId, targetUserId],
+    );
+
+    const { rows: defectRows } = await client.query(
+      `SELECT p.id AS project_id, p.code AS project_code, COUNT(d.id)::int AS open_defects
+         FROM defects d
+         JOIN projects p ON p.org_id = d.org_id AND p.id = d.project_id
+        WHERE d.org_id = $1 AND d.assigned_user_id = $2
+          AND d.status IN ('OPEN', 'IN_PROGRESS')
+        GROUP BY p.id, p.code`,
+      [orgId, targetUserId],
+    );
+
     const projectMap = new Map<
       string,
       {
@@ -743,12 +818,16 @@ export class OrganisationsService {
         projectCode: string;
         openRequirements: number;
         pendingReviews: number;
+        draftPackages: number;
+        assignedDefects: number;
         requiredReplacementRoles: string[];
       }
     >();
 
     let totalReqs = 0;
     let totalRevs = 0;
+    let totalDraftPkgs = 0;
+    let totalDefects = 0;
 
     for (const r of reqRows) {
       totalReqs += r.open_reqs;
@@ -757,6 +836,8 @@ export class OrganisationsService {
         projectCode: r.project_code,
         openRequirements: r.open_reqs,
         pendingReviews: 0,
+        draftPackages: 0,
+        assignedDefects: 0,
         requiredReplacementRoles: [],
       });
     }
@@ -768,6 +849,8 @@ export class OrganisationsService {
         projectCode: rv.project_code,
         openRequirements: 0,
         pendingReviews: 0,
+        draftPackages: 0,
+        assignedDefects: 0,
         requiredReplacementRoles: [],
       };
       existing.pendingReviews = rv.pending_reviews;
@@ -775,11 +858,42 @@ export class OrganisationsService {
       projectMap.set(rv.project_id, existing);
     }
 
+    for (const pk of pkgRows) {
+      totalDraftPkgs += pk.draft_packages;
+      const existing = projectMap.get(pk.project_id) ?? {
+        projectId: pk.project_id,
+        projectCode: pk.project_code,
+        openRequirements: 0,
+        pendingReviews: 0,
+        draftPackages: 0,
+        assignedDefects: 0,
+        requiredReplacementRoles: [],
+      };
+      existing.draftPackages = pk.draft_packages;
+      projectMap.set(pk.project_id, existing);
+    }
+
+    for (const df of defectRows) {
+      totalDefects += df.open_defects;
+      const existing = projectMap.get(df.project_id) ?? {
+        projectId: df.project_id,
+        projectCode: df.project_code,
+        openRequirements: 0,
+        pendingReviews: 0,
+        draftPackages: 0,
+        assignedDefects: 0,
+        requiredReplacementRoles: [],
+      };
+      existing.assignedDefects = df.open_defects;
+      projectMap.set(df.project_id, existing);
+    }
+
     return {
       targetUserId,
       openRequirementsCount: totalReqs,
       pendingReviewsCount: totalRevs,
-      draftPackagesCount: 0,
+      draftPackagesCount: totalDraftPkgs,
+      assignedDefectsCount: totalDefects,
       byProject: Array.from(projectMap.values()),
     };
   }

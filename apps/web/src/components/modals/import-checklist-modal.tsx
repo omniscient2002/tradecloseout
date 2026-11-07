@@ -100,14 +100,26 @@ export function ImportChecklistModal({
     setParsing(true);
     setError(null);
     try {
+      if (f.size > 10 * 1024 * 1024) {
+        throw new Error("File exceeds maximum size of 10 MB.");
+      }
       const buffer = await f.arrayBuffer();
-      const workbook = XLSX.read(buffer, { type: "array" });
+      const workbook = XLSX.read(buffer, {
+        type: "array",
+        cellFormula: false,
+        cellHTML: false,
+        cellText: false,
+      });
       const firstSheet = workbook.SheetNames[0];
       const sheet = workbook.Sheets[firstSheet];
       const rawRows: any[] = XLSX.utils.sheet_to_json(sheet);
 
       if (!rawRows || rawRows.length === 0) {
         throw new Error("Spreadsheet contains no data rows.");
+      }
+
+      if (rawRows.length > 5000) {
+        throw new Error(`Spreadsheet contains ${rawRows.length} rows, exceeding the limit of 5,000 rows.`);
       }
 
       const results: ParsedRequirement[] = [];

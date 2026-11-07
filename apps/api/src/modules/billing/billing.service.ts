@@ -1,7 +1,8 @@
 // apps/api/src/modules/billing/billing.service.ts
 // Rule 46 GST Invoicing, Section 194J TDS & Razorpay Webhooks (FR-BIL-001..012, RT-015, RT-030)
 
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { createHmac } from 'crypto';
 import { PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { TenantDbService, ExecutionContext } from '../../database/tenant-db.service';
@@ -179,15 +180,35 @@ export class BillingService {
   }
 
   /**
-   * API-160 POST /webhooks/razorpay (Idempotent signature verification)
+   * API-160 POST /webhooks/razorpay (Idempotent signature verification, Finding N05 & XP03)
    */
   async handleRazorpayWebhook(payload: Record<string, any>, signature: string) {
-    const eventId = payload.id || uuidv7();
-    // Verify idempotency
-    return {
-      received: true,
-      eventId,
-      status: 'PROCESSED_IDEMPOTENTLY',
-    };
+    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+    if (!webhookSecret) {
+      throw new ServiceUnavailableException({
+        code: 'PAYMENT_WEBHOOK_NOT_CONFIGURED',
+        title: 'Payment webhook unavailable',
+        detail: 'Razorpay webhook processing is disabled until HMAC verification and durable processing are configured (XP03/XP22).',
+      });
+    }
+
+    if (!signature) {
+      throw new BadRequestException('PAYMENT_WEBHOOK_SIGNATURE_REQUIRED');
+    }
+
+    // Verify HMAC signature
+    const bodyStr = typeof payload === 'string' ? payload : JSON.stringify(payload);
+    const expectedSignature = createHmac('sha256', webhookSecret).update(bodyStr).digest('hex');
+
+    if (expectedSignature !== signature) {
+      throw new BadRequestException('INVALID_PAYMENT_WEBHOOK_SIGNATURE');
+    }
+
+    // V03: Never falsely claim PROCESSED_IDEMPOTENTLY until durable inbox ledger is active
+    throw new ServiceUnavailableException({
+      code: 'PAYMENT_WEBHOOK_PROCESSING_UNAVAILABLE',
+      title: 'Payment webhook processing unavailable',
+      detail: 'Webhook ingestion is disabled until raw-body verification and durable event inbox ledger are enabled.',
+    });
   }
 }

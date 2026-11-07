@@ -38,6 +38,16 @@ export class AssetsController {
     return this.assetsService.createAsset(req.userContext, projectId, dto);
   }
 
+  @Post('match-candidates')
+  @RequirePermission('asset.read')
+  async matchAssetCandidates(
+    @Req() req: any,
+    @Param('projectId') projectId: string,
+    @Body() dto: { filename?: string; text?: string; tagCandidate?: string },
+  ) {
+    return this.assetsService.matchAssetCandidates(req.userContext, projectId, dto);
+  }
+
   @Get('export')
   @RequirePermission('asset.read')
   async exportAssets(@Req() req: any, @Param('projectId') projectId: string) {
@@ -51,8 +61,13 @@ export class AssetsController {
     @Param('projectId') projectId: string,
     @Body('items') items: any[],
     @Query('dryRun') dryRun?: string,
+    @Body('conflictStrategy') conflictStrategy?: 'SKIP' | 'FAIL' | 'UPDATE',
+    @Body('atomic') atomic?: boolean,
   ) {
-    return this.assetsService.importAssets(req.userContext, projectId, items || [], dryRun === 'true');
+    return this.assetsService.importAssets(req.userContext, projectId, items || [], dryRun === 'true', {
+      conflictStrategy,
+      atomic,
+    });
   }
 
   @Get(':id')
@@ -63,6 +78,38 @@ export class AssetsController {
     @Param('id') assetId: string,
   ) {
     return this.assetsService.getAsset(req.userContext, projectId, assetId);
+  }
+
+  @Get(':id/passport')
+  @RequirePermission('asset.read')
+  async getEquipmentPassport(
+    @Req() req: any,
+    @Param('projectId') projectId: string,
+    @Param('id') assetId: string,
+  ) {
+    return this.assetsService.getEquipmentPassport(req.userContext, projectId, assetId);
+  }
+
+  @Get(':id/history')
+  @RequirePermission('asset.read')
+  async getAssetIdentityHistory(
+    @Req() req: any,
+    @Param('projectId') projectId: string,
+    @Param('id') assetId: string,
+  ) {
+    return this.assetsService.getAssetIdentityHistory(req.userContext, projectId, assetId);
+  }
+
+  @Patch(':id/revalidations/:revalidationId')
+  @RequirePermission('asset.manage')
+  async revalidateEvidence(
+    @Req() req: any,
+    @Param('projectId') projectId: string,
+    @Param('id') assetId: string,
+    @Param('revalidationId') revalidationId: string,
+    @Body() dto: { status: 'CONFIRMED' | 'MISMATCH' | 'EXEMPT'; notes?: string; expectedRowVersion?: number },
+  ) {
+    return this.assetsService.revalidateEvidence(req.userContext, projectId, assetId, revalidationId, dto);
   }
 
   @Patch(':id')

@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
-import { ShieldCheck, Lock, Hash, Clock, CheckCircle2, AlertTriangle, RefreshCw, KeyRound } from "lucide-react";
-import { apiFetch, ApiProblemError } from "../../../lib/api-client";
+import { Hash, RefreshCw } from "lucide-react";
+import { apiFetch } from "../../../lib/api-client";
 
 interface AuditEventDto {
   id: string;
@@ -22,12 +22,6 @@ export default function AuditTrailPage() {
   const [events, setEvents] = useState<AuditEventDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [verifying, setVerifying] = useState(false);
-  const [verificationResult, setVerificationResult] = useState<{
-    verified: boolean;
-    totalVerified: number;
-    headHash: string;
-  } | null>(null);
 
   const fetchAuditEvents = useCallback(async () => {
     setLoading(true);
@@ -37,21 +31,6 @@ export default function AuditTrailPage() {
       const list = Array.isArray(data) ? data : (data as any)?.data || [];
       setEvents(list);
 
-      // Verify the chain client-side
-      let valid = true;
-      for (let i = 0; i < list.length - 1; i++) {
-        // since sorted DESC by chain_seq:
-        // list[i].prev_hash should match list[i+1].hash
-        if (list[i].prev_hash && list[i + 1]?.hash && list[i].prev_hash !== list[i + 1].hash) {
-          valid = false;
-          break;
-        }
-      }
-      setVerificationResult({
-        verified: valid,
-        totalVerified: list.length,
-        headHash: list[0]?.hash || "N/A",
-      });
     } catch (err: any) {
       setError(err?.message || "Failed to load cryptographic audit log.");
     } finally {
@@ -62,13 +41,6 @@ export default function AuditTrailPage() {
   useEffect(() => {
     fetchAuditEvents();
   }, [fetchAuditEvents]);
-
-  const handleVerifyChain = async () => {
-    setVerifying(true);
-    await new Promise((r) => setTimeout(r, 600));
-    fetchAuditEvents();
-    setVerifying(false);
-  };
 
   const formatDateIst = (isoDate: string) => {
     try {
@@ -90,33 +62,16 @@ export default function AuditTrailPage() {
     <div className="p-6 max-w-[1600px] mx-auto space-y-6 text-xs">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-900">Cryptographic Audit Trail</h1>
+          <h1 className="text-xl font-bold text-slate-900">Audit Trail</h1>
           <p className="text-slate-500 mt-0.5">
-            Append-only SHA-256 hash-chained event logs protecting against tamper, fraud, and subcontractor evidence disputes.
+            Recent organisation events. This screen does not verify the full hash chain or prove tamper resistance.
           </p>
         </div>
 
         <div className="flex items-center gap-3">
-          {verificationResult?.verified ? (
-            <div className="flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-300 px-3.5 py-1.5 font-semibold text-emerald-800 shadow-2xs">
-              <ShieldCheck className="h-4 w-4 text-emerald-600" />
-              <span>SHA-256 Chain Verified & Intact ({verificationResult.totalVerified} Events)</span>
-            </div>
-          ) : (
-            <div className="flex items-center gap-1.5 rounded-full bg-amber-50 border border-amber-300 px-3.5 py-1.5 font-semibold text-amber-800">
-              <AlertTriangle className="h-4 w-4 text-amber-600" />
-              <span>Verifying Ledger Integrity...</span>
-            </div>
-          )}
-
-          <button
-            onClick={handleVerifyChain}
-            disabled={verifying || loading}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 font-semibold text-slate-700 hover:bg-slate-50 shadow-2xs cursor-pointer"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${verifying ? "animate-spin" : ""}`} />
-            <span>Verify Integrity</span>
-          </button>
+          <span className="rounded-full border border-amber-300 bg-amber-50 px-3.5 py-1.5 font-semibold text-amber-800">
+            Hash-chain integrity not verified
+          </span>
         </div>
       </div>
 
@@ -135,10 +90,10 @@ export default function AuditTrailPage() {
       <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-2xs">
         <div className="border-b border-slate-200 bg-slate-50 px-5 py-3.5 flex items-center justify-between">
           <div className="font-bold text-slate-800">
-            Immutable Audit Ledger (Sequence #{events[0]?.chain_seq || 0} down to #1)
+            Latest audit events (up to 100)
           </div>
           <div className="font-mono text-[11px] text-slate-500">
-            Head Hash: <span className="font-bold text-slate-800">{events[0]?.hash.slice(0, 16) || "none"}...</span>
+            Latest event hash (unverified): <span className="font-bold text-slate-800">{events[0]?.hash.slice(0, 16) || "none"}...</span>
           </div>
         </div>
 

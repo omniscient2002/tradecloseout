@@ -4,14 +4,9 @@ import React, { useState, useEffect } from "react";
 import { Modal } from "../ui/modal";
 import {
   PackageCheck,
-  FileCheck2,
   AlertTriangle,
-  Download,
   Loader2,
   CheckCircle2,
-  QrCode,
-  Layers,
-  FileArchive,
   Receipt,
   FileText,
 } from "lucide-react";
@@ -39,11 +34,11 @@ export function CompileHandoverModal({
     missingCount: number;
     expiredCount: number;
   }>({
-    readyWithoutOverride: true,
+    readyWithoutOverride: false,
     missingCount: 0,
     expiredCount: 0,
   });
-  const [overrideReason, setOverrideReason] = useState("");
+  const [readinessAvailable, setReadinessAvailable] = useState(false);
 
   // RA Bill States
   const [milestoneKey, setMilestoneKey] = useState<string>("COMMISSIONING");
@@ -52,40 +47,80 @@ export function CompileHandoverModal({
   const [description, setDescription] = useState<string>("");
 
   const [compiling, setCompiling] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Result States
   const [packageResult, setPackageResult] = useState<{
     packageId: string;
-    pdfDownloadUrl: string;
-    zipDownloadUrl: string;
     versionNo: number;
-    totalPages: number;
-    sizeMb: string;
-    isRaBill?: boolean;
-    includedRequirementsCount?: number;
-    items?: Array<{ requirementKey: string; documentTitle: string; revisionCode: string; assetTag?: string }>;
+    status: string;
   } | null>(null);
+
+  useEffect(() => {
+    if (!open || !packageResult || packageResult.status === "READY" || packageResult.status === "FAILED") return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const latest = await apiFetch<{ status: string }>(
+          `/api/v1/projects/${encodeURIComponent(projectId)}/packages/${encodeURIComponent(packageResult.packageId)}`,
+        );
+        if (cancelled) return;
+        setPackageResult((current) => current ? { ...current, status: latest.status } : current);
+        if (latest.status !== "READY" && latest.status !== "FAILED") timer = setTimeout(poll, 2500);
+      } catch (pollError: any) {
+        if (!cancelled) {
+          setError(pollError.message || "Package status could not be refreshed.");
+          timer = setTimeout(poll, 5000);
+        }
+      }
+    };
+    timer = setTimeout(poll, 2500);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [open, projectId, packageResult?.packageId, packageResult?.status]);
+
+  const handleDownload = async () => {
+    if (!packageResult || packageResult.status !== "READY") return;
+    setDownloading(true);
+    setError(null);
+    try {
+      const result = await apiFetch<{ downloadUrl: string }>(
+        `/api/v1/projects/${encodeURIComponent(projectId)}/packages/${encodeURIComponent(packageResult.packageId)}/download`,
+      );
+      window.location.assign(result.downloadUrl);
+    } catch (downloadError: any) {
+      setError(downloadError.message || "Verified package download is unavailable.");
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   useEffect(() => {
     if (open && projectId) {
       setLoadingReadiness(true);
       setError(null);
+      setReadinessAvailable(false);
       setPackageResult(null);
 
       apiFetch<any>(`/api/v1/projects/${encodeURIComponent(projectId)}/handover/readiness`)
         .then((data) => {
           if (data) {
             setReadiness({
-              readyWithoutOverride: data.readyWithoutOverride ?? true,
+              readyWithoutOverride: data.readyWithoutOverride === true,
               missingCount: data.blockers?.missingMandatoryCount ?? 0,
               expiredCount: data.blockers?.expiredMandatoryCount ?? 0,
             });
+            setReadinessAvailable(true);
           }
         })
         .catch((err) => {
           console.warn("Readiness check returned:", err);
-          setReadiness({ readyWithoutOverride: true, missingCount: 0, expiredCount: 0 });
+          setReadiness({ readyWithoutOverride: false, missingCount: 0, expiredCount: 0 });
+          setError("Project readiness could not be checked. Retry before requesting a package.");
         })
         .finally(() => setLoadingReadiness(false));
     }
@@ -110,31 +145,20 @@ export function CompileHandoverModal({
 
         setPackageResult({
           packageId: data.packageId,
-          pdfDownloadUrl: `/api/v1/projects/${projectId}/dossier/pdf`,
-          zipDownloadUrl: `/api/v1/projects/${projectId}/dossier/pdf`,
           versionNo: data.versionNo || 1,
-          totalPages: (data.includedRequirementsCount || 1) * 8,
-          sizeMb: "12.4",
-          isRaBill: true,
-          includedRequirementsCount: data.includedRequirementsCount || 0,
-          items: data.items || [],
+          status: data.status || "QUEUED",
         });
       } else {
         const data = await apiFetch<any>(`/api/v1/projects/${encodeURIComponent(projectId)}/handover/packages`, {
           method: "POST",
           body: JSON.stringify({
-            overrideReason: overrideReason.trim() || undefined,
           }),
         });
 
         setPackageResult({
           packageId: data.packageId,
-          pdfDownloadUrl: data.pdfUrl || `/api/v1/projects/${projectId}/dossier/pdf`,
-          zipDownloadUrl: data.zipUrl || `/api/v1/projects/${projectId}/dossier/pdf`,
           versionNo: data.versionNo || 1,
-          totalPages: data.totalPages || 48,
-          sizeMb: data.sizeMb || "16.8",
-          isRaBill: false,
+          status: data.status || "QUEUED",
         });
       }
     } catch (err: any) {
@@ -191,7 +215,7 @@ export function CompileHandoverModal({
                   <span>Monthly Progress Billing Annexure</span>
                 </div>
                 <p className="text-[11px] text-blue-800 mt-0.5">
-                  Generates an approved technical documentation pack strictly matching your monthly milestone to unlock immediate payment from the General Contractor.
+                  Creates a milestone-scoped evidence package record. It does not certify the bill, issue an invoice, or determine payment eligibility.
                 </p>
               </div>
 
@@ -227,7 +251,7 @@ export function CompileHandoverModal({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Claim Amount (₹ INR)</label>
+                  <label className="block font-semibold text-slate-700 mb-1">Claim amount (₹ INR, informational only)</label>
                   <input
                     type="number"
                     value={billAmountInr}
@@ -257,6 +281,10 @@ export function CompileHandoverModal({
                   <Loader2 className="w-4 h-4 animate-spin text-slate-500" />
                   <span className="text-slate-600">Checking project readiness gates...</span>
                 </div>
+              ) : !readinessAvailable ? (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-900">
+                  Readiness is unavailable. The package request is disabled until the check succeeds.
+                </div>
               ) : readiness.readyWithoutOverride ? (
                 <div className="flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-900">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
@@ -270,23 +298,8 @@ export function CompileHandoverModal({
                   </div>
                   <p className="text-[11px] text-amber-800">
                     {readiness.missingCount} mandatory document(s) missing or {readiness.expiredCount} expired.
-                    An authorized Project Manager override reason is required to proceed.
+                    Resolve blockers or record an authorised waiver/not-applicable decision before requesting the final package.
                   </p>
-                </div>
-              )}
-
-              {(!readiness.readyWithoutOverride || overrideReason) && (
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">
-                    PM Override Justification (Mandatory when compiling with exceptions)
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={overrideReason}
-                    onChange={(e) => setOverrideReason(e.target.value)}
-                    placeholder="e.g. Client agreed to conditional handover pending OEM spare filters arriving next week."
-                    className="w-full p-2 border border-slate-300 rounded text-xs focus:outline-none focus:border-blue-600"
-                  />
                 </div>
               )}
             </div>
@@ -309,7 +322,7 @@ export function CompileHandoverModal({
             </button>
             <button
               type="submit"
-              disabled={compiling || (packType === "FULL_HANDOVER" && !readiness.readyWithoutOverride && !overrideReason.trim())}
+              disabled={compiling || (packType === "FULL_HANDOVER" && (!readinessAvailable || !readiness.readyWithoutOverride))}
               className="inline-flex items-center gap-1.5 rounded bg-[#0F2942] px-4 py-1.5 text-xs font-semibold text-white hover:bg-[#163A5F] disabled:opacity-50 transition-all cursor-pointer shadow-xs"
             >
               {compiling ? (
@@ -327,59 +340,38 @@ export function CompileHandoverModal({
           </div>
         </form>
       ) : (
-        /* Compilation Success View */
+        /* Keep the request visible while the worker builds its immutable artifact. */
         <div className="space-y-4 text-xs">
-          <div className="rounded-lg bg-emerald-50 border border-emerald-300 p-4 text-emerald-950 space-y-1">
+          <div className={`rounded-lg border p-4 space-y-1 ${packageResult.status === "READY" ? "bg-emerald-50 border-emerald-300 text-emerald-950" : packageResult.status === "FAILED" ? "bg-red-50 border-red-300 text-red-950" : "bg-amber-50 border-amber-300 text-amber-950"}`}>
             <div className="font-bold flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              <span>
-                {packageResult.isRaBill
-                  ? `RA Bill Evidence Pack #${billNumber} Compiled Successfully!`
-                  : `Handover Dossier Package v${packageResult.versionNo} Ready!`}
-              </span>
+              {packageResult.status === "READY" ? <CheckCircle2 className="w-4 h-4 text-emerald-700" /> : packageResult.status === "FAILED" ? <AlertTriangle className="w-4 h-4 text-red-600" /> : <Loader2 className="w-4 h-4 animate-spin text-amber-700" />}
+              <span>{packageResult.status === "READY" ? "Verified PDF is ready" : packageResult.status === "FAILED" ? "Package generation failed" : "Generating handover package"}</span>
             </div>
-            <p className="text-[11px] text-emerald-800">
-              {packageResult.isRaBill
-                ? `Attached ${packageResult.includedRequirementsCount} verified technical document(s) matching milestone ${milestoneKey}.`
-                : "Generated in O(1) streaming memory with hierarchical bookmarks, online QR verification, and PDF linearization."}
+            <p className="text-[11px]">
+              State: {packageResult.status}. A PDF download is enabled only after the stored artifact checksum and provider version are verified.
             </p>
           </div>
 
-          <div className="rounded-lg bg-slate-50 border border-slate-200 p-3.5 flex items-center justify-between">
-            <div>
-              <span className="text-xs font-bold text-slate-900 block truncate">
-                {packageResult.isRaBill ? `${billNumber} (${milestoneKey}) Evidence Pack` : `${projectName} — Official Dossier`}
-              </span>
-              <span className="text-[11px] font-mono text-slate-500 mt-0.5 block">
-                {packageResult.totalPages} Pages · {packageResult.sizeMb} MB · SHA-256 Registered
-              </span>
-            </div>
-            <span className="rounded bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5">
-              VERIFIED
-            </span>
-          </div>
+          {error && <div className="rounded bg-red-50 p-2.5 text-xs text-red-800">{error}</div>}
 
-          {/* Download Buttons */}
-          <div className="grid grid-cols-2 gap-3 pt-1">
-            <a
-              href={packageResult.pdfDownloadUrl}
-              download
-              className="inline-flex items-center justify-center gap-1.5 rounded-md bg-[#0F2942] py-2.5 text-xs font-bold text-white hover:bg-[#163A5F] transition-all cursor-pointer shadow-xs text-center"
-            >
-              <Download className="w-4 h-4" />
-              <span>Download PDF Pack</span>
-            </a>
-            <a
-              href={packageResult.zipDownloadUrl}
-              download
-              className="inline-flex items-center justify-center gap-1.5 rounded-md bg-slate-800 py-2.5 text-xs font-bold text-white hover:bg-slate-900 transition-all cursor-pointer shadow-xs text-center"
-            >
-              <FileArchive className="w-4 h-4" />
-              <span>Download ZIP Archive</span>
-            </a>
+          <div className="rounded-lg bg-slate-50 border border-slate-200 p-3.5">
+            <div>
+              <span className="text-[11px] text-slate-500 block">Package version {packageResult.versionNo} · ID</span>
+              <span className="text-xs font-mono font-bold text-slate-900">{packageResult.packageId}</span>
+            </div>
           </div>
 
           <div className="text-right pt-2 border-t border-slate-100">
+            {packageResult.status === "READY" && (
+              <button
+                type="button"
+                onClick={handleDownload}
+                disabled={downloading}
+                className="mr-2 rounded-md bg-[#0F2942] px-4 py-1.5 text-xs font-semibold text-white hover:bg-[#163A5F] disabled:opacity-50"
+              >
+                {downloading ? "Preparing download…" : "Download verified PDF"}
+              </button>
+            )}
             <button
               type="button"
               onClick={onClose}

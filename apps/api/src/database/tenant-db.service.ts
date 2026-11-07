@@ -9,6 +9,11 @@ export interface ExecutionContext {
   userId: string;
   actorType: 'USER' | 'GUEST' | 'SYSTEM' | 'ADMIN';
   requestId: string;
+  orgRole?: string;
+  projectRole?: string;
+  guestGrantId?: string;
+  guestScope?: Record<string, unknown>;
+  guestCapabilities?: string[];
 }
 
 @Injectable()
@@ -18,6 +23,11 @@ export class TenantDbService {
   constructor(@Optional() existingPool?: any) {
     if (existingPool) {
       this.pool = existingPool;
+    } else if (process.env.APP_DATABASE_URL) {
+      this.pool = new Pool({
+        connectionString: process.env.APP_DATABASE_URL,
+        max: 20,
+      });
     } else {
       this.pool = new Pool({
         host: process.env.DB_HOST || '127.0.0.1',
@@ -50,7 +60,7 @@ export class TenantDbService {
     try {
       await client.query('BEGIN');
       // Set transaction-local configuration parameters (is_local = true)
-      await client.query("SELECT set_config('app.current_org', $1, true)", [ctx.orgId]);
+      await client.query("SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)", [ctx.orgId]);
       await client.query("SELECT set_config('app.current_user', $1, true)", [ctx.userId]);
       await client.query("SELECT set_config('app.actor_type', $1, true)", [ctx.actorType]);
 

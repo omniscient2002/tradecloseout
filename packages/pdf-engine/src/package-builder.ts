@@ -106,35 +106,44 @@ export class PackageBuilder {
       color: rgb(0.6, 0.6, 0.6),
     });
 
-    // 2. Table of Contents Index Page
-    const indexPage = doc.addPage([595.28, 841.89]);
-    indexPage.drawText('TABLE OF CONTENTS / SUBMITTAL INDEX', {
-      x: 50,
-      y: height - 80,
-      size: 16,
-      font: fontBold,
-      color: rgb(0.1, 0.2, 0.4),
-    });
+    // 2. Table of Contents Index Pages (paginated at 35 rows per page, PQ02)
+    const rowsPerPage = 35;
+    const tocPageCount = Math.max(1, Math.ceil(itemsWithPages.length / rowsPerPage));
 
-    let currentY = height - 120;
-    indexPage.drawText('#', { x: 50, y: currentY, size: 10, font: fontBold });
-    indexPage.drawText('Document Type & Title', { x: 80, y: currentY, size: 10, font: fontBold });
-    indexPage.drawText('Rev', { x: 380, y: currentY, size: 10, font: fontBold });
-    indexPage.drawText('Date', { x: 420, y: currentY, size: 10, font: fontBold });
-    indexPage.drawText('Page(s)', { x: 480, y: currentY, size: 10, font: fontBold });
+    for (let p = 0; p < tocPageCount; p++) {
+      const indexPage = doc.addPage([595.28, 841.89]);
+      const pageHeader = tocPageCount > 1
+        ? `TABLE OF CONTENTS / SUBMITTAL INDEX (Page ${p + 1} of ${tocPageCount})`
+        : 'TABLE OF CONTENTS / SUBMITTAL INDEX';
 
-    currentY -= 15;
-    indexPage.drawLine({
-      start: { x: 50, y: currentY },
-      end: { x: 545, y: currentY },
-      thickness: 1,
-      color: rgb(0.8, 0.8, 0.8),
-    });
+      indexPage.drawText(pageHeader, {
+        x: 50,
+        y: height - 80,
+        size: 16,
+        font: fontBold,
+        color: rgb(0.1, 0.2, 0.4),
+      });
 
-    currentY -= 20;
-    itemsWithPages.forEach((item, index) => {
-      if (currentY > 70) {
-        indexPage.drawText(`${index + 1}`, { x: 50, y: currentY, size: 9, font });
+      let currentY = height - 120;
+      indexPage.drawText('#', { x: 50, y: currentY, size: 10, font: fontBold });
+      indexPage.drawText('Document Type & Title', { x: 80, y: currentY, size: 10, font: fontBold });
+      indexPage.drawText('Rev', { x: 380, y: currentY, size: 10, font: fontBold });
+      indexPage.drawText('Date', { x: 420, y: currentY, size: 10, font: fontBold });
+      indexPage.drawText('Page(s)', { x: 480, y: currentY, size: 10, font: fontBold });
+
+      currentY -= 15;
+      indexPage.drawLine({
+        start: { x: 50, y: currentY },
+        end: { x: 545, y: currentY },
+        thickness: 1,
+        color: rgb(0.8, 0.8, 0.8),
+      });
+
+      currentY -= 20;
+      const pageSlice = itemsWithPages.slice(p * rowsPerPage, (p + 1) * rowsPerPage);
+      pageSlice.forEach((item, indexInPage) => {
+        const itemNumber = p * rowsPerPage + indexInPage + 1;
+        indexPage.drawText(`${itemNumber}`, { x: 50, y: currentY, size: 9, font });
         const cleanTitle = sanitizeText(item.documentTitle);
         const truncatedTitle = cleanTitle.length > 45 ? cleanTitle.substring(0, 42) + '...' : cleanTitle;
         indexPage.drawText(truncatedTitle, { x: 80, y: currentY, size: 9, font });
@@ -143,8 +152,8 @@ export class PackageBuilder {
         const pageRange = item.pageStart === item.pageEnd ? `${item.pageStart}` : `${item.pageStart}-${item.pageEnd}`;
         indexPage.drawText(pageRange, { x: 480, y: currentY, size: 9, font });
         currentY -= 18;
-      }
-    });
+      });
+    }
 
     return doc.save();
   }
@@ -161,20 +170,21 @@ export class PackageBuilder {
     const sortedItems = [...items].sort((a, b) => a.sortOrder - b.sortOrder);
 
     // 1. First pass: load and inspect item documents to determine accurate page counts
-    const loadedItemDocs: Array<{ item: PackageItemInput; doc: PDFDocument | null; pageCount: number }> = [];
+    const loadedItemDocs: Array<{ item: PackageItemInput; doc: PDFDocument; pageCount: number }> = [];
     for (const item of sortedItems) {
       try {
         const itemBytes = await fs.readFile(item.filePath);
         const itemDoc = await PDFDocument.load(itemBytes);
         loadedItemDocs.push({ item, doc: itemDoc, pageCount: itemDoc.getPageCount() });
-      } catch {
-        // Missing or non-PDF placeholder page count = 1
-        loadedItemDocs.push({ item, doc: null, pageCount: 1 });
+      } catch (err: any) {
+        throw new Error(`MISSING_SOURCE_FILE: Unable to read required package item ${item.itemId} at ${item.filePath}: ${err.message}`);
       }
     }
 
-    // 2. Compute accurate starting and ending page numbers
-    const frontMatterPageCount = 2; // 1 Cover + 1 Table of Contents
+    // 2. Compute accurate starting and ending page numbers (PQ02: multi-page front matter)
+    const rowsPerPage = 35;
+    const tocPageCount = Math.max(1, Math.ceil(sortedItems.length / rowsPerPage));
+    const frontMatterPageCount = 1 + tocPageCount; // 1 Cover + N Table of Contents
     let runningPage = frontMatterPageCount + 1;
     const itemsWithPages: Array<PackageItemInput & { pageStart: number; pageEnd: number }> = [];
 

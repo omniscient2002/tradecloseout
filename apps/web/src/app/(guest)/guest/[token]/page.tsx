@@ -9,8 +9,8 @@ import {
   KeyRound,
   Download,
 } from "lucide-react";
-import { apiFetch, ApiProblemError } from "../../../../lib/api-client";
-import { enqueueFieldUpload } from "../../../../lib/offline-upload-queue";
+import { apiFetch, ApiProblemError, setCsrfToken } from "../../../../lib/api-client";
+import { enqueueFieldUpload, setOfflineActorPartition } from "../../../../lib/offline-upload-queue";
 
 interface GuestPortalContextDto {
   grantId: string;
@@ -52,6 +52,7 @@ export default function StandaloneGuestPortalPage() {
   // Guest OTP State (05 §6.2 & RT-014)
   const [otpSent, setOtpSent] = useState(false);
   const [otpCode, setOtpCode] = useState("");
+  const [otpChallengeId, setOtpChallengeId] = useState<string | null>(null);
 
   // Supplier Upload State (SCR-034)
   const [selectedReqId, setSelectedReqId] = useState<string>("");
@@ -76,10 +77,25 @@ export default function StandaloneGuestPortalPage() {
       const res = await apiFetch<GuestPortalContextDto>(
         `/api/v1/guest/${encodeURIComponent(token)}`,
       );
-      setCtx(res);
-      if (res.assignedRequirements?.[0]) {
-        setSelectedReqId(res.assignedRequirements[0].id);
+      let resolved = res;
+      try {
+        const session = await apiFetch<Pick<GuestPortalContextDto, "grantId" | "projectId" | "otpVerified" | "assignedRequirements">>(
+          '/api/v1/guest/me/context',
+        );
+        if (session.grantId === res.grantId && session.projectId === res.projectId) {
+          resolved = { ...res, ...session };
+          setOfflineActorPartition(`guest:${session.grantId}`);
+          if (session.assignedRequirements?.[0]) setSelectedReqId(session.assignedRequirements[0].id);
+        } else {
+          setOfflineActorPartition(null);
+        }
+      } catch (sessionError: any) {
+        setOfflineActorPartition(null);
+        if (!(sessionError instanceof ApiProblemError) || ![401, 403, 404].includes(sessionError.status)) {
+          throw sessionError;
+        }
       }
+      setCtx(resolved);
     } catch (err: any) {
       setError(
         err instanceof ApiProblemError
@@ -98,9 +114,10 @@ export default function StandaloneGuestPortalPage() {
   const handleRequestGuestOtp = async () => {
     setError(null);
     try {
-      await apiFetch(`/api/v1/guest/${encodeURIComponent(token)}/otp/request`, {
+      const result = await apiFetch<{ challengeId: string }>(`/api/v1/guest/${encodeURIComponent(token)}/otp/request`, {
         method: "POST",
       });
+      setOtpChallengeId(result.challengeId);
       setOtpSent(true);
     } catch (err: any) {
       setError(err.message || "Could not send OTP.");
@@ -109,12 +126,22 @@ export default function StandaloneGuestPortalPage() {
 
   const handleVerifyGuestOtp = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!otpChallengeId) {
+      setError("Request a new verification code first.");
+      return;
+    }
     setError(null);
     try {
-      await apiFetch(`/api/v1/guest/${encodeURIComponent(token)}/otp/verify`, {
-        method: "POST",
-        body: JSON.stringify({ otp: otpCode.trim(), code: otpCode.trim() }),
-      });
+      const res = await apiFetch<{ csrfToken: string }>(
+        `/api/v1/guest/${encodeURIComponent(token)}/otp/verify`,
+        {
+          method: "POST",
+          body: JSON.stringify({ code: otpCode.trim(), challengeId: otpChallengeId }),
+        },
+      );
+      if (res?.csrfToken) {
+        setCsrfToken(res.csrfToken);
+      }
       await loadGuestContext();
     } catch (err: any) {
       setError(err.message || "Invalid OTP code.");
@@ -134,6 +161,7 @@ export default function StandaloneGuestPortalPage() {
     setError(null);
     try {
       await enqueueFieldUpload({
+        actorPartition: `guest:${ctx.grantId}`,
         projectId: ctx.projectId,
         requirementId: selectedReqId,
         file: selectedFile,
@@ -156,6 +184,13 @@ export default function StandaloneGuestPortalPage() {
       return;
     }
 
+    const canonicalDecision =
+      clientDecision === "REJECTED"
+        ? "REJECT"
+        : clientDecision === "ACCEPT_WITH_EXCEPTIONS"
+        ? "ACCEPT_WITH_EXCEPTIONS"
+        : "ACCEPT";
+
     setError(null);
     try {
       await apiFetch(
@@ -163,8 +198,9 @@ export default function StandaloneGuestPortalPage() {
         {
           method: "POST",
           body: JSON.stringify({
-            decision: clientDecision === "REJECTED" ? "REJECTED" : "ACCEPTED",
+            decision: canonicalDecision,
             remarks: clientRemarks.trim() || undefined,
+            comment: clientRemarks.trim() || undefined,
           }),
         },
       );

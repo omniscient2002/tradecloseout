@@ -24,6 +24,7 @@ export enum RequirementStatus {
   REQUESTED = 'REQUESTED',
   UPLOADED = 'UPLOADED',
   IN_REVIEW = 'IN_REVIEW',
+  UNDER_REVIEW = 'UNDER_REVIEW', // Aligns with SQL schema and workflows (TC2-022)
   CHANGES_REQUESTED = 'CHANGES_REQUESTED',
   REJECTED = 'REJECTED',
   APPROVED = 'APPROVED',
@@ -54,6 +55,7 @@ export enum FileVersionStatus {
 export enum VersionReviewStatus {
   NOT_SUBMITTED = 'NOT_SUBMITTED',
   IN_REVIEW = 'IN_REVIEW',
+  UNDER_REVIEW = 'UNDER_REVIEW', // Aligns with SQL schema and workflows (TC2-022)
   CHANGES_REQUESTED = 'CHANGES_REQUESTED',
   REJECTED = 'REJECTED',
   APPROVED = 'APPROVED',
@@ -77,6 +79,7 @@ export enum PackageStatus {
 
 export enum SubmissionStatus {
   DRAFT = 'DRAFT',
+  SUBMITTED = 'SUBMITTED', // Aligns with SQL schema and workflows (TC2-022)
   SENT = 'SENT',
   ACKNOWLEDGED = 'ACKNOWLEDGED',
   PARTIALLY_ACCEPTED = 'PARTIALLY_ACCEPTED', // RT-007
@@ -85,7 +88,18 @@ export enum SubmissionStatus {
   WITHDRAWN = 'WITHDRAWN', // RT-024
 }
 
+export enum SubmissionRecipientStatus {
+  SENT = 'SENT',
+  ACKNOWLEDGED = 'ACKNOWLEDGED',
+  ACCEPTED = 'ACCEPTED',
+  ACCEPTED_WITH_EXCEPTIONS = 'ACCEPTED_WITH_EXCEPTIONS',
+  REJECTED = 'REJECTED',
+}
+
 export enum SubmissionRecipientDecision {
+  ACCEPT = 'ACCEPT',
+  ACCEPT_WITH_EXCEPTIONS = 'ACCEPT_WITH_EXCEPTIONS',
+  REJECT = 'REJECT',
   PENDING = 'PENDING',
   ACCEPTED = 'ACCEPTED',
   ACCEPTED_WITH_EXCEPTIONS = 'ACCEPTED_WITH_EXCEPTIONS',

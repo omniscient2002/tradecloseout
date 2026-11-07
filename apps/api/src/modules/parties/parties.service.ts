@@ -7,11 +7,15 @@ import {
   ForbiddenException,
   UnauthorizedException,
   BadRequestException,
+  Optional,
+  ServiceUnavailableException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import * as crypto from 'node:crypto';
 import { PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { TenantDbService, ExecutionContext } from '../../database/tenant-db.service';
+import { DltSmsGateway, TransactionalMailGateway } from '../identity/identity.controller';
 
 export interface CreatePartyDto {
   name: string;
@@ -21,9 +25,48 @@ export interface CreatePartyDto {
   phone?: string;
 }
 
+export interface GuestGrantProfile {
+  grantType: 'SUPPLIER_UPLOAD' | 'SUPPLIER_CONTRIBUTOR' | 'CONSULTANT_REVIEW' | 'CLIENT_VIEW' | 'MC_VIEW' | 'AUDITOR_READ';
+  role: string;
+  capabilities: string[];
+}
+
+export const GUEST_GRANT_PROFILES: Record<string, GuestGrantProfile> = {
+  SUPPLIER_UPLOAD: {
+    grantType: 'SUPPLIER_UPLOAD',
+    role: 'R-SUPPLIER-OEM',
+    capabilities: ['document.upload', 'document.read'],
+  },
+  SUPPLIER_CONTRIBUTOR: {
+    grantType: 'SUPPLIER_CONTRIBUTOR',
+    role: 'R-SUBCONTRACTOR',
+    capabilities: ['document.upload', 'document.read', 'review.read', 'defect.manage'],
+  },
+  CONSULTANT_REVIEW: {
+    grantType: 'CONSULTANT_REVIEW',
+    role: 'R-CONSULTANT',
+    capabilities: ['project.read', 'asset.read', 'document.read', 'document.download', 'review.read', 'review.decide', 'package.download'],
+  },
+  CLIENT_VIEW: {
+    grantType: 'CLIENT_VIEW',
+    role: 'R-CLIENT',
+    capabilities: ['project.read', 'document.read', 'document.download', 'package.download', 'package.accept'],
+  },
+  MC_VIEW: {
+    grantType: 'MC_VIEW',
+    role: 'R-SITE',
+    capabilities: ['project.read', 'asset.read', 'document.read', 'document.download', 'review.read', 'package.download'],
+  },
+  AUDITOR_READ: {
+    grantType: 'AUDITOR_READ',
+    role: 'R-AUDITOR',
+    capabilities: ['project.read', 'asset.read', 'document.read', 'document.download', 'review.read', 'package.download'],
+  },
+};
+
 export interface CreateGuestGrantDto {
   partyId?: string;
-  grantType?: 'SUPPLIER' | 'CONSULTANT' | 'CLIENT' | 'AUDITOR';
+  grantType?: string;
   role?: string;
   capabilities?: string[];
   scopeJson?: Record<string, any>;
@@ -35,7 +78,11 @@ export interface CreateGuestGrantDto {
 
 @Injectable()
 export class PartiesService {
-  constructor(private readonly db: TenantDbService) {}
+  constructor(
+    private readonly db: TenantDbService,
+    @Optional() private readonly smsGateway?: DltSmsGateway,
+    @Optional() private readonly mailGateway?: TransactionalMailGateway,
+  ) {}
 
   private hashSecret(secret: string): string {
     return crypto.createHash('sha256').update(secret).digest('hex');
@@ -90,6 +137,77 @@ export class PartiesService {
    * Issues a scoped guest grant with a raw secret token (hash stored in DB).
    */
   async createGuestGrant(ctx: ExecutionContext, projectId: string, dto: CreateGuestGrantDto) {
+    if (!dto.partyId) {
+      throw new BadRequestException('PARTY_REQUIRED: partyId is required to create a guest grant');
+    }
+
+    if (ctx.actorType === 'GUEST') {
+      throw new ForbiddenException('GUEST_CANNOT_ISSUE_GRANTS: Guests cannot issue guest grants');
+    }
+
+    const rawType = (dto.grantType || 'SUPPLIER_UPLOAD').toUpperCase();
+    const typeMap: Record<string, keyof typeof GUEST_GRANT_PROFILES> = {
+      SUPPLIER: 'SUPPLIER_UPLOAD',
+      SUPPLIER_UPLOAD: 'SUPPLIER_UPLOAD',
+      SUPPLIER_CONTRIBUTOR: 'SUPPLIER_CONTRIBUTOR',
+      CONSULTANT: 'CONSULTANT_REVIEW',
+      CONSULTANT_REVIEW: 'CONSULTANT_REVIEW',
+      CLIENT: 'CLIENT_VIEW',
+      CLIENT_VIEW: 'CLIENT_VIEW',
+      MC: 'MC_VIEW',
+      MC_VIEW: 'MC_VIEW',
+      AUDITOR: 'AUDITOR_READ',
+      AUDITOR_READ: 'AUDITOR_READ',
+    };
+    const profileKey = typeMap[rawType];
+    if (!profileKey || !GUEST_GRANT_PROFILES[profileKey]) {
+      throw new BadRequestException(`INVALID_GRANT_TYPE: Grant type '${dto.grantType}' is unrecognized`);
+    }
+
+    // Issuer delegation ceiling (FV01): Procurement (R-PROC) and Subcontractors can only issue supplier grants
+    if (ctx.orgRole === 'R-PROC' || ctx.orgRole === 'R-SUBCONTRACTOR') {
+      if (profileKey !== 'SUPPLIER_UPLOAD' && profileKey !== 'SUPPLIER_CONTRIBUTOR') {
+        throw new ForbiddenException('DELEGATION_CEILING_EXCEEDED: Procurement members can only issue supplier grants');
+      }
+    }
+
+    // Only Owner, Admin, PM, or Doc Controller can issue Client or Consultant grants
+    if (profileKey === 'CLIENT_VIEW' || profileKey === 'CONSULTANT_REVIEW') {
+      const allowedRoles = new Set(['R-OWNER', 'R-ADMIN', 'R-PM', 'R-DOC']);
+      if (!allowedRoles.has(ctx.orgRole || '') && !allowedRoles.has(ctx.projectRole || '')) {
+        throw new ForbiddenException(`DELEGATION_CEILING_EXCEEDED: Cannot issue ${profileKey} grant without management authority`);
+      }
+    }
+
+    const profile = GUEST_GRANT_PROFILES[profileKey];
+    const grantType = profile.grantType;
+
+    // Forbid internal organisation roles or role override attempts (FV01)
+    const FORBIDDEN_GUEST_ROLES = new Set([
+      'R-OWNER',
+      'R-ADMIN',
+      'R-PROC',
+      'R-SAFETY',
+      'R-DOC',
+      'R-BILLING',
+      'R-PM',
+    ]);
+    if (dto.role && (FORBIDDEN_GUEST_ROLES.has(dto.role) || dto.role !== profile.role)) {
+      throw new BadRequestException(`INVALID_GUEST_ROLE: Guest grants cannot adopt internal role '${dto.role}' or override profile role '${profile.role}'`);
+    }
+    const role = profile.role;
+
+    // Capabilities ceiling: must be strict subset of profile capabilities (FV01)
+    let capabilities = profile.capabilities;
+    if (dto.capabilities && dto.capabilities.length > 0) {
+      for (const cap of dto.capabilities) {
+        if (!profile.capabilities.includes(cap)) {
+          throw new BadRequestException(`UNAUTHORIZED_CAPABILITY: Capability '${cap}' exceeds grant profile ceiling for '${grantType}'`);
+        }
+      }
+      capabilities = dto.capabilities;
+    }
+
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
       const rawToken = crypto.randomBytes(32).toString('hex');
       const tokenHash = this.hashSecret(rawToken);
@@ -109,10 +227,10 @@ export class PartiesService {
           grantId,
           ctx.orgId,
           projectId,
-          dto.partyId || null,
-          dto.grantType || 'SUPPLIER',
-          dto.role || 'R-SUPPLIER-OEM',
-          dto.capabilities || ['REQUIREMENT_UPLOAD', 'DOCUMENT_VIEW'],
+          dto.partyId,
+          grantType,
+          role,
+          capabilities,
           JSON.stringify(dto.scopeJson || {}),
           dto.otpRequired ?? true,
           dto.phone || null,
@@ -128,7 +246,7 @@ export class PartiesService {
         token: rawToken,
         link: `/guest/${rawToken}`,
         expiresAt,
-        role: dto.role || 'R-SUPPLIER-OEM',
+        role,
         capabilities: res.rows[0].capabilities,
         scope: dto.scopeJson || {},
       };
@@ -143,7 +261,7 @@ export class PartiesService {
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
       const grantRes = await client.query(
         `UPDATE guest_grants
-            SET status = 'REVOKED', revoked_at = now()
+            SET status = 'REVOKED'
           WHERE org_id = $1 AND id = $2 AND status = 'ACTIVE'
           RETURNING id`,
         [ctx.orgId, grantId],
@@ -183,9 +301,9 @@ export class PartiesService {
 
     return this.createGuestGrant(ctx, projectId, {
       partyId: dto.supplierPartyId,
-      grantType: 'SUPPLIER',
+      grantType: 'SUPPLIER_UPLOAD',
       role: 'R-SUPPLIER-OEM',
-      capabilities: ['REQUIREMENT_UPLOAD', 'DOCUMENT_VIEW'],
+      capabilities: ['document.upload', 'document.read'],
       scopeJson: {
         projectId,
         supplierPartyId: dto.supplierPartyId,
@@ -229,6 +347,7 @@ export class PartiesService {
         throw new NotFoundException('GUEST_GRANT_NOT_FOUND_OR_EXPIRED');
       }
       const grant = res.rows[0];
+      await client.query(`SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`, [grant.org_id]);
       if (grant.cooldown_until && new Date(grant.cooldown_until) > new Date()) {
         throw new ForbiddenException(`RATE_LIMIT_COOLDOWN_ACTIVE: Try again after ${grant.cooldown_until}`);
       }
@@ -244,30 +363,7 @@ export class PartiesService {
       );
       const meta = metaRes.rows[0] || {};
 
-      let assignedRequirements: any[] = [];
-      const allowedReqIds: string[] = Array.isArray(grant.scope_json?.requirementIds)
-        ? grant.scope_json.requirementIds
-        : [];
-      if (allowedReqIds.length > 0) {
-        const reqRes = await client.query(
-          `SELECT id, requirement_key, title, doc_type_key, status, due_at
-             FROM requirements
-            WHERE org_id = $1 AND project_id = $2 AND id = ANY($3::uuid[])
-              AND superseded_at IS NULL`,
-          [grant.org_id, grant.project_id, allowedReqIds],
-        );
-        assignedRequirements = reqRes.rows.map((r: any) => ({
-          id: r.id,
-          requirementKey: r.requirement_key,
-          title: r.title,
-          docTypeKey: r.doc_type_key,
-          status: r.status,
-          dueAt: r.due_at,
-        }));
-      }
-
       return {
-        ...grant,
         grantId: grant.id,
         grantType: grant.grant_type,
         projectId: grant.project_id,
@@ -275,10 +371,38 @@ export class PartiesService {
         brandColor: meta.brand_color || '#0F172A',
         projectName: meta.project_name || 'Project Closeout',
         projectCode: meta.project_code || '',
-        otpRequired: grant.otp_required,
-        otpVerified: !grant.otp_required,
+        otpRequired: true,
+        otpVerified: false,
         supportContactText: `Contact ${meta.contractor_name || 'the contractor'} for assistance.`,
-        assignedRequirements,
+      };
+    });
+  }
+
+  async getGuestSessionContext(ctx: ExecutionContext) {
+    if (ctx.actorType !== 'GUEST' || !ctx.guestGrantId) throw new NotFoundException('GUEST_GRANT_NOT_FOUND');
+    return this.db.withTenantContext(ctx, async (client) => {
+      const { rows } = await client.query(
+        `SELECT id, project_id, scope_json FROM guest_grants
+          WHERE org_id = $1 AND id = $2 AND status = 'ACTIVE' AND expires_at > now()`,
+        [ctx.orgId, ctx.guestGrantId],
+      );
+      if (!rows.length) throw new NotFoundException('GUEST_GRANT_NOT_FOUND');
+      const grant = rows[0];
+      const allowedIds: string[] = Array.isArray(grant.scope_json?.requirementIds) ? grant.scope_json.requirementIds : [];
+      const reqs = allowedIds.length ? await client.query(
+        `SELECT id, requirement_key, title, doc_type_key, status, due_at FROM requirements
+          WHERE org_id = $1 AND project_id = $2 AND id = ANY($3::uuid[]) AND superseded_at IS NULL
+          ORDER BY requirement_key, id`,
+        [ctx.orgId, grant.project_id, allowedIds],
+      ) : { rows: [] };
+      return {
+        grantId: grant.id,
+        projectId: grant.project_id,
+        otpVerified: true,
+        assignedRequirements: reqs.rows.map((r: any) => ({
+          id: r.id, requirementKey: r.requirement_key, title: r.title,
+          docTypeKey: r.doc_type_key, status: r.status, dueAt: r.due_at,
+        })),
       };
     });
   }
@@ -286,12 +410,12 @@ export class PartiesService {
   /**
    * API-028A POST /guest/:token/otp/request (RT-014, CB-007, CB-011)
    */
-  async requestGuestOtp(token: string): Promise<{ success: boolean; maskedTarget: string }> {
+  async requestGuestOtp(token: string): Promise<{ success: boolean; challengeId: string; maskedTarget: string; channel: string; debugOtp?: string }> {
     const tokenHash = this.hashSecret(token);
     return await this.db.withTokenContext(tokenHash, async (client) => {
       const grants = (
         await client.query(
-          `SELECT * FROM guest_grants
+        `SELECT * FROM guest_grants
            WHERE token_hash = $1 AND status = 'ACTIVE' AND expires_at > now()`,
           [tokenHash],
         )
@@ -300,7 +424,15 @@ export class PartiesService {
       if (!grants.length) {
         throw new NotFoundException('GUEST_GRANT_NOT_FOUND_OR_EXPIRED');
       }
-      const grant = grants[0];
+      await client.query(`SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`, [grants[0].org_id]);
+      const locked = await client.query(
+        `SELECT * FROM guest_grants
+          WHERE id = $1 AND org_id = $2 AND token_hash = $3 AND status = 'ACTIVE' AND expires_at > now()
+          FOR UPDATE`,
+        [grants[0].id, grants[0].org_id, tokenHash],
+      );
+      if (!locked.rows.length) throw new NotFoundException('GUEST_GRANT_NOT_FOUND_OR_EXPIRED');
+      const grant = locked.rows[0];
 
       // Check 15-minute cooldown
       if (grant.cooldown_until && new Date(grant.cooldown_until) > new Date()) {
@@ -335,7 +467,8 @@ export class PartiesService {
       const challengeId = uuidv7();
       const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
-      const targetIdentifier = grant.target_phone_e164 || grant.target_email || 'guest';
+      const targetIdentifier = grant.target_phone_e164 || grant.target_email;
+      if (!targetIdentifier) throw new UnprocessableEntityException('GUEST_CONTACT_REQUIRED');
       const channel = grant.target_phone_e164 ? 'SMS' : 'EMAIL';
 
       await client.query(
@@ -344,8 +477,27 @@ export class PartiesService {
         [challengeId, channel, targetIdentifier, grant.id, codeHash, expiresAt],
       );
 
-      const maskedTarget = targetIdentifier.replace(/^(\+?\d{2,4})\d+(\d{4})$/, '$1******$2');
-      return { success: true, maskedTarget };
+      const isProductionLike = process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging';
+      const isExplicitDebug = process.env.ENABLE_DEBUG_OTP === 'true' && !isProductionLike;
+      if (!isExplicitDebug) {
+        if (channel === 'SMS') {
+          if (!this.smsGateway) throw new ServiceUnavailableException('SMS_GATEWAY_UNAVAILABLE');
+          const sent = await this.smsGateway.sendOtpSms(
+            targetIdentifier,
+            rawCode,
+            process.env.DLT_GUEST_OTP_TEMPLATE_ID || process.env.DLT_OTP_TEMPLATE_ID || '',
+          );
+          if (!sent.delivered) throw new Error('GUEST_OTP_DELIVERY_FAILED');
+        } else {
+          if (!this.mailGateway) throw new ServiceUnavailableException('MAIL_GATEWAY_UNAVAILABLE');
+          await this.mailGateway.sendOtpEmail(targetIdentifier, rawCode, 'GUEST_ACCESS');
+        }
+      }
+
+      const maskedTarget = channel === 'EMAIL'
+        ? `${targetIdentifier.slice(0, 1)}***@${targetIdentifier.split('@')[1] || 'hidden'}`
+        : targetIdentifier.replace(/^(\+?\d{2,4})\d+(\d{4})$/, '$1******$2');
+      return { success: true, challengeId, maskedTarget, channel: isExplicitDebug ? 'DEBUG' : channel, debugOtp: isExplicitDebug ? rawCode : undefined };
     });
   }
 
@@ -355,9 +507,13 @@ export class PartiesService {
   async verifyGuestOtp(
     token: string,
     code: string,
+    challengeId: string,
   ): Promise<{ sessionToken: string; activeOrgId: string; grantId: string; csrfToken: string }> {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(challengeId) || !/^\d{6}$/.test(code)) {
+      throw new BadRequestException('INVALID_CHALLENGE_OR_CODE');
+    }
     const tokenHash = this.hashSecret(token);
-    return await this.db.withTokenContext(tokenHash, async (client) => {
+    const result = await this.db.withTokenContext(tokenHash, async (client) => {
       const grants = (
         await client.query(
           `SELECT * FROM guest_grants
@@ -369,7 +525,15 @@ export class PartiesService {
       if (!grants.length) {
         throw new NotFoundException('GUEST_GRANT_NOT_FOUND_OR_EXPIRED');
       }
-      const grant = grants[0];
+      await client.query(`SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`, [grants[0].org_id]);
+      const locked = await client.query(
+        `SELECT * FROM guest_grants
+          WHERE id = $1 AND org_id = $2 AND token_hash = $3 AND status = 'ACTIVE' AND expires_at > now()
+          FOR UPDATE`,
+        [grants[0].id, grants[0].org_id, tokenHash],
+      );
+      if (!locked.rows.length) throw new NotFoundException('GUEST_GRANT_NOT_FOUND_OR_EXPIRED');
+      const grant = locked.rows[0];
 
       // Check cooldown
       if (grant.cooldown_until && new Date(grant.cooldown_until) > new Date()) {
@@ -379,9 +543,9 @@ export class PartiesService {
       const challenges = (
         await client.query(
           `SELECT * FROM otp_challenges
-           WHERE guest_grant_id = $1 AND purpose = 'GUEST_ACCESS' AND consumed_at IS NULL AND expires_at > now()
-           ORDER BY created_at DESC LIMIT 1`,
-          [grant.id],
+           WHERE guest_grant_id = $1 AND id = $2 AND purpose = 'GUEST_ACCESS' AND consumed_at IS NULL AND expires_at > now()
+           LIMIT 1 FOR UPDATE`,
+          [grant.id, challengeId],
         )
       ).rows;
 
@@ -401,13 +565,13 @@ export class PartiesService {
             `UPDATE guest_grants SET failed_otp_count = 0, cooldown_until = $1 WHERE id = $2`,
             [cooldownUntil, grant.id],
           );
-          throw new ForbiddenException('TOO_MANY_FAILED_ATTEMPTS: 15-minute cooldown activated');
+          return { failure: 'TOO_MANY_FAILED_ATTEMPTS' as const };
         } else {
           await client.query(
             `UPDATE guest_grants SET failed_otp_count = $1 WHERE id = $2`,
             [newAttempts, grant.id],
           );
-          throw new UnauthorizedException('INVALID_OTP_CODE');
+          return { failure: 'INVALID_OTP_CODE' as const };
         }
       }
 
@@ -434,6 +598,202 @@ export class PartiesService {
       );
 
       return { sessionToken, activeOrgId: grant.org_id, grantId: grant.id, csrfToken };
+    });
+
+    if ('failure' in result) {
+      if (result.failure === 'TOO_MANY_FAILED_ATTEMPTS') {
+        throw new ForbiddenException('TOO_MANY_FAILED_ATTEMPTS: 15-minute cooldown activated');
+      }
+      throw new UnauthorizedException('INVALID_OTP_CODE');
+    }
+    return result;
+  }
+
+  /**
+   * API-028C POST /guest/:token/session
+   * Legacy bearer/PIN exchange is disabled; OTP verification creates the session.
+   */
+  async createGuestSession(
+    _token: string,
+    _pin?: string,
+  ): Promise<{ sessionToken: string; activeOrgId: string; grantId: string; csrfToken: string }> {
+    throw new UnauthorizedException({
+      code: 'OTP_REQUIRED',
+      detail: 'Verify a single-use OTP challenge before creating a guest session.',
+    });
+  }
+
+  /**
+   * API-029A: POST /api/v1/projects/:projectId/procurement-orders
+   * Creates a purchase order with lines and vendor document obligation schedules (Top 25 Item 2).
+   */
+  async createProcurementOrder(
+    ctx: ExecutionContext,
+    projectId: string,
+    input: {
+      poNumber: string;
+      supplierPartyId: string;
+      orderedAt?: string;
+      promisedDeliveryAt?: string;
+      totalAmountPaise?: number;
+      notes?: string;
+      lines: Array<{
+        lineNo: number;
+        assetCategoryKey: string;
+        description: string;
+        quantity?: number;
+        assetId?: string;
+        make?: string;
+        model?: string;
+        obligations?: Array<{
+          docTypeKey: string;
+          stageKey: string;
+          title: string;
+          dueDate?: string;
+        }>;
+      }>;
+    },
+  ) {
+    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+      const poId = uuidv7();
+      await client.query(
+        `INSERT INTO procurement_orders (
+          id, org_id, project_id, po_number, supplier_party_id, status,
+          ordered_at, promised_delivery_at, total_amount_paise, notes, created_by
+        ) VALUES ($1, $2, $3, $4, $5, 'ISSUED', COALESCE($6, CURRENT_DATE), $7, $8, $9, $10)`,
+        [
+          poId,
+          ctx.orgId,
+          projectId,
+          input.poNumber.trim(),
+          input.supplierPartyId,
+          input.orderedAt || null,
+          input.promisedDeliveryAt || null,
+          input.totalAmountPaise || null,
+          input.notes || null,
+          ctx.userId,
+        ],
+      );
+
+      let totalObligations = 0;
+      for (const line of input.lines || []) {
+        const lineId = uuidv7();
+        await client.query(
+          `INSERT INTO procurement_order_lines (
+            id, org_id, project_id, po_id, line_no, asset_category_key,
+            description, quantity, asset_id, make, model
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          [
+            lineId,
+            ctx.orgId,
+            projectId,
+            poId,
+            line.lineNo,
+            line.assetCategoryKey,
+            line.description.trim(),
+            line.quantity ?? 1,
+            line.assetId || null,
+            line.make || null,
+            line.model || null,
+          ],
+        );
+
+        for (const obl of line.obligations || []) {
+          const oblId = uuidv7();
+          await client.query(
+            `INSERT INTO supplier_document_obligations (
+              id, org_id, project_id, po_line_id, doc_type_key, stage_key,
+              title, due_date, supplier_party_id, status
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'PENDING')`,
+            [
+              oblId,
+              ctx.orgId,
+              projectId,
+              lineId,
+              obl.docTypeKey,
+              obl.stageKey || 'FAT',
+              obl.title,
+              obl.dueDate || null,
+              input.supplierPartyId,
+            ],
+          );
+          totalObligations++;
+        }
+      }
+
+      return {
+        poId,
+        poNumber: input.poNumber,
+        linesCount: input.lines?.length ?? 0,
+        obligationsCount: totalObligations,
+        status: 'ISSUED',
+      };
+    });
+  }
+
+  /**
+   * API-029B: GET /api/v1/projects/:projectId/procurement-orders
+   */
+  async listProcurementOrders(ctx: ExecutionContext, projectId: string) {
+    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+      const { rows } = await client.query(
+        `SELECT po.*, p.name AS supplier_name,
+                (SELECT count(*) FROM procurement_order_lines pol WHERE pol.po_id = po.id)::int AS line_count,
+                (SELECT count(*) FROM supplier_document_obligations sdo
+                  JOIN procurement_order_lines pol ON pol.id = sdo.po_line_id
+                  WHERE pol.po_id = po.id)::int AS obligation_count,
+                (SELECT count(*) FROM supplier_document_obligations sdo
+                  JOIN procurement_order_lines pol ON pol.id = sdo.po_line_id
+                  WHERE pol.po_id = po.id AND sdo.status = 'PENDING')::int AS pending_obligation_count
+         FROM procurement_orders po
+         JOIN parties p ON p.id = po.supplier_party_id
+         WHERE po.org_id = $1 AND po.project_id = $2
+         ORDER BY po.ordered_at DESC`,
+        [ctx.orgId, projectId],
+      );
+      return rows;
+    });
+  }
+
+  async intakeSupplierObligation(
+    ctx: ExecutionContext,
+    projectId: string,
+    obligationId: string,
+    dto: { decision?: 'ACCEPT' | 'REJECT'; notes?: string; documentVersionId?: string },
+  ) {
+    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+      const { rows } = await client.query(
+        `SELECT * FROM supplier_document_obligations
+          WHERE org_id = $1 AND project_id = $2 AND id = $3
+          FOR UPDATE`,
+        [ctx.orgId, projectId, obligationId],
+      );
+      if (!rows.length) {
+        throw new NotFoundException({
+          code: 'OBLIGATION_NOT_FOUND',
+          detail: `Supplier document obligation ${obligationId} not found in project ${projectId}.`,
+        });
+      }
+      const existing = rows[0];
+      const decision = dto.decision ?? 'ACCEPT';
+      const newStatus = decision === 'REJECT' ? 'PENDING' : 'ACCEPTED';
+
+      await client.query(
+        `UPDATE supplier_document_obligations
+            SET status = $4,
+                document_version_id = COALESCE($5, document_version_id)
+          WHERE org_id = $1 AND project_id = $2 AND id = $3`,
+        [ctx.orgId, projectId, obligationId, newStatus, dto.documentVersionId ?? null],
+      );
+
+      return {
+        id: obligationId,
+        projectId,
+        status: newStatus,
+        decision,
+        documentVersionId: dto.documentVersionId ?? existing.document_version_id,
+        notes: dto.notes ?? null,
+      };
     });
   }
 }

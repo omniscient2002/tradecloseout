@@ -1,0 +1,21 @@
+id,priority,title,status,depends_on,findings,plan_document,section
+A01,P0,Canonical actor/resource policy and external response contracts,open,,PA01; PA02,TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md,A01
+A02,P1,"Executable API schemas, routes and generated clients",open,A01,PA03; PA04; PA07; PA08; PA13,TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md,A02
+A03,P1,One workflow state vocabulary and executable next actions,open,A02; A16,PA05; PA06; PA09; PA15,TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md,A03
+A04,P1,OTP challenge lifecycle and production identity recovery,open,,PA10; PA21,TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md,A04
+A05,P1,Dependency and untrusted parser remediation,open,,PA11; PA18; PA28,TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md,A05
+A06,P1,"Atomic durable commands, complete audit and idempotent outcomes",open,A01; A02; A03,PA14; PA16,TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md,A06
+A07,P1,Scoped evidence qualification and verified artifact identity,open,A01; A03; A06,PA12; PA15,TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md,A07
+A08,P1,"Durable outbox, bounded file/artifact execution and recovery",open,A06; A07,PA17; PA18; PA19; PA20,TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md,A08
+A09,P1,"Frozen handover, recipient authority and decision corrections",open,A01; A02; A06; A07; A08,PA01; PA08; PA15; PA30,TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md,A09
+A10,P1,Recoverable field uploads and actor-safe offline behavior,open,A02; A06; A07,PA25; PA31,TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md,A10
+A11,P2,Stable baseline/import and material-to-equipment trace,open,A03; A05; A06; A07; A16,PA28; PA29,TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md,A11
+A12,P2,"Native inspection, witness and traceable TAB",open,A01; A07; A10; A11,PA27,TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md,A12
+A13,P2,Functional controls and seasonal/deferred commissioning,open,A09; A12,PA27,TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md,A13
+A14,P2,"Sectional aftercare, warranty conflicts and commercial evidence",open,A07; A09; A11; A12,PA09; PA30,TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md,A14
+A15,P1,Truthful billing/profile UI and optional financial/signing integrations,open,A02; A03; A06,PA09; PA24; PA30,TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md,A15
+A16,P1,Schema reconciliation and safe populated upgrades,open,,PA05; PA13; PA26,TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md,A16
+A17,P2,"Connected contractor UI, work desk, search and accessible mobile flows",open,A01; A02; A03,PA03; PA06; PA24; PA31,TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md,A17
+A18,P1,"Validated configuration, release packaging and observability",open,A01; A08; A16,PA21; PA22; PA32,TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md,A18
+A19,P1,"Recovery, load envelopes and failure rehearsals",open,A06; A07; A08; A18,PA19; PA23; PA32,TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md,A19
+A20,P1,"Boundary tests, customer acceptance and the completion protocol",open,,PA22,TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md,A20

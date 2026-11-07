@@ -31,7 +31,6 @@ export interface ReviewDecisionInput {
     reference: string;
     evidenceObjectId?: string;
   };
-  isOverride?: boolean;
 }
 
 export async function executeReviewDecision(
@@ -43,6 +42,7 @@ export async function executeReviewDecision(
   try {
     // 1. Bind transaction-local RLS context (08 §5.2)
     await client.query(`SELECT set_config('app.current_org', $1, true)`, [ctx.activeOrgId]);
+    await client.query(`SELECT set_config('app.current_org_id', $1, true)`, [ctx.activeOrgId]);
     await client.query(`SELECT set_config('app.current_user', $1, true)`, [ctx.userId]);
 
     // 2. Load version + lock parent document row FOR UPDATE (AUD-007 race guard)
@@ -110,7 +110,7 @@ export async function executeReviewDecision(
         });
       }
     }
-    if (row.uploaded_by === ctx.userId && !input.isOverride) {
+    if (row.uploaded_by === ctx.userId) {
       throw new ForbiddenException({
         code: 'SELF_APPROVAL_DENIED',
         message: 'SELF_APPROVAL_DENIED: Uploaders cannot approve their own uploaded document version (FR-REV-009).',
@@ -177,24 +177,10 @@ export async function executeReviewDecision(
       );
     }
 
-    // FIX 1 / Bug 1: Lock and atomically update ALL linked requirements for this document (FR-DOC-011)
-    const requirementIds = Array.from(new Set(versionRows.map((r) => r.requirement_id).filter(Boolean)));
-    if (requirementIds.length > 0) {
-      await client.query(
-        `UPDATE requirements
-            SET status = $4, row_version = row_version + 1, updated_at = now()
-          WHERE org_id = $1 AND project_id = $2
-            AND (id = ANY($3::uuid[]) OR id IN (SELECT requirement_id FROM document_requirements WHERE org_id = $1 AND project_id = $2 AND document_id = $5))`,
-        [ctx.activeOrgId, input.projectId, requirementIds, nextVersionStatus, row.document_id],
-      );
-    }
-
     await client.query('COMMIT');
     return {
       documentVersionId: input.documentVersionId,
       documentVersionStatus: nextVersionStatus,
-      requirementStatus: nextVersionStatus,
-      affectedRequirementIds: requirementIds,
       method: input.method,
       rowVersion: row.row_version + 1,
     };

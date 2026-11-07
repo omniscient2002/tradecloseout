@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './modules/health/health.module';
 import { IdentityModule } from './modules/identity/identity.module';
@@ -15,6 +16,10 @@ import { ConfigurationModule } from './modules/configuration/configuration.modul
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { SignaturesModule } from './modules/signatures/signatures.module';
+import { WorkItemsModule } from './modules/work-items/work-items.module';
+import { CommissioningModule } from './modules/commissioning/commissioning.module';
+import { IdempotencyInterceptor } from './common/interceptors/idempotency.interceptor';
+import { VisibilityProjectionInterceptor } from './common/interceptors/visibility-projection.interceptor';
 
 @Module({
   imports: [
@@ -34,6 +39,18 @@ import { SignaturesModule } from './modules/signatures/signatures.module';
     NotificationsModule,
     BillingModule,
     SignaturesModule,
+    WorkItemsModule,
+    CommissioningModule,
+  ],
+  providers: [
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: IdempotencyInterceptor,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: VisibilityProjectionInterceptor,
+    },
   ],
 })
 export class AppModule {}

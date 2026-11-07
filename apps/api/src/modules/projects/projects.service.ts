@@ -15,7 +15,7 @@ import {
   TenantActorContext,
   DomainOutboxEvent,
 } from '@tradecloseout/db';
-import { ProjectCodeSchema } from '@tradecloseout/shared';
+import { hasPermission, ProjectCodeSchema } from '@tradecloseout/shared';
 
 @Injectable()
 export class ProjectsService {
@@ -303,7 +303,7 @@ export class ProjectsService {
     ctx: TenantActorContext,
     projectId: string,
     expectedRowVersion?: number,
-    input?: { closureDate?: string; overrideReason?: string },
+    input?: { closureDate?: string },
   ) {
     const closureDate = input?.closureDate || new Date().toISOString().split('T')[0];
 
@@ -320,6 +320,46 @@ export class ProjectsService {
 
       if (expectedRowVersion !== undefined && expectedRowVersion !== null && proj.row_version !== expectedRowVersion) {
         throw new ConflictException({ code: 'PRECONDITION_FAILED', detail: 'Stale rowVersion.' });
+      }
+
+      // Security & Workflow Invariants (TC2-012):
+      // Project closure has no generic override path. Exceptions must use a separate,
+      // authorised and auditable domain decision before this transition.
+      if (proj.status !== 'HANDOVER') {
+        throw new ConflictException({
+          code: 'INVALID_STATE_TRANSITION',
+          detail: `Cannot close project from status ${proj.status}. Project must be in HANDOVER status.`,
+        });
+      }
+
+      // 2. Open mandatory defects must be resolved
+      const { rows: openDefects } = await client.query(
+        `SELECT id FROM defects
+          WHERE org_id = $1 AND project_id = $2
+            AND mandatory = true AND status NOT IN ('CLOSED', 'WAIVED')
+          LIMIT 1`,
+        [ctx.orgId, projectId],
+      );
+      if (openDefects.length > 0) {
+        throw new ConflictException({
+          code: 'MANDATORY_DEFECTS_UNRESOLVED',
+          detail: 'Cannot close project: open mandatory defects remain unresolved. Close them or record a valid authorised waiver first.',
+        });
+      }
+
+      // 3. Accepted handover submission required
+      const { rows: acceptedSubmissions } = await client.query(
+        `SELECT id FROM submissions
+          WHERE org_id = $1 AND project_id = $2
+            AND status IN ('ACCEPTED', 'PARTIALLY_ACCEPTED')
+          LIMIT 1`,
+        [ctx.orgId, projectId],
+      );
+      if (acceptedSubmissions.length === 0) {
+        throw new ConflictException({
+          code: 'HANDOVER_SUBMISSION_NOT_ACCEPTED',
+          detail: 'Cannot close project: no accepted handover submission found. Record recipient acceptance before closing.',
+        });
       }
 
       // Precedence Rule (AUD-P-08 / FR-AST-012): Only set warranty_start where NULL
@@ -461,6 +501,25 @@ export class ProjectsService {
    */
   async listProjects(ctx: TenantActorContext) {
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+      const permission = hasPermission({
+        orgRole: ctx.orgRole,
+        projectRole: ctx.projectRole,
+        guestCapabilities: ctx.guestCapabilities,
+      }, 'project.read');
+      if (!permission.allowed) throw new NotFoundException('PROJECT_NOT_FOUND');
+      if (ctx.guestGrantId) throw new NotFoundException('PROJECT_NOT_FOUND');
+      if (permission.scope === 'S') {
+        const res = await client.query(
+          `SELECT p.* FROM projects p
+            JOIN project_members pm
+              ON pm.org_id = p.org_id AND pm.project_id = p.id
+             AND pm.user_id = $2 AND pm.status = 'ACTIVE'
+           WHERE p.org_id = $1 AND p.purged_at IS NULL
+           ORDER BY p.created_at DESC`,
+          [ctx.orgId, ctx.userId],
+        );
+        return res.rows;
+      }
       const res = await client.query(
         `SELECT p.* FROM projects p
          WHERE p.org_id = $1 AND p.purged_at IS NULL
@@ -475,6 +534,9 @@ export class ProjectsService {
    * API-032 GET /projects/:id
    */
   async getProject(ctx: TenantActorContext, projectId: string) {
+    if ((ctx.actorType === 'GUEST' || ctx.guestGrantId) && ctx.guestProjectId && ctx.guestProjectId !== projectId) {
+      throw new NotFoundException('PROJECT_NOT_FOUND');
+    }
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
       const res = await client.query(
         `SELECT * FROM projects WHERE org_id = $1 AND id = $2 AND purged_at IS NULL`,
@@ -488,6 +550,9 @@ export class ProjectsService {
   }
 
   async getProjectDashboard(ctx: TenantActorContext, projectId: string) {
+    if ((ctx.actorType === 'GUEST' || ctx.guestGrantId) && ctx.guestProjectId && ctx.guestProjectId !== projectId) {
+      throw new NotFoundException('PROJECT_NOT_FOUND');
+    }
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
       const projRes = await client.query(
         `SELECT p.*, cp.name as client_name
@@ -501,34 +566,37 @@ export class ProjectsService {
       }
       const p = projRes.rows[0];
 
-      // Aggregate requirement counts
+      // Aggregate requirement counts (RQ01: harmonized with organisation summary)
       const countsRes = await client.query(
         `SELECT
-           COUNT(*)::int as total,
-           COUNT(CASE WHEN status = 'APPROVED' THEN 1 END)::int as approved,
-           COUNT(CASE WHEN status = 'APPROVED_EXTERNAL' THEN 1 END)::int as approved_external,
-           COUNT(CASE WHEN status = 'WAIVED' THEN 1 END)::int as waived,
-           COUNT(CASE WHEN status = 'IN_REVIEW' THEN 1 END)::int as in_review,
-           COUNT(CASE WHEN status IN ('MISSING', 'EXPIRED') THEN 1 END)::int as missing_or_expired,
-           COUNT(CASE WHEN due_at IS NOT NULL AND due_at BETWEEN now() AND now() + INTERVAL '14 days' THEN 1 END)::int as expiring_soon
+           COUNT(id) FILTER (WHERE status != 'NOT_APPLICABLE' AND superseded_at IS NULL)::int as applicable_total,
+           COUNT(id) FILTER (WHERE status = 'APPROVED' AND superseded_at IS NULL)::int as approved,
+           COUNT(id) FILTER (WHERE status = 'APPROVED_EXTERNAL' AND superseded_at IS NULL)::int as approved_external,
+           COUNT(id) FILTER (WHERE status = 'WAIVED' AND superseded_at IS NULL)::int as waived,
+           COUNT(id) FILTER (WHERE status IN ('IN_REVIEW', 'UPLOADED') AND superseded_at IS NULL)::int as in_review,
+           COUNT(id) FILTER (WHERE status IN ('NOT_STARTED', 'REQUESTED', 'CHANGES_REQUESTED', 'REJECTED', 'MISSING', 'EXPIRED') AND superseded_at IS NULL)::int as missing_or_expired,
+           COUNT(id) FILTER (WHERE status NOT IN ('APPROVED', 'APPROVED_EXTERNAL', 'WAIVED', 'NOT_APPLICABLE') AND superseded_at IS NULL AND due_at IS NOT NULL AND due_at BETWEEN now() AND now() + INTERVAL '14 days')::int as expiring_soon
          FROM requirements
          WHERE org_id = $1 AND project_id = $2`,
         [ctx.orgId, projectId],
       );
       const c = countsRes.rows[0] || {};
 
-      // Estimate retention at risk from contract if available or default 5%
+      // Estimate retention at risk from all active contracts (RQ01)
       const contractRes = await client.query(
-        `SELECT COALESCE(retention_bps, 500) as retention_rate, COALESCE(value_paise, 0) as contract_value
-         FROM contracts
-         WHERE org_id = $1 AND project_id = $2
-         ORDER BY created_at DESC LIMIT 1`,
+        `SELECT COALESCE(SUM(value_paise), 0) AS total_contract_value_paise,
+                COALESCE(SUM(ROUND((value_paise * COALESCE(retention_bps, 500)) / 10000)), 0) AS total_retention_at_risk_paise,
+                COUNT(*)::int AS active_contract_count
+           FROM contracts
+          WHERE org_id = $1 AND project_id = $2 AND status = 'ACTIVE'`,
         [ctx.orgId, projectId],
       );
       let retentionPaise = '0';
-      if (contractRes.rows.length > 0) {
-        const val = BigInt(contractRes.rows[0].contract_value || 0);
-        const bps = BigInt(contractRes.rows[0].retention_rate || 500);
+      if (contractRes.rows.length > 0 && Number(contractRes.rows[0].active_contract_count) > 0) {
+        retentionPaise = contractRes.rows[0].total_retention_at_risk_paise.toString();
+      } else if (p.contract_value_paise) {
+        const val = BigInt(p.contract_value_paise);
+        const bps = p.retention_bps !== null && p.retention_bps !== undefined ? BigInt(p.retention_bps) : 500n;
         retentionPaise = ((val * bps) / 10000n).toString();
       }
 
@@ -541,7 +609,7 @@ export class ProjectsService {
         targetHandoverDate: p.target_handover_date,
         retentionAtRiskPaise: retentionPaise,
         counts: {
-          applicableTotal: Number(c.total) || 0,
+          applicableTotal: Number(c.applicable_total) || 0,
           approvedCount: Number(c.approved) || 0,
           approvedExternalCount: Number(c.approved_external) || 0,
           waivedCount: Number(c.waived) || 0,

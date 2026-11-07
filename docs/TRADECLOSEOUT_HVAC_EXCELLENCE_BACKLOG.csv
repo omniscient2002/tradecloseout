@@ -1,0 +1,33 @@
+task_id,title,priority,depends_on,release_gate,proposed_effort_band,status,instructions_document,instructions_heading
+XP00,Establish the current baseline and complete journey boundaries,P0,,G1,S,PLANNED_NOT_COMPLETE,TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md,XP00 — Establish the current baseline and complete journey boundaries
+XP01,Repair OTP identity and delivery assurance,P0,XP00,G1,M,PLANNED_NOT_COMPLETE,TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md,XP01 — Repair OTP identity and delivery assurance
+XP02,Centralize real resource authority and response contracts,P0,XP01,G1,L,PLANNED_NOT_COMPLETE,TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md,XP02 — Centralize real resource authority and response contracts
+XP03,Implement durable command outcomes and strict API contracts,P0,XP00;XP02,G1,XL,PLANNED_NOT_COMPLETE,TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md,XP03 — Implement durable command outcomes and strict API contracts
+XP04,"Finish immutable, bounded file processing",P0,XP02;XP03,G2,L,PLANNED_NOT_COMPLETE,TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md,"XP04 — Finish immutable, bounded file processing"
+XP05,"Make outbox, worker effects and recovery explicit",P0,XP03,G2,L,PLANNED_NOT_COMPLETE,TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md,"XP05 — Make outbox, worker effects and recovery explicit"
+XP06,Complete messaging and actionable reminders,P1,XP01;XP05,G2,L,PLANNED_NOT_COMPLETE,TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md,XP06 — Complete messaging and actionable reminders
+XP07,Introduce coverage-aware evidence qualification,P0,XP03;XP04,G2,XL,PLANNED_NOT_COMPLETE,TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md,XP07 — Introduce coverage-aware evidence qualification
+XP08,Deliver one canonical review and external-response workflow,P0,XP02;XP03;XP07,G2,L,PLANNED_NOT_COMPLETE,TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md,XP08 — Deliver one canonical review and external-response workflow
+XP09,"Finish practical dossiers, archives and recipient acceptance",P0,XP05;XP07;XP08,G2,L,PLANNED_NOT_COMPLETE,TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md,"XP09 — Finish practical dossiers, archives and recipient acceptance"
+XP10,Make the deployable service and recovery trustworthy,P0,XP00;XP03,G2,XL,PLANNED_NOT_COMPLETE,TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md,XP10 — Make the deployable service and recovery trustworthy
+XP11,Deliver import-first project onboarding,P1,XP03;XP07,G3,L,PLANNED_NOT_COMPLETE,TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md,XP11 — Deliver import-first project onboarding
+XP12,"Build the daily inbox, search and project workspace",P1,XP02;XP07,G3,L,PLANNED_NOT_COMPLETE,TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md,"XP12 — Build the daily inbox, search and project workspace"
+XP13,Make the equipment passport the physical-unit spine,P1,XP03;XP07,G3,L,PLANNED_NOT_COMPLETE,TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md,XP13 — Make the equipment passport the physical-unit spine
+XP14,Complete the supplier documentary request loop,P1,XP06;XP11;XP13,G3,L,PLANNED_NOT_COMPLETE,TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md,XP14 — Complete the supplier documentary request loop
+XP15,Trace material approval through delivery and installation,P2,XP13;XP14,G4,XL,PLANNED_NOT_COMPLETE,TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md,XP15 — Trace material approval through delivery and installation
+XP16,"Add native inspections, hold points and test runs",P2,XP07;XP13;XP15,G4,XL,PLANNED_NOT_COMPLETE,TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md,"XP16 — Add native inspections, hold points and test runs"
+XP17,Deliver air/water TAB with traceable calculations,P2,XP16,G4,XL,PLANNED_NOT_COMPLETE,TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md,XP17 — Deliver air/water TAB with traceable calculations
+XP18,"Support functional, controls and seasonal commissioning",P2,XP17,G4,XL,PLANNED_NOT_COMPLETE,TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md,"XP18 — Support functional, controls and seasonal commissioning"
+XP19,"Add decision register, returned-comment closure and waiting ledger",P1,XP08;XP12,G3,L,PLANNED_NOT_COMPLETE,TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md,"XP19 — Add decision register, returned-comment closure and waiting ledger"
+XP20,Deliver client/FM-ready handover and information access,P1,XP09;XP13,G3,L,PLANNED_NOT_COMPLETE,TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md,XP20 — Deliver client/FM-ready handover and information access
+XP21,"Separate aftercare, warranty and DLP into a real service workflow",P1,XP13;XP20,G3,XL,PLANNED_NOT_COMPLETE,TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md,"XP21 — Separate aftercare, warranty and DLP into a real service workflow"
+XP22,Build source-backed commercial milestone and retention evidence,P1,XP07;XP09;XP21,G3,XL,PLANNED_NOT_COMPLETE,TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md,XP22 — Build source-backed commercial milestone and retention evidence
+XP23,Provide truthful portfolio and supplier performance insight,P2,XP12;XP22,G5,L,PLANNED_NOT_COMPLETE,TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md,XP23 — Provide truthful portfolio and supplier performance insight
+XP24,Integrate the tools contractors already use,P2,XP02;XP03;XP05,G4,XL,PLANNED_NOT_COMPLETE,TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md,XP24 — Integrate the tools contractors already use
+XP25,Add assistive AI only where it saves verified effort,P3,XP07;XP24;XP27,G5,XL,PLANNED_NOT_COMPLETE,TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md,XP25 — Add assistive AI only where it saves verified effort
+XP26,"Make mobile, offline, accessible and localized work dependable",P1,XP02;XP12,G3,XL,PLANNED_NOT_COMPLETE,TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md,"XP26 — Make mobile, offline, accessible and localized work dependable"
+XP27,"Establish complete release, fault, load and recovery gates",P1,XP00;XP04;XP09;XP10;XP26,G2,XL,PLANNED_NOT_COMPLETE,TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md,"XP27 — Establish complete release, fault, load and recovery gates"
+XP28,Validate workflows with contractors from the beginning,P1,,G3,M + ongoing,PLANNED_NOT_COMPLETE,TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md,XP28 — Validate workflows with contractors from the beginning
+XP29,"Build onboarding, support and adoption into the product",P1,XP11;XP12;XP20,G3,L,PLANNED_NOT_COMPLETE,TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md,"XP29 — Build onboarding, support and adoption into the product"
+XP30,Make evidence governance and client-specific rule packs explicit,P1,XP02;XP10,G2,L,PLANNED_NOT_COMPLETE,TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md,XP30 — Make evidence governance and client-specific rule packs explicit
+XP31,Keep implementation maintainable and contracts traceable,P1,XP00;XP03,G3,L,PLANNED_NOT_COMPLETE,TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md,XP31 — Keep implementation maintainable and contracts traceable

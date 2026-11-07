@@ -85,7 +85,12 @@ export async function apiFetch<T>(
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    if (res.status === 401 && typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+    if (
+      res.status === 401 &&
+      typeof window !== 'undefined' &&
+      !window.location.pathname.startsWith('/login') &&
+      !window.location.pathname.startsWith('/guest')
+    ) {
       window.location.href = '/login';
     }
     throw new ApiProblemError(data);
@@ -138,12 +143,16 @@ export const api = {
       }
     },
     async logout() {
-      if (typeof window !== 'undefined') {
-        document.cookie = "tc_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;";
-        window.sessionStorage.removeItem("tc_csrf_token");
-        window.localStorage.removeItem("tc_csrf_token");
+      try {
+        await apiFetch<void>('/api/v1/auth/logout', { method: 'POST' });
+        if (typeof window !== 'undefined') {
+          window.sessionStorage.removeItem('tc_csrf_token');
+          window.localStorage.removeItem('tc_csrf_token');
+        }
+        return { data: { success: true }, error: null, status: 204 };
+      } catch (err: any) {
+        return { data: null, error: err.message, status: err.status || 500 };
       }
-      return { data: { success: true }, error: null, status: 200 };
     },
   },
   projects: {

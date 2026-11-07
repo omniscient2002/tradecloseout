@@ -26,7 +26,7 @@ export class NotificationsController {
   }
 
   @Post('notifications')
-  @RequirePermission('document.read')
+  @RequirePermission('notification.manage')
   async createNotification(
     @Req() req: any,
     @Body()

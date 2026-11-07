@@ -21,6 +21,7 @@ import { PermissionGuard, RequirePermission } from '../../common/guards/permissi
 export interface VerifyGuestOtpDto {
   code?: string;
   otp?: string;
+  challengeId?: string;
 }
 
 @Controller('api/v1')
@@ -126,11 +127,45 @@ export class PartiesController {
   }
 
   /**
+   * API-029A POST /api/v1/projects/:projectId/procurement-orders
+   * PO & vendor-document obligation schedule (Top 25 Item 2).
+   */
+  @Post('projects/:projectId/procurement-orders')
+  @UseGuards(SessionCsrfGuard, PermissionGuard)
+  @RequirePermission('party.manage')
+  async createProcurementOrder(
+    @Req() req: any,
+    @Param('projectId') projectId: string,
+    @Body() dto: any,
+  ) {
+    return this.partiesService.createProcurementOrder(req.userContext, projectId, dto);
+  }
+
+  /**
+   * API-029B GET /api/v1/projects/:projectId/procurement-orders
+   */
+  @Get('projects/:projectId/procurement-orders')
+  @UseGuards(SessionCsrfGuard, PermissionGuard)
+  @RequirePermission('party.read')
+  async listProcurementOrders(
+    @Req() req: any,
+    @Param('projectId') projectId: string,
+  ) {
+    return this.partiesService.listProcurementOrders(req.userContext, projectId);
+  }
+
+  /**
    * API-028 GET /api/v1/guest/:token
    */
   @Get('guest/:token')
   async getGuestGrant(@Param('token') token: string) {
     return this.partiesService.getGuestGrant(token);
+  }
+
+  @Get('guest/me/context')
+  @UseGuards(SessionCsrfGuard)
+  async getGuestSessionContext(@Req() req: any) {
+    return this.partiesService.getGuestSessionContext(req.userContext);
   }
 
   /**
@@ -151,16 +186,16 @@ export class PartiesController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const code = body?.code || (body as any)?.otp;
-    if (!code) {
-      throw new BadRequestException('OTP code is required');
+    if (!code || !body?.challengeId) {
+      throw new BadRequestException('OTP code and challenge ID are required');
     }
 
-    const result = await this.partiesService.verifyGuestOtp(token, code);
+    const result = await this.partiesService.verifyGuestOtp(token, code, body.challengeId);
 
     // Set HTTP-only guest session cookie
     res.cookie('tc_session', result.sessionToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging',
       sameSite: 'lax',
       path: '/',
       maxAge: 24 * 60 * 60 * 1000,
@@ -171,5 +206,47 @@ export class PartiesController {
       grantId: result.grantId,
       csrfToken: result.csrfToken,
     };
+  }
+
+  /**
+   * API-028C POST /api/v1/guest/:token/session
+   * Legacy session exchange is disabled; guests authenticate through OTP verification.
+   */
+  @Post('guest/:token/session')
+  async createGuestSession(
+    @Param('token') token: string,
+    @Body('pin') pin: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.partiesService.createGuestSession(token, pin);
+
+    res.cookie('tc_session', result.sessionToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 24 * 60 * 60 * 1000,
+    });
+
+    return {
+      activeOrgId: result.activeOrgId,
+      grantId: result.grantId,
+      csrfToken: result.csrfToken,
+    };
+  }
+
+  @Post([
+    'projects/:projectId/supplier-obligations/:id/intake',
+    'projects/:projectId/supplier-document-obligations/:id/intake',
+  ])
+  @UseGuards(SessionCsrfGuard, PermissionGuard)
+  @RequirePermission('document.upload')
+  async intakeSupplierObligation(
+    @Req() req: any,
+    @Param('projectId') projectId: string,
+    @Param('id') obligationId: string,
+    @Body() dto: { decision?: 'ACCEPT' | 'REJECT'; notes?: string; documentVersionId?: string },
+  ) {
+    return this.partiesService.intakeSupplierObligation(req.userContext, projectId, obligationId, dto);
   }
 }

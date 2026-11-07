@@ -45,10 +45,18 @@ export class ProblemJsonExceptionFilter implements ExceptionFilter {
       if (typeof body === 'object' && body !== null) {
         code = body.code || this.defaultCodeForStatus(status);
         title = body.title || this.defaultTitleForStatus(status);
-        detail = body.detail || body.message || detail;
+        if (Array.isArray(body.message)) {
+          fieldErrors = body.message.map((msg: string) => ({
+            field: typeof msg === 'string' ? msg.split(' ')[0] : 'field',
+            message: msg,
+          }));
+          detail = 'Request payload validation failed.';
+        } else {
+          detail = body.detail || body.message || detail;
+          fieldErrors = Array.isArray(body.fieldErrors) ? body.fieldErrors : [];
+        }
         retryable = Boolean(body.retryable ?? (status === 429 || status === 503));
         retryAfterSeconds = body.retryAfterSeconds;
-        fieldErrors = Array.isArray(body.fieldErrors) ? body.fieldErrors : [];
       } else if (typeof body === 'string') {
         code = this.defaultCodeForStatus(status);
         title = this.defaultTitleForStatus(status);

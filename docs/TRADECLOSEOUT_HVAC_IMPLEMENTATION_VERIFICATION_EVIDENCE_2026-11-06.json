@@ -1,0 +1,72 @@
+{
+  "review_date": "2026-11-06",
+  "git_head": "8aec185388e674ff1cf5d90693cc5c491dc41aa1",
+  "scope": "uncommitted working tree; verification only",
+  "report": "TRADECLOSEOUT_HVAC_IMPLEMENTATION_VERIFICATION_2026-11-06.md",
+  "source_fingerprints": [
+    {
+      "path": "apps/api/src/modules/identity/identity.controller.ts",
+      "sha256": "2e23565cbe0e92c7df4e1beab235a2e5de3a174b29489f8065aa016226b5624f"
+    },
+    {
+      "path": "apps/api/src/modules/identity/identity.module.ts",
+      "sha256": "ec10fb30f87b0589f46984f8e451d8cc4bc0b4b3daf192efb37d00b2602f098b"
+    },
+    {
+      "path": "apps/api/src/modules/billing/billing.service.ts",
+      "sha256": "99a344f1ba29d8e88969b8d4e30c7d6480885884efd5dea5ac4969b8c78fa6da"
+    },
+    {
+      "path": "apps/api/src/modules/assets/assets.service.ts",
+      "sha256": "ebf10b6b1403878363047fc5ab4351cee4cec154492024e7cd4a1e13333eb046"
+    },
+    {
+      "path": "apps/api/src/modules/handover/handover.service.ts",
+      "sha256": "50dc9d01e9d6be5b52ca07ab61b9a9d7bf7d0a0c4f76d98ba8079b66cd2c1cbc"
+    },
+    {
+      "path": "apps/api/src/modules/notifications/notifications.service.ts",
+      "sha256": "8c8ff723937bfa672f9ea19db54ca0621d8c0cda751f7378995c23773430f9c9"
+    },
+    {
+      "path": "apps/api/src/modules/organisations/organisations.service.ts",
+      "sha256": "c86068cdcdeb93b0893e3e94d7a252ca4128beb4e0128213a8701ea4bfec8968"
+    },
+    {
+      "path": "apps/worker/src/event-registry.ts",
+      "sha256": "6e368c1a503426c86d26be9d0e004426e5aa5addbedbd71d76f10275d109a266"
+    },
+    {
+      "path": "apps/worker/src/main.ts",
+      "sha256": "1a9900cd58ba171553912c08c0b5485d9956c5e4c7c62e57bef138e96bbe7ea0"
+    },
+    {
+      "path": "apps/worker/src/queues/bounded-stream.ts",
+      "sha256": "1af0fc9c82894d9f1620855576136bb50377c83b2de45d28518f2cb843094e90"
+    },
+    {
+      "path": "packages/db/migrations/0016_canonical_tenant_alias_validation.sql",
+      "sha256": "8083cdda5033e28886692bcf719bfb93dc59b1e2c8f1d61d5a8001d900e41d06"
+    },
+    {
+      "path": "apps/api/test/hvac-production-reaudit-remediation.spec.ts",
+      "sha256": "cc9b811b702ce5d16476d5512d3c6ac4a894c4b28c2387e6207f8362ee0ac553"
+    }
+  ],
+  "checks": {
+    "typecheck": "passed",
+    "root_test": "passed",
+    "api_suites": 23,
+    "api_tests": 161,
+    "shared_tests": 44,
+    "database_behavioral_checks": 9,
+    "worker_behavioral_checks": 12,
+    "archive_browser_cases": 6,
+    "pdf_scripted_checks": 3
+  },
+  "otp_probe": {
+    "boundary": "Actual current verification Lua with isolated state possible from overlapping reissues; no sessions created",
+    "old_generation": "OK",
+    "current_generation": "OK"
+  }
+}

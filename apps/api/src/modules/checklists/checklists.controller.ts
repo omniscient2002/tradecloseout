@@ -65,7 +65,7 @@ export class ChecklistsController {
   }
 
   @Post('projects/:projectId/requirements/:id/change-requests')
-  @RequirePermission('requirement.manage')
+  @RequirePermission('checklist.manage')
   async requestChange(
     @Req() req: any,
     @Param('projectId') projectId: string,
@@ -82,7 +82,7 @@ export class ChecklistsController {
   }
 
   @Post('change-requests/:id/decide')
-  @RequirePermission('requirement.manage')
+  @RequirePermission('checklist.manage')
   async decideChangeRequest(
     @Req() req: any,
     @Param('id') id: string,
@@ -102,7 +102,13 @@ export class ChecklistsController {
     return this.checklistsService.requestWaiver(req.userContext, id, reason, type);
   }
 
-  @Post(['waivers/:id/countersign', 'requirements/:id/waivers/countersign', 'requirements/:id/waivers/approve'])
+  @Post([
+    'waivers/:id/countersign',
+    'projects/:projectId/checklists/waivers/:id/countersign',
+    'projects/:projectId/waivers/:id/countersign',
+    'requirements/:id/waivers/countersign',
+    'requirements/:id/waivers/approve',
+  ])
   @RequirePermission('requirement.waive_second')
   async countersignWaiver(@Req() req: any, @Param('id') id: string) {
     return this.checklistsService.countersignWaiver(req.userContext, id);

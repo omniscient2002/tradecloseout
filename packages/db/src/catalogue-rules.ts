@@ -188,3 +188,47 @@ export function evaluateCatalogueApplicability(
     return false; // Optional ('O') excluded unless explicitly added
   });
 }
+
+export interface EvidenceCompanionRule {
+  ruleCode: string;
+  ruleName: string;
+  primaryDocType: string;
+  companionDocType: string;
+  description: string;
+  isMandatory: boolean;
+}
+
+export const STANDARD_COMPANION_RULES: EvidenceCompanionRule[] = [
+  {
+    ruleCode: 'COMP-001',
+    ruleName: 'Pressure Test Gauge Calibration',
+    primaryDocType: 'DT-018', // Pressure / Hydrostatic Test Report
+    companionDocType: 'DT-041', // Calibration Certificate
+    description: 'Pressure & hydrostatic test reports require valid calibration certificate for the test gauge used',
+    isMandatory: true,
+  },
+  {
+    ruleCode: 'COMP-002',
+    ruleName: 'Balancing Report Instrument Calibration',
+    primaryDocType: 'DT-022', // Air / Water Balancing Report
+    companionDocType: 'DT-041', // Calibration Certificate
+    description: 'Air and water balancing reports require valid calibration certificates for anemometers/hoods/manometers',
+    isMandatory: true,
+  },
+  {
+    ruleCode: 'COMP-003',
+    ruleName: 'FAT Inspection Report and MIR',
+    primaryDocType: 'DT-030', // Factory Acceptance Test
+    companionDocType: 'DT-032', // Material Inspection Report (MIR)
+    description: 'Factory Acceptance Test reports require associated Material Inspection Report upon site receipt',
+    isMandatory: true,
+  },
+  {
+    ruleCode: 'COMP-004',
+    ruleName: 'Warranty Certificate Delivery Challan',
+    primaryDocType: 'DT-044', // OEM Warranty Certificate
+    companionDocType: 'DT-035', // Delivery Challan / Proof of Supply
+    description: 'OEM Warranty certificates require matching delivery challan for serial/warranty verification',
+    isMandatory: true,
+  },
+];

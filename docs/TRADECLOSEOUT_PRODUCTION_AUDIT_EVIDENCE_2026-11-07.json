@@ -1,0 +1,5062 @@
+{
+  "date": "2026-11-07",
+  "captured_at_utc": "2026-11-06T20:32:20.925906+00:00",
+  "git_head": "8aec185388e674ff1cf5d90693cc5c491dc41aa1",
+  "runtime": "v26.4.0",
+  "inventory": {
+    "files": 210,
+    "lines": 48865,
+    "http_handlers": 144,
+    "post_handlers": 78,
+    "body_handlers": 71,
+    "inline_any_body_handlers_minimum": 51,
+    "mandatory_idempotency_handlers": 10
+  },
+  "checks": {
+    "typecheck": {
+      "exit_code": 0
+    },
+    "root_tests": {
+      "exit_code": 0,
+      "api_suites": 24,
+      "api_tests": 178,
+      "shared_suites": 4,
+      "shared_tests": 44,
+      "database_subtests": 9,
+      "database_including_parent": 10,
+      "worker_subtests": 12,
+      "worker_including_parent": 13,
+      "archive_browser": 6,
+      "pdf_scripted": 3
+    },
+    "root_build": {
+      "exit_code": 1,
+      "error": "Turbo Exec format error while spawning build children; individual builds succeeded"
+    },
+    "individual_builds": {
+      "api": 0,
+      "worker": 0,
+      "web": 0
+    },
+    "dependency_audit": {
+      "exit_code": 1,
+      "high": 7,
+      "moderate": 4,
+      "critical": 0
+    },
+    "qpdf_available": false
+  },
+  "http_probes": [
+    {
+      "label": "owner_auth_me",
+      "status": 200,
+      "body": {
+        "userId": "dafd3b9d-44e0-4a12-ae85-fbf0e3665cab",
+        "user_id": "dafd3b9d-44e0-4a12-ae85-fbf0e3665cab",
+        "name": "Test owner",
+        "user_name": "Test owner",
+        "user": {
+          "id": "dafd3b9d-44e0-4a12-ae85-fbf0e3665cab",
+          "name": "Test owner"
+        },
+        "activeOrgId": "1f3105b8-8e03-4f0a-a428-05e0187698b5",
+        "active_org_id": "1f3105b8-8e03-4f0a-a428-05e0187698b5",
+        "activeOrg": {
+          "id": "1f3105b8-8e03-4f0a-a428-05e0187698b5",
+          "legal_name": "Tenant A",
+          "display_name": "Tenant A",
+          "status": "ACTIVE",
+          "state": "MH"
+        },
+        "orgRole": "R-OWNER",
+        "org_role": "R-OWNER"
+      }
+    },
+    {
+      "label": "owner_auth_orgs",
+      "status": 200,
+      "body": {
+        "count": 0,
+        "projectIds": []
+      }
+    },
+    {
+      "label": "versioned_work_items",
+      "status": 404,
+      "body": {
+        "type": "https://errors.tradecloseout.in/not-found",
+        "title": "Resource not found",
+        "status": 404,
+        "code": "NOT_FOUND",
+        "detail": "Cannot GET /api/v1/work-items",
+        "requestId": "req_unknown",
+        "retryable": false,
+        "fieldErrors": []
+      }
+    },
+    {
+      "label": "unversioned_work_items",
+      "status": 200,
+      "body": {
+        "items": [],
+        "counts": {
+          "total": 0,
+          "reviews": 0,
+          "waivers": 0,
+          "defects": 0,
+          "revalidations": 0,
+          "supplierObligations": 0
+        },
+        "pagination": {
+          "limit": 50,
+          "offset": 0,
+          "hasMore": false
+        }
+      }
+    },
+    {
+      "label": "versioned_commissioning",
+      "status": 404,
+      "body": {
+        "type": "https://errors.tradecloseout.in/not-found",
+        "title": "Resource not found",
+        "status": 404,
+        "code": "NOT_FOUND",
+        "detail": "Cannot GET /api/v1/projects/e0b03271-c40d-4b22-8f29-48d496c37124/commissioning/tab-worksheets",
+        "requestId": "req_unknown",
+        "retryable": false,
+        "fieldErrors": []
+      }
+    },
+    {
+      "label": "unversioned_commissioning",
+      "status": 200,
+      "body": {
+        "count": 0,
+        "projectIds": []
+      }
+    },
+    {
+      "label": "guest_project_list_scoped_to_project_0",
+      "status": 404,
+      "body": {
+        "type": "https://errors.tradecloseout.in/not-found",
+        "title": "Resource not found",
+        "status": 404,
+        "code": "NOT_FOUND",
+        "detail": "PROJECT_NOT_FOUND",
+        "requestId": "req_unknown",
+        "retryable": false,
+        "fieldErrors": []
+      }
+    },
+    {
+      "label": "guest_reads_other_project",
+      "status": 200,
+      "body": {
+        "id": "92a127aa-6d00-4da3-becc-5ccb83943965",
+        "code": "PROJECT_1",
+        "name": "Project A1",
+        "site_json": {},
+        "status": "ACTIVE",
+        "created_at": {},
+        "updated_at": {}
+      }
+    },
+    {
+      "label": "consultant_projection",
+      "status": 200,
+      "internalSettingsVisible": true
+    },
+    {
+      "label": "current_guest_page_decision_payload",
+      "status": 422,
+      "body": {
+        "type": "https://errors.tradecloseout.in/remarks-required",
+        "title": "Semantically invalid request",
+        "status": 422,
+        "code": "REMARKS_REQUIRED",
+        "detail": "Remarks are required when accepting with exceptions or rejecting a package (SCR-031).",
+        "requestId": "req_unknown",
+        "retryable": false,
+        "fieldErrors": []
+      }
+    },
+    {
+      "label": "owner_logout",
+      "status": 204
+    },
+    {
+      "label": "logout_persisted_revocation",
+      "revoked": true
+    }
+  ],
+  "database_redis_probes": [
+    {
+      "label": "passport_after_projection_fix",
+      "result": {
+        "succeeded": true
+      }
+    },
+    {
+      "label": "canonical_review_submission_real_schema",
+      "error": {
+        "code": "23514",
+        "message": "new row for relation \"requirements\" violates check constraint \"requirements_status_v021_chk\""
+      }
+    },
+    {
+      "label": "review_state_after_submission",
+      "result": {
+        "review_status": "NOT_SUBMITTED"
+      }
+    },
+    {
+      "label": "pending_waiver_work_queue",
+      "result": {
+        "waiverCount": 0,
+        "types": []
+      }
+    },
+    {
+      "label": "generic_guest_grant_default_enum",
+      "error": {
+        "code": "23514",
+        "message": "new row for relation \"guest_grants\" violates check constraint \"guest_grants_grant_type_check\""
+      }
+    },
+    {
+      "label": "project_dashboard_zero_retention",
+      "result": {
+        "retentionAtRiskPaise": "50000"
+      }
+    },
+    {
+      "label": "archive_missing_observed_size_only",
+      "result": {
+        "signed": true
+      }
+    },
+    {
+      "label": "in_memory_OTP_immediate_valid_code",
+      "result": {
+        "verified": false,
+        "code": "OTP_EXPIRED"
+      }
+    },
+    {
+      "label": "older_delivery_failure_deletes_new_generation_alias",
+      "result": {
+        "aliasPresent": false,
+        "verified": false,
+        "code": "OTP_EXPIRED"
+      }
+    }
+  ],
+  "pdf_probe": {
+    "label": "PDF_engine_fallback_active_content",
+    "inspectionSucceeded": true,
+    "openActionRetained": true,
+    "pageCount": 1,
+    "qpdfAvailable": false
+  },
+  "dependency_audit": {
+    "advisories": {
+      "1108110": {
+        "findings": [
+          {
+            "version": "0.18.5",
+            "paths": [
+              "apps__web>xlsx"
+            ],
+            "dev": false,
+            "optional": false,
+            "bundled": false
+          }
+        ],
+        "id": 1108110,
+        "title": "Prototype Pollution in sheetJS",
+        "module_name": "xlsx",
+        "vulnerable_versions": "<0.19.3",
+        "patched_versions": null,
+        "patched_versions_unpublished": true,
+        "severity": "high",
+        "cwe": "CWE-1321",
+        "github_advisory_id": "GHSA-4r6h-8v6p-xvw6",
+        "url": "https://github.com/advisories/GHSA-4r6h-8v6p-xvw6"
+      },
+      "1108111": {
+        "findings": [
+          {
+            "version": "0.18.5",
+            "paths": [
+              "apps__web>xlsx"
+            ],
+            "dev": false,
+            "optional": false,
+            "bundled": false
+          }
+        ],
+        "id": 1108111,
+        "title": "SheetJS Regular Expression Denial of Service (ReDoS)",
+        "module_name": "xlsx",
+        "vulnerable_versions": "<0.20.2",
+        "patched_versions": null,
+        "patched_versions_unpublished": true,
+        "severity": "high",
+        "cwe": "CWE-1333",
+        "github_advisory_id": "GHSA-5pgg-2g8v-p4x9",
+        "url": "https://github.com/advisories/GHSA-5pgg-2g8v-p4x9"
+      },
+      "1116251": {
+        "findings": [
+          {
+            "version": "0.40.1",
+            "paths": [
+              "apps__api>drizzle-orm",
+              "packages__db>drizzle-orm"
+            ],
+            "dev": false,
+            "optional": false,
+            "bundled": false
+          }
+        ],
+        "id": 1116251,
+        "title": "Drizzle ORM has SQL injection via improperly escaped SQL identifiers",
+        "module_name": "drizzle-orm",
+        "vulnerable_versions": "<0.45.2",
+        "patched_versions": ">=0.45.2",
+        "severity": "high",
+        "cwe": "CWE-89",
+        "github_advisory_id": "GHSA-gpj5-g38j-94v9",
+        "url": "https://github.com/advisories/GHSA-gpj5-g38j-94v9"
+      },
+      "1117015": {
+        "findings": [
+          {
+            "version": "8.4.31",
+            "paths": [
+              "apps__web>next>postcss"
+            ],
+            "dev": false,
+            "optional": false,
+            "bundled": false
+          }
+        ],
+        "id": 1117015,
+        "title": "PostCSS has XSS via Unescaped </style> in its CSS Stringify Output",
+        "module_name": "postcss",
+        "vulnerable_versions": "<8.5.10",
+        "patched_versions": ">=8.5.10",
+        "severity": "moderate",
+        "cwe": "CWE-79",
+        "github_advisory_id": "GHSA-qx2v-qp2m-jg93",
+        "url": "https://github.com/advisories/GHSA-qx2v-qp2m-jg93"
+      },
+      "1124252": {
+        "findings": [
+          {
+            "version": "8.4.31",
+            "paths": [
+              "apps__web>next>postcss"
+            ],
+            "dev": false,
+            "optional": false,
+            "bundled": false
+          }
+        ],
+        "id": 1124252,
+        "title": "PostCSS: Arbitrary file read and information disclosure via attacker-controlled sourceMappingURL in CSS comments",
+        "module_name": "postcss",
+        "vulnerable_versions": "<=8.5.11",
+        "patched_versions": ">=8.5.12",
+        "severity": "high",
+        "cwe": "CWE-22, CWE-200",
+        "github_advisory_id": "GHSA-6g55-p6wh-862q",
+        "url": "https://github.com/advisories/GHSA-6g55-p6wh-862q"
+      },
+      "1130709": {
+        "findings": [
+          {
+            "version": "8.4.31",
+            "paths": [
+              "apps__web>next>postcss"
+            ],
+            "dev": false,
+            "optional": false,
+            "bundled": false
+          }
+        ],
+        "id": 1130709,
+        "title": "PostCSS: incomplete fix of GHSA-6g55-p6wh-862q \u2014 attacker-controlled sourceMappingURL reads arbitrary .map files when `from` is unset",
+        "module_name": "postcss",
+        "vulnerable_versions": "<=8.5.22",
+        "patched_versions": ">=8.5.23",
+        "severity": "moderate",
+        "cwe": "CWE-22, CWE-200",
+        "github_advisory_id": "GHSA-fxqj-rqcc-2cmp",
+        "url": "https://github.com/advisories/GHSA-fxqj-rqcc-2cmp"
+      },
+      "1139510": {
+        "findings": [
+          {
+            "version": "8.4.31",
+            "paths": [
+              "apps__web>next>postcss"
+            ],
+            "dev": false,
+            "optional": false,
+            "bundled": false
+          }
+        ],
+        "id": 1139510,
+        "title": "PostCSS: Path Traversal in Previous Source Map Auto-Loading (sourceMappingURL) leads to Arbitrary .map File Disclosure",
+        "module_name": "postcss",
+        "vulnerable_versions": "<=8.5.17",
+        "patched_versions": ">=8.5.18",
+        "severity": "high",
+        "cwe": "CWE-22",
+        "github_advisory_id": "GHSA-r28c-9q8g-f849",
+        "url": "https://github.com/advisories/GHSA-r28c-9q8g-f849"
+      },
+      "1243066": {
+        "findings": [
+          {
+            "version": "3.25.76",
+            "paths": [
+              "apps__api>zod",
+              "packages__shared>zod"
+            ],
+            "dev": false,
+            "optional": false,
+            "bundled": false
+          }
+        ],
+        "id": 1243066,
+        "title": "Zod can exhaust memory while validating oversized constrained collections",
+        "module_name": "zod",
+        "vulnerable_versions": "<4.6.6",
+        "patched_versions": ">=4.6.6",
+        "severity": "high",
+        "cwe": "CWE-770",
+        "github_advisory_id": "GHSA-mrhx-c7xc-m3w5",
+        "url": "https://github.com/advisories/GHSA-mrhx-c7xc-m3w5"
+      },
+      "1243083": {
+        "findings": [
+          {
+            "version": "2.4.0",
+            "paths": [
+              "apps__api>@nestjs/platform-express>multer",
+              "apps__api>@nestjs/core>@nestjs/platform-express>multer"
+            ],
+            "dev": false,
+            "optional": false,
+            "bundled": false
+          }
+        ],
+        "id": 1243083,
+        "title": "multer vulnerable to Denial of Service via a pending asynchronous fileFilter after request teardown",
+        "module_name": "multer",
+        "vulnerable_versions": ">=2.0.0 <2.5.0",
+        "patched_versions": ">=2.5.0",
+        "severity": "high",
+        "cwe": "CWE-248, CWE-404",
+        "github_advisory_id": "GHSA-q7qp-rjg7-q26m",
+        "url": "https://github.com/advisories/GHSA-q7qp-rjg7-q26m"
+      },
+      "1244013": {
+        "findings": [
+          {
+            "version": "10.5.0",
+            "paths": [
+              "packages__pdf-engine>archiver>archiver-utils>glob",
+              "packages__pdf-engine>archiver>zip-stream>archiver-utils>glob"
+            ],
+            "dev": false,
+            "optional": false,
+            "bundled": false
+          }
+        ],
+        "id": 1244013,
+        "title": "Glob: AbortSignal cancellation bypass allows post-timeout filesystem traversal",
+        "module_name": "glob",
+        "vulnerable_versions": ">=9.0.0 <=14.0.1",
+        "patched_versions": ">=14.0.2",
+        "severity": "moderate",
+        "cwe": "CWE-400",
+        "github_advisory_id": "GHSA-3g3m-2fjr-6pw4",
+        "url": "https://github.com/advisories/GHSA-3g3m-2fjr-6pw4"
+      },
+      "1244623": {
+        "findings": [
+          {
+            "version": "10.2.6",
+            "paths": [
+              "apps__worker>archiver>readdir-glob>minimatch"
+            ],
+            "dev": false,
+            "optional": false,
+            "bundled": false
+          },
+          {
+            "version": "9.0.9",
+            "paths": [
+              "packages__pdf-engine>archiver>archiver-utils>glob>minimatch",
+              "packages__pdf-engine>archiver>zip-stream>archiver-utils>glob>minimatch"
+            ],
+            "dev": false,
+            "optional": false,
+            "bundled": false
+          }
+        ],
+        "id": 1244623,
+        "title": "minimatch has potential denial of service via globparts amplification",
+        "module_name": "minimatch",
+        "vulnerable_versions": ">=7.0.0 <11.0.1",
+        "patched_versions": ">=11.0.1",
+        "severity": "moderate",
+        "cwe": "CWE-405",
+        "github_advisory_id": "GHSA-g3hv-75wg-m249",
+        "url": "https://github.com/advisories/GHSA-g3hv-75wg-m249"
+      }
+    },
+    "metadata": {
+      "vulnerabilities": {
+        "info": 0,
+        "low": 0,
+        "moderate": 4,
+        "high": 7,
+        "critical": 0
+      },
+      "dependencies": 317,
+      "devDependencies": 0,
+      "optionalDependencies": 103,
+      "totalDependencies": 420
+    }
+  },
+  "route_inventory": [
+    {
+      "file": "apps/api/src/modules/assets/assets.controller.ts",
+      "line": 25,
+      "controller": "'api/v1/projects/:projectId/assets'",
+      "method": "GET",
+      "path": "''",
+      "handler": "listAssets",
+      "permissions": [
+        "'asset.read'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/assets/assets.controller.ts",
+      "line": 31,
+      "controller": "'api/v1/projects/:projectId/assets'",
+      "method": "POST",
+      "path": "''",
+      "handler": "createAsset",
+      "permissions": [
+        "'asset.manage'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "{ tag: string; name: string; categoryKey: string; make?: string; model?: string; serialNo?: string; location?: string }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/assets/assets.controller.ts",
+      "line": 41,
+      "controller": "'api/v1/projects/:projectId/assets'",
+      "method": "POST",
+      "path": "'match-candidates'",
+      "handler": "matchAssetCandidates",
+      "permissions": [
+        "'asset.read'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "{ filename?: string; text?: string; tagCandidate?: string }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/assets/assets.controller.ts",
+      "line": 51,
+      "controller": "'api/v1/projects/:projectId/assets'",
+      "method": "GET",
+      "path": "'export'",
+      "handler": "exportAssets",
+      "permissions": [
+        "'asset.read'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/assets/assets.controller.ts",
+      "line": 57,
+      "controller": "'api/v1/projects/:projectId/assets'",
+      "method": "POST",
+      "path": "'import'",
+      "handler": "importAssets",
+      "permissions": [
+        "'asset.manage'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "any[]",
+        "'SKIP' | 'FAIL' | 'UPDATE'",
+        "boolean"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/assets/assets.controller.ts",
+      "line": 73,
+      "controller": "'api/v1/projects/:projectId/assets'",
+      "method": "GET",
+      "path": "':id'",
+      "handler": "getAsset",
+      "permissions": [
+        "'asset.read'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/assets/assets.controller.ts",
+      "line": 83,
+      "controller": "'api/v1/projects/:projectId/assets'",
+      "method": "GET",
+      "path": "':id/passport'",
+      "handler": "getEquipmentPassport",
+      "permissions": [
+        "'asset.read'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/assets/assets.controller.ts",
+      "line": 93,
+      "controller": "'api/v1/projects/:projectId/assets'",
+      "method": "GET",
+      "path": "':id/history'",
+      "handler": "getAssetIdentityHistory",
+      "permissions": [
+        "'asset.read'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/assets/assets.controller.ts",
+      "line": 103,
+      "controller": "'api/v1/projects/:projectId/assets'",
+      "method": "PATCH",
+      "path": "':id/revalidations/:revalidationId'",
+      "handler": "revalidateEvidence",
+      "permissions": [
+        "'asset.manage'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "{ status: 'CONFIRMED' | 'MISMATCH' | 'EXEMPT'; notes?: string; expectedRowVersion?: number }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/assets/assets.controller.ts",
+      "line": 115,
+      "controller": "'api/v1/projects/:projectId/assets'",
+      "method": "PATCH",
+      "path": "':id'",
+      "handler": "updateAsset",
+      "permissions": [
+        "'asset.manage'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "any"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/assets/assets.controller.ts",
+      "line": 126,
+      "controller": "'api/v1/projects/:projectId/assets'",
+      "method": "DELETE",
+      "path": "':id'",
+      "handler": "deleteAsset",
+      "permissions": [
+        "'asset.manage'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/billing/billing.controller.ts",
+      "line": 28,
+      "controller": "'api/v1'",
+      "method": "GET",
+      "path": "'billing/plans'",
+      "handler": "listPlans",
+      "permissions": [],
+      "guards": [],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/billing/billing.controller.ts",
+      "line": 33,
+      "controller": "'api/v1'",
+      "method": "GET",
+      "path": "['billing/invoices', 'orgs/current/invoices']",
+      "handler": "listInvoices",
+      "permissions": [
+        "'billing.manage'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/billing/billing.controller.ts",
+      "line": 40,
+      "controller": "'api/v1'",
+      "method": "GET",
+      "path": "'orgs/current/subscription'",
+      "handler": "getCurrentSubscription",
+      "permissions": [
+        "'billing.manage'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/billing/billing.controller.ts",
+      "line": 47,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "['billing/invoices', 'orgs/current/invoices']",
+      "handler": "createInvoice",
+      "permissions": [
+        "'billing.manage'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "{\n      subtotalPaise: number;\n      buyerGstin?: string;\n      placeOfSupply: string;\n      isInterState?: boolean;\n    }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/billing/billing.controller.ts",
+      "line": 63,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "['billing/invoices/:id/tds', 'orgs/current/tds']",
+      "handler": "recordTds",
+      "permissions": [
+        "'billing.manage'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "{\n      section: '194J_A_2PCT' | '194J_B_10PCT' | '194C';\n      rateBps: number;\n      amountPaise: number;\n      certificateReference?: string;\n      invoiceId?: string;\n    }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/billing/billing.controller.ts",
+      "line": 81,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'projects/:id/warranty-events'",
+      "handler": "recordWarrantyEvent",
+      "permissions": [
+        "'document.upload'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "{\n      assetId: string;\n      eventType: 'REGISTRATION' | 'CONFIRMATION' | 'CLAIM' | 'EXTENSION';\n      oemReference: string;\n      registeredAt: string;\n      warrantyStart: string;\n      warrantyEnd: string;\n      basis: 'COMMISSIONING' | 'HANDOVER' | 'ACCEPTANCE' | 'SUPPLY';\n      evidenceObjectId?: string;\n    }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/billing/billing.controller.ts",
+      "line": 102,
+      "controller": "'api/v1'",
+      "method": "GET",
+      "path": "'projects/:id/warranty-events'",
+      "handler": "listWarrantyEvents",
+      "permissions": [
+        "'document.read'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/billing/billing.controller.ts",
+      "line": 109,
+      "controller": "'api/v1'",
+      "method": "GET",
+      "path": "'projects/:id/commercial-readiness'",
+      "handler": "getCommercialReadiness",
+      "permissions": [
+        "'document.read'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/billing/billing.controller.ts",
+      "line": 116,
+      "controller": "'api/v1'",
+      "method": "GET",
+      "path": "'projects/:id/defects'",
+      "handler": "listDefects",
+      "permissions": [
+        "'document.read'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/billing/billing.controller.ts",
+      "line": 123,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'projects/:id/defects'",
+      "handler": "createDefect",
+      "permissions": [
+        "'document.upload'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "{\n      title: string;\n      description?: string;\n      assetId?: string;\n      severity?: 'MINOR' | 'MAJOR' | 'CRITICAL';\n      location?: string;\n    }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/billing/billing.controller.ts",
+      "line": 141,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "['defects/:id/remedy', 'projects/:projectId/defects/:id/remedy']",
+      "handler": "submitDefectRemedy",
+      "permissions": [
+        "'document.upload'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "{ remedyEvidenceObjectId: string; expectedRowVersion?: number }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/billing/billing.controller.ts",
+      "line": 159,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "['defects/:id/close', 'projects/:projectId/defects/:id/close']",
+      "handler": "closeDefect",
+      "permissions": [
+        "'document.upload'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "{ closureEvidenceObjectId: string; expectedRowVersion?: number }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/billing/billing.controller.ts",
+      "line": 177,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'billing/rule46-invoices'",
+      "handler": "issueRule46GstInvoice",
+      "permissions": [
+        "'billing.manage'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "{\n      subscriptionId: string;\n      description: string;\n      subtotalPaise: string | number;\n      buyerGstin?: string | null;\n      buyerStateCode: string;\n    }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/billing/billing.controller.ts",
+      "line": 200,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'billing/tds/:id/reconcile'",
+      "handler": "reconcileForm16a",
+      "permissions": [
+        "'billing.manage'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "{\n      form16aCertificateRef: string;\n      certificateObjectId: string;\n    }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/billing/billing.controller.ts",
+      "line": 220,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'webhooks/razorpay'",
+      "handler": "handleRazorpayWebhook",
+      "permissions": [],
+      "guards": [],
+      "idempotency": false,
+      "bodyTypes": [
+        "any"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/checklists/checklists.controller.ts",
+      "line": 22,
+      "controller": "'api/v1'",
+      "method": "GET",
+      "path": "'projects/:projectId/requirements'",
+      "handler": "listRequirements",
+      "permissions": [
+        "'document.read'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/checklists/checklists.controller.ts",
+      "line": 28,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'projects/:projectId/requirements'",
+      "handler": "createRequirement",
+      "permissions": [
+        "'document.upload'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "{ key: string; title: string; groupKey?: string; docTypeCode?: string; mandatory?: boolean; assetTag?: string; dueDate?: string }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/checklists/checklists.controller.ts",
+      "line": 38,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "['projects/:projectId/snapshots', 'projects/:projectId/checklist/snapshots']",
+      "handler": "createSnapshot",
+      "permissions": [
+        "'project.manage'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "{ comment?: string }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/checklists/checklists.controller.ts",
+      "line": 48,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "['projects/:projectId/checklists/import-l3', 'projects/:projectId/checklist/import-l3']",
+      "handler": "importL3Checklist",
+      "permissions": [
+        "'project.manage'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "{\n      profileName?: string;\n      requirements: Array<{\n        key?: string;\n        title: string;\n        docTypeKey?: string;\n        mandatory?: boolean;\n      }>;\n    }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/checklists/checklists.controller.ts",
+      "line": 67,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'projects/:projectId/requirements/:id/change-requests'",
+      "handler": "requestChange",
+      "permissions": [
+        "'checklist.manage'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "{ changeType: 'ADD' | 'REMOVE' | 'MODIFY'; reason: string; deltaJson?: any }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/checklists/checklists.controller.ts",
+      "line": 78,
+      "controller": "'api/v1'",
+      "method": "GET",
+      "path": "'projects/:projectId/change-requests'",
+      "handler": "listChangeRequests",
+      "permissions": [
+        "'document.read'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/checklists/checklists.controller.ts",
+      "line": 84,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'change-requests/:id/decide'",
+      "handler": "decideChangeRequest",
+      "permissions": [
+        "'checklist.manage'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "{ decision: 'APPROVED' | 'REJECTED'; comment?: string }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/checklists/checklists.controller.ts",
+      "line": 94,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'requirements/:id/waivers'",
+      "handler": "requestWaiver",
+      "permissions": [
+        "'requirement.waive'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "string",
+        "'WAIVE' | 'NOT_APPLICABLE'"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/checklists/checklists.controller.ts",
+      "line": 105,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "['waivers/:id/countersign', 'requirements/:id/waivers/countersign', 'requirements/:id/waivers/approve']",
+      "handler": "countersignWaiver",
+      "permissions": [
+        "'requirement.waive_second'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/commissioning/commissioning.controller.ts",
+      "line": 15,
+      "controller": "'projects/:projectId/commissioning'",
+      "method": "POST",
+      "path": "'tab-worksheets'",
+      "handler": "recordTabWorksheet",
+      "permissions": [
+        "'document.upload'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "CreateTabWorksheetInput"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/commissioning/commissioning.controller.ts",
+      "line": 26,
+      "controller": "'projects/:projectId/commissioning'",
+      "method": "GET",
+      "path": "'tab-worksheets'",
+      "handler": "listTabWorksheets",
+      "permissions": [
+        "'document.read'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/commissioning/commissioning.controller.ts",
+      "line": 37,
+      "controller": "'projects/:projectId/commissioning'",
+      "method": "POST",
+      "path": "'inspections'",
+      "handler": "recordQualityInspection",
+      "permissions": [
+        "'document.upload'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "CreateInspectionInput"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/commissioning/commissioning.controller.ts",
+      "line": 48,
+      "controller": "'projects/:projectId/commissioning'",
+      "method": "POST",
+      "path": "'inspections/:id/witness-sign'",
+      "handler": "signInspectionWitness",
+      "permissions": [
+        "'document.upload'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "{ partyName: string; representativeName: string; role: string; notes?: string }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/commissioning/commissioning.controller.ts",
+      "line": 60,
+      "controller": "'projects/:projectId/commissioning'",
+      "method": "POST",
+      "path": "'seasonal-schedules'",
+      "handler": "createSeasonalSchedule",
+      "permissions": [
+        "'project.manage'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "CreateSeasonalScheduleInput"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/commissioning/commissioning.controller.ts",
+      "line": 71,
+      "controller": "'projects/:projectId/commissioning'",
+      "method": "GET",
+      "path": "'seasonal-schedules'",
+      "handler": "listSeasonalSchedules",
+      "permissions": [
+        "'project.read'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/documents/documents.controller.ts",
+      "line": 28,
+      "controller": "'api/v1'",
+      "method": "GET",
+      "path": "'projects/:projectId/documents'",
+      "handler": "listDocuments",
+      "permissions": [
+        "'document.read'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/documents/documents.controller.ts",
+      "line": 48,
+      "controller": "'api/v1'",
+      "method": "GET",
+      "path": "'documents/:id'",
+      "handler": "getDocument",
+      "permissions": [
+        "'document.read'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/documents/documents.controller.ts",
+      "line": 54,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "['projects/:projectId/documents/upload-intents', 'projects/:projectId/upload-intents']",
+      "handler": "createUploadIntent",
+      "permissions": [
+        "'document.upload'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": true,
+      "bodyTypes": [
+        "CreateUploadIntentDto"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/documents/documents.controller.ts",
+      "line": 65,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'document-versions/:id/refresh-upload-urls'",
+      "handler": "refreshUploadUrls",
+      "permissions": [
+        "'document.upload'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/documents/documents.controller.ts",
+      "line": 71,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "[\n    'document-versions/:id/complete',\n    'document-versions/:id/complete-upload',\n    'projects/:projectId/document-versions/:id/complete-upload',\n  ]",
+      "handler": "completeUpload",
+      "permissions": [
+        "'document.upload'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": true,
+      "bodyTypes": [
+        "CompleteUploadDto"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/documents/documents.controller.ts",
+      "line": 86,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'document-versions/:id/abort-upload'",
+      "handler": "abortUpload",
+      "permissions": [
+        "'document.upload'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/documents/documents.controller.ts",
+      "line": 92,
+      "controller": "'api/v1'",
+      "method": "GET",
+      "path": "'document-versions/:id/download-url'",
+      "handler": "getDownloadUrl",
+      "permissions": [
+        "'document.download'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/documents/documents.controller.ts",
+      "line": 98,
+      "controller": "'api/v1'",
+      "method": "GET",
+      "path": "'document-versions/:id/preview-url'",
+      "handler": "getPreviewUrl",
+      "permissions": [
+        "'document.download'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/documents/documents.controller.ts",
+      "line": 104,
+      "controller": "'api/v1'",
+      "method": "GET",
+      "path": "'projects/:projectId/document-versions/:versionId/stream'",
+      "handler": "streamProjectPdf",
+      "permissions": [
+        "'document.download'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/documents/documents.controller.ts",
+      "line": 115,
+      "controller": "'api/v1'",
+      "method": "GET",
+      "path": "'document-versions/:versionId/stream'",
+      "handler": "streamDirectPdf",
+      "permissions": [
+        "'document.download'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/documents/documents.controller.ts",
+      "line": 125,
+      "controller": "'api/v1'",
+      "method": "DELETE",
+      "path": "'documents/:id'",
+      "handler": "deleteDocument",
+      "permissions": [
+        "'document.delete'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/documents/documents.controller.ts",
+      "line": 131,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'documents/:id/restore'",
+      "handler": "restoreDocument",
+      "permissions": [
+        "'document.delete'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/documents/documents.controller.ts",
+      "line": 137,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'documents/:id/versions'",
+      "handler": "replaceDocumentVersion",
+      "permissions": [
+        "'document.upload'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "{\n      fileName: string;\n      mimeType: string;\n      sizeBytes: number;\n      revisionCode: string;\n    }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/documents/documents.controller.ts",
+      "line": 153,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "['projects/:projectId/documents/bulk-import', 'projects/:projectId/documents/bulk-import-intents']",
+      "handler": "createBulkImportIntent",
+      "permissions": [
+        "'document.bulk_import'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/documents/documents.controller.ts",
+      "line": 159,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'bulk-imports/:id/dry-run'",
+      "handler": "dryRunBulkImport",
+      "permissions": [
+        "'document.bulk_import'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/documents/documents.controller.ts",
+      "line": 165,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'bulk-imports/:id/commit'",
+      "handler": "commitBulkImport",
+      "permissions": [
+        "'document.bulk_import'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/documents/documents.controller.ts",
+      "line": 171,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'projects/:projectId/documents/:documentId/batch-links'",
+      "handler": "linkBatchEvidence",
+      "permissions": [
+        "'document.upload'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "{ assetIds: string[]; requirementIds: string[] }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/documents/documents.controller.ts",
+      "line": 188,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'projects/:projectId/transmittals/generate'",
+      "handler": "generateTransmittalPack",
+      "permissions": [
+        "'document.upload'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": true,
+      "bodyTypes": [
+        "{ documentIds: string[]; notes?: string }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/documents/documents.controller.ts",
+      "line": 204,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'projects/:projectId/transmittals/stamp-back'",
+      "handler": "processTransmittalStampBack",
+      "permissions": [
+        "'review.record_external'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "{\n      transmittalNo: string;\n      approverName: string;\n      approverRoleOrg: string;\n      decisionDate: string;\n      evidenceObjectId?: string;\n      versionIds: string[];\n    }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/handover/handover.controller.ts",
+      "line": 26,
+      "controller": "'api/v1'",
+      "method": "GET",
+      "path": "['projects/:projectId/readiness', 'projects/:projectId/handover/readiness', 'projects/:projectId/packages/readiness']",
+      "handler": "evaluateReadiness",
+      "permissions": [
+        "'package.generate'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/handover/handover.controller.ts",
+      "line": 36,
+      "controller": "'api/v1'",
+      "method": "GET",
+      "path": "'projects/:projectId/packages'",
+      "handler": "listPackages",
+      "permissions": [
+        "'document.read'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/handover/handover.controller.ts",
+      "line": 46,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "['projects/:projectId/packages', 'projects/:projectId/handover/packages']",
+      "handler": "generateHandoverPackage",
+      "permissions": [
+        "'package.generate'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": true,
+      "bodyTypes": [
+        "GenerateHandoverPackageDto"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/handover/handover.controller.ts",
+      "line": 61,
+      "controller": "'api/v1'",
+      "method": "GET",
+      "path": "'packages/:id'",
+      "handler": "getPackage",
+      "permissions": [
+        "'document.read'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/handover/handover.controller.ts",
+      "line": 68,
+      "controller": "'api/v1'",
+      "method": "GET",
+      "path": "'projects/:projectId/packages/:id'",
+      "handler": "getProjectPackage",
+      "permissions": [
+        "'document.read'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/handover/handover.controller.ts",
+      "line": 79,
+      "controller": "'api/v1'",
+      "method": "GET",
+      "path": "'projects/:projectId/packages/:packageId/download'",
+      "handler": "getPackageDownloadUrl",
+      "permissions": [
+        "'document.read'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/handover/handover.controller.ts",
+      "line": 93,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'packages/:id/submit'",
+      "handler": "submitPackage",
+      "permissions": [
+        "'package.submit'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": true,
+      "bodyTypes": [
+        "SubmitPackageDto"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/handover/handover.controller.ts",
+      "line": 112,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'projects/:projectId/submissions'",
+      "handler": "createSubmission",
+      "permissions": [
+        "'package.submit'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "{\n      packageId?: string;\n      recipients: Array<{\n        partyId?: string;\n        email: string;\n        name: string;\n        isRequiredApprover?: boolean;\n        role?: string;\n      }>;\n      coverNote?: string;\n    }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/handover/handover.controller.ts",
+      "line": 136,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'projects/:projectId/handover/ra-bill-pack'",
+      "handler": "compileRaBillEvidencePack",
+      "permissions": [
+        "'package.generate'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "{\n      milestoneKey: 'MOBILISATION' | 'SUBMISSION' | 'DELIVERY' | 'INSTALLATION' | 'COMMISSIONING' | 'HANDOVER' | 'FINAL_BILL';\n      billNumber: string;\n      billAmountInr?: number;\n      description?: string;\n    }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/handover/handover.controller.ts",
+      "line": 156,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'projects/:projectId/submissions/:submissionId/decision'",
+      "handler": "recordSubmissionDecision",
+      "permissions": [
+        "'package.accept'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "{\n      recipientPartyId: string;\n      decision: 'ACCEPT' | 'ACCEPT_WITH_EXCEPTIONS' | 'REJECT';\n      remarks?: string;\n      exceptionItems?: Array<{ title: string; docTypeKey: string; reason: string }>;\n    }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/handover/handover.controller.ts",
+      "line": 182,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'submissions/:submissionId/recipients/:recipientId/decision'",
+      "handler": "recordRecipientDecision",
+      "permissions": [
+        "'package.accept'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "'ACCEPT' | 'ACCEPT_WITH_EXCEPTIONS' | 'REJECT'",
+        "string"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/handover/handover.controller.ts",
+      "line": 207,
+      "controller": "'api/v1'",
+      "method": "GET",
+      "path": "'projects/:projectId/dossier/pdf'",
+      "handler": "getDossierPdf",
+      "permissions": [
+        "'document.read'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/handover/handover.controller.ts",
+      "line": 225,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'projects/:projectId/archive-exports'",
+      "handler": "exportProjectArchive",
+      "permissions": [
+        "'package.generate'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": true,
+      "bodyTypes": [
+        "{ purpose?: string; includeArchiveFile?: boolean }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/handover/handover.controller.ts",
+      "line": 240,
+      "controller": "'api/v1'",
+      "method": "GET",
+      "path": "'projects/:projectId/archive-exports'",
+      "handler": "listArchiveExports",
+      "permissions": [
+        "'export.data'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/handover/handover.controller.ts",
+      "line": 250,
+      "controller": "'api/v1'",
+      "method": "GET",
+      "path": "'projects/:projectId/archive-exports/:exportId'",
+      "handler": "getArchiveExport",
+      "permissions": [
+        "'export.data'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/health/health.controller.ts",
+      "line": 10,
+      "controller": "''",
+      "method": "GET",
+      "path": "'health'",
+      "handler": "health",
+      "permissions": [],
+      "guards": [],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/health/health.controller.ts",
+      "line": 15,
+      "controller": "''",
+      "method": "GET",
+      "path": "'api/v1/health'",
+      "handler": "apiHealth",
+      "permissions": [],
+      "guards": [],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/identity/identity.controller.ts",
+      "line": 45,
+      "controller": "'api/v1/auth'",
+      "method": "POST",
+      "path": "'otp/request'",
+      "handler": "requestOtp",
+      "permissions": [],
+      "guards": [],
+      "idempotency": false,
+      "bodyTypes": [
+        "{ identifier?: string; phoneOrEmail?: string }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/identity/identity.controller.ts",
+      "line": 167,
+      "controller": "'api/v1/auth'",
+      "method": "POST",
+      "path": "'otp/verify'",
+      "handler": "verifyOtp",
+      "permissions": [],
+      "guards": [],
+      "idempotency": false,
+      "bodyTypes": [
+        "{\n      identifier?: string;\n      challengeId?: string;\n      otp?: string;\n      code?: string;\n      signupProfile?: { fullName: string; orgName: string; state: string };\n    }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/identity/identity.controller.ts",
+      "line": 468,
+      "controller": "'api/v1/auth'",
+      "method": "GET",
+      "path": "'me'",
+      "handler": "getMe",
+      "permissions": [],
+      "guards": [
+        "SessionCsrfGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/identity/identity.controller.ts",
+      "line": 499,
+      "controller": "'api/v1/auth'",
+      "method": "GET",
+      "path": "'orgs'",
+      "handler": "getOrgs",
+      "permissions": [],
+      "guards": [
+        "SessionCsrfGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/identity/identity.controller.ts",
+      "line": 516,
+      "controller": "'api/v1/auth'",
+      "method": "POST",
+      "path": "'switch-org'",
+      "handler": "switchActiveOrg",
+      "permissions": [],
+      "guards": [
+        "SessionCsrfGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "{ targetOrgId: string }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/identity/identity.controller.ts",
+      "line": 576,
+      "controller": "'api/v1/auth'",
+      "method": "POST",
+      "path": "'logout'",
+      "handler": "logout",
+      "permissions": [],
+      "guards": [
+        "SessionCsrfGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/notifications/notifications.controller.ts",
+      "line": 22,
+      "controller": "'api/v1'",
+      "method": "GET",
+      "path": "'notifications'",
+      "handler": "listNotifications",
+      "permissions": [
+        "'document.read'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/notifications/notifications.controller.ts",
+      "line": 28,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'notifications'",
+      "handler": "createNotification",
+      "permissions": [
+        "'notification.manage'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "{\n      projectId?: string;\n      channel: 'IN_APP' | 'EMAIL' | 'SMS' | 'WHATSAPP';\n      eventKey: string;\n      payload: Record<string, any>;\n      dedupKey: string;\n      isUrgent?: boolean;\n    }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/notifications/notifications.controller.ts",
+      "line": 45,
+      "controller": "'api/v1'",
+      "method": "GET",
+      "path": "'projects/:projectId/owner-digest'",
+      "handler": "getOwnerDigest",
+      "permissions": [
+        "'project.read'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/organisations/organisations.controller.ts",
+      "line": 24,
+      "controller": "'api/v1/orgs/:orgId'",
+      "method": "GET",
+      "path": "'dashboard'",
+      "handler": "getDashboard",
+      "permissions": [
+        "'org.read'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/organisations/organisations.controller.ts",
+      "line": 30,
+      "controller": "'api/v1/orgs/:orgId'",
+      "method": "GET",
+      "path": "'audit'",
+      "handler": "getAuditLog",
+      "permissions": [
+        "'org.read'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/organisations/organisations.controller.ts",
+      "line": 36,
+      "controller": "'api/v1/orgs/:orgId'",
+      "method": "GET",
+      "path": "''",
+      "handler": "getOrganisation",
+      "permissions": [
+        "'org.read'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/organisations/organisations.controller.ts",
+      "line": 42,
+      "controller": "'api/v1/orgs/:orgId'",
+      "method": "PATCH",
+      "path": "''",
+      "handler": "updateOrganisation",
+      "permissions": [
+        "'org.manage'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "any"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/organisations/organisations.controller.ts",
+      "line": 52,
+      "controller": "'api/v1/orgs/:orgId'",
+      "method": "GET",
+      "path": "'members'",
+      "handler": "listMembers",
+      "permissions": [
+        "'org.read'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/organisations/organisations.controller.ts",
+      "line": 58,
+      "controller": "'api/v1/orgs/:orgId'",
+      "method": "POST",
+      "path": "'invitations'",
+      "handler": "createInvitation",
+      "permissions": [
+        "'org.manage'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "{ email: string; role: string }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/organisations/organisations.controller.ts",
+      "line": 68,
+      "controller": "'api/v1/orgs/:orgId'",
+      "method": "DELETE",
+      "path": "'invitations/:id'",
+      "handler": "revokeInvitation",
+      "permissions": [
+        "'org.manage'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/organisations/organisations.controller.ts",
+      "line": 78,
+      "controller": "'api/v1/orgs/:orgId'",
+      "method": "PATCH",
+      "path": "'members/:userId'",
+      "handler": "updateMemberRole",
+      "permissions": [
+        "'org.manage'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "{ role: string }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/organisations/organisations.controller.ts",
+      "line": 89,
+      "controller": "'api/v1/orgs/:orgId'",
+      "method": "GET",
+      "path": "'members/:userId/offboarding-gap-report'",
+      "handler": "getOffboardingGapReport",
+      "permissions": [
+        "'org.manage'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/organisations/organisations.controller.ts",
+      "line": 99,
+      "controller": "'api/v1/orgs/:orgId'",
+      "method": "DELETE",
+      "path": "'members/:userId'",
+      "handler": "removeMember",
+      "permissions": [
+        "'org.manage'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "string"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/organisations/organisations.controller.ts",
+      "line": 110,
+      "controller": "'api/v1/orgs/:orgId'",
+      "method": "POST",
+      "path": "'transfer-ownership'",
+      "handler": "transferOwnership",
+      "permissions": [
+        "'org.manage'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "{ targetUserId: string }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/organisations/organisations.controller.ts",
+      "line": 120,
+      "controller": "'api/v1/orgs/:orgId'",
+      "method": "POST",
+      "path": "'reassign-work'",
+      "handler": "reassignWork",
+      "permissions": [
+        "'org.manage'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "{ fromUserId: string; toUserId: string }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/parties/parties.controller.ts",
+      "line": 37,
+      "controller": "'api/v1'",
+      "method": "GET",
+      "path": "'parties'",
+      "handler": "getParties",
+      "permissions": [
+        "'party.read'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/parties/parties.controller.ts",
+      "line": 47,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'parties'",
+      "handler": "createParty",
+      "permissions": [
+        "'party.manage'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "{\n      name: string;\n      types: string[];\n      gstin?: string;\n      email?: string;\n      phone?: string;\n    }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/parties/parties.controller.ts",
+      "line": 67,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'projects/:projectId/supplier-links'",
+      "handler": "createSupplierLink",
+      "permissions": [
+        "'document.upload'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "{\n      supplierPartyId: string;\n      requirementIds: string[];\n      expiresInDays?: number;\n      otpRequired?: boolean;\n    }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/parties/parties.controller.ts",
+      "line": 87,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'projects/:projectId/guest-grants'",
+      "handler": "createGuestGrant",
+      "permissions": [
+        "'party.manage'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "CreateGuestGrantDto"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/parties/parties.controller.ts",
+      "line": 101,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'guest-grants/:id/revoke'",
+      "handler": "revokeGuestGrant",
+      "permissions": [
+        "'party.manage'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/parties/parties.controller.ts",
+      "line": 111,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'projects/:projectId/supplier-upload-links'",
+      "handler": "createSupplierUploadLink",
+      "permissions": [
+        "'document.upload'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "{\n      supplierPartyId: string;\n      requirementIds: string[];\n      phone?: string;\n      email?: string;\n      expiresInDays?: number;\n    }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/parties/parties.controller.ts",
+      "line": 133,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'projects/:projectId/procurement-orders'",
+      "handler": "createProcurementOrder",
+      "permissions": [
+        "'party.manage'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "any"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/parties/parties.controller.ts",
+      "line": 147,
+      "controller": "'api/v1'",
+      "method": "GET",
+      "path": "'projects/:projectId/procurement-orders'",
+      "handler": "listProcurementOrders",
+      "permissions": [
+        "'party.read'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/parties/parties.controller.ts",
+      "line": 160,
+      "controller": "'api/v1'",
+      "method": "GET",
+      "path": "'guest/:token'",
+      "handler": "getGuestGrant",
+      "permissions": [],
+      "guards": [],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/parties/parties.controller.ts",
+      "line": 165,
+      "controller": "'api/v1'",
+      "method": "GET",
+      "path": "'guest/me/context'",
+      "handler": "getGuestSessionContext",
+      "permissions": [],
+      "guards": [
+        "SessionCsrfGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/parties/parties.controller.ts",
+      "line": 174,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'guest/:token/otp/request'",
+      "handler": "requestGuestOtp",
+      "permissions": [],
+      "guards": [],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/parties/parties.controller.ts",
+      "line": 182,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'guest/:token/otp/verify'",
+      "handler": "verifyGuestOtp",
+      "permissions": [],
+      "guards": [],
+      "idempotency": false,
+      "bodyTypes": [
+        "VerifyGuestOtpDto"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/parties/parties.controller.ts",
+      "line": 215,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'guest/:token/session'",
+      "handler": "createGuestSession",
+      "permissions": [],
+      "guards": [],
+      "idempotency": false,
+      "bodyTypes": [
+        "string"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/projects/projects.controller.ts",
+      "line": 26,
+      "controller": "'api/v1/projects'",
+      "method": "GET",
+      "path": "''",
+      "handler": "listProjects",
+      "permissions": [
+        "'project.read'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/projects/projects.controller.ts",
+      "line": 32,
+      "controller": "'api/v1/projects'",
+      "method": "POST",
+      "path": "''",
+      "handler": "createProject",
+      "permissions": [
+        "'project.create'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "{\n      code: string;\n      name: string;\n      projectType?: string;\n      clientPartyId?: string;\n      mcPartyId?: string;\n      consultantPartyId?: string;\n      contractValuePaise?: string | number | bigint;\n      targetHandoverDate?: string;\n    }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/projects/projects.controller.ts",
+      "line": 51,
+      "controller": "'api/v1/projects'",
+      "method": "GET",
+      "path": "':id'",
+      "handler": "getProject",
+      "permissions": [
+        "'project.read'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/projects/projects.controller.ts",
+      "line": 57,
+      "controller": "'api/v1/projects'",
+      "method": "GET",
+      "path": "':id/dashboard'",
+      "handler": "getProjectDashboard",
+      "permissions": [
+        "'project.read'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/projects/projects.controller.ts",
+      "line": 63,
+      "controller": "'api/v1/projects'",
+      "method": "PATCH",
+      "path": "':id'",
+      "handler": "updateProject",
+      "permissions": [
+        "'project.manage'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "{ name?: string; code?: string; clientPartyId?: string }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/projects/projects.controller.ts",
+      "line": 73,
+      "controller": "'api/v1/projects'",
+      "method": "POST",
+      "path": "':id/activate'",
+      "handler": "activateProject",
+      "permissions": [
+        "'project.manage'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/projects/projects.controller.ts",
+      "line": 79,
+      "controller": "'api/v1/projects'",
+      "method": "POST",
+      "path": "':id/handover'",
+      "handler": "handoverProject",
+      "permissions": [
+        "'project.manage'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/projects/projects.controller.ts",
+      "line": 85,
+      "controller": "'api/v1/projects'",
+      "method": "POST",
+      "path": "':id/suspend'",
+      "handler": "suspendProject",
+      "permissions": [
+        "'project.manage'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/projects/projects.controller.ts",
+      "line": 91,
+      "controller": "'api/v1/projects'",
+      "method": "POST",
+      "path": "':id/close'",
+      "handler": "closeProject",
+      "permissions": [
+        "'project.manage'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": true,
+      "bodyTypes": [
+        "CloseProjectDto"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/projects/projects.controller.ts",
+      "line": 100,
+      "controller": "'api/v1/projects'",
+      "method": "POST",
+      "path": "':id/reopen'",
+      "handler": "reopenProject",
+      "permissions": [
+        "'project.manage'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "{ expectedRowVersion?: number; reason?: string }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/projects/projects.controller.ts",
+      "line": 115,
+      "controller": "'api/v1/projects'",
+      "method": "GET",
+      "path": "':id/contracts'",
+      "handler": "listContracts",
+      "permissions": [
+        "'project.read'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/projects/projects.controller.ts",
+      "line": 121,
+      "controller": "'api/v1/projects'",
+      "method": "POST",
+      "path": "':id/contracts'",
+      "handler": "createContract",
+      "permissions": [
+        "'project.manage'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "any"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/projects/projects.controller.ts",
+      "line": 131,
+      "controller": "'api/v1/projects'",
+      "method": "POST",
+      "path": "':id/contracts/:contractId/variations'",
+      "handler": "createVariation",
+      "permissions": [
+        "'project.manage'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "any"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/projects/projects.controller.ts",
+      "line": 142,
+      "controller": "'api/v1/projects'",
+      "method": "GET",
+      "path": "':id/specifications'",
+      "handler": "listSpecifications",
+      "permissions": [
+        "'project.read'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/projects/projects.controller.ts",
+      "line": 148,
+      "controller": "'api/v1/projects'",
+      "method": "POST",
+      "path": "':id/specifications'",
+      "handler": "createSpecification",
+      "permissions": [
+        "'project.manage'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "any"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/projects/projects.controller.ts",
+      "line": 158,
+      "controller": "'api/v1/projects'",
+      "method": "GET",
+      "path": "':id/members'",
+      "handler": "listProjectMembers",
+      "permissions": [
+        "'project.read'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/projects/projects.controller.ts",
+      "line": 164,
+      "controller": "'api/v1/projects'",
+      "method": "POST",
+      "path": "':id/members'",
+      "handler": "addProjectMember",
+      "permissions": [
+        "'project.manage'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "{ userId: string; role: string }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/projects/projects.controller.ts",
+      "line": 174,
+      "controller": "'api/v1/projects'",
+      "method": "DELETE",
+      "path": "':id/members/:userId'",
+      "handler": "removeProjectMember",
+      "permissions": [
+        "'project.manage'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/reviews/reviews.controller.ts",
+      "line": 33,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'requirements/:id/submit-review'",
+      "handler": "submitReview",
+      "permissions": [
+        "'document.upload'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "{ documentVersionId: string; remarks?: string }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/reviews/reviews.controller.ts",
+      "line": 43,
+      "controller": "'api/v1'",
+      "method": "GET",
+      "path": "'projects/:projectId/reviews'",
+      "handler": "listReviews",
+      "permissions": [
+        "'review.decide'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/reviews/reviews.controller.ts",
+      "line": 53,
+      "controller": "'api/v1'",
+      "method": "GET",
+      "path": "'reviews/:id'",
+      "handler": "getReview",
+      "permissions": [
+        "'review.decide'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/reviews/reviews.controller.ts",
+      "line": 59,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'reviews/:id/decisions'",
+      "handler": "decideReview",
+      "permissions": [
+        "'review.decide'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "DecisionDto"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/reviews/reviews.controller.ts",
+      "line": 69,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'projects/:projectId/reviews'",
+      "handler": "recordProjectReview",
+      "permissions": [
+        "'review.decide'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "{ documentVersionId: string; decision: any; comment?: string; method?: any }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/reviews/reviews.controller.ts",
+      "line": 79,
+      "controller": "'api/v1'",
+      "method": "GET",
+      "path": "'projects/:projectId/document-versions/:versionId'",
+      "handler": "getVersionReviewDetail",
+      "permissions": [
+        "'document.read'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/reviews/reviews.controller.ts",
+      "line": 89,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'projects/:projectId/document-versions/:versionId/decision'",
+      "handler": "decideVersionReview",
+      "permissions": [
+        "'review.decide'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": true,
+      "bodyTypes": [
+        "DecideVersionReviewDto"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/reviews/reviews.controller.ts",
+      "line": 117,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'reviews/:id/comments'",
+      "handler": "addComment",
+      "permissions": [
+        "'review.decide'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "ReviewCommentDto"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/reviews/reviews.controller.ts",
+      "line": 127,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'reviews/:id/override'",
+      "handler": "overrideReview",
+      "permissions": [
+        "'review.decide'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": true,
+      "bodyTypes": [
+        "{ justification: string; decision: 'APPROVE' | 'REJECT' }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/reviews/reviews.controller.ts",
+      "line": 138,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'reviews/bulk-decisions'",
+      "handler": "bulkDecisions",
+      "permissions": [
+        "'review.decide'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "{ reviewIds: string[]; decision: 'APPROVE' | 'REJECT'; comment?: string }"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/reviews/reviews.controller.ts",
+      "line": 147,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'document-versions/:id/external-approval'",
+      "handler": "recordExternalApproval",
+      "permissions": [
+        "'review.record_external'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": true,
+      "bodyTypes": [
+        "ExternalApprovalDto"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/reviews/reviews.controller.ts",
+      "line": 161,
+      "controller": "'api/v1'",
+      "method": "GET",
+      "path": "'projects/:projectId/external-review-options'",
+      "handler": "getExternalReviewOptions",
+      "permissions": [
+        "'review.record_external'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/signatures/digital-signature.controller.ts",
+      "line": 10,
+      "controller": "'api/v1'",
+      "method": "POST",
+      "path": "'projects/:projectId/signatures'",
+      "handler": "recordSignature",
+      "permissions": [
+        "'document.upload'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": [
+        "Omit<RecordCryptographicSignatureInput, 'projectId'>"
+      ]
+    },
+    {
+      "file": "apps/api/src/modules/signatures/digital-signature.controller.ts",
+      "line": 24,
+      "controller": "'api/v1'",
+      "method": "GET",
+      "path": "'signatures/verify/:code'",
+      "handler": "verifySignature",
+      "permissions": [],
+      "guards": [],
+      "idempotency": false,
+      "bodyTypes": []
+    },
+    {
+      "file": "apps/api/src/modules/work-items/work-items.controller.ts",
+      "line": 10,
+      "controller": "'work-items'",
+      "method": "GET",
+      "path": "''",
+      "handler": "listWorkItems",
+      "permissions": [
+        "'project.read'"
+      ],
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "idempotency": false,
+      "bodyTypes": []
+    }
+  ],
+  "source_snapshot_start": {
+    "captured_at_utc": "2026-11-06T19:57:15.878397+00:00",
+    "files": [
+      {
+        "path": ".github/workflows/deploy.yml",
+        "sha256": "35b6f45c7d4318e32aff3e635a46b096d692bfcf55dca91a8ff1f1fe48499cfd",
+        "lines": 86
+      },
+      {
+        "path": "apps/api/src/app.module.ts",
+        "sha256": "11a5e24191f232a4b9cd4f439da9e1965a1a080a541be05552a67034a7170f77",
+        "lines": 51
+      },
+      {
+        "path": "apps/api/src/common/decorators/idempotency.decorator.ts",
+        "sha256": "d9b88d94840b4100e133d6722f95bd61564df16af8b9c1cf463cf95caff4ed4c",
+        "lines": 9
+      },
+      {
+        "path": "apps/api/src/common/filters/problem-json.filter.ts",
+        "sha256": "3a3ef301c7ce03724734db41df108c6f3f86f58bfe9a01651381d7b5c74345d3",
+        "lines": 133
+      },
+      {
+        "path": "apps/api/src/common/guards/permission.guard.ts",
+        "sha256": "3b25e2480fdecfbe6d9f5f1d5b3419d6d7c138520a7399cb00518f8a56b1f70e",
+        "lines": 174
+      },
+      {
+        "path": "apps/api/src/common/guards/session-csrf.guard.ts",
+        "sha256": "905c9a7f84afefe1997565735ce7ab88caf483f668297ed82979ddc4e1f47f04",
+        "lines": 281
+      },
+      {
+        "path": "apps/api/src/common/interceptors/idempotency.interceptor.ts",
+        "sha256": "f446aa9314677eb966e203461d8912de2b8065e84acbad0ea5ff690cab6cd699",
+        "lines": 186
+      },
+      {
+        "path": "apps/api/src/common/interceptors/visibility-projection.interceptor.ts",
+        "sha256": "21d6e986805aa41e0fc287437264438083d7411c7bb55d2ddd6d51ea15ce4d28",
+        "lines": 149
+      },
+      {
+        "path": "apps/api/src/database/database.module.ts",
+        "sha256": "4eb36d8c2e49ded8b2f0dde7c6cad85242aceff5dc07f320524db597886aed46",
+        "lines": 21
+      },
+      {
+        "path": "apps/api/src/database/tenant-db.service.ts",
+        "sha256": "8bb4797f91905e894bff76fc6bc093b24cc9b0aae3732c1a18765266ffb9e964",
+        "lines": 132
+      },
+      {
+        "path": "apps/api/src/main.ts",
+        "sha256": "7a12029f7c2ec2d2499b2b766be4695da150be35f7ddf744dd9e7fa0562b94cb",
+        "lines": 26
+      },
+      {
+        "path": "apps/api/src/modules/assets/assets.controller.ts",
+        "sha256": "301bcda13df47a06a75f86c588059ff3695e5a7f202dd8269fb002d4b52c6cb8",
+        "lines": 136
+      },
+      {
+        "path": "apps/api/src/modules/assets/assets.module.ts",
+        "sha256": "cb486d352d2941453cd80714eb04f0f7fce6952705f20d0a0379f7ed1b7ba801",
+        "lines": 11
+      },
+      {
+        "path": "apps/api/src/modules/assets/assets.service.ts",
+        "sha256": "71894c08c5aae1c6fae559f52778bc55dca2a659456794912cbc4179a2d86463",
+        "lines": 1157
+      },
+      {
+        "path": "apps/api/src/modules/billing/billing.controller.ts",
+        "sha256": "722cc5c2012feea18d68b78ed8de560a95fc3709f966a8c8aba1d2e0d26bbff3",
+        "lines": 227
+      },
+      {
+        "path": "apps/api/src/modules/billing/billing.module.ts",
+        "sha256": "b4fb563484cab1591826dd8ccb5471aea48d65ed1a5e0d388d79876142c3fc24",
+        "lines": 16
+      },
+      {
+        "path": "apps/api/src/modules/billing/billing.service.ts",
+        "sha256": "0eec31999eb4338a9a388f20258e05df77476efe1ce863aace6016684cb2b0a2",
+        "lines": 214
+      },
+      {
+        "path": "apps/api/src/modules/billing/gst-einvoice-tds.service.ts",
+        "sha256": "2c9fd319338ed5e4674d8ecaddb5a2b8285331d1634bf98e1d84d0ff3d4ee453",
+        "lines": 228
+      },
+      {
+        "path": "apps/api/src/modules/billing/warranty-and-billing.service.ts",
+        "sha256": "e56958528060eb442e6e32f74fcbf2a0c58346c5a25d644eeabe85c2f64ddfe5",
+        "lines": 851
+      },
+      {
+        "path": "apps/api/src/modules/checklists/checklists.controller.ts",
+        "sha256": "d65630ce9d08d2fecb21c8c0843c8634b8e45d0eccfa59789a7ef8c6c0923884",
+        "lines": 110
+      },
+      {
+        "path": "apps/api/src/modules/checklists/checklists.module.ts",
+        "sha256": "7835e296871169dc4bcc35e97234fe3542cf8e83511613d296e6f4cf89b8bcc0",
+        "lines": 11
+      },
+      {
+        "path": "apps/api/src/modules/checklists/checklists.service.ts",
+        "sha256": "f4363fbef91e0bb93525d7de6a989b42ff4d2d3e36eec1e15b48bc8361b53881",
+        "lines": 809
+      },
+      {
+        "path": "apps/api/src/modules/commissioning/commissioning.controller.ts",
+        "sha256": "76ca62ae54ea70934addbe11f553f8b0002704964f8b6b0c3ac64b0ae8ce3f57",
+        "lines": 80
+      },
+      {
+        "path": "apps/api/src/modules/commissioning/commissioning.module.ts",
+        "sha256": "82fbac8c05a2d6b64db2be3bd7d43f5b00f5fcaa46a706abfb28c6d421d0ab90",
+        "lines": 12
+      },
+      {
+        "path": "apps/api/src/modules/commissioning/commissioning.service.ts",
+        "sha256": "b15f69279e920e2f81b4d400275c1d6f2cdf8833e81bcbf030722b7172e821a6",
+        "lines": 621
+      },
+      {
+        "path": "apps/api/src/modules/configuration/config-resolver.ts",
+        "sha256": "2119c744fd389980ae52e2b3624c438746c5f9dd6f62a622cfb12d58f5026ffa",
+        "lines": 253
+      },
+      {
+        "path": "apps/api/src/modules/configuration/configuration.module.ts",
+        "sha256": "57731f4a0b0355b6b83579270434d6a6329991c96b10078434d5fa9df91da850",
+        "lines": 7
+      },
+      {
+        "path": "apps/api/src/modules/documents/documents.controller.ts",
+        "sha256": "980413597f9de8f1b09e1d1e66536a7b933f0bbf5d4b61582f9878a7fe2a0d8c",
+        "lines": 221
+      },
+      {
+        "path": "apps/api/src/modules/documents/documents.module.ts",
+        "sha256": "61c1b7c27a2fcf6890812d384a875849665f5cc14c735581e37b9f90d4490e3a",
+        "lines": 13
+      },
+      {
+        "path": "apps/api/src/modules/documents/documents.service.ts",
+        "sha256": "d42366fe45c69c4c7d662d860ed3810f68862e6032d77194f481974f6b689887",
+        "lines": 1253
+      },
+      {
+        "path": "apps/api/src/modules/documents/dto/upload-intent.dto.ts",
+        "sha256": "1353e6d910a63d35abcbf8a75020fb9f9423da1d6c5567f9c698c7b2a5962ed9",
+        "lines": 118
+      },
+      {
+        "path": "apps/api/src/modules/documents/s3-storage.service.ts",
+        "sha256": "04e230fc5dd51ff4fbfe9790adb1fba81287ba9a4c6853e6a11f0fad040f4133",
+        "lines": 278
+      },
+      {
+        "path": "apps/api/src/modules/handover/dto/handover-packages.dto.ts",
+        "sha256": "f7505b446065ceb487d53de4569369c80ed2adf17bf1d8a17f587c023b5a6562",
+        "lines": 38
+      },
+      {
+        "path": "apps/api/src/modules/handover/handover.controller.ts",
+        "sha256": "7a11220269208131ea91e62d3375342a385cdaab49aa083d6cbe4835d000db3f",
+        "lines": 260
+      },
+      {
+        "path": "apps/api/src/modules/handover/handover.module.ts",
+        "sha256": "5c19e426f9f272b449792278fc31d5c3e48282f4862235adaae897a4dc0c6342",
+        "lines": 13
+      },
+      {
+        "path": "apps/api/src/modules/handover/handover.service.ts",
+        "sha256": "7b9b4e1842cb91900dcf1f041af67c2a51c492b6daba361630829297b0c3a518",
+        "lines": 1327
+      },
+      {
+        "path": "apps/api/src/modules/health/health.controller.ts",
+        "sha256": "5a502521d706b4bdb8fe53db474225aeb6e2a3fdb904a7a0fa1af73dca52b011",
+        "lines": 41
+      },
+      {
+        "path": "apps/api/src/modules/health/health.module.ts",
+        "sha256": "c9b7e261283e469775e71227fd936c3633c02c26181fd4cc22e2c7633eda5f0c",
+        "lines": 10
+      },
+      {
+        "path": "apps/api/src/modules/identity/identity.controller.ts",
+        "sha256": "25384f5c558c3826a0b7b142e8e35d2c4928a361e76a51eb5ea090aa4f2269e2",
+        "lines": 608
+      },
+      {
+        "path": "apps/api/src/modules/identity/identity.module.ts",
+        "sha256": "a35f3459c4f7dbd47c82d4099ce53ff343fe1500d107f818225d8a198b9388a6",
+        "lines": 336
+      },
+      {
+        "path": "apps/api/src/modules/notifications/notifications.controller.ts",
+        "sha256": "5fea9ce47c0bdd2cb1fcfd8c2859a90f6be656fa46b86098d0312d8cbf193684",
+        "lines": 50
+      },
+      {
+        "path": "apps/api/src/modules/notifications/notifications.module.ts",
+        "sha256": "9a5f1d4c832511a3db5cbc520146e7bf7fa8b7e2d68bfd789905d5187f2767b9",
+        "lines": 13
+      },
+      {
+        "path": "apps/api/src/modules/notifications/notifications.service.ts",
+        "sha256": "8c8ff723937bfa672f9ea19db54ca0621d8c0cda751f7378995c23773430f9c9",
+        "lines": 148
+      },
+      {
+        "path": "apps/api/src/modules/organisations/organisations.controller.ts",
+        "sha256": "649370f30c91908e8f0fbfd0da6765ad30b9ccdeef9114c459118dc7216ff364",
+        "lines": 129
+      },
+      {
+        "path": "apps/api/src/modules/organisations/organisations.module.ts",
+        "sha256": "144331586053240efd10ded34dccd14aaf3a00d96ec5071f15a88a62047a5b8f",
+        "lines": 12
+      },
+      {
+        "path": "apps/api/src/modules/organisations/organisations.service.ts",
+        "sha256": "cd9da7692176ce9a53ec0df7b29fa6c10c524be2fd5469c23d675fc32496cbf0",
+        "lines": 917
+      },
+      {
+        "path": "apps/api/src/modules/parties/parties.controller.ts",
+        "sha256": "855d259932c6f75b9efb5a1e395c9c0336a3243a4ede26607bb9394e0b6c5fe4",
+        "lines": 237
+      },
+      {
+        "path": "apps/api/src/modules/parties/parties.module.ts",
+        "sha256": "feccaa4205d09f48261fef4836f1311f05b0c604ed38a2b2ca9832188ad0686f",
+        "lines": 16
+      },
+      {
+        "path": "apps/api/src/modules/parties/parties.service.ts",
+        "sha256": "28949c1224a17b988fcd5469bb03754b98fb135aa1195aadbb025dc813c59cd5",
+        "lines": 647
+      },
+      {
+        "path": "apps/api/src/modules/parties/supplier-guest.service.ts",
+        "sha256": "676aec48200de49d30633db4cbd950d14ee3765db4479d1a83e81cadd6060333",
+        "lines": 231
+      },
+      {
+        "path": "apps/api/src/modules/projects/dto/close-project.dto.ts",
+        "sha256": "9a87bff67b31a93062aefb4b6840ae364de7c1a9c8a7d3b3f6735fa400cc1c58",
+        "lines": 7
+      },
+      {
+        "path": "apps/api/src/modules/projects/projects.controller.ts",
+        "sha256": "66eb12321835c330ab0a773006bf834eff8a21c993f3970b685d6b176775ea7e",
+        "lines": 183
+      },
+      {
+        "path": "apps/api/src/modules/projects/projects.module.ts",
+        "sha256": "a4752430ff1d068907cd7ff6bedc6fa54540e3fa8625db6871d87d3a8c9ae99c",
+        "lines": 11
+      },
+      {
+        "path": "apps/api/src/modules/projects/projects.service.ts",
+        "sha256": "1616aa6c70cf0f6851f82497729854bd1fbdbedc84d96c1fd5375f4dc28fb03a",
+        "lines": 820
+      },
+      {
+        "path": "apps/api/src/modules/reviews/dto/decide-review.dto.ts",
+        "sha256": "906dae1105a6dac8faee5365e6cc61d454a675703b23d488d88450d5517f6851",
+        "lines": 29
+      },
+      {
+        "path": "apps/api/src/modules/reviews/dto/external-approval.dto.ts",
+        "sha256": "af43d7406da42f5f7c156ea3614cc65403fd141edf886115bd90c0d844d38f2c",
+        "lines": 17
+      },
+      {
+        "path": "apps/api/src/modules/reviews/review-decision.service.ts",
+        "sha256": "2904956c55cf6b54cf9533b48a8e4cb30358b5015a6ebea63bf2a73099371908",
+        "lines": 191
+      },
+      {
+        "path": "apps/api/src/modules/reviews/reviews.controller.ts",
+        "sha256": "566729127054cea50c226dd76451448a49e9a4218bc2bc6d0c23ce37b81cb90c",
+        "lines": 166
+      },
+      {
+        "path": "apps/api/src/modules/reviews/reviews.module.ts",
+        "sha256": "96612a19f6a3c47659feff66487baa42fb532ce72214bd2feba0e9b331dcae8e",
+        "lines": 11
+      },
+      {
+        "path": "apps/api/src/modules/reviews/reviews.service.ts",
+        "sha256": "a21175e1f5d0b924ace269f818eb435da75f96d4876efae5a751f6c3f45e3cf5",
+        "lines": 1021
+      },
+      {
+        "path": "apps/api/src/modules/signatures/digital-signature.controller.ts",
+        "sha256": "40cbdfb2eca586a80f56733f58d746dc1f5fb81fad7970f7b825e632a58af90e",
+        "lines": 31
+      },
+      {
+        "path": "apps/api/src/modules/signatures/digital-signature.service.ts",
+        "sha256": "cfb00bad826217cf4a1ab1c861751a2d95beba4630e1dc15e72eb26a8be3c66f",
+        "lines": 122
+      },
+      {
+        "path": "apps/api/src/modules/signatures/signatures.module.ts",
+        "sha256": "89257a1d6908d2d93132870e07c42304cf8c49b1f224d414859a5fb26ecad3f2",
+        "lines": 12
+      },
+      {
+        "path": "apps/api/src/modules/work-items/work-items.controller.ts",
+        "sha256": "12a83c1d327d23589c11571a4f30074026d620e45bc09e251c567e7f6f1c8d8f",
+        "lines": 29
+      },
+      {
+        "path": "apps/api/src/modules/work-items/work-items.module.ts",
+        "sha256": "3e688b597754ce4e4ce4d3e9563cc1dcb19f82f0198ed107a9ff71f661988a0e",
+        "lines": 12
+      },
+      {
+        "path": "apps/api/src/modules/work-items/work-items.service.ts",
+        "sha256": "97aee3089622811dc115f10071ddaa66da98c4ca4e325aa3b472b53e2d1a080d",
+        "lines": 290
+      },
+      {
+        "path": "apps/api/src/modules/workflows/v021-workflows.service.ts",
+        "sha256": "808690a8ee3e7e9b3acf819eccc85a9a30e8e34c9be3e1ac741f994527584d77",
+        "lines": 487
+      },
+      {
+        "path": "apps/api/src/modules/workflows/workflows.module.ts",
+        "sha256": "51f889bdaccea8b7c97929e3d023c4ae6f8f47354f9b025870bc9f8d921513f5",
+        "lines": 10
+      },
+      {
+        "path": "apps/api/test/concurrency.spec.ts",
+        "sha256": "ffe97119efe3121eea657e80062135f141238480721b8704f1a128b0dcac4ff8",
+        "lines": 145
+      },
+      {
+        "path": "apps/api/test/contractor-user-journey.spec.ts",
+        "sha256": "c949b4a6f7ab00e0cdccdce518d9f24572bcbdfd2efa8daa516f8514b1438eba",
+        "lines": 520
+      },
+      {
+        "path": "apps/api/test/discovery-lifecycle-foundations.spec.ts",
+        "sha256": "47530d0eb1756fd8c2017718efbb3f0179d162a71377137d15d812d6f6f15b59",
+        "lines": 860
+      },
+      {
+        "path": "apps/api/test/document-download-boundaries.spec.ts",
+        "sha256": "e074d260ca72219fca85722276b39efd0228328d7baf48badea6983e9a9228b5",
+        "lines": 75
+      },
+      {
+        "path": "apps/api/test/guest-session-boundaries.spec.ts",
+        "sha256": "436174ebd9bd48388b6845583a57210163c4fd1e5e8d25b1b56a132840d4a961",
+        "lines": 79
+      },
+      {
+        "path": "apps/api/test/hvac-domain-excellence.spec.ts",
+        "sha256": "a94d2546bf6bc0d7b198b1fd8f0db8c2f9bbca1ecff4333743de12042433ac67",
+        "lines": 1051
+      },
+      {
+        "path": "apps/api/test/hvac-production-reaudit-remediation.spec.ts",
+        "sha256": "2b4246a11fee6be79ce5698551c18b185da4736a444ac5d120d5d21f05d35c3d",
+        "lines": 783
+      },
+      {
+        "path": "apps/api/test/idempotency-cleanup-replay.spec.ts",
+        "sha256": "71785452dc9bd99fd19dd8384b7f463faa776daf2bf87b0b5a8cc660f93fde98",
+        "lines": 41
+      },
+      {
+        "path": "apps/api/test/idempotency-expired-claim.spec.ts",
+        "sha256": "7f916754c2557cbcaa5cfc71f56381c824acf01f1b1da591b13209947cb444da",
+        "lines": 45
+      },
+      {
+        "path": "apps/api/test/modules/auth-iam.spec.ts",
+        "sha256": "3dcb9219357356e4dc01149931bcd6b9e39029e430e1451203f362a37f8a2341",
+        "lines": 83
+      },
+      {
+        "path": "apps/api/test/modules/config-checklists-assets.spec.ts",
+        "sha256": "8a5a032e93fc27f5a06b4d15e0aaa57f2a850b6474e951ef00a46e0e03ccf146",
+        "lines": 93
+      },
+      {
+        "path": "apps/api/test/modules/documents-reviews.spec.ts",
+        "sha256": "f85890e9322b731154f136664938e1d94851d4f099a4f3634a5381eaa931c256",
+        "lines": 126
+      },
+      {
+        "path": "apps/api/test/modules/handover-billing-system.spec.ts",
+        "sha256": "672e469e4aecb5a7bf5da18aa707558eef2842f4d01fe1e9f783307811e5fb98",
+        "lines": 121
+      },
+      {
+        "path": "apps/api/test/modules/nfr-quality-attributes.spec.ts",
+        "sha256": "bc863f2e9cf2cf1a26a9babf5ff10398f0f162d6d9bada3253d3ad738f2c10ab",
+        "lines": 94
+      },
+      {
+        "path": "apps/api/test/modules/parties-projects.spec.ts",
+        "sha256": "2eee3a60a9eaa9550005396e916bec0781e80ada63017552feb789c4eeb317bc",
+        "lines": 139
+      },
+      {
+        "path": "apps/api/test/perfect-10-remediation.spec.ts",
+        "sha256": "835249f0fca6142c715fe23805a5af1bc35b6bc9ea7636be10206726b70d1fd6",
+        "lines": 561
+      },
+      {
+        "path": "apps/api/test/phase0-evidence-integrity-remediation.spec.ts",
+        "sha256": "6a0558c3c69f504998afd1dfe0438349ddacf6add0c3d21b29f6826f460a8906",
+        "lines": 685
+      },
+      {
+        "path": "apps/api/test/rbac-matrix.spec.ts",
+        "sha256": "cac8cbaa459ac5af1855cf1aafc87524b9628d3144df6b50db165ad92d83865c",
+        "lines": 98
+      },
+      {
+        "path": "apps/api/test/review-authority-boundaries.spec.ts",
+        "sha256": "fc4a28d5161df2dc1ae36805b52d1530956be15a867b64cf142a990371b1b42a",
+        "lines": 114
+      },
+      {
+        "path": "apps/api/test/rls-and-integrity.spec.ts",
+        "sha256": "60e6f45392281123abf40e5ad77aaf8584fc0a23422d0e498e7f3aa141d81433",
+        "lines": 232
+      },
+      {
+        "path": "apps/api/test/rls-isolation.spec.ts",
+        "sha256": "be6b45a60608d9a27e468a71fc6a01bba902b19d96e23b35dde3a0f8c46bae6a",
+        "lines": 188
+      },
+      {
+        "path": "apps/api/test/security-invariants.e2e-spec.ts",
+        "sha256": "f4ea6665911d08a0fa70f52d01536447eb1e301aa0febacdd270715aec84ca76",
+        "lines": 93
+      },
+      {
+        "path": "apps/api/test/sol-integrity-verification.spec.ts",
+        "sha256": "2133a0b3607c68eac60ba7f3da804d61fbbf9b205d1bf884198c0761269d3dcf",
+        "lines": 187
+      },
+      {
+        "path": "apps/api/test/v021-edge-cases.e2e-spec.ts",
+        "sha256": "94eb248b7598bbec6bdc45d6b03d908339422ce0525f24c2b9e9b6a38d727301",
+        "lines": 91
+      },
+      {
+        "path": "apps/web/e2e/archive-verifier.spec.ts",
+        "sha256": "cd2b529a25ac0299de1120168ae543937a7992cb3b5f54e6f36d8896ac36d9b5",
+        "lines": 41
+      },
+      {
+        "path": "apps/web/e2e/critical-flows.spec.ts",
+        "sha256": "8459785de8be9c325626fa9242fd707b89902e9d3d496bd13c206e54f639d585",
+        "lines": 27
+      },
+      {
+        "path": "apps/web/src/app/(contractor)/audit/page.tsx",
+        "sha256": "848cff86f4dd1a3abcff687ce18372d2c5076c6227453b6c2c07d3cb1b73bb80",
+        "lines": 148
+      },
+      {
+        "path": "apps/web/src/app/(contractor)/billing/page.tsx",
+        "sha256": "f9598e89e8ee6394cf5bf98f3a0d4792293155ccf32745385bab5cd45671b709",
+        "lines": 212
+      },
+      {
+        "path": "apps/web/src/app/(contractor)/dashboard/page.tsx",
+        "sha256": "add31a775d297e59242e4b5326b23e675c2bdf8898787c0bc9f395b557487207",
+        "lines": 1039
+      },
+      {
+        "path": "apps/web/src/app/(contractor)/layout.tsx",
+        "sha256": "6473b8b7e13e7cc9f3175602312b8609226528c547b8e25786d882f2f51eabc6",
+        "lines": 338
+      },
+      {
+        "path": "apps/web/src/app/(contractor)/parties/page.tsx",
+        "sha256": "cc592d262392cd01792dc52c0fd98728906717bd012b1e51c80034598d891d25",
+        "lines": 269
+      },
+      {
+        "path": "apps/web/src/app/(contractor)/projects/[projectId]/page.tsx",
+        "sha256": "647f1acf7e8f575ace187e16e92ab5d60d4444173484761cbf4c196f67c74bc5",
+        "lines": 1947
+      },
+      {
+        "path": "apps/web/src/app/(contractor)/projects/[projectId]/review/[versionId]/page.tsx",
+        "sha256": "4d8485662415cb8a3858f5962d4be25b2af3692eb803919437a2ad3c4bb98a87",
+        "lines": 643
+      },
+      {
+        "path": "apps/web/src/app/(contractor)/projects/page.tsx",
+        "sha256": "b1d78eae192d79fa6f09a889d1d1320e013d95137b3c43b32ff5e24f2e4bf5f9",
+        "lines": 396
+      },
+      {
+        "path": "apps/web/src/app/(guest)/guest/[token]/page.tsx",
+        "sha256": "b4c07041ec77a83de15473221c5073655e92a736a347f45c0eeb95292fcf81c4",
+        "lines": 463
+      },
+      {
+        "path": "apps/web/src/app/(public)/login/page.tsx",
+        "sha256": "e63dc11287f434c51e6f3bf94cee7bfcf5941f9c4b9f89ea9dafe605f152eda8",
+        "lines": 340
+      },
+      {
+        "path": "apps/web/src/app/layout.tsx",
+        "sha256": "3db6bcd1afa93181c3c862774419b886cb2af1c87df9133cadf53ad319ccf34d",
+        "lines": 24
+      },
+      {
+        "path": "apps/web/src/app/page.tsx",
+        "sha256": "14390e9f3c37c4429bb4eaa3f31d250f61960725638131fc25fa9534f81be9fb",
+        "lines": 5
+      },
+      {
+        "path": "apps/web/src/components/layout/header.tsx",
+        "sha256": "78c08170d4e809a6e8ad5d24a5c687304f18ff1e0c14986bcbb058d0057fa191",
+        "lines": 232
+      },
+      {
+        "path": "apps/web/src/components/layout/sidebar.tsx",
+        "sha256": "bd56df12ff738cd29c39fbb95e85d307cdccbcf993ca9e4dc45a9c6673d94217",
+        "lines": 287
+      },
+      {
+        "path": "apps/web/src/components/modals/add-requirement-modal.tsx",
+        "sha256": "f06bbc50ab8ce42270d85e6b2fc4fd9452920a873bc403f06a5da981a674c11e",
+        "lines": 221
+      },
+      {
+        "path": "apps/web/src/components/modals/compile-handover-modal.tsx",
+        "sha256": "31ab1db6fbe8101741d5f30157228d625fbb4cb6ea56f798377b8c85ddd05863",
+        "lines": 387
+      },
+      {
+        "path": "apps/web/src/components/modals/create-project-modal.tsx",
+        "sha256": "be76c6df0673ceec12ce39016c21b1e79c0be865a263a966d075fbfc68ce492f",
+        "lines": 115
+      },
+      {
+        "path": "apps/web/src/components/modals/external-approval-modal.tsx",
+        "sha256": "7508bf7bbf6aeea8befa5f095f63da5ec826e07ef3af5bb91aab7eae562de627",
+        "lines": 166
+      },
+      {
+        "path": "apps/web/src/components/modals/import-checklist-modal.tsx",
+        "sha256": "b758a48bf966f1b33c0d70c72756886304b4711b5d420dad91df3149c20f2a78",
+        "lines": 333
+      },
+      {
+        "path": "apps/web/src/components/modals/login-switch-user-modal.tsx",
+        "sha256": "a7a9903e7d8ecf2fda0f2890f1a10952b27c99e56fb0b8097eff9767b13fac8e",
+        "lines": 355
+      },
+      {
+        "path": "apps/web/src/components/modals/request-waiver-modal.tsx",
+        "sha256": "cccce65b4d695857b4ae61b93c48912f541b303e28ce4b1489ab6256aaa981ec",
+        "lines": 191
+      },
+      {
+        "path": "apps/web/src/components/modals/share-supplier-link-modal.tsx",
+        "sha256": "0492527feed8274e804d0e8b4860f8e2060b5041556a105848dd4fcb131496ea",
+        "lines": 310
+      },
+      {
+        "path": "apps/web/src/components/modals/upload-evidence-modal.tsx",
+        "sha256": "fdcaf4554a304b546c67480c92ef097a89ee4d5866a675373737b99ecec70ece",
+        "lines": 217
+      },
+      {
+        "path": "apps/web/src/components/modals/upload-modal.tsx",
+        "sha256": "4206c3b482afcb661f32cbc4145939304ec2a6ea71ef2ae3366bc7a946d41345",
+        "lines": 203
+      },
+      {
+        "path": "apps/web/src/components/modals/waiver-modal.tsx",
+        "sha256": "ef37a8ea5062c2887cb56efa2d04a88a47115172080e4d2bfd380feb1608c9c8",
+        "lines": 110
+      },
+      {
+        "path": "apps/web/src/components/pwa-register.tsx",
+        "sha256": "500f0281dff050199924a80110d8d79b3dcee3486c83449753b349d00cde5c4b",
+        "lines": 44
+      },
+      {
+        "path": "apps/web/src/components/requirement-status-pill.tsx",
+        "sha256": "98a5d52992261265449f6319248abc19433531d40f7f9ca95ebb66200fbcdcf1",
+        "lines": 142
+      },
+      {
+        "path": "apps/web/src/components/ui/metric-card.tsx",
+        "sha256": "89461b4da5ab75b4b931efb27c480eee54cade27b661469e7dd0ecb7f0e167f1",
+        "lines": 84
+      },
+      {
+        "path": "apps/web/src/components/ui/modal.tsx",
+        "sha256": "45ce5e3466be15b55bf4a3bf12e8e5ec435442a0bfc4d0c66463d98d557fcd8c",
+        "lines": 81
+      },
+      {
+        "path": "apps/web/src/components/ui/motion-button.tsx",
+        "sha256": "f4d78a112022d9adc1695a095e4f8ae492574ff2e5455a05d528260538122d44",
+        "lines": 64
+      },
+      {
+        "path": "apps/web/src/components/ui/motion-card.tsx",
+        "sha256": "ccf5c817bd02ccf1067ff47701cc205478dfbee7c9611062c780485fd48a9b9a",
+        "lines": 37
+      },
+      {
+        "path": "apps/web/src/components/ui/progress-bar.tsx",
+        "sha256": "f62630d966af368becc8a3db645818a958bad9224e30261121ad67ea79270a3d",
+        "lines": 54
+      },
+      {
+        "path": "apps/web/src/components/ui/status-badge.tsx",
+        "sha256": "6e922eb7bda65519cfe0bc9923944195b93dfe837a3cc5bf7982e8284c54ec54",
+        "lines": 186
+      },
+      {
+        "path": "apps/web/src/components/upload-sheet.tsx",
+        "sha256": "d8a216be2bfc5d7d747fa75ffb648254973d7f72869bd8addaa9467b61c44e6a",
+        "lines": 379
+      },
+      {
+        "path": "apps/web/src/components/views/checklist-view.tsx",
+        "sha256": "9b4f9908d43ba39c67323540c8ce966c97d9409a5dc0ce09e5bc98f9a289ca4d",
+        "lines": 361
+      },
+      {
+        "path": "apps/web/src/components/views/client-guest-view.tsx",
+        "sha256": "322c8747259e2ece15092227a7639953748868d670f221cae68b28e6ff503c4c",
+        "lines": 144
+      },
+      {
+        "path": "apps/web/src/components/views/overview-view.tsx",
+        "sha256": "c35fee090cd8bb74c4eedcfc3db2ad8f82c9d35593da5edc20373b5f41ff2caa",
+        "lines": 351
+      },
+      {
+        "path": "apps/web/src/components/views/packages-view.tsx",
+        "sha256": "732a17696ac85155c0d3d77cb3a7e58fc85bec551c403ac350d852aa936247b1",
+        "lines": 165
+      },
+      {
+        "path": "apps/web/src/components/views/reviews-view.tsx",
+        "sha256": "8e9b752d60dae0f496d9672f7c19a2081ad4b409d4a538d6ce2b5d2f8d75d285",
+        "lines": 314
+      },
+      {
+        "path": "apps/web/src/components/views/supplier-guest-view.tsx",
+        "sha256": "61216faa0c7cfc28e05381aa07328525afbab185fbbb54b32ebbf7e7fe69da41",
+        "lines": 144
+      },
+      {
+        "path": "apps/web/src/components/views/warranties-view.tsx",
+        "sha256": "9b6d6c8525b6596d6ee67ca047d5d73e12ae168c99cc3be6e6b95c882e8bbc8d",
+        "lines": 347
+      },
+      {
+        "path": "apps/web/src/lib/api-client.ts",
+        "sha256": "c8af6e8b3ac5a49088c8b18483525bc028cfc3953409966086aa01361b20464a",
+        "lines": 186
+      },
+      {
+        "path": "apps/web/src/lib/draft-storage.ts",
+        "sha256": "92a9c4aea102e6f60e7c0d228bea82a9110d301f54e9a4d61b0744431d1f1062",
+        "lines": 37
+      },
+      {
+        "path": "apps/web/src/lib/offline-upload-queue.ts",
+        "sha256": "dcf2776c028a152a49a1a2671ce102516af05d603b0d63e191ba0184b39d35f9",
+        "lines": 373
+      },
+      {
+        "path": "apps/web/src/middleware.ts",
+        "sha256": "7168d41119270dd5146e8ca9c992797b86c971155a2b676142cf552bb8e27d28",
+        "lines": 44
+      },
+      {
+        "path": "apps/worker/src/event-registry.ts",
+        "sha256": "b7e21acc1bab98a14e4a2297cf4611c04e9aa26134def5bf3874266239b73dc5",
+        "lines": 114
+      },
+      {
+        "path": "apps/worker/src/main.ts",
+        "sha256": "4182fd05ec0f352c954ab77eeb113789b93e636e75a4bd5fbdb29b0613167129",
+        "lines": 514
+      },
+      {
+        "path": "apps/worker/src/notification-delivery.ts",
+        "sha256": "aad44ab2f9e4a653b9289b8577b788da63ba806fd149d01ac2cd8ff9d12dd1b8",
+        "lines": 31
+      },
+      {
+        "path": "apps/worker/src/queues/archive-verifier.ts",
+        "sha256": "e6d2a0571455644e64b67938496d009d4f1b2d1b9a8c7e7ab5e68d10b39004f1",
+        "lines": 59
+      },
+      {
+        "path": "apps/worker/src/queues/bounded-stream.ts",
+        "sha256": "64369306207f15c62057a84b678b2dea2269df9426052f7fcc9e0b5b9a206eaa",
+        "lines": 28
+      },
+      {
+        "path": "apps/worker/src/queues/file.processor.ts",
+        "sha256": "d392ce5175fcc5f862c09bad5c26006b0423e003b467e58350dce858cb56d8e9",
+        "lines": 384
+      },
+      {
+        "path": "apps/worker/src/queues/format-converter.ts",
+        "sha256": "e49a2274408ec17269be50651d1fbf66aa62ccf49710a5ee736a4f892ee73346",
+        "lines": 147
+      },
+      {
+        "path": "apps/worker/src/queues/handover-package.processor.ts",
+        "sha256": "facf57d3866019d4f48654c66f947e1d8ec9107f08f7248e1251b3792c94fe49",
+        "lines": 379
+      },
+      {
+        "path": "apps/worker/src/queues/pdf-stream-compiler.ts",
+        "sha256": "e93adff869df47725761a59fee287698e94154ee0f6d384d88f26030e7f65de1",
+        "lines": 478
+      },
+      {
+        "path": "apps/worker/src/queues/pdf.processor.ts",
+        "sha256": "dbe0e4eec1e7de19f650946e7d6e33c807d0826775347c57659a35a5fb5206c6",
+        "lines": 224
+      },
+      {
+        "path": "apps/worker/src/queues/portable-archive.processor.ts",
+        "sha256": "25ed74e73fb56744c07377635ddf98d80de9a6020dc37a9fec133611307127e2",
+        "lines": 158
+      },
+      {
+        "path": "apps/worker/src/scheduler.ts",
+        "sha256": "0f3a980cf76dc32a325b2684e4d080f1c9fd36f71f4caca3f1807b6c8e031dd2",
+        "lines": 469
+      },
+      {
+        "path": "apps/worker/test/helpers/clamav-server.ts",
+        "sha256": "407d6631fd54e83e18f22aaeab9c11397878e8a17662561e850d69328cb43db0",
+        "lines": 91
+      },
+      {
+        "path": "apps/worker/test/helpers/storage-server.ts",
+        "sha256": "631ed0ab584b92ee93767e23cc8034fb19de32777a5d346e7732b4622ee5fb65",
+        "lines": 122
+      },
+      {
+        "path": "apps/worker/test/worker-integration.spec.ts",
+        "sha256": "f82b9f9a458dfd57dd02ca038c97bb8ec5cfa932e800239cd98006529fe6281f",
+        "lines": 217
+      },
+      {
+        "path": "infra/docker/docker-compose.yml",
+        "sha256": "86dd60a97985fbf18b8cf10153ccbcfa34e38b5c7b963763af54411061e58c70",
+        "lines": 52
+      },
+      {
+        "path": "infra/docker/postgres-init.sql",
+        "sha256": "5351f7deed7975db1f21dff6dd6870e6ea1b7acac43c4da277ef0bedfcfd7a48",
+        "lines": 30
+      },
+      {
+        "path": "infra/terraform/main.tf",
+        "sha256": "6fa048ff40117cdf609c083890c44ded4736349bfdb03266436fad223e0777db",
+        "lines": 199
+      },
+      {
+        "path": "packages/db/migrations/0000_complete_v021_schema_and_rls.sql",
+        "sha256": "0704f4f1c5abea5eaa1c6663646c1abe58a793a23440c3293a6d238fa9a9ca8b",
+        "lines": 1445
+      },
+      {
+        "path": "packages/db/migrations/0001_rls_and_constraints.sql",
+        "sha256": "c97db02697a7f917c6d986d26835fef67e806be4c2e7b0dd0b3499ab04e084a0",
+        "lines": 160
+      },
+      {
+        "path": "packages/db/migrations/0002_create_missing_tables.sql",
+        "sha256": "b65394e19b000a4a77731f8a1547d6f539ca4cdca4c712859c2a69bf9d4e75a8",
+        "lines": 163
+      },
+      {
+        "path": "packages/db/migrations/0003_v021_redteam_patches.sql",
+        "sha256": "e5ce1df0ac8e1e04e45cf545695b87935857cb1724b3ce0614f4c4a3b1ec8d13",
+        "lines": 154
+      },
+      {
+        "path": "packages/db/migrations/0004_perfect_10_hardening.sql",
+        "sha256": "c313443ae6a5bf69cdc2990e1c6f9c87a05f55f5b3e019623269d206013b2c4a",
+        "lines": 135
+      },
+      {
+        "path": "packages/db/migrations/0005_add_project_contract_columns.sql",
+        "sha256": "7afb3ac25668681346e17f19841c1fdca7458705ebd3e72bf1a74fc3b708c54f",
+        "lines": 5
+      },
+      {
+        "path": "packages/db/migrations/0006_discovery_and_lifecycle_foundations.sql",
+        "sha256": "d52651be44878f923c33b3074848312cd24e9615678cf9c2a349ba367ab60017",
+        "lines": 143
+      },
+      {
+        "path": "packages/db/migrations/0007_procurement_and_vendor_obligations.sql",
+        "sha256": "0947b4638d13568ae6fa1b51a25cb01611b4e43955762d39a37939b1ea79d258",
+        "lines": 86
+      },
+      {
+        "path": "packages/db/migrations/0008_external_review_authority.sql",
+        "sha256": "6e6e281d5884df86311a59404736a9b4d5128aab5068ee08bbb6d15af56469c7",
+        "lines": 7
+      },
+      {
+        "path": "packages/db/migrations/0009_storage_object_verification.sql",
+        "sha256": "61042f0d5dc9212cf3030a01ba5f668b768bd7a7d1ed7a58d999961f85bff5e5",
+        "lines": 13
+      },
+      {
+        "path": "packages/db/migrations/0010_transmittal_records.sql",
+        "sha256": "cbd31cc27bcc544b3c4fad655eba063a824c2775a50ac95c746b5f5c2a0c6784",
+        "lines": 43
+      },
+      {
+        "path": "packages/db/migrations/0011_guest_grant_token_lookup.sql",
+        "sha256": "b07d0b0dd4936c4607702f1620ebf6b152e2b6e3898a9d85392c6982ef5dcebe",
+        "lines": 15
+      },
+      {
+        "path": "packages/db/migrations/0012_external_review_proof_version.sql",
+        "sha256": "a73565d7af2c6006418467a3117fb1f77150df95f545af97e549889a6f1293a2",
+        "lines": 6
+      },
+      {
+        "path": "packages/db/migrations/0013_reconcile_tenant_policies_and_composite_constraints.sql",
+        "sha256": "fe535d07e71fceed8551f9f2ea1e06b0e6b00fd9ba185b8c8a5c3cc13063584c",
+        "lines": 48
+      },
+      {
+        "path": "packages/db/migrations/0014_protect_remaining_tenant_tables.sql",
+        "sha256": "2a9bb0c9221ab6c1c947ae554263c0b2e45f07f64dff5f7d11567362a4f4fff3",
+        "lines": 24
+      },
+      {
+        "path": "packages/db/migrations/0015_document_versions_updated_at.sql",
+        "sha256": "f5d57f25ec2f7e7099c7da67a10f26786ffd581adcdb54be578b582eda3a88ab",
+        "lines": 27
+      },
+      {
+        "path": "packages/db/migrations/0016_canonical_tenant_alias_validation.sql",
+        "sha256": "8083cdda5033e28886692bcf719bfb93dc59b1e2c8f1d61d5a8001d900e41d06",
+        "lines": 70
+      },
+      {
+        "path": "packages/db/migrations/0017_hvac_commissioning_tab_and_inspections.sql",
+        "sha256": "acd36e6893f903124c4e8b37e77d43b6277e64c4507204314d1f0b9523836929",
+        "lines": 96
+      },
+      {
+        "path": "packages/db/migrations/0018_revalidation_concurrency_and_commissioning_composite_fks.sql",
+        "sha256": "4792ca71873cb23b71b84b12561037ef6b688e0d00876eb3310de90ec9d6292e",
+        "lines": 39
+      },
+      {
+        "path": "packages/db/migrations/0019_defect_remedy_lifecycle.sql",
+        "sha256": "6b285cfd3427bf7c761f2162ae6ce5fbbc738bb60067d09ecf5d9bfa2fd14783",
+        "lines": 12
+      },
+      {
+        "path": "packages/db/src/catalogue-rules.ts",
+        "sha256": "2eaeb6a0dd1095341d8cd5ab36171fa425a1671544d30d2b2b4128942b36a1bc",
+        "lines": 234
+      },
+      {
+        "path": "packages/db/src/index.ts",
+        "sha256": "cfd98884f681bcff189cb29c83328d15d8adcf5b85515b8ebd8fffca8e6184cb",
+        "lines": 3
+      },
+      {
+        "path": "packages/db/src/run-migrations.ts",
+        "sha256": "44e8c194fb04fc458e65f1a1e2ba13e9c855b337471e8752fa1350c735927b5c",
+        "lines": 123
+      },
+      {
+        "path": "packages/db/src/schema.ts",
+        "sha256": "94a3d7f788ccf6573f1b0673975d3a2a536d0b4373de76a17a4bdd27ec41cf5a",
+        "lines": 1715
+      },
+      {
+        "path": "packages/db/src/seed-real-portfolio.ts",
+        "sha256": "36b50c77904bdda8328589fecfd14a819d75517028e145de7200cd3e7a3d8c1e",
+        "lines": 721
+      },
+      {
+        "path": "packages/db/src/seed-vayuputra-story.ts",
+        "sha256": "d83c9dcd36b0dd7cd8c45cc3fe494aa6456f21b757224fb5356c1d31429cd52f",
+        "lines": 882
+      },
+      {
+        "path": "packages/db/src/tenant-tx.ts",
+        "sha256": "d0b8dc5bff922528578a518b32fedaa1db255d5d21de90378c07492c8c84cf56",
+        "lines": 209
+      },
+      {
+        "path": "packages/db/test/db-integration.spec.ts",
+        "sha256": "a806200a9e83dee1ff38412eddc2ba134c943d055d44beb3e7e22fc73dcb18a9",
+        "lines": 151
+      },
+      {
+        "path": "packages/db/test/helpers/disposable-database.ts",
+        "sha256": "833656581f7f821bf1b7677cc85ab17ea599f9430d0b2ce793a0a61411875b68",
+        "lines": 72
+      },
+      {
+        "path": "packages/db/test/helpers/fixtures.ts",
+        "sha256": "3a8803d532a4e7ace580ba25389f20f388df2d2304641c61cb59a0c93016240d",
+        "lines": 33
+      },
+      {
+        "path": "packages/pdf-engine/src/index.ts",
+        "sha256": "e4d1734b1b6991a9b4ad177e12f5656c11a4d7a778c4c8ffbe795ab66c1a758a",
+        "lines": 2
+      },
+      {
+        "path": "packages/pdf-engine/src/package-builder.ts",
+        "sha256": "a146b5c787f7b6c0376ef0a55b424996e8d523e300e90093c24257308a919caf",
+        "lines": 328
+      },
+      {
+        "path": "packages/pdf-engine/src/sanitise-pdf.ts",
+        "sha256": "8a144784dba017d82b90bedef86162a802ced3e29048221d1c766ce9fc44553a",
+        "lines": 105
+      },
+      {
+        "path": "packages/pdf-engine/test/pdf-engine.spec.ts",
+        "sha256": "1e670cb16fec70aa5f97eefc37cbf4928add1cd5e7ebaf85405dea6ddf3987e0",
+        "lines": 155
+      },
+      {
+        "path": "packages/shared/src/business-rules.ts",
+        "sha256": "ce8be47c955e0b0402fc2a3845d6a1e3d6e360874824c48ca9bb79b3b34787a6",
+        "lines": 16
+      },
+      {
+        "path": "packages/shared/src/canonical-json.ts",
+        "sha256": "086503e8bd722a8fef1f52b3fd37ec83539f1aedc6b22b0a3a2fd28612e512bc",
+        "lines": 11
+      },
+      {
+        "path": "packages/shared/src/env.ts",
+        "sha256": "a31a3cf0a648e659428f0a976fdd73a61022c671be822337d380e1d9a6008908",
+        "lines": 50
+      },
+      {
+        "path": "packages/shared/src/index.ts",
+        "sha256": "0944b092466822926e046046aee38b0042aa657f59e9935bd4b73fa0f260f943",
+        "lines": 7
+      },
+      {
+        "path": "packages/shared/src/permissions.ts",
+        "sha256": "a31cba4f3453f6c8f2d8d540d36702c4299ce1c8c1067029d9e8df2381d507ec",
+        "lines": 455
+      },
+      {
+        "path": "packages/shared/src/status-enums.ts",
+        "sha256": "2a0c6f9f5a537efb79a2e18ffb95eceb22d544525d4ede028a8c371946e1690c",
+        "lines": 141
+      },
+      {
+        "path": "packages/shared/src/types.ts",
+        "sha256": "ac461dcc5b8a54656e92114877468e0768fbc9496cdce9a86370504e6ef1c5ac",
+        "lines": 28
+      },
+      {
+        "path": "packages/shared/src/validators.ts",
+        "sha256": "e949b7e083b056d2a92a4fe26b542195959207b635224472b085147d3363f392",
+        "lines": 114
+      },
+      {
+        "path": "packages/shared/test/dates-money.property.spec.ts",
+        "sha256": "b454a2394056c6d7cdcc502a76724cbb6bddbb0e64479dcf728b357b656e1c3d",
+        "lines": 39
+      },
+      {
+        "path": "packages/shared/test/permissions.spec.ts",
+        "sha256": "7f6713ed25afdf39a762af248fbb94d6cb865e7753f5d36379f4521e727a6d7d",
+        "lines": 128
+      },
+      {
+        "path": "packages/shared/test/status-transitions.spec.ts",
+        "sha256": "ac795ed33e87a6bdadf18f4535a8826d94b232183880a8de9e379f014c5be22c",
+        "lines": 21
+      },
+      {
+        "path": "packages/shared/test/validators.spec.ts",
+        "sha256": "9740c0663e542d4b1851ce39154d03a97c57e1a9da9462c65110fd7fe29b43dc",
+        "lines": 125
+      },
+      {
+        "path": "scripts/execute-runbooks.ts",
+        "sha256": "6bcd23edba6da1e86975cc33b648777560ad377121c88ea9dfcf4091d21b0322",
+        "lines": 80
+      },
+      {
+        "path": "scripts/rebuild-master-prompt.py",
+        "sha256": "bd6e316af20fb7d2ad7e4c8278a702e9547ac890abb4bc273d9e4e05ca07e5e5",
+        "lines": 77
+      },
+      {
+        "path": "scripts/reconcile-consultant-checklist.ts",
+        "sha256": "ed3152d81c44bfe51ad61ebc9dcacc058ef403ccbba3a555d47f41edf4eb6e23",
+        "lines": 149
+      },
+      {
+        "path": "scripts/run-restore-drill.sh",
+        "sha256": "9c95bd741aaab0b0a1d50f1e44be76dd2324f214b2ae71e84f6a4bac2b3c1af8",
+        "lines": 164
+      },
+      {
+        "path": "scripts/test-e2e-smoke.ts",
+        "sha256": "e22c65f670a949cad9cd78f48a8edf5ebe4848de8ead3bb4564f8ccd4d82c16b",
+        "lines": 304
+      },
+      {
+        "path": "scripts/test-real-excel-ingestion.ts",
+        "sha256": "1a8fdbc9ee3b7a59007c01ae081e97af6ef8409be72c98edc3f9915655447490",
+        "lines": 373
+      },
+      {
+        "path": "scripts/verify-traceability.ts",
+        "sha256": "56152f2b325b2b60d7627e934da30c6811ea5e5fee21df76f4bf88287931a65d",
+        "lines": 47
+      }
+    ]
+  },
+  "source_snapshot_end": [
+    {
+      "path": ".github/workflows/deploy.yml",
+      "sha256": "35b6f45c7d4318e32aff3e635a46b096d692bfcf55dca91a8ff1f1fe48499cfd"
+    },
+    {
+      "path": "apps/api/src/app.module.ts",
+      "sha256": "11a5e24191f232a4b9cd4f439da9e1965a1a080a541be05552a67034a7170f77"
+    },
+    {
+      "path": "apps/api/src/common/decorators/idempotency.decorator.ts",
+      "sha256": "d9b88d94840b4100e133d6722f95bd61564df16af8b9c1cf463cf95caff4ed4c"
+    },
+    {
+      "path": "apps/api/src/common/filters/problem-json.filter.ts",
+      "sha256": "3a3ef301c7ce03724734db41df108c6f3f86f58bfe9a01651381d7b5c74345d3"
+    },
+    {
+      "path": "apps/api/src/common/guards/permission.guard.ts",
+      "sha256": "3b25e2480fdecfbe6d9f5f1d5b3419d6d7c138520a7399cb00518f8a56b1f70e"
+    },
+    {
+      "path": "apps/api/src/common/guards/session-csrf.guard.ts",
+      "sha256": "905c9a7f84afefe1997565735ce7ab88caf483f668297ed82979ddc4e1f47f04"
+    },
+    {
+      "path": "apps/api/src/common/interceptors/idempotency.interceptor.ts",
+      "sha256": "f446aa9314677eb966e203461d8912de2b8065e84acbad0ea5ff690cab6cd699"
+    },
+    {
+      "path": "apps/api/src/common/interceptors/visibility-projection.interceptor.ts",
+      "sha256": "21d6e986805aa41e0fc287437264438083d7411c7bb55d2ddd6d51ea15ce4d28"
+    },
+    {
+      "path": "apps/api/src/database/database.module.ts",
+      "sha256": "4eb36d8c2e49ded8b2f0dde7c6cad85242aceff5dc07f320524db597886aed46"
+    },
+    {
+      "path": "apps/api/src/database/tenant-db.service.ts",
+      "sha256": "8bb4797f91905e894bff76fc6bc093b24cc9b0aae3732c1a18765266ffb9e964"
+    },
+    {
+      "path": "apps/api/src/main.ts",
+      "sha256": "7a12029f7c2ec2d2499b2b766be4695da150be35f7ddf744dd9e7fa0562b94cb"
+    },
+    {
+      "path": "apps/api/src/modules/assets/assets.controller.ts",
+      "sha256": "301bcda13df47a06a75f86c588059ff3695e5a7f202dd8269fb002d4b52c6cb8"
+    },
+    {
+      "path": "apps/api/src/modules/assets/assets.module.ts",
+      "sha256": "cb486d352d2941453cd80714eb04f0f7fce6952705f20d0a0379f7ed1b7ba801"
+    },
+    {
+      "path": "apps/api/src/modules/assets/assets.service.ts",
+      "sha256": "71894c08c5aae1c6fae559f52778bc55dca2a659456794912cbc4179a2d86463"
+    },
+    {
+      "path": "apps/api/src/modules/billing/billing.controller.ts",
+      "sha256": "722cc5c2012feea18d68b78ed8de560a95fc3709f966a8c8aba1d2e0d26bbff3"
+    },
+    {
+      "path": "apps/api/src/modules/billing/billing.module.ts",
+      "sha256": "b4fb563484cab1591826dd8ccb5471aea48d65ed1a5e0d388d79876142c3fc24"
+    },
+    {
+      "path": "apps/api/src/modules/billing/billing.service.ts",
+      "sha256": "0eec31999eb4338a9a388f20258e05df77476efe1ce863aace6016684cb2b0a2"
+    },
+    {
+      "path": "apps/api/src/modules/billing/gst-einvoice-tds.service.ts",
+      "sha256": "2c9fd319338ed5e4674d8ecaddb5a2b8285331d1634bf98e1d84d0ff3d4ee453"
+    },
+    {
+      "path": "apps/api/src/modules/billing/warranty-and-billing.service.ts",
+      "sha256": "e56958528060eb442e6e32f74fcbf2a0c58346c5a25d644eeabe85c2f64ddfe5"
+    },
+    {
+      "path": "apps/api/src/modules/checklists/checklists.controller.ts",
+      "sha256": "d65630ce9d08d2fecb21c8c0843c8634b8e45d0eccfa59789a7ef8c6c0923884"
+    },
+    {
+      "path": "apps/api/src/modules/checklists/checklists.module.ts",
+      "sha256": "7835e296871169dc4bcc35e97234fe3542cf8e83511613d296e6f4cf89b8bcc0"
+    },
+    {
+      "path": "apps/api/src/modules/checklists/checklists.service.ts",
+      "sha256": "f4363fbef91e0bb93525d7de6a989b42ff4d2d3e36eec1e15b48bc8361b53881"
+    },
+    {
+      "path": "apps/api/src/modules/commissioning/commissioning.controller.ts",
+      "sha256": "76ca62ae54ea70934addbe11f553f8b0002704964f8b6b0c3ac64b0ae8ce3f57"
+    },
+    {
+      "path": "apps/api/src/modules/commissioning/commissioning.module.ts",
+      "sha256": "82fbac8c05a2d6b64db2be3bd7d43f5b00f5fcaa46a706abfb28c6d421d0ab90"
+    },
+    {
+      "path": "apps/api/src/modules/commissioning/commissioning.service.ts",
+      "sha256": "b15f69279e920e2f81b4d400275c1d6f2cdf8833e81bcbf030722b7172e821a6"
+    },
+    {
+      "path": "apps/api/src/modules/configuration/config-resolver.ts",
+      "sha256": "2119c744fd389980ae52e2b3624c438746c5f9dd6f62a622cfb12d58f5026ffa"
+    },
+    {
+      "path": "apps/api/src/modules/configuration/configuration.module.ts",
+      "sha256": "57731f4a0b0355b6b83579270434d6a6329991c96b10078434d5fa9df91da850"
+    },
+    {
+      "path": "apps/api/src/modules/documents/documents.controller.ts",
+      "sha256": "980413597f9de8f1b09e1d1e66536a7b933f0bbf5d4b61582f9878a7fe2a0d8c"
+    },
+    {
+      "path": "apps/api/src/modules/documents/documents.module.ts",
+      "sha256": "61c1b7c27a2fcf6890812d384a875849665f5cc14c735581e37b9f90d4490e3a"
+    },
+    {
+      "path": "apps/api/src/modules/documents/documents.service.ts",
+      "sha256": "d42366fe45c69c4c7d662d860ed3810f68862e6032d77194f481974f6b689887"
+    },
+    {
+      "path": "apps/api/src/modules/documents/dto/upload-intent.dto.ts",
+      "sha256": "1353e6d910a63d35abcbf8a75020fb9f9423da1d6c5567f9c698c7b2a5962ed9"
+    },
+    {
+      "path": "apps/api/src/modules/documents/s3-storage.service.ts",
+      "sha256": "04e230fc5dd51ff4fbfe9790adb1fba81287ba9a4c6853e6a11f0fad040f4133"
+    },
+    {
+      "path": "apps/api/src/modules/handover/dto/handover-packages.dto.ts",
+      "sha256": "f7505b446065ceb487d53de4569369c80ed2adf17bf1d8a17f587c023b5a6562"
+    },
+    {
+      "path": "apps/api/src/modules/handover/handover.controller.ts",
+      "sha256": "7a11220269208131ea91e62d3375342a385cdaab49aa083d6cbe4835d000db3f"
+    },
+    {
+      "path": "apps/api/src/modules/handover/handover.module.ts",
+      "sha256": "5c19e426f9f272b449792278fc31d5c3e48282f4862235adaae897a4dc0c6342"
+    },
+    {
+      "path": "apps/api/src/modules/handover/handover.service.ts",
+      "sha256": "7b9b4e1842cb91900dcf1f041af67c2a51c492b6daba361630829297b0c3a518"
+    },
+    {
+      "path": "apps/api/src/modules/health/health.controller.ts",
+      "sha256": "5a502521d706b4bdb8fe53db474225aeb6e2a3fdb904a7a0fa1af73dca52b011"
+    },
+    {
+      "path": "apps/api/src/modules/health/health.module.ts",
+      "sha256": "c9b7e261283e469775e71227fd936c3633c02c26181fd4cc22e2c7633eda5f0c"
+    },
+    {
+      "path": "apps/api/src/modules/identity/identity.controller.ts",
+      "sha256": "25384f5c558c3826a0b7b142e8e35d2c4928a361e76a51eb5ea090aa4f2269e2"
+    },
+    {
+      "path": "apps/api/src/modules/identity/identity.module.ts",
+      "sha256": "a35f3459c4f7dbd47c82d4099ce53ff343fe1500d107f818225d8a198b9388a6"
+    },
+    {
+      "path": "apps/api/src/modules/notifications/notifications.controller.ts",
+      "sha256": "5fea9ce47c0bdd2cb1fcfd8c2859a90f6be656fa46b86098d0312d8cbf193684"
+    },
+    {
+      "path": "apps/api/src/modules/notifications/notifications.module.ts",
+      "sha256": "9a5f1d4c832511a3db5cbc520146e7bf7fa8b7e2d68bfd789905d5187f2767b9"
+    },
+    {
+      "path": "apps/api/src/modules/notifications/notifications.service.ts",
+      "sha256": "8c8ff723937bfa672f9ea19db54ca0621d8c0cda751f7378995c23773430f9c9"
+    },
+    {
+      "path": "apps/api/src/modules/organisations/organisations.controller.ts",
+      "sha256": "649370f30c91908e8f0fbfd0da6765ad30b9ccdeef9114c459118dc7216ff364"
+    },
+    {
+      "path": "apps/api/src/modules/organisations/organisations.module.ts",
+      "sha256": "144331586053240efd10ded34dccd14aaf3a00d96ec5071f15a88a62047a5b8f"
+    },
+    {
+      "path": "apps/api/src/modules/organisations/organisations.service.ts",
+      "sha256": "cd9da7692176ce9a53ec0df7b29fa6c10c524be2fd5469c23d675fc32496cbf0"
+    },
+    {
+      "path": "apps/api/src/modules/parties/parties.controller.ts",
+      "sha256": "855d259932c6f75b9efb5a1e395c9c0336a3243a4ede26607bb9394e0b6c5fe4"
+    },
+    {
+      "path": "apps/api/src/modules/parties/parties.module.ts",
+      "sha256": "feccaa4205d09f48261fef4836f1311f05b0c604ed38a2b2ca9832188ad0686f"
+    },
+    {
+      "path": "apps/api/src/modules/parties/parties.service.ts",
+      "sha256": "28949c1224a17b988fcd5469bb03754b98fb135aa1195aadbb025dc813c59cd5"
+    },
+    {
+      "path": "apps/api/src/modules/parties/supplier-guest.service.ts",
+      "sha256": "676aec48200de49d30633db4cbd950d14ee3765db4479d1a83e81cadd6060333"
+    },
+    {
+      "path": "apps/api/src/modules/projects/dto/close-project.dto.ts",
+      "sha256": "9a87bff67b31a93062aefb4b6840ae364de7c1a9c8a7d3b3f6735fa400cc1c58"
+    },
+    {
+      "path": "apps/api/src/modules/projects/projects.controller.ts",
+      "sha256": "66eb12321835c330ab0a773006bf834eff8a21c993f3970b685d6b176775ea7e"
+    },
+    {
+      "path": "apps/api/src/modules/projects/projects.module.ts",
+      "sha256": "a4752430ff1d068907cd7ff6bedc6fa54540e3fa8625db6871d87d3a8c9ae99c"
+    },
+    {
+      "path": "apps/api/src/modules/projects/projects.service.ts",
+      "sha256": "1616aa6c70cf0f6851f82497729854bd1fbdbedc84d96c1fd5375f4dc28fb03a"
+    },
+    {
+      "path": "apps/api/src/modules/reviews/dto/decide-review.dto.ts",
+      "sha256": "906dae1105a6dac8faee5365e6cc61d454a675703b23d488d88450d5517f6851"
+    },
+    {
+      "path": "apps/api/src/modules/reviews/dto/external-approval.dto.ts",
+      "sha256": "af43d7406da42f5f7c156ea3614cc65403fd141edf886115bd90c0d844d38f2c"
+    },
+    {
+      "path": "apps/api/src/modules/reviews/review-decision.service.ts",
+      "sha256": "2904956c55cf6b54cf9533b48a8e4cb30358b5015a6ebea63bf2a73099371908"
+    },
+    {
+      "path": "apps/api/src/modules/reviews/reviews.controller.ts",
+      "sha256": "566729127054cea50c226dd76451448a49e9a4218bc2bc6d0c23ce37b81cb90c"
+    },
+    {
+      "path": "apps/api/src/modules/reviews/reviews.module.ts",
+      "sha256": "96612a19f6a3c47659feff66487baa42fb532ce72214bd2feba0e9b331dcae8e"
+    },
+    {
+      "path": "apps/api/src/modules/reviews/reviews.service.ts",
+      "sha256": "a21175e1f5d0b924ace269f818eb435da75f96d4876efae5a751f6c3f45e3cf5"
+    },
+    {
+      "path": "apps/api/src/modules/signatures/digital-signature.controller.ts",
+      "sha256": "40cbdfb2eca586a80f56733f58d746dc1f5fb81fad7970f7b825e632a58af90e"
+    },
+    {
+      "path": "apps/api/src/modules/signatures/digital-signature.service.ts",
+      "sha256": "cfb00bad826217cf4a1ab1c861751a2d95beba4630e1dc15e72eb26a8be3c66f"
+    },
+    {
+      "path": "apps/api/src/modules/signatures/signatures.module.ts",
+      "sha256": "89257a1d6908d2d93132870e07c42304cf8c49b1f224d414859a5fb26ecad3f2"
+    },
+    {
+      "path": "apps/api/src/modules/work-items/work-items.controller.ts",
+      "sha256": "12a83c1d327d23589c11571a4f30074026d620e45bc09e251c567e7f6f1c8d8f"
+    },
+    {
+      "path": "apps/api/src/modules/work-items/work-items.module.ts",
+      "sha256": "3e688b597754ce4e4ce4d3e9563cc1dcb19f82f0198ed107a9ff71f661988a0e"
+    },
+    {
+      "path": "apps/api/src/modules/work-items/work-items.service.ts",
+      "sha256": "97aee3089622811dc115f10071ddaa66da98c4ca4e325aa3b472b53e2d1a080d"
+    },
+    {
+      "path": "apps/api/src/modules/workflows/v021-workflows.service.ts",
+      "sha256": "808690a8ee3e7e9b3acf819eccc85a9a30e8e34c9be3e1ac741f994527584d77"
+    },
+    {
+      "path": "apps/api/src/modules/workflows/workflows.module.ts",
+      "sha256": "51f889bdaccea8b7c97929e3d023c4ae6f8f47354f9b025870bc9f8d921513f5"
+    },
+    {
+      "path": "apps/api/test/concurrency.spec.ts",
+      "sha256": "ffe97119efe3121eea657e80062135f141238480721b8704f1a128b0dcac4ff8"
+    },
+    {
+      "path": "apps/api/test/contractor-user-journey.spec.ts",
+      "sha256": "c949b4a6f7ab00e0cdccdce518d9f24572bcbdfd2efa8daa516f8514b1438eba"
+    },
+    {
+      "path": "apps/api/test/discovery-lifecycle-foundations.spec.ts",
+      "sha256": "47530d0eb1756fd8c2017718efbb3f0179d162a71377137d15d812d6f6f15b59"
+    },
+    {
+      "path": "apps/api/test/document-download-boundaries.spec.ts",
+      "sha256": "e074d260ca72219fca85722276b39efd0228328d7baf48badea6983e9a9228b5"
+    },
+    {
+      "path": "apps/api/test/guest-session-boundaries.spec.ts",
+      "sha256": "436174ebd9bd48388b6845583a57210163c4fd1e5e8d25b1b56a132840d4a961"
+    },
+    {
+      "path": "apps/api/test/hvac-domain-excellence.spec.ts",
+      "sha256": "a94d2546bf6bc0d7b198b1fd8f0db8c2f9bbca1ecff4333743de12042433ac67"
+    },
+    {
+      "path": "apps/api/test/hvac-production-reaudit-remediation.spec.ts",
+      "sha256": "2b4246a11fee6be79ce5698551c18b185da4736a444ac5d120d5d21f05d35c3d"
+    },
+    {
+      "path": "apps/api/test/idempotency-cleanup-replay.spec.ts",
+      "sha256": "71785452dc9bd99fd19dd8384b7f463faa776daf2bf87b0b5a8cc660f93fde98"
+    },
+    {
+      "path": "apps/api/test/idempotency-expired-claim.spec.ts",
+      "sha256": "7f916754c2557cbcaa5cfc71f56381c824acf01f1b1da591b13209947cb444da"
+    },
+    {
+      "path": "apps/api/test/modules/auth-iam.spec.ts",
+      "sha256": "3dcb9219357356e4dc01149931bcd6b9e39029e430e1451203f362a37f8a2341"
+    },
+    {
+      "path": "apps/api/test/modules/config-checklists-assets.spec.ts",
+      "sha256": "8a5a032e93fc27f5a06b4d15e0aaa57f2a850b6474e951ef00a46e0e03ccf146"
+    },
+    {
+      "path": "apps/api/test/modules/documents-reviews.spec.ts",
+      "sha256": "f85890e9322b731154f136664938e1d94851d4f099a4f3634a5381eaa931c256"
+    },
+    {
+      "path": "apps/api/test/modules/handover-billing-system.spec.ts",
+      "sha256": "672e469e4aecb5a7bf5da18aa707558eef2842f4d01fe1e9f783307811e5fb98"
+    },
+    {
+      "path": "apps/api/test/modules/nfr-quality-attributes.spec.ts",
+      "sha256": "bc863f2e9cf2cf1a26a9babf5ff10398f0f162d6d9bada3253d3ad738f2c10ab"
+    },
+    {
+      "path": "apps/api/test/modules/parties-projects.spec.ts",
+      "sha256": "2eee3a60a9eaa9550005396e916bec0781e80ada63017552feb789c4eeb317bc"
+    },
+    {
+      "path": "apps/api/test/perfect-10-remediation.spec.ts",
+      "sha256": "835249f0fca6142c715fe23805a5af1bc35b6bc9ea7636be10206726b70d1fd6"
+    },
+    {
+      "path": "apps/api/test/phase0-evidence-integrity-remediation.spec.ts",
+      "sha256": "6a0558c3c69f504998afd1dfe0438349ddacf6add0c3d21b29f6826f460a8906"
+    },
+    {
+      "path": "apps/api/test/rbac-matrix.spec.ts",
+      "sha256": "cac8cbaa459ac5af1855cf1aafc87524b9628d3144df6b50db165ad92d83865c"
+    },
+    {
+      "path": "apps/api/test/review-authority-boundaries.spec.ts",
+      "sha256": "fc4a28d5161df2dc1ae36805b52d1530956be15a867b64cf142a990371b1b42a"
+    },
+    {
+      "path": "apps/api/test/rls-and-integrity.spec.ts",
+      "sha256": "60e6f45392281123abf40e5ad77aaf8584fc0a23422d0e498e7f3aa141d81433"
+    },
+    {
+      "path": "apps/api/test/rls-isolation.spec.ts",
+      "sha256": "be6b45a60608d9a27e468a71fc6a01bba902b19d96e23b35dde3a0f8c46bae6a"
+    },
+    {
+      "path": "apps/api/test/security-invariants.e2e-spec.ts",
+      "sha256": "f4ea6665911d08a0fa70f52d01536447eb1e301aa0febacdd270715aec84ca76"
+    },
+    {
+      "path": "apps/api/test/sol-integrity-verification.spec.ts",
+      "sha256": "2133a0b3607c68eac60ba7f3da804d61fbbf9b205d1bf884198c0761269d3dcf"
+    },
+    {
+      "path": "apps/api/test/v021-edge-cases.e2e-spec.ts",
+      "sha256": "94eb248b7598bbec6bdc45d6b03d908339422ce0525f24c2b9e9b6a38d727301"
+    },
+    {
+      "path": "apps/web/e2e/archive-verifier.spec.ts",
+      "sha256": "cd2b529a25ac0299de1120168ae543937a7992cb3b5f54e6f36d8896ac36d9b5"
+    },
+    {
+      "path": "apps/web/e2e/critical-flows.spec.ts",
+      "sha256": "8459785de8be9c325626fa9242fd707b89902e9d3d496bd13c206e54f639d585"
+    },
+    {
+      "path": "apps/web/src/app/(contractor)/audit/page.tsx",
+      "sha256": "848cff86f4dd1a3abcff687ce18372d2c5076c6227453b6c2c07d3cb1b73bb80"
+    },
+    {
+      "path": "apps/web/src/app/(contractor)/billing/page.tsx",
+      "sha256": "f9598e89e8ee6394cf5bf98f3a0d4792293155ccf32745385bab5cd45671b709"
+    },
+    {
+      "path": "apps/web/src/app/(contractor)/dashboard/page.tsx",
+      "sha256": "add31a775d297e59242e4b5326b23e675c2bdf8898787c0bc9f395b557487207"
+    },
+    {
+      "path": "apps/web/src/app/(contractor)/layout.tsx",
+      "sha256": "6473b8b7e13e7cc9f3175602312b8609226528c547b8e25786d882f2f51eabc6"
+    },
+    {
+      "path": "apps/web/src/app/(contractor)/parties/page.tsx",
+      "sha256": "cc592d262392cd01792dc52c0fd98728906717bd012b1e51c80034598d891d25"
+    },
+    {
+      "path": "apps/web/src/app/(contractor)/projects/[projectId]/page.tsx",
+      "sha256": "647f1acf7e8f575ace187e16e92ab5d60d4444173484761cbf4c196f67c74bc5"
+    },
+    {
+      "path": "apps/web/src/app/(contractor)/projects/[projectId]/review/[versionId]/page.tsx",
+      "sha256": "4d8485662415cb8a3858f5962d4be25b2af3692eb803919437a2ad3c4bb98a87"
+    },
+    {
+      "path": "apps/web/src/app/(contractor)/projects/page.tsx",
+      "sha256": "b1d78eae192d79fa6f09a889d1d1320e013d95137b3c43b32ff5e24f2e4bf5f9"
+    },
+    {
+      "path": "apps/web/src/app/(guest)/guest/[token]/page.tsx",
+      "sha256": "b4c07041ec77a83de15473221c5073655e92a736a347f45c0eeb95292fcf81c4"
+    },
+    {
+      "path": "apps/web/src/app/(public)/login/page.tsx",
+      "sha256": "e63dc11287f434c51e6f3bf94cee7bfcf5941f9c4b9f89ea9dafe605f152eda8"
+    },
+    {
+      "path": "apps/web/src/app/layout.tsx",
+      "sha256": "3db6bcd1afa93181c3c862774419b886cb2af1c87df9133cadf53ad319ccf34d"
+    },
+    {
+      "path": "apps/web/src/app/page.tsx",
+      "sha256": "14390e9f3c37c4429bb4eaa3f31d250f61960725638131fc25fa9534f81be9fb"
+    },
+    {
+      "path": "apps/web/src/components/layout/header.tsx",
+      "sha256": "78c08170d4e809a6e8ad5d24a5c687304f18ff1e0c14986bcbb058d0057fa191"
+    },
+    {
+      "path": "apps/web/src/components/layout/sidebar.tsx",
+      "sha256": "bd56df12ff738cd29c39fbb95e85d307cdccbcf993ca9e4dc45a9c6673d94217"
+    },
+    {
+      "path": "apps/web/src/components/modals/add-requirement-modal.tsx",
+      "sha256": "f06bbc50ab8ce42270d85e6b2fc4fd9452920a873bc403f06a5da981a674c11e"
+    },
+    {
+      "path": "apps/web/src/components/modals/compile-handover-modal.tsx",
+      "sha256": "31ab1db6fbe8101741d5f30157228d625fbb4cb6ea56f798377b8c85ddd05863"
+    },
+    {
+      "path": "apps/web/src/components/modals/create-project-modal.tsx",
+      "sha256": "be76c6df0673ceec12ce39016c21b1e79c0be865a263a966d075fbfc68ce492f"
+    },
+    {
+      "path": "apps/web/src/components/modals/external-approval-modal.tsx",
+      "sha256": "7508bf7bbf6aeea8befa5f095f63da5ec826e07ef3af5bb91aab7eae562de627"
+    },
+    {
+      "path": "apps/web/src/components/modals/import-checklist-modal.tsx",
+      "sha256": "b758a48bf966f1b33c0d70c72756886304b4711b5d420dad91df3149c20f2a78"
+    },
+    {
+      "path": "apps/web/src/components/modals/login-switch-user-modal.tsx",
+      "sha256": "a7a9903e7d8ecf2fda0f2890f1a10952b27c99e56fb0b8097eff9767b13fac8e"
+    },
+    {
+      "path": "apps/web/src/components/modals/request-waiver-modal.tsx",
+      "sha256": "cccce65b4d695857b4ae61b93c48912f541b303e28ce4b1489ab6256aaa981ec"
+    },
+    {
+      "path": "apps/web/src/components/modals/share-supplier-link-modal.tsx",
+      "sha256": "0492527feed8274e804d0e8b4860f8e2060b5041556a105848dd4fcb131496ea"
+    },
+    {
+      "path": "apps/web/src/components/modals/upload-evidence-modal.tsx",
+      "sha256": "fdcaf4554a304b546c67480c92ef097a89ee4d5866a675373737b99ecec70ece"
+    },
+    {
+      "path": "apps/web/src/components/modals/upload-modal.tsx",
+      "sha256": "4206c3b482afcb661f32cbc4145939304ec2a6ea71ef2ae3366bc7a946d41345"
+    },
+    {
+      "path": "apps/web/src/components/modals/waiver-modal.tsx",
+      "sha256": "ef37a8ea5062c2887cb56efa2d04a88a47115172080e4d2bfd380feb1608c9c8"
+    },
+    {
+      "path": "apps/web/src/components/pwa-register.tsx",
+      "sha256": "500f0281dff050199924a80110d8d79b3dcee3486c83449753b349d00cde5c4b"
+    },
+    {
+      "path": "apps/web/src/components/requirement-status-pill.tsx",
+      "sha256": "98a5d52992261265449f6319248abc19433531d40f7f9ca95ebb66200fbcdcf1"
+    },
+    {
+      "path": "apps/web/src/components/ui/metric-card.tsx",
+      "sha256": "89461b4da5ab75b4b931efb27c480eee54cade27b661469e7dd0ecb7f0e167f1"
+    },
+    {
+      "path": "apps/web/src/components/ui/modal.tsx",
+      "sha256": "45ce5e3466be15b55bf4a3bf12e8e5ec435442a0bfc4d0c66463d98d557fcd8c"
+    },
+    {
+      "path": "apps/web/src/components/ui/motion-button.tsx",
+      "sha256": "f4d78a112022d9adc1695a095e4f8ae492574ff2e5455a05d528260538122d44"
+    },
+    {
+      "path": "apps/web/src/components/ui/motion-card.tsx",
+      "sha256": "ccf5c817bd02ccf1067ff47701cc205478dfbee7c9611062c780485fd48a9b9a"
+    },
+    {
+      "path": "apps/web/src/components/ui/progress-bar.tsx",
+      "sha256": "f62630d966af368becc8a3db645818a958bad9224e30261121ad67ea79270a3d"
+    },
+    {
+      "path": "apps/web/src/components/ui/status-badge.tsx",
+      "sha256": "6e922eb7bda65519cfe0bc9923944195b93dfe837a3cc5bf7982e8284c54ec54"
+    },
+    {
+      "path": "apps/web/src/components/upload-sheet.tsx",
+      "sha256": "d8a216be2bfc5d7d747fa75ffb648254973d7f72869bd8addaa9467b61c44e6a"
+    },
+    {
+      "path": "apps/web/src/components/views/checklist-view.tsx",
+      "sha256": "9b4f9908d43ba39c67323540c8ce966c97d9409a5dc0ce09e5bc98f9a289ca4d"
+    },
+    {
+      "path": "apps/web/src/components/views/client-guest-view.tsx",
+      "sha256": "322c8747259e2ece15092227a7639953748868d670f221cae68b28e6ff503c4c"
+    },
+    {
+      "path": "apps/web/src/components/views/overview-view.tsx",
+      "sha256": "c35fee090cd8bb74c4eedcfc3db2ad8f82c9d35593da5edc20373b5f41ff2caa"
+    },
+    {
+      "path": "apps/web/src/components/views/packages-view.tsx",
+      "sha256": "732a17696ac85155c0d3d77cb3a7e58fc85bec551c403ac350d852aa936247b1"
+    },
+    {
+      "path": "apps/web/src/components/views/reviews-view.tsx",
+      "sha256": "8e9b752d60dae0f496d9672f7c19a2081ad4b409d4a538d6ce2b5d2f8d75d285"
+    },
+    {
+      "path": "apps/web/src/components/views/supplier-guest-view.tsx",
+      "sha256": "61216faa0c7cfc28e05381aa07328525afbab185fbbb54b32ebbf7e7fe69da41"
+    },
+    {
+      "path": "apps/web/src/components/views/warranties-view.tsx",
+      "sha256": "9b6d6c8525b6596d6ee67ca047d5d73e12ae168c99cc3be6e6b95c882e8bbc8d"
+    },
+    {
+      "path": "apps/web/src/lib/api-client.ts",
+      "sha256": "c8af6e8b3ac5a49088c8b18483525bc028cfc3953409966086aa01361b20464a"
+    },
+    {
+      "path": "apps/web/src/lib/draft-storage.ts",
+      "sha256": "92a9c4aea102e6f60e7c0d228bea82a9110d301f54e9a4d61b0744431d1f1062"
+    },
+    {
+      "path": "apps/web/src/lib/offline-upload-queue.ts",
+      "sha256": "dcf2776c028a152a49a1a2671ce102516af05d603b0d63e191ba0184b39d35f9"
+    },
+    {
+      "path": "apps/web/src/middleware.ts",
+      "sha256": "7168d41119270dd5146e8ca9c992797b86c971155a2b676142cf552bb8e27d28"
+    },
+    {
+      "path": "apps/worker/src/event-registry.ts",
+      "sha256": "b7e21acc1bab98a14e4a2297cf4611c04e9aa26134def5bf3874266239b73dc5"
+    },
+    {
+      "path": "apps/worker/src/main.ts",
+      "sha256": "4182fd05ec0f352c954ab77eeb113789b93e636e75a4bd5fbdb29b0613167129"
+    },
+    {
+      "path": "apps/worker/src/notification-delivery.ts",
+      "sha256": "aad44ab2f9e4a653b9289b8577b788da63ba806fd149d01ac2cd8ff9d12dd1b8"
+    },
+    {
+      "path": "apps/worker/src/queues/archive-verifier.ts",
+      "sha256": "e6d2a0571455644e64b67938496d009d4f1b2d1b9a8c7e7ab5e68d10b39004f1"
+    },
+    {
+      "path": "apps/worker/src/queues/bounded-stream.ts",
+      "sha256": "64369306207f15c62057a84b678b2dea2269df9426052f7fcc9e0b5b9a206eaa"
+    },
+    {
+      "path": "apps/worker/src/queues/file.processor.ts",
+      "sha256": "d392ce5175fcc5f862c09bad5c26006b0423e003b467e58350dce858cb56d8e9"
+    },
+    {
+      "path": "apps/worker/src/queues/format-converter.ts",
+      "sha256": "e49a2274408ec17269be50651d1fbf66aa62ccf49710a5ee736a4f892ee73346"
+    },
+    {
+      "path": "apps/worker/src/queues/handover-package.processor.ts",
+      "sha256": "facf57d3866019d4f48654c66f947e1d8ec9107f08f7248e1251b3792c94fe49"
+    },
+    {
+      "path": "apps/worker/src/queues/pdf-stream-compiler.ts",
+      "sha256": "e93adff869df47725761a59fee287698e94154ee0f6d384d88f26030e7f65de1"
+    },
+    {
+      "path": "apps/worker/src/queues/pdf.processor.ts",
+      "sha256": "dbe0e4eec1e7de19f650946e7d6e33c807d0826775347c57659a35a5fb5206c6"
+    },
+    {
+      "path": "apps/worker/src/queues/portable-archive.processor.ts",
+      "sha256": "25ed74e73fb56744c07377635ddf98d80de9a6020dc37a9fec133611307127e2"
+    },
+    {
+      "path": "apps/worker/src/scheduler.ts",
+      "sha256": "0f3a980cf76dc32a325b2684e4d080f1c9fd36f71f4caca3f1807b6c8e031dd2"
+    },
+    {
+      "path": "apps/worker/test/helpers/clamav-server.ts",
+      "sha256": "407d6631fd54e83e18f22aaeab9c11397878e8a17662561e850d69328cb43db0"
+    },
+    {
+      "path": "apps/worker/test/helpers/storage-server.ts",
+      "sha256": "631ed0ab584b92ee93767e23cc8034fb19de32777a5d346e7732b4622ee5fb65"
+    },
+    {
+      "path": "apps/worker/test/worker-integration.spec.ts",
+      "sha256": "f82b9f9a458dfd57dd02ca038c97bb8ec5cfa932e800239cd98006529fe6281f"
+    },
+    {
+      "path": "infra/docker/docker-compose.yml",
+      "sha256": "86dd60a97985fbf18b8cf10153ccbcfa34e38b5c7b963763af54411061e58c70"
+    },
+    {
+      "path": "infra/docker/postgres-init.sql",
+      "sha256": "5351f7deed7975db1f21dff6dd6870e6ea1b7acac43c4da277ef0bedfcfd7a48"
+    },
+    {
+      "path": "infra/terraform/main.tf",
+      "sha256": "6fa048ff40117cdf609c083890c44ded4736349bfdb03266436fad223e0777db"
+    },
+    {
+      "path": "packages/db/migrations/0000_complete_v021_schema_and_rls.sql",
+      "sha256": "0704f4f1c5abea5eaa1c6663646c1abe58a793a23440c3293a6d238fa9a9ca8b"
+    },
+    {
+      "path": "packages/db/migrations/0001_rls_and_constraints.sql",
+      "sha256": "c97db02697a7f917c6d986d26835fef67e806be4c2e7b0dd0b3499ab04e084a0"
+    },
+    {
+      "path": "packages/db/migrations/0002_create_missing_tables.sql",
+      "sha256": "b65394e19b000a4a77731f8a1547d6f539ca4cdca4c712859c2a69bf9d4e75a8"
+    },
+    {
+      "path": "packages/db/migrations/0003_v021_redteam_patches.sql",
+      "sha256": "e5ce1df0ac8e1e04e45cf545695b87935857cb1724b3ce0614f4c4a3b1ec8d13"
+    },
+    {
+      "path": "packages/db/migrations/0004_perfect_10_hardening.sql",
+      "sha256": "c313443ae6a5bf69cdc2990e1c6f9c87a05f55f5b3e019623269d206013b2c4a"
+    },
+    {
+      "path": "packages/db/migrations/0005_add_project_contract_columns.sql",
+      "sha256": "7afb3ac25668681346e17f19841c1fdca7458705ebd3e72bf1a74fc3b708c54f"
+    },
+    {
+      "path": "packages/db/migrations/0006_discovery_and_lifecycle_foundations.sql",
+      "sha256": "d52651be44878f923c33b3074848312cd24e9615678cf9c2a349ba367ab60017"
+    },
+    {
+      "path": "packages/db/migrations/0007_procurement_and_vendor_obligations.sql",
+      "sha256": "0947b4638d13568ae6fa1b51a25cb01611b4e43955762d39a37939b1ea79d258"
+    },
+    {
+      "path": "packages/db/migrations/0008_external_review_authority.sql",
+      "sha256": "6e6e281d5884df86311a59404736a9b4d5128aab5068ee08bbb6d15af56469c7"
+    },
+    {
+      "path": "packages/db/migrations/0009_storage_object_verification.sql",
+      "sha256": "61042f0d5dc9212cf3030a01ba5f668b768bd7a7d1ed7a58d999961f85bff5e5"
+    },
+    {
+      "path": "packages/db/migrations/0010_transmittal_records.sql",
+      "sha256": "cbd31cc27bcc544b3c4fad655eba063a824c2775a50ac95c746b5f5c2a0c6784"
+    },
+    {
+      "path": "packages/db/migrations/0011_guest_grant_token_lookup.sql",
+      "sha256": "b07d0b0dd4936c4607702f1620ebf6b152e2b6e3898a9d85392c6982ef5dcebe"
+    },
+    {
+      "path": "packages/db/migrations/0012_external_review_proof_version.sql",
+      "sha256": "a73565d7af2c6006418467a3117fb1f77150df95f545af97e549889a6f1293a2"
+    },
+    {
+      "path": "packages/db/migrations/0013_reconcile_tenant_policies_and_composite_constraints.sql",
+      "sha256": "fe535d07e71fceed8551f9f2ea1e06b0e6b00fd9ba185b8c8a5c3cc13063584c"
+    },
+    {
+      "path": "packages/db/migrations/0014_protect_remaining_tenant_tables.sql",
+      "sha256": "2a9bb0c9221ab6c1c947ae554263c0b2e45f07f64dff5f7d11567362a4f4fff3"
+    },
+    {
+      "path": "packages/db/migrations/0015_document_versions_updated_at.sql",
+      "sha256": "f5d57f25ec2f7e7099c7da67a10f26786ffd581adcdb54be578b582eda3a88ab"
+    },
+    {
+      "path": "packages/db/migrations/0016_canonical_tenant_alias_validation.sql",
+      "sha256": "8083cdda5033e28886692bcf719bfb93dc59b1e2c8f1d61d5a8001d900e41d06"
+    },
+    {
+      "path": "packages/db/migrations/0017_hvac_commissioning_tab_and_inspections.sql",
+      "sha256": "acd36e6893f903124c4e8b37e77d43b6277e64c4507204314d1f0b9523836929"
+    },
+    {
+      "path": "packages/db/migrations/0018_revalidation_concurrency_and_commissioning_composite_fks.sql",
+      "sha256": "4792ca71873cb23b71b84b12561037ef6b688e0d00876eb3310de90ec9d6292e"
+    },
+    {
+      "path": "packages/db/migrations/0019_defect_remedy_lifecycle.sql",
+      "sha256": "6b285cfd3427bf7c761f2162ae6ce5fbbc738bb60067d09ecf5d9bfa2fd14783"
+    },
+    {
+      "path": "packages/db/src/catalogue-rules.ts",
+      "sha256": "2eaeb6a0dd1095341d8cd5ab36171fa425a1671544d30d2b2b4128942b36a1bc"
+    },
+    {
+      "path": "packages/db/src/index.ts",
+      "sha256": "cfd98884f681bcff189cb29c83328d15d8adcf5b85515b8ebd8fffca8e6184cb"
+    },
+    {
+      "path": "packages/db/src/run-migrations.ts",
+      "sha256": "44e8c194fb04fc458e65f1a1e2ba13e9c855b337471e8752fa1350c735927b5c"
+    },
+    {
+      "path": "packages/db/src/schema.ts",
+      "sha256": "94a3d7f788ccf6573f1b0673975d3a2a536d0b4373de76a17a4bdd27ec41cf5a"
+    },
+    {
+      "path": "packages/db/src/seed-real-portfolio.ts",
+      "sha256": "36b50c77904bdda8328589fecfd14a819d75517028e145de7200cd3e7a3d8c1e"
+    },
+    {
+      "path": "packages/db/src/seed-vayuputra-story.ts",
+      "sha256": "d83c9dcd36b0dd7cd8c45cc3fe494aa6456f21b757224fb5356c1d31429cd52f"
+    },
+    {
+      "path": "packages/db/src/tenant-tx.ts",
+      "sha256": "d0b8dc5bff922528578a518b32fedaa1db255d5d21de90378c07492c8c84cf56"
+    },
+    {
+      "path": "packages/db/test/db-integration.spec.ts",
+      "sha256": "a806200a9e83dee1ff38412eddc2ba134c943d055d44beb3e7e22fc73dcb18a9"
+    },
+    {
+      "path": "packages/db/test/helpers/disposable-database.ts",
+      "sha256": "833656581f7f821bf1b7677cc85ab17ea599f9430d0b2ce793a0a61411875b68"
+    },
+    {
+      "path": "packages/db/test/helpers/fixtures.ts",
+      "sha256": "3a8803d532a4e7ace580ba25389f20f388df2d2304641c61cb59a0c93016240d"
+    },
+    {
+      "path": "packages/pdf-engine/src/index.ts",
+      "sha256": "e4d1734b1b6991a9b4ad177e12f5656c11a4d7a778c4c8ffbe795ab66c1a758a"
+    },
+    {
+      "path": "packages/pdf-engine/src/package-builder.ts",
+      "sha256": "a146b5c787f7b6c0376ef0a55b424996e8d523e300e90093c24257308a919caf"
+    },
+    {
+      "path": "packages/pdf-engine/src/sanitise-pdf.ts",
+      "sha256": "8a144784dba017d82b90bedef86162a802ced3e29048221d1c766ce9fc44553a"
+    },
+    {
+      "path": "packages/pdf-engine/test/pdf-engine.spec.ts",
+      "sha256": "1e670cb16fec70aa5f97eefc37cbf4928add1cd5e7ebaf85405dea6ddf3987e0"
+    },
+    {
+      "path": "packages/shared/src/business-rules.ts",
+      "sha256": "ce8be47c955e0b0402fc2a3845d6a1e3d6e360874824c48ca9bb79b3b34787a6"
+    },
+    {
+      "path": "packages/shared/src/canonical-json.ts",
+      "sha256": "086503e8bd722a8fef1f52b3fd37ec83539f1aedc6b22b0a3a2fd28612e512bc"
+    },
+    {
+      "path": "packages/shared/src/env.ts",
+      "sha256": "a31a3cf0a648e659428f0a976fdd73a61022c671be822337d380e1d9a6008908"
+    },
+    {
+      "path": "packages/shared/src/index.ts",
+      "sha256": "0944b092466822926e046046aee38b0042aa657f59e9935bd4b73fa0f260f943"
+    },
+    {
+      "path": "packages/shared/src/permissions.ts",
+      "sha256": "a31cba4f3453f6c8f2d8d540d36702c4299ce1c8c1067029d9e8df2381d507ec"
+    },
+    {
+      "path": "packages/shared/src/status-enums.ts",
+      "sha256": "2a0c6f9f5a537efb79a2e18ffb95eceb22d544525d4ede028a8c371946e1690c"
+    },
+    {
+      "path": "packages/shared/src/types.ts",
+      "sha256": "ac461dcc5b8a54656e92114877468e0768fbc9496cdce9a86370504e6ef1c5ac"
+    },
+    {
+      "path": "packages/shared/src/validators.ts",
+      "sha256": "e949b7e083b056d2a92a4fe26b542195959207b635224472b085147d3363f392"
+    },
+    {
+      "path": "packages/shared/test/dates-money.property.spec.ts",
+      "sha256": "b454a2394056c6d7cdcc502a76724cbb6bddbb0e64479dcf728b357b656e1c3d"
+    },
+    {
+      "path": "packages/shared/test/permissions.spec.ts",
+      "sha256": "7f6713ed25afdf39a762af248fbb94d6cb865e7753f5d36379f4521e727a6d7d"
+    },
+    {
+      "path": "packages/shared/test/status-transitions.spec.ts",
+      "sha256": "ac795ed33e87a6bdadf18f4535a8826d94b232183880a8de9e379f014c5be22c"
+    },
+    {
+      "path": "packages/shared/test/validators.spec.ts",
+      "sha256": "9740c0663e542d4b1851ce39154d03a97c57e1a9da9462c65110fd7fe29b43dc"
+    },
+    {
+      "path": "scripts/execute-runbooks.ts",
+      "sha256": "6bcd23edba6da1e86975cc33b648777560ad377121c88ea9dfcf4091d21b0322"
+    },
+    {
+      "path": "scripts/rebuild-master-prompt.py",
+      "sha256": "bd6e316af20fb7d2ad7e4c8278a702e9547ac890abb4bc273d9e4e05ca07e5e5"
+    },
+    {
+      "path": "scripts/reconcile-consultant-checklist.ts",
+      "sha256": "ed3152d81c44bfe51ad61ebc9dcacc058ef403ccbba3a555d47f41edf4eb6e23"
+    },
+    {
+      "path": "scripts/run-restore-drill.sh",
+      "sha256": "9c95bd741aaab0b0a1d50f1e44be76dd2324f214b2ae71e84f6a4bac2b3c1af8"
+    },
+    {
+      "path": "scripts/test-e2e-smoke.ts",
+      "sha256": "e22c65f670a949cad9cd78f48a8edf5ebe4848de8ead3bb4564f8ccd4d82c16b"
+    },
+    {
+      "path": "scripts/test-real-excel-ingestion.ts",
+      "sha256": "1a8fdbc9ee3b7a59007c01ae081e97af6ef8409be72c98edc3f9915655447490"
+    },
+    {
+      "path": "scripts/verify-traceability.ts",
+      "sha256": "56152f2b325b2b60d7627e934da30c6811ea5e5fee21df76f4bf88287931a65d"
+    }
+  ],
+  "source_changes_during_audit": [],
+  "additional_source_fingerprints": [
+    {
+      "path": "package.json",
+      "sha256": "f485321a0745271238cd7b32baef77f2ed13b195666a7345442a401df9a66a61"
+    },
+    {
+      "path": "pnpm-lock.yaml",
+      "sha256": "cab823c34048688aaecc2ce39a769d4f38ebc24dadbb05d86b7468d3b5869f3d"
+    },
+    {
+      "path": "pnpm-workspace.yaml",
+      "sha256": "f372e8bbf1e822cd8eb66f86505c620db245c78663b0655771db29c3c2629d40"
+    },
+    {
+      "path": "turbo.json",
+      "sha256": "5d96cd57c347565d51d8b3fb65f4ddfbbe8080cece1b5fb271fe24864e5a45be"
+    },
+    {
+      "path": "apps/api/package.json",
+      "sha256": "1c3a6943d4612b058fd81f3db43855c5f3f28e6ff6b95c1699639942c3391698"
+    },
+    {
+      "path": "apps/web/package.json",
+      "sha256": "a5f695bf7371788b900ab0dcbee32433aab22ff4621931d0d60bd598572c6f3e"
+    },
+    {
+      "path": "apps/web/playwright.config.ts",
+      "sha256": "b49152c9566d2f4202fbff206094cf5c92c1b42e9838cf84c218f42d18c4db70"
+    },
+    {
+      "path": "apps/web/next.config.mjs",
+      "sha256": "260309e418d1b199d281d287ffb75c4ad59b9b1d7142f7b1ad92c398668db0d1"
+    },
+    {
+      "path": "apps/web/public/sw.js",
+      "sha256": "01f7751c3769287b02a6b8029692e5208d040e0faaf7be0777906134b90b255b"
+    },
+    {
+      "path": "apps/worker/package.json",
+      "sha256": "a312d10171ecaad4dc9fa12df75a9e20f4f67e414dd909dd66b92dd3be26a552"
+    },
+    {
+      "path": "packages/db/package.json",
+      "sha256": "d1eac34f6348d5364d9bc89ae04ad000cb5d17d993a0e49612da56fdfc32e12b"
+    },
+    {
+      "path": "packages/shared/package.json",
+      "sha256": "01598d16d1b92822526ea856b85642d3632d58db9a850d06f4d64dee7ae42ea8"
+    },
+    {
+      "path": "packages/pdf-engine/package.json",
+      "sha256": "81dea0bfe54857181ae16031e7dbc08b8b93994ebdb52b7067c7d98582ab1655"
+    }
+  ],
+  "probe_sources": {
+    "tradecloseout-production-http-probe.cjs": "const root = '/home/cassandra/tradecloseout';\nconst {createRequire} = require('node:module');\nconst {randomUUID,randomBytes,createHash} = require('node:crypto');\nconst fs = require('node:fs');\nconst req = createRequire(`${root}/apps/api/package.json`);\nconst {Test} = req('@nestjs/testing');\nconst {Pool} = req('pg');\nconst {ValidationPipe} = req('@nestjs/common');\nconst Redis = req('ioredis');\nconst pick = (m,k) => m[k] || m.default[k];\nconst compiled = `${root}/apps/api/dist/apps/api/src`;\nconst {AppModule} = require(`${compiled}/app.module.js`);\nconst {TenantDbService} = require(`${compiled}/database/tenant-db.service.js`);\nconst {ProblemJsonExceptionFilter} = require(`${compiled}/common/filters/problem-json.filter.js`);\nconst {VisibilityProjectionInterceptor} = require(`${compiled}/common/interceptors/visibility-projection.interceptor.js`);\nconst results=[];\n(async()=>{\n process.env.NODE_ENV='test';\n process.env.REDIS_URL ||= 'redis://127.0.0.1:6379';\n const helper=await import(`${root}/packages/db/test/helpers/disposable-database.ts`);\n const fixtures=await import(`${root}/packages/db/test/helpers/fixtures.ts`);\n await pick(helper,'withDisposableDatabase')(async ({admin,app:pool})=>{\n  const {userId,tenants:[a]}=await pick(fixtures,'seedTenants')(admin);\n  await admin.query(`INSERT INTO memberships(id,org_id,user_id,role,status) VALUES($1,$2,$3,'R-OWNER','ACTIVE')`,[randomUUID(),a.orgId,userId]);\n  const token=randomBytes(32).toString('hex'),csrf=randomBytes(24).toString('hex');\n  const hash=x=>createHash('sha256').update(x).digest('hex');\n  const session=randomUUID();\n  await admin.query(`INSERT INTO sessions(id,user_id,token_hash,csrf_token_hash,active_org_id,expires_at) VALUES($1,$2,$3,$4,$5,now()+interval '1 day')`,[session,userId,hash(token),hash(csrf),a.orgId]);\n  const module=await Test.createTestingModule({imports:[AppModule]})\n   .overrideProvider(Pool).useValue(pool)\n   .overrideProvider(TenantDbService).useValue(new TenantDbService(pool)).compile();\n  const app=module.createNestApplication({logger:false});\n  app.use(req('cookie-parser')());\n  app.useGlobalPipes(new ValidationPipe({whitelist:true,transform:true}));\n  app.useGlobalFilters(new ProblemJsonExceptionFilter());\n  app.useGlobalInterceptors(new VisibilityProjectionInterceptor());\n  try {\n   await app.listen(0,'127.0.0.1');\n   const base=await app.getUrl();\n   async function get(label,path,cookie=token){\n    const response=await fetch(base+path,{headers:{Cookie:`tc_session=${cookie}`}});\n    const body=await response.json().catch(()=>null);\n    if(label==='consultant_projection')results.push({label,status:response.status,internalSettingsVisible:body?.settings_json?.internal_note==='synthetic confidential note'});\n    else results.push({label,status:response.status,body:Array.isArray(body)?{count:body.length,projectIds:body.map(x=>x.id)}:body});\n   }\n   await get('owner_auth_me','/api/v1/auth/me');\n   await get('owner_auth_orgs','/api/v1/auth/orgs');\n   await get('versioned_work_items','/api/v1/work-items');\n   await get('unversioned_work_items','/work-items');\n   await get('versioned_commissioning',`/api/v1/projects/${a.projectIds[0]}/commissioning/tab-worksheets`);\n   await get('unversioned_commissioning',`/projects/${a.projectIds[0]}/commissioning/tab-worksheets`);\n   const party=randomUUID(),grant=randomUUID(),guestToken=randomBytes(32).toString('hex');\n   await admin.query(`INSERT INTO parties(id,org_id,name,types,status) VALUES($1,$2,'Scoped external client',ARRAY['CLIENT'],'ACTIVE')`,[party,a.orgId]);\n   await admin.query(`INSERT INTO guest_grants(id,org_id,project_id,party_id,target_email,grant_type,role,capabilities,scope_json,token_hash,expires_at,created_by) VALUES($1,$2,$3,$4,'probe@example.invalid','CLIENT_VIEW','R-CLIENT',ARRAY['project.read','asset.read'],'{}',$5,now()+interval '1 day',$6)`,[grant,a.orgId,a.projectIds[0],party,hash(randomUUID()),userId]);\n   await admin.query(`INSERT INTO sessions(id,user_id,token_hash,csrf_token_hash,active_org_id,guest_grant_id,expires_at) VALUES($1,$2,$3,$4,$5,$6,now()+interval '1 day')`,[randomUUID(),userId,hash(guestToken),hash(csrf),a.orgId,grant]);\n   await get('guest_project_list_scoped_to_project_0','/api/v1/projects',guestToken);\n   await get('guest_reads_other_project',`/api/v1/projects/${a.projectIds[1]}`,guestToken);\n   await admin.query(`UPDATE projects SET settings_json=$1 WHERE id=$2`,[JSON.stringify({internal_note:'synthetic confidential note',supplier_price:123}),a.projectIds[0]]);\n   await admin.query(`UPDATE guest_grants SET role='R-CONSULT' WHERE id=$1`,[grant]);\n   await get('consultant_projection',`/api/v1/projects/${a.projectIds[0]}`,guestToken);\n   const portalResponse=await fetch(base+`/api/v1/submissions/${randomUUID()}/recipients/${randomUUID()}/decision`,{method:'POST',headers:{Cookie:`tc_session=${token}`,'X-CSRF-Token':csrf,'Content-Type':'application/json'},body:JSON.stringify({decision:'ACCEPTED',remarks:'Payload emitted by current guest page'})});\n   results.push({label:'current_guest_page_decision_payload',status:portalResponse.status,body:await portalResponse.json()});\n   const response=await fetch(base+'/api/v1/auth/logout',{method:'POST',headers:{Cookie:`tc_session=${token}`,'X-CSRF-Token':csrf}});\n   results.push({label:'owner_logout',status:response.status});\n   const row=await admin.query(`SELECT revoked_at FROM sessions WHERE id=$1`,[session]);\n   results.push({label:'logout_persisted_revocation',revoked:row.rows[0]?.revoked_at!=null});\n  }finally{\n   app.get(Redis).disconnect();\n   await app.close();\n  }\n });\n fs.writeFileSync('/tmp/tradecloseout-production-http-results.json',JSON.stringify(results,null,2)+'\\n');\n for(const result of results)console.log(JSON.stringify(result));\n})().catch(e=>{console.error('PROBE_FAILED',e.message);process.exitCode=1});\n",
+    "tradecloseout-production-domain-probe.cjs": "const root='/home/cassandra/tradecloseout';\nconst {createRequire}=require('node:module');\nconst {randomUUID,createHash}=require('node:crypto');\nconst fs=require('node:fs');\nconst req=createRequire(`${root}/apps/api/package.json`);\nreq('@nestjs/common');\nconst Redis=req('ioredis');\nconst compiled=`${root}/apps/api/dist/apps/api/src`;\nconst {TenantDbService}=require(`${compiled}/database/tenant-db.service.js`);\nconst {AssetsService}=require(`${compiled}/modules/assets/assets.service.js`);\nconst {ProjectsService}=require(`${compiled}/modules/projects/projects.service.js`);\nconst {PartiesService}=require(`${compiled}/modules/parties/parties.service.js`);\nconst {ReviewsService}=require(`${compiled}/modules/reviews/reviews.service.js`);\nconst {ChecklistsService}=require(`${compiled}/modules/checklists/checklists.service.js`);\nconst {WorkItemsService}=require(`${compiled}/modules/work-items/work-items.service.js`);\nconst {HandoverService}=require(`${compiled}/modules/handover/handover.service.js`);\nconst {IdentityController}=require(`${compiled}/modules/identity/identity.controller.js`);\nconst {IdentityModule}=require(`${compiled}/modules/identity/identity.module.js`);\nconst pick=(m,k)=>m[k]||m.default[k];\nconst results=[];\nasync function probe(label,fn){try{results.push({label,result:await fn()});}catch(e){results.push({label,error:{code:e.code,message:e.message,response:e.response}});}}\n(async()=>{\n const h=await import(`${root}/packages/db/test/helpers/disposable-database.ts`);\n const f=await import(`${root}/packages/db/test/helpers/fixtures.ts`);\n await pick(h,'withDisposableDatabase')(async({admin,app})=>{\n  const {userId,tenants:[a]}=await pick(f,'seedTenants')(admin);\n  const org=a.orgId,project=a.projectIds[0];\n  const otherUser=randomUUID();\n  await admin.query(`INSERT INTO users(id,name,status) VALUES($1,'Independent reviewer','ACTIVE')`,[otherUser]);\n  const ctx={orgId:org,userId,actorType:'MEMBER',orgRole:'R-OWNER',ip:'127.0.0.1',userAgent:'audit-probe',requestId:randomUUID()};\n  const db=new TenantDbService(app),assets=new AssetsService(app),projects=new ProjectsService(app),parties=new PartiesService(db),reviews=new ReviewsService(db),checklists=new ChecklistsService(app),workItems=new WorkItemsService(app);\n  const asset=randomUUID(),snapshot=randomUUID(),requirement=randomUUID(),object=randomUUID(),doc=randomUUID(),version=randomUUID(),party=randomUUID();\n  const sha='a'.repeat(64);\n  await admin.query(`INSERT INTO assets(id,org_id,project_id,tag,name,category_key,created_by) VALUES($1,$2,$3,'AHU-1','AHU-1','HVAC_AHU',$4)`,[asset,org,project,userId]);\n  await probe('passport_after_projection_fix',async()=>{const r=await assets.getEquipmentPassport(ctx,project,asset);return {succeeded:!!r};});\n  await admin.query(`INSERT INTO checklist_snapshots(id,org_id,project_id,version_no,status,resolved_payload_json,provenance_json,source_json,checksum,created_by) VALUES($1,$2,$3,1,'ACTIVE','{}','{}','{}',$4,$5)`,[snapshot,org,project,sha,userId]);\n  await admin.query(`INSERT INTO requirements(id,org_id,project_id,current_snapshot_id,requirement_key,group_key,title,doc_type_key,mandatory,status,reviewer_role) VALUES($1,$2,$3,$4,'REQ-1','HVAC','Manual','MANUAL',true,'NOT_STARTED','R-OWNER')`,[requirement,org,project,snapshot]);\n  await admin.query(`INSERT INTO storage_objects(id,org_id,bucket,object_key,mime,size_bytes,observed_size_bytes,sha256,status,provider_version_id) VALUES($1,$2,'vault',$3,'application/pdf',1024,1024,$4,'READY','v1')`,[object,org,`uploads/${object}`,sha]);\n  await admin.query(`INSERT INTO documents(id,org_id,project_id,title,doc_type_key,category_key,status,created_by) VALUES($1,$2,$3,'Manual','MANUAL','EQUIPMENT','ACTIVE',$4)`,[doc,org,project,userId]);\n  await admin.query(`INSERT INTO document_versions(id,org_id,project_id,document_id,version_no,revision_code,object_id,file_status,review_status,issue_date,uploaded_by) VALUES($1,$2,$3,$4,1,'R0',$5,'READY','NOT_SUBMITTED',CURRENT_DATE,$6)`,[version,org,project,doc,object,otherUser]);\n  await admin.query(`UPDATE documents SET latest_version_id=$1 WHERE id=$2`,[version,doc]);\n  await probe('canonical_review_submission_real_schema',()=>reviews.submitReview({...ctx,actorType:'USER'},requirement,{documentVersionId:version}));\n  await probe('review_state_after_submission',async()=>{const r=await admin.query(`SELECT review_status FROM document_versions WHERE id=$1`,[version]);return r.rows[0];});\n  await probe('pending_waiver_work_queue',async()=>{\n   await checklists.requestWaiver(ctx,requirement,'Scope exception needs independent approval');\n   const r=await workItems.listWorkItems(ctx,{projectId:project});\n   return {waiverCount:r.counts?.waivers,types:r.items?.map(x=>x.type)};\n  });\n  await admin.query(`INSERT INTO parties(id,org_id,name,types,status) VALUES($1,$2,'Supplier',ARRAY['SUPPLIER_OEM'],'ACTIVE')`,[party,org]);\n  await probe('generic_guest_grant_default_enum',()=>parties.createGuestGrant({...ctx,actorType:'USER'},project,{partyId:party,email:'probe@example.invalid'}));\n  await admin.query(`INSERT INTO contracts(id,org_id,project_id,reference,title,value_paise,retention_bps,status,created_by) VALUES($1,$2,$3,'ZERO','Zero retention',1000000,0,'ACTIVE',$4)`,[randomUUID(),org,project,userId]);\n  await probe('project_dashboard_zero_retention',async()=>{const r=await projects.getProjectDashboard(ctx,project);return {retentionAtRiskPaise:r.retentionAtRiskPaise};});\n  const archive=randomUUID(),archiveObject=randomUUID(),key=`archives/${archive}.zip`;\n  await admin.query(`INSERT INTO storage_objects(id,org_id,bucket,object_key,mime,size_bytes,sha256,status,provider_version_id) VALUES($1,$2,'vault',$3,'application/zip',2048,$4,'READY','v1')`,[archiveObject,org,key,sha]);\n  await admin.query(`INSERT INTO archive_exports(id,org_id,project_id,status,archive_sha256,verification_receipt_json) VALUES($1,$2,$3,'COMPLETED',$4,$5)`,[archive,org,project,sha,JSON.stringify({artifact:{objectId:archiveObject,objectKey:key,bucket:'vault',providerVersionId:'v1',sizeBytes:2048,sha256:sha}})]);\n  let signed=false;const handover=new HandoverService(app,{createSignedDownloadUrl:async()=>{signed=true;return'https://probe.invalid';}});\n  await probe('archive_missing_observed_size_only',async()=>{await handover.getArchiveExport(ctx,project,archive);return{signed};});\n });\n process.env.NODE_ENV='test';process.env.ENABLE_DEBUG_OTP='true';delete process.env.REDIS_URL;\n const provider=Reflect.getMetadata('providers',IdentityModule).find(p=>p.provide===Redis);\n const fallback=provider.useFactory();\n const controller=new IdentityController({connect:async()=>{throw new Error('UNEXPECTED_DATABASE_ACCESS');}},fallback,{},{});\n await probe('in_memory_OTP_immediate_valid_code',async()=>{\n  const identifier=`audit-${randomUUID()}@example.invalid`;\n  const challenge=await controller.requestOtp({identifier},{});\n  try{await controller.verifyOtp({identifier,challengeId:challenge.challengeId,code:challenge.debugOtp},{headers:{}},{cookie(){}});return{verified:true};}\n  catch(e){return{verified:false,code:e.response?.code||e.message};}\n });\n process.env.ENABLE_DEBUG_OTP='false';\n const redis=new Redis(process.env.REDIS_URL||'redis://127.0.0.1:6379');\n const identifier=`audit-${randomUUID()}@example.invalid`;\n let rejectFirst,entered;\n const enteredPromise=new Promise(r=>entered=r);let sends=0,secondCode;\n const mail={sendOtpEmail:async(_id,code)=>{sends++;if(sends===1){entered();return new Promise((_r,reject)=>rejectFirst=reject);}secondCode=code;}};\n const live=new IdentityController({connect:async()=>{throw new Error('UNEXPECTED_DATABASE_ACCESS');}},redis,{},mail);\n const first=live.requestOtp({identifier},{}).catch(()=>null);\n await enteredPromise;\n const firstId=await redis.get(`otp:alias:${identifier}`);\n const second=await live.requestOtp({identifier},{});\n rejectFirst(new Error('controlled first provider failure'));await first;\n await probe('older_delivery_failure_deletes_new_generation_alias',async()=>{\n  const alias=await redis.get(`otp:alias:${identifier}`);\n  try{await live.verifyOtp({identifier,challengeId:second.challengeId,code:secondCode},{headers:{}},{cookie(){}});return{aliasPresent:!!alias,verified:true};}\n  catch(e){return{aliasPresent:!!alias,verified:false,code:e.response?.code||e.message};}\n });\n const keys=[`rl:otp:req:${identifier}`,`otp:alias:${identifier}`,`otp:challenge:${identifier}`,`otp:challenge:${firstId}`,`otp:challenge:${second.challengeId}`,`otp:attempts:${firstId}`,`otp:attempts:${second.challengeId}`];\n await redis.del(...keys);await redis.quit();\n fs.writeFileSync('/tmp/tradecloseout-production-domain-results.json',JSON.stringify(results,null,2)+'\\n');\n for(const result of results)console.log(JSON.stringify(result));\n})().catch(e=>{console.error('PROBE_FAILED',e.code||'',e.message);process.exitCode=1;});\n"
+  },
+  "limitations": [
+    "No production deployment, real provider delivery/payment, actual ClamAV/storage journey, application browser suite, load/chaos campaign or object restore certified.",
+    "HTTP probes ran real compiled Nest application against disposable migrated PostgreSQL and restricted runtime role.",
+    "PDF fallback probe retained an inert OpenAction; no action execution or installed-qpdf run.",
+    "Registry advisories are dependency matches, not proof of reachable exploits."
+  ],
+  "verification_log_fingerprints": [
+    {
+      "temporary_path": "/tmp/tradecloseout-production-audit-tests.log",
+      "sha256": "01722204d318a06d3c474972d41d5affacb001fe508fb7a663bf58e6cee3d4b8"
+    },
+    {
+      "temporary_path": "/tmp/tradecloseout-production-audit-typecheck.log",
+      "sha256": "8935e75360eaccba7ec1fee2d68b076e23856327a92e0b3f4f7ff0f2147b6b54"
+    },
+    {
+      "temporary_path": "/tmp/tradecloseout-production-audit-build.log",
+      "sha256": "e7f0d9f630a34160be7e06d313ddfe7a59dc2a43243b9d1e7b5917dac0721611"
+    },
+    {
+      "temporary_path": "/tmp/tradecloseout-production-api-build.log",
+      "sha256": "9aba080a04d36f3c5b3e64cf2e200d70a422c78297ff80bac5f5551def846538"
+    },
+    {
+      "temporary_path": "/tmp/tradecloseout-production-worker-build.log",
+      "sha256": "5ac71a99decf5b92dbfe798066cbe8ea317395f8f764f5a8879fd3511ca99454"
+    },
+    {
+      "temporary_path": "/tmp/tradecloseout-production-web-build.log",
+      "sha256": "aaec60b7a52aca25ff42ed8cf5039a4385311b684593c74986063dba4cd98ed8"
+    }
+  ],
+  "report_fingerprints": [
+    {
+      "path": "docs/TRADECLOSEOUT_PRODUCTION_CODE_AUDIT_2026-11-07.md",
+      "sha256": "f77d27a1366b9111400ae723ce4087ea7435cd19002f7b992927f4d6aa8765b0"
+    },
+    {
+      "path": "docs/TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md",
+      "sha256": "8415d0527927c55406a6f136f2137b9df08da8d7b00bd73632c2267c840c000d"
+    }
+  ]
+}

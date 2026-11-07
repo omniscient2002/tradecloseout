@@ -8,21 +8,40 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  GoneException,
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import path from 'path';
+import { Readable } from 'stream';
+import { pipeline } from 'stream/promises';
 import { PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { TenantDbService, ExecutionContext } from '../../database/tenant-db.service';
 import { BulkImportStatus, FileVersionStatus } from '@tradecloseout/shared';
-import { linkDocumentToMultipleAssetsAndRequirements } from '../remediation/perfect-10-patches';
 
 import { Pool } from 'pg';
+import { S3StorageService } from './s3-storage.service';
 
 export interface ObjectStoragePresigner {
-  createUploadUrls(params: { objectKey: string; sizeBytes: number }): Promise<any>;
-  createSignedDownloadUrl(params: { objectKey: string; filename: string }): Promise<string>;
+  createUploadUrls(params: { objectKey: string; sizeBytes: number; mimeType?: string }): Promise<{
+    uploadId: string | null;
+    partSizeBytes: number;
+    parts: Array<{ partNumber: number; uploadUrl: string; requiredHeaders: Record<string, string> }>;
+  }>;
+  finalizeUpload(params: {
+    objectKey: string;
+    uploadId: string | null;
+    expectedSizeBytes: number;
+    parts?: Array<{ partNumber: number; etag?: string }>;
+  }): Promise<{ observedSizeBytes: number; versionId: string }>;
+  refreshUploadUrls(params: { objectKey: string; uploadId: string; sizeBytes: number }): Promise<{
+    parts: Array<{ partNumber: number; uploadUrl: string; requiredHeaders: Record<string, string> }>;
+    expiresInSeconds: number;
+  }>;
+  abortUpload(params: { objectKey: string; uploadId: string | null }): Promise<void>;
+  createSignedDownloadUrl(params: { objectKey: string; filename?: string; inline?: boolean; versionId?: string }): Promise<string>;
+  fetchObject(params: { objectKey: string; versionId: string; range?: string }): Promise<AsyncIterable<Uint8Array>>;
 }
 
 const ALLOWED_MIME_TYPES = new Set([
@@ -42,10 +61,11 @@ const EICAR_SIGNATURE = 'X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-T
 @Injectable()
 export class DocumentsService {
   private readonly db: TenantDbService;
+  private readonly storageAdapter: ObjectStoragePresigner;
 
   constructor(
     @Optional() db?: TenantDbService,
-    @Optional() private readonly storageAdapter?: ObjectStoragePresigner,
+    @Optional() storageAdapter?: ObjectStoragePresigner,
   ) {
     if (db instanceof TenantDbService) {
       this.db = db;
@@ -54,6 +74,27 @@ export class DocumentsService {
     } else {
       this.db = new TenantDbService();
     }
+    this.storageAdapter = storageAdapter || new S3StorageService();
+  }
+
+  private async assertGuestVersionScope(client: PoolClient, ctx: ExecutionContext, versionId: string, capability: 'document.upload' | 'document.download') {
+    if (ctx.actorType !== 'GUEST' && !ctx.guestGrantId) return;
+    if (!ctx.guestGrantId) throw new NotFoundException('VERSION_NOT_FOUND');
+    const { rows } = await client.query(
+      `SELECT 1
+         FROM guest_grants g
+         JOIN document_versions dv
+           ON dv.org_id = g.org_id AND dv.project_id = g.project_id
+          AND dv.uploaded_by_grant_id = g.id AND dv.id = $3
+         JOIN document_requirements dr
+           ON dr.org_id = dv.org_id AND dr.project_id = dv.project_id AND dr.document_id = dv.document_id
+        WHERE g.org_id = $1 AND g.id = $2 AND g.status = 'ACTIVE' AND g.expires_at > now()
+          AND g.capabilities @> ARRAY[$4]::text[]
+          AND COALESCE(g.scope_json->'requirementIds', '[]'::jsonb) ? dr.requirement_id::text
+        LIMIT 1`,
+      [ctx.orgId, ctx.guestGrantId, versionId, capability],
+    );
+    if (!rows.length) throw new NotFoundException('VERSION_NOT_FOUND');
   }
 
   /**
@@ -71,6 +112,9 @@ export class DocumentsService {
       includeDeleted?: boolean;
     },
   ) {
+    if (ctx.actorType === 'GUEST' || ctx.guestGrantId) {
+      throw new NotFoundException('DOCUMENTS_NOT_FOUND');
+    }
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
       let query = `
         SELECT d.*, 
@@ -120,6 +164,27 @@ export class DocumentsService {
    */
   async getDocument(ctx: ExecutionContext, documentId: string) {
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+      if (ctx.actorType === 'GUEST' || ctx.guestGrantId) {
+        if (!ctx.guestGrantId) throw new NotFoundException('DOCUMENT_NOT_FOUND');
+        const { rows } = await client.query(
+          `SELECT DISTINCT dv.id, dv.version_no, dv.revision_code, dv.file_status, dv.review_status,
+                  dv.issue_date, dv.expiry_date, dv.created_at
+             FROM guest_grants g
+             JOIN documents d ON d.org_id = g.org_id AND d.project_id = g.project_id AND d.id = $3
+             JOIN document_versions dv
+               ON dv.org_id = d.org_id AND dv.project_id = d.project_id AND dv.document_id = d.id
+              AND dv.uploaded_by_grant_id = g.id AND dv.deleted_at IS NULL
+             JOIN document_requirements dr
+               ON dr.org_id = d.org_id AND dr.project_id = d.project_id AND dr.document_id = d.id
+            WHERE g.org_id = $1 AND g.id = $2 AND g.status = 'ACTIVE' AND g.expires_at > now()
+              AND g.capabilities @> ARRAY['document.upload']::text[] AND d.deleted_at IS NULL
+              AND COALESCE(g.scope_json->'requirementIds', '[]'::jsonb) ? dr.requirement_id::text
+            ORDER BY dv.version_no DESC`,
+          [ctx.orgId, ctx.guestGrantId, documentId],
+        );
+        if (!rows.length) throw new NotFoundException('DOCUMENT_NOT_FOUND');
+        return { id: documentId, versions: rows };
+      }
       const docRes = await client.query(
         `SELECT d.*,
                 da.asset_id AS primary_asset_id,
@@ -190,7 +255,14 @@ export class DocumentsService {
     },
     existingDocumentId?: string,
   ) {
-    const rawFileName = dto.fileName || dto.filename || 'document.pdf';
+    const rawFileName = path.basename((dto.fileName || dto.filename || 'document.pdf').replace(/\\/g, '/'))
+      .normalize('NFKC').replace(/[\u0000-\u001f\u007f]/g, '').trim();
+    if (!rawFileName || rawFileName.length > 255 || !Number.isSafeInteger(dto.sizeBytes) || dto.sizeBytes < 1 || dto.sizeBytes > 100 * 1024 * 1024) {
+      throw new BadRequestException('INVALID_UPLOAD_METADATA');
+    }
+    if (dto.checksumSha256 && !/^[a-fA-F0-9]{64}$/.test(dto.checksumSha256)) {
+      throw new BadRequestException('INVALID_SHA256_CHECKSUM');
+    }
     // 1. Strict SVG Ban (RT-006)
     if (dto.mimeType === 'image/svg+xml' || rawFileName.toLowerCase().endsWith('.svg')) {
       throw new BadRequestException('400 UNSUPPORTED_FILE_TYPE: SVG format is strictly banned for security');
@@ -200,7 +272,52 @@ export class DocumentsService {
       throw new BadRequestException(`400 UNSUPPORTED_FILE_TYPE: ${dto.mimeType} is not supported`);
     }
 
+    // Revalidate requirement scope for guest grants (TC2-006)
+    const isGuest = ctx.actorType === 'GUEST' || Boolean((ctx as any).guestGrantId);
+    const guestGrantId = (ctx as any).guestGrantId || null;
+    const requestedRequirementIds = Array.from(new Set([
+      ...(dto.requirementId ? [dto.requirementId] : []),
+      ...(dto.requirementIds || []),
+    ]));
+    const requestedAssetIds = Array.from(new Set([
+      ...(dto.assetId ? [dto.assetId] : []),
+      ...(dto.assetIds || []),
+    ]));
+
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+      if (isGuest) {
+        if (!guestGrantId || requestedRequirementIds.length === 0) {
+          throw new ForbiddenException('GUEST_UPLOAD_SCOPE_REQUIRED');
+        }
+        const { rows: grants } = await client.query(
+          `SELECT scope_json, capabilities FROM guest_grants
+            WHERE org_id = $1 AND project_id = $2 AND id = $3
+              AND status = 'ACTIVE' AND expires_at > now() FOR SHARE`,
+          [ctx.orgId, projectId, guestGrantId],
+        );
+        const grant = grants[0];
+        const scope = grant?.scope_json;
+        const allowedRequirements: string[] = Array.isArray(scope?.requirementIds) ? scope.requirementIds : [];
+        const allowedAssets: string[] = Array.isArray(scope?.assetIds) ? scope.assetIds : [];
+        if (!grant || !Array.isArray(grant.capabilities) || !grant.capabilities.includes('document.upload') ||
+            requestedRequirementIds.some((id) => !allowedRequirements.includes(id)) ||
+            requestedAssetIds.some((id) => !allowedAssets.includes(id))) {
+          throw new ForbiddenException({
+            code: 'RESOURCE_OUTSIDE_GUEST_SCOPE',
+            detail: 'Every linked requirement and asset must be explicitly assigned to the active guest grant.',
+          });
+        }
+        const existingId = dto.documentId || existingDocumentId;
+        if (existingId) {
+          const owned = await client.query(
+            `SELECT 1 FROM document_versions
+              WHERE org_id = $1 AND project_id = $2 AND document_id = $3
+                AND uploaded_by_grant_id = $4 AND deleted_at IS NULL LIMIT 1`,
+            [ctx.orgId, projectId, existingId, guestGrantId],
+          );
+          if (!owned.rows.length) throw new NotFoundException('DOCUMENT_NOT_FOUND_IN_PROJECT');
+        }
+      }
       // Soft check plan storage limit without premature deduction (Bug 2 / Dimension 10)
       const { rows: quotaRows } = await client.query(
         `SELECT uc.value AS current_storage, p.limits_json
@@ -227,6 +344,11 @@ export class DocumentsService {
 
       // If documentId specified, enforce AUD-P-04 revision code uniqueness
       if (documentId) {
+        const parentDocument = await client.query(
+          `SELECT id FROM documents WHERE org_id = $1 AND project_id = $2 AND id = $3 FOR UPDATE`,
+          [ctx.orgId, projectId, documentId],
+        );
+        if (!parentDocument.rows.length) throw new NotFoundException('DOCUMENT_NOT_FOUND_IN_PROJECT');
         const dupRev = await client.query(
           `SELECT id FROM document_versions 
             WHERE org_id = $1 AND project_id = $2 AND document_id = $3 AND upper(revision_code) = upper($4)`,
@@ -245,21 +367,22 @@ export class DocumentsService {
 
       const storageObjectId = uuidv7();
       const versionId = uuidv7();
-      const objectKey = `orgs/${ctx.orgId}/projects/${projectId}/${storageObjectId}/${rawFileName}`;
+      const objectKey = `orgs/${ctx.orgId}/projects/${projectId}/${storageObjectId}/source`;
 
       const isMultipart = dto.sizeBytes > 10 * 1024 * 1024; // > 10 MB
-      const s3UploadId = isMultipart ? `s3_up_${uuidv7()}` : null;
 
       // 1. Insert storage_objects
       await client.query(
         `INSERT INTO storage_objects (
-          id, org_id, provider, bucket, object_key, s3_upload_id, mime, size_bytes, sha256, status, created_by
-        ) VALUES ($1, $2, 'S3', 'tradecloseout-storage', $3, $4, $5, $6, $7, 'PENDING', $8)`,
+          id, org_id, provider, bucket, object_key, original_filename, s3_upload_id, mime, size_bytes,
+          expected_sha256, observed_size_bytes, sha256, status, created_by
+        ) VALUES ($1, $2, 'S3', $3, $4, $5, NULL, $6, $7, $8, NULL, NULL, 'PENDING', $9)`,
         [
           storageObjectId,
           ctx.orgId,
+          process.env.S3_BUCKET || '',
           objectKey,
-          s3UploadId,
+          rawFileName,
           dto.mimeType,
           dto.sizeBytes,
           dto.checksumSha256 || null,
@@ -267,7 +390,7 @@ export class DocumentsService {
         ],
       );
 
-      // 2. Insert documents if new
+      // 2. Insert documents if new, or lock existing document row FOR UPDATE (TC-F013)
       if (!dto.documentId && !existingDocumentId) {
         await client.query(
           `INSERT INTO documents (
@@ -283,6 +406,11 @@ export class DocumentsService {
             ctx.userId,
           ],
         );
+      } else {
+        await client.query(
+          `SELECT id FROM documents WHERE org_id = $1 AND id = $2 FOR UPDATE`,
+          [ctx.orgId, documentId],
+        );
       }
 
       // Compute version number
@@ -293,11 +421,13 @@ export class DocumentsService {
       const nextVersionNo = Number(prevVerRes.rows[0]?.max_v || 0) + 1;
 
       // 3. Insert document_versions
+      const uploaderUserId = isGuest ? null : ctx.userId;
+
       await client.query(
         `INSERT INTO document_versions (
           id, org_id, project_id, document_id, version_no, revision_code,
-          object_id, file_status, review_status, issue_date, expiry_date, uploaded_by
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'NOT_SUBMITTED', $9, $10, $11)`,
+          object_id, file_status, review_status, issue_date, expiry_date, uploaded_by, uploaded_by_grant_id
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'NOT_SUBMITTED', $9, $10, $11, $12)`,
         [
           versionId,
           ctx.orgId,
@@ -309,7 +439,8 @@ export class DocumentsService {
           FileVersionStatus.PENDING_UPLOAD,
           dto.issueDate || new Date().toISOString().slice(0, 10),
           dto.expiryDate || null,
-          ctx.userId,
+          uploaderUserId,
+          guestGrantId,
         ],
       );
 
@@ -347,22 +478,26 @@ export class DocumentsService {
         );
       }
 
-      // Generate presigned URLs
-      let parts: any[] = [];
-      if (this.storageAdapter) {
-        const presigned = await this.storageAdapter.createUploadUrls({
-          objectKey,
-          sizeBytes: dto.sizeBytes,
-        });
-        parts = presigned.parts;
-      } else {
-        parts = isMultipart
-          ? [
-              { partNumber: 1, uploadUrl: `https://s3.ap-south-1.amazonaws.com/${objectKey}?partNumber=1&uploadId=${s3UploadId}` },
-              { partNumber: 2, uploadUrl: `https://s3.ap-south-1.amazonaws.com/${objectKey}?partNumber=2&uploadId=${s3UploadId}` },
-            ]
-          : [{ partNumber: 1, uploadUrl: `https://s3.ap-south-1.amazonaws.com/${objectKey}?single=true` }];
-      }
+      // Generate presigned URLs (normalized for client contracts - TC2-009 & TC2-030)
+      const presigned = await this.storageAdapter.createUploadUrls({
+        objectKey,
+        sizeBytes: dto.sizeBytes,
+        mimeType: dto.mimeType,
+      });
+      const s3UploadId = presigned.uploadId;
+      await client.query(
+        `UPDATE storage_objects SET s3_upload_id = $1 WHERE org_id = $2 AND id = $3`,
+        [s3UploadId, ctx.orgId, storageObjectId],
+      );
+      const partSizeBytes = presigned.partSizeBytes || (isMultipart ? 5 * 1024 * 1024 : dto.sizeBytes);
+      const rawParts = presigned.parts || [];
+
+      const normalizedParts = rawParts.map((p: any) => ({
+        partNumber: p.partNumber,
+        uploadUrl: p.uploadUrl || p.url,
+        url: p.uploadUrl || p.url,
+        requiredHeaders: p.requiredHeaders || {},
+      }));
 
       return {
         documentId,
@@ -370,7 +505,12 @@ export class DocumentsService {
         storageObjectId,
         isMultipart,
         s3UploadId,
-        parts,
+        partSizeBytes,
+        parts: normalizedParts,
+        upload: {
+          partSizeBytes,
+          parts: normalizedParts,
+        },
         linkedRequirementCount: allRequirementIds.length,
         linkedAssetCount: allAssetIds.length,
       };
@@ -383,7 +523,7 @@ export class DocumentsService {
   async refreshUploadUrls(ctx: ExecutionContext, versionId: string) {
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
       const verRes = await client.query(
-        `SELECT dv.*, so.object_key, so.s3_upload_id
+        `SELECT dv.*, so.object_key, so.s3_upload_id, so.size_bytes
          FROM document_versions dv
          JOIN storage_objects so ON so.id = dv.object_id
          WHERE dv.org_id = $1 AND dv.id = $2`,
@@ -394,21 +534,22 @@ export class DocumentsService {
         throw new NotFoundException('VERSION_NOT_FOUND');
       }
 
+      await this.assertGuestVersionScope(client, ctx, versionId, 'document.upload');
+
       const ver = verRes.rows[0];
       if (!ver.s3_upload_id) {
         throw new BadRequestException('NOT_A_MULTIPART_UPLOAD');
       }
-
-      const refreshedParts = [
-        { partNumber: 1, uploadUrl: `https://s3.ap-south-1.amazonaws.com/${ver.object_key}?partNumber=1&uploadId=${ver.s3_upload_id}&refreshed=true` },
-        { partNumber: 2, uploadUrl: `https://s3.ap-south-1.amazonaws.com/${ver.object_key}?partNumber=2&uploadId=${ver.s3_upload_id}&refreshed=true` },
-      ];
-
+      const refreshed = await this.storageAdapter.refreshUploadUrls({
+        objectKey: ver.object_key,
+        uploadId: ver.s3_upload_id,
+        sizeBytes: Number(ver.size_bytes),
+      });
       return {
         versionId: ver.id,
         s3UploadId: ver.s3_upload_id,
-        refreshedParts,
-        expiresInSeconds: 900,
+        refreshedParts: refreshed.parts,
+        expiresInSeconds: refreshed.expiresInSeconds,
       };
     });
   }
@@ -420,8 +561,8 @@ export class DocumentsService {
   async completeUpload(
     ctx: ExecutionContext,
     projectIdOrVersionId: string,
-    maybeVersionIdOrDto?: string | { checksumSha256?: string; isEicarTestVirus?: boolean; samplePayload?: string },
-    maybeDto?: { checksumSha256?: string; isEicarTestVirus?: boolean; samplePayload?: string },
+    maybeVersionIdOrDto?: string | { checksumSha256?: string; isEicarTestVirus?: boolean; samplePayload?: string; parts?: Array<{ partNumber: number; etag?: string }> },
+    maybeDto?: { checksumSha256?: string; isEicarTestVirus?: boolean; samplePayload?: string; parts?: Array<{ partNumber: number; etag?: string }> },
   ) {
     const versionId =
       typeof maybeVersionIdOrDto === 'string' ? maybeVersionIdOrDto : projectIdOrVersionId;
@@ -430,7 +571,10 @@ export class DocumentsService {
 
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
       const verRes = await client.query(
-        `SELECT dv.*, so.id AS storage_id, so.object_key, d.id AS doc_id, d.current_approved_version_id
+        `SELECT dv.*, so.id AS storage_id, so.object_key, so.bucket, so.s3_upload_id,
+                so.expected_sha256, so.size_bytes AS storage_size_bytes,
+                so.provider_version_id, so.original_filename, d.id AS doc_id, d.title AS doc_title,
+                d.current_approved_version_id
            FROM document_versions dv
            JOIN storage_objects so ON so.id = dv.object_id
            JOIN documents d ON d.id = dv.document_id
@@ -441,40 +585,38 @@ export class DocumentsService {
       if (!verRes.rows.length) {
         throw new NotFoundException('VERSION_NOT_FOUND');
       }
+      await this.assertGuestVersionScope(client, ctx, versionId, 'document.upload');
       const version = verRes.rows[0];
-
-      // Check for EICAR virus simulation or ClamAV quarantine trigger (TC-DOC-02, FR-DOC-009)
-      const isVirus =
-        dto?.isEicarTestVirus === true ||
-        (dto?.samplePayload && dto.samplePayload.includes(EICAR_SIGNATURE)) ||
-        version.object_key.toLowerCase().includes('eicar');
-
-      if (isVirus) {
-        await client.query(
-          `UPDATE document_versions
-              SET file_status = 'QUARANTINED', review_status = 'REJECTED', updated_at = now()
-            WHERE org_id = $1 AND id = $2`,
-          [ctx.orgId, versionId],
-        );
-        await client.query(
-          `UPDATE storage_objects
-              SET status = 'QUARANTINED', updated_at = now()
-            WHERE org_id = $1 AND id = $2`,
-          [ctx.orgId, version.storage_id],
-        );
-
-        return {
-          versionId,
-          fileStatus: 'QUARANTINED',
-          reviewStatus: 'REJECTED',
-          message: 'Security Alert: File infected with test signature (EICAR) and moved to quarantine (TC-DOC-02).',
-        };
+      if (version.file_status !== 'PENDING_UPLOAD') {
+        if (['PROCESSING', 'READY'].includes(version.file_status) && version.provider_version_id) {
+          return {
+            versionId,
+            documentId: version.doc_id,
+            fileStatus: version.file_status,
+            reviewStatus: version.review_status,
+            currentApprovedVersionId: version.current_approved_version_id,
+          };
+        }
+        throw new ConflictException(`UPLOAD_CANNOT_COMPLETE_FROM_${version.file_status}`);
       }
 
-      // Clean file: Transition to READY
+      if (dto?.checksumSha256 && version.expected_sha256 &&
+          dto.checksumSha256.toLowerCase() !== version.expected_sha256.toLowerCase()) {
+        throw new ConflictException('UPLOAD_CHECKSUM_CHANGED_AFTER_INTENT');
+      }
+
+      const providerReceipt = await this.storageAdapter.finalizeUpload({
+        objectKey: version.object_key,
+        uploadId: version.s3_upload_id,
+        expectedSizeBytes: Number(version.storage_size_bytes),
+        parts: dto?.parts || [],
+      });
+
+      // Security Invariant (TC2-001): Upload completion transitions file to PROCESSING.
+      // It does not jump directly to READY; worker scan & verification must validate the object.
       await client.query(
         `UPDATE document_versions
-            SET file_status = 'READY',
+            SET file_status = 'PROCESSING',
                 updated_at = now()
           WHERE org_id = $1 AND id = $2`,
         [ctx.orgId, versionId],
@@ -482,29 +624,40 @@ export class DocumentsService {
 
       await client.query(
         `UPDATE storage_objects
-            SET status = 'READY',
-                sha256 = COALESCE($3, sha256),
+            SET status = 'PROCESSING',
+                observed_size_bytes = $3,
+                provider_version_id = $4,
                 updated_at = now()
           WHERE org_id = $1 AND id = $2`,
-        [ctx.orgId, version.storage_id, dto?.checksumSha256 || null],
+        [ctx.orgId, version.storage_id, providerReceipt.observedSizeBytes, providerReceipt.versionId],
       );
 
-      // FIX 3 / Bug 2: Commit STORAGE_BYTES quota ONLY when file transitions to READY
-      if (version.size_bytes && Number(version.size_bytes) > 0) {
-        await client.query(
-          `INSERT INTO usage_counters (id, org_id, metric, period, value)
-           VALUES ($1, $2, 'STORAGE_BYTES', 'ALL_TIME', 0)
-           ON CONFLICT (org_id, metric, period) DO NOTHING`,
-          [uuidv7(), ctx.orgId],
-        );
-        await client.query(
-          `UPDATE usage_counters
-              SET value = (value::numeric + $2)::text,
-                  updated_at = now()
-            WHERE org_id = $1 AND metric = 'STORAGE_BYTES' AND period = 'ALL_TIME'`,
-          [ctx.orgId, String(version.size_bytes)],
-        );
-      }
+      // Enqueue scan event to outbox with complete actionable payload (TC2-005)
+      const eventId = uuidv7();
+      await client.query(
+        `INSERT INTO outbox_events (id, org_id, project_id, event_type, payload_json, created_at)
+         VALUES ($1, $2, $3, 'FILE_UPLOAD_COMPLETED_ENQUEUE_SCAN', $4, now())`,
+        [
+          eventId,
+          ctx.orgId,
+          version.project_id || null,
+          JSON.stringify({
+            eventId,
+            orgId: ctx.orgId,
+            projectId: version.project_id || null,
+            versionId,
+            documentId: version.doc_id,
+            storageObjectId: version.storage_id,
+            objectKey: version.object_key,
+            originalFilename: version.original_filename,
+            expectedSha256: version.expected_sha256 || null,
+            bucket: version.bucket,
+            providerVersionId: providerReceipt.versionId,
+            actorUserId: ctx.userId,
+            requestId: ctx.requestId,
+          }),
+        ],
+      );
 
       // TC-DOC-03: documents.latest_version_id updates to this version,
       // but current_approved_version_id remains untouched until approved!
@@ -518,7 +671,7 @@ export class DocumentsService {
       return {
         versionId,
         documentId: version.doc_id,
-        fileStatus: 'READY',
+        fileStatus: 'PROCESSING',
         reviewStatus: 'PENDING_REVIEW',
         currentApprovedVersionId: version.current_approved_version_id,
       };
@@ -531,7 +684,7 @@ export class DocumentsService {
   async abortUpload(ctx: ExecutionContext, versionId: string) {
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
       const verRes = await client.query(
-        `SELECT dv.*, so.id AS storage_id FROM document_versions dv
+        `SELECT dv.*, so.id AS storage_id, so.object_key, so.s3_upload_id FROM document_versions dv
            JOIN storage_objects so ON so.id = dv.object_id
           WHERE dv.org_id = $1 AND dv.id = $2`,
         [ctx.orgId, versionId],
@@ -539,7 +692,14 @@ export class DocumentsService {
       if (!verRes.rows.length) {
         throw new NotFoundException('VERSION_NOT_FOUND');
       }
+      await this.assertGuestVersionScope(client, ctx, versionId, 'document.upload');
       const version = verRes.rows[0];
+
+      if (version.file_status !== 'PENDING_UPLOAD') {
+        throw new ConflictException(`UPLOAD_CANNOT_ABORT_FROM_${version.file_status}`);
+      }
+
+      await this.storageAdapter.abortUpload({ objectKey: version.object_key, uploadId: version.s3_upload_id });
 
       await client.query(
         `UPDATE storage_objects SET status = 'ABORTED' WHERE org_id = $1 AND id = $2`,
@@ -561,10 +721,12 @@ export class DocumentsService {
   async getDownloadUrl(ctx: ExecutionContext, versionId: string) {
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
       const verRes = await client.query(
-        `SELECT dv.*, so.object_key, so.mime, so.size_bytes
+        `SELECT dv.*, so.object_key, so.mime, so.size_bytes, so.provider_version_id,
+                so.status AS storage_status, so.sha256, so.observed_size_bytes
            FROM document_versions dv
-           JOIN storage_objects so ON so.id = dv.object_id
-          WHERE dv.org_id = $1 AND dv.id = $2`,
+           JOIN storage_objects so ON so.org_id = dv.org_id AND so.id = dv.object_id
+           JOIN documents d ON d.org_id = dv.org_id AND d.project_id = dv.project_id AND d.id = dv.document_id
+          WHERE dv.org_id = $1 AND dv.id = $2 AND dv.deleted_at IS NULL AND d.deleted_at IS NULL`,
         [ctx.orgId, versionId],
       );
       if (!verRes.rows.length) {
@@ -572,13 +734,10 @@ export class DocumentsService {
       }
       const version = verRes.rows[0];
 
-      // TC-DOC-01: Block download if file is in PROCESSING, QUARANTINED, or FAILED state
-      if (
-        version.file_status === 'PROCESSING' ||
-        version.file_status === 'QUARANTINED' ||
-        version.file_status === 'FAILED' ||
-        version.file_status === 'PENDING_UPLOAD'
-      ) {
+      await this.assertGuestVersionScope(client, ctx, versionId, 'document.download');
+      if (version.file_status !== 'READY' || version.storage_status !== 'READY' ||
+          !version.provider_version_id || !version.sha256 ||
+          version.observed_size_bytes == null || String(version.observed_size_bytes) !== String(version.size_bytes)) {
         throw new ForbiddenException({
           code: 'DOWNLOAD_BLOCKED',
           title: 'File is not ready or quarantined',
@@ -586,7 +745,11 @@ export class DocumentsService {
         });
       }
 
-      const downloadUrl = `https://s3.ap-south-1.amazonaws.com/${version.object_key}?response-content-disposition=attachment&expires=900`;
+      const downloadUrl = await this.storageAdapter.createSignedDownloadUrl({
+        objectKey: version.object_key,
+        filename: `${version.revision_code || 'document'}.pdf`,
+        versionId: version.provider_version_id,
+      });
       return {
         versionId: version.id,
         downloadUrl,
@@ -604,10 +767,12 @@ export class DocumentsService {
   async getPreviewUrl(ctx: ExecutionContext, versionId: string) {
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
       const verRes = await client.query(
-        `SELECT dv.*, so.object_key, so.mime
+        `SELECT dv.*, so.object_key, so.mime, so.size_bytes, so.provider_version_id,
+                so.status AS storage_status, so.sha256, so.observed_size_bytes
            FROM document_versions dv
-           JOIN storage_objects so ON so.id = dv.object_id
-          WHERE dv.org_id = $1 AND dv.id = $2`,
+           JOIN storage_objects so ON so.org_id = dv.org_id AND so.id = dv.object_id
+           JOIN documents d ON d.org_id = dv.org_id AND d.project_id = dv.project_id AND d.id = dv.document_id
+          WHERE dv.org_id = $1 AND dv.id = $2 AND dv.deleted_at IS NULL AND d.deleted_at IS NULL`,
         [ctx.orgId, versionId],
       );
       if (!verRes.rows.length) {
@@ -615,12 +780,10 @@ export class DocumentsService {
       }
       const version = verRes.rows[0];
 
-      if (
-        version.file_status === 'PROCESSING' ||
-        version.file_status === 'QUARANTINED' ||
-        version.file_status === 'FAILED' ||
-        version.file_status === 'PENDING_UPLOAD'
-      ) {
+      await this.assertGuestVersionScope(client, ctx, versionId, 'document.download');
+      if (version.file_status !== 'READY' || version.storage_status !== 'READY' ||
+          !version.provider_version_id || !version.sha256 ||
+          version.observed_size_bytes == null || String(version.observed_size_bytes) !== String(version.size_bytes)) {
         throw new ForbiddenException({
           code: 'PREVIEW_BLOCKED',
           title: 'File preview unavailable',
@@ -628,7 +791,11 @@ export class DocumentsService {
         });
       }
 
-      const previewUrl = `https://s3.ap-south-1.amazonaws.com/${version.object_key}?response-content-disposition=inline&expires=900`;
+      const previewUrl = await this.storageAdapter.createSignedDownloadUrl({
+        objectKey: version.object_key,
+        inline: true,
+        versionId: version.provider_version_id,
+      });
       return {
         versionId: version.id,
         previewUrl,
@@ -645,12 +812,16 @@ export class DocumentsService {
     ctx: ExecutionContext,
     projectId: string | undefined,
     versionId: string,
-    res: any,
+    reqOrRes: any,
+    resOptional?: any,
   ) {
+    const req = resOptional ? reqOrRes : (reqOrRes?.headers ? reqOrRes : {});
+    const res = resOptional || reqOrRes;
     const fileRecord = await this.db.withTenantContext(ctx, async (client: PoolClient) => {
       const { rows } = await client.query(
         `SELECT dv.id, dv.file_status, dv.revision_code, d.title,
-                so.object_key, so.mime, so.size_bytes, so.sha256
+                so.object_key, so.mime, so.size_bytes, so.sha256, so.provider_version_id,
+                so.status AS storage_status, so.observed_size_bytes
            FROM document_versions dv
            JOIN documents d
              ON d.org_id = dv.org_id AND d.id = dv.document_id
@@ -658,7 +829,7 @@ export class DocumentsService {
              ON so.org_id = dv.org_id AND so.id = dv.object_id
           WHERE dv.org_id = $1 AND dv.id = $2
             ${projectId ? 'AND dv.project_id = $3' : ''}
-            AND dv.deleted_at IS NULL
+            AND dv.deleted_at IS NULL AND d.deleted_at IS NULL
           LIMIT 1`,
         projectId ? [ctx.orgId, versionId, projectId] : [ctx.orgId, versionId],
       );
@@ -668,7 +839,11 @@ export class DocumentsService {
       }
       const row = rows[0];
 
-      if (row.file_status !== 'READY') {
+      await this.assertGuestVersionScope(client, ctx, versionId, 'document.download');
+
+      if (row.file_status !== 'READY' || row.storage_status !== 'READY' || !row.sha256 ||
+          !row.provider_version_id || row.observed_size_bytes == null ||
+          String(row.observed_size_bytes) !== String(row.size_bytes)) {
         throw new ForbiddenException({
           code: 'FILE_NOT_READY',
           detail: `File status is ${row.file_status}; only verified READY files can be viewed.`,
@@ -678,69 +853,104 @@ export class DocumentsService {
       return row;
     });
 
-    const fs = await import('fs');
-    const path = await import('path');
-    const candidatePaths = [
-      `/tmp/tradecloseout-sim/${fileRecord.object_key.replace(/\//g, '_')}.pdf`,
-      `/tmp/tradecloseout-sim/${fileRecord.object_key.replace(/\//g, '_')}`,
-      `/tmp/tradecloseout-sim/${path.basename(fileRecord.object_key)}`,
-      fileRecord.object_key,
-    ];
-
-    let finalPath = '';
-    for (const p of candidatePaths) {
-      if (fs.existsSync(p)) {
-        finalPath = p;
-        break;
-      }
+    if (!fileRecord.provider_version_id) {
+      throw new NotFoundException({
+        code: 'IMMUTABLE_EVIDENCE_VERSION_MISSING',
+        detail: 'Verified document metadata has no pinned provider object version.',
+      });
     }
 
-    if (!finalPath) {
-      // If file not found on disk, dynamically generate a compliant engineering preview PDF
-      const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib');
-      const pdfDoc = await PDFDocument.create();
-      const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-      const fontMono = await pdfDoc.embedFont(StandardFonts.Courier);
-      const page = pdfDoc.addPage([595.28, 841.89]);
-      page.drawText('TRADECLOSEOUT CERTIFIED TECHNICAL RECORD', {
-        x: 48,
-        y: 790,
-        size: 11,
-        font: fontBold,
-        color: rgb(0.06, 0.16, 0.26),
-      });
-      page.drawText(`${fileRecord.title} (Rev ${fileRecord.revision_code})`, {
-        x: 48,
-        y: 765,
-        size: 14,
-        font: fontBold,
-        color: rgb(0.05, 0.09, 0.16),
-      });
-      page.drawText(`Document Version ID: ${fileRecord.id}`, { x: 48, y: 730, size: 9, font: fontMono, color: rgb(0.3, 0.35, 0.4) });
-      page.drawText(`Verified SHA-256: ${fileRecord.sha256}`, { x: 48, y: 710, size: 9, font: fontMono, color: rgb(0.3, 0.35, 0.4) });
-      page.drawText(`Status: VERIFIED & COMPLIANT (READY)`, { x: 48, y: 690, size: 9.5, font: fontBold, color: rgb(0.1, 0.5, 0.2) });
-
-      const pdfBytes = await pdfDoc.save();
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox");
-      res.setHeader('X-Content-Type-Options', 'nosniff');
-      res.setHeader(
-        'Content-Disposition',
-        `inline; filename="${encodeURIComponent(fileRecord.title)}-${fileRecord.revision_code}.pdf"`,
-      );
-      res.end(Buffer.from(pdfBytes));
-      return;
-    }
+    const totalBytes = Number(fileRecord.size_bytes);
+    const etag = `"${fileRecord.sha256}"`;
 
     res.setHeader('Content-Type', fileRecord.mime || 'application/pdf');
     res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox");
     res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('ETag', etag);
     res.setHeader(
       'Content-Disposition',
       `inline; filename="${encodeURIComponent(fileRecord.title)}-${fileRecord.revision_code}.pdf"`,
     );
 
-    fs.createReadStream(finalPath).pipe(res);
+    // Conditional request: If-None-Match -> 304 Not Modified
+    const ifNoneMatch = req.headers?.['if-none-match'];
+    if (ifNoneMatch && (ifNoneMatch === etag || ifNoneMatch === '*')) {
+      res.status(304).end();
+      return;
+    }
+
+    const pipeWithCancellation = async (body: AsyncIterable<Uint8Array>) => {
+      if (req?.destroyed || res?.destroyed) {
+        return;
+      }
+      const stream = Readable.from(body);
+      const abortHandler = () => {
+        if (!stream.destroyed) stream.destroy();
+      };
+      req?.on?.('close', abortHandler);
+      res?.on?.('close', abortHandler);
+      try {
+        await pipeline(stream, res);
+      } catch (err: any) {
+        if (err?.code === 'ERR_STREAM_PREMATURE_CLOSE' || req?.destroyed || res?.destroyed) {
+          return;
+        }
+        throw err;
+      } finally {
+        req?.removeListener?.('close', abortHandler);
+        res?.removeListener?.('close', abortHandler);
+        abortHandler();
+      }
+    };
+
+    // Range handling: bytes=start-end (VQ01)
+    const rangeHeader = req.headers?.['range'];
+    if (rangeHeader && typeof rangeHeader === 'string' && rangeHeader.startsWith('bytes=')) {
+      const parts = rangeHeader.slice(6).split('-');
+      let start = parts[0] ? parseInt(parts[0], 10) : NaN;
+      let end = parts[1] ? parseInt(parts[1], 10) : NaN;
+
+      if (isNaN(start) && !isNaN(end)) {
+        // Suffix range: bytes=-500 (last 500 bytes)
+        start = Math.max(0, totalBytes - end);
+        end = totalBytes - 1;
+      } else if (!isNaN(start) && isNaN(end)) {
+        // Open-ended range: bytes=1000-
+        end = totalBytes - 1;
+      }
+
+      // Check range validity (HTTP 416 if unsatisfiable)
+      if (isNaN(start) || isNaN(end) || start < 0 || start > end || start >= totalBytes) {
+        res.status(416);
+        res.setHeader('Content-Range', `bytes */${totalBytes}`);
+        res.end();
+        return;
+      }
+
+      end = Math.min(end, totalBytes - 1);
+      const chunkSize = end - start + 1;
+
+      res.status(206);
+      res.setHeader('Content-Range', `bytes ${start}-${end}/${totalBytes}`);
+      res.setHeader('Content-Length', String(chunkSize));
+
+      const body = await this.storageAdapter.fetchObject({
+        objectKey: fileRecord.object_key,
+        versionId: fileRecord.provider_version_id,
+        range: `bytes=${start}-${end}`,
+      });
+      await pipeWithCancellation(body);
+      return;
+    }
+
+    res.status(200);
+    res.setHeader('Content-Length', String(totalBytes));
+    const body = await this.storageAdapter.fetchObject({
+      objectKey: fileRecord.object_key,
+      versionId: fileRecord.provider_version_id,
+    });
+    await pipeWithCancellation(body);
   }
 
   /**
@@ -855,31 +1065,14 @@ export class DocumentsService {
 
   /**
    * API-095 POST /projects/:id/documents/bulk-import-intents (RT-001)
+   * Retired until worker-based archive extraction and verification pipeline is implemented.
    */
   async createBulkImportIntent(ctx: ExecutionContext, projectId: string) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
-      const jobId = uuidv7();
-      const zipStorageId = uuidv7();
-
-      // Storage object for zip
-      await client.query(
-        `INSERT INTO storage_objects (id, org_id, bucket, object_key, mime, size_bytes, status, created_by)
-         VALUES ($1, $2, 'tradecloseout-storage', $3, 'application/zip', 0, 'PENDING', $4)`,
-        [zipStorageId, ctx.orgId, `orgs/${ctx.orgId}/bulk/${jobId}.zip`, ctx.userId],
-      );
-
-      // Bulk import job
-      const jobRes = await client.query(
-        `INSERT INTO bulk_import_jobs (id, org_id, project_id, zip_object_id, status, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         RETURNING *`,
-        [jobId, ctx.orgId, projectId, zipStorageId, BulkImportStatus.UPLOADED, ctx.userId],
-      );
-
-      return {
-        job: jobRes.rows[0],
-        zipUploadUrl: `https://s3.ap-south-1.amazonaws.com/orgs/${ctx.orgId}/bulk/${jobId}.zip?presigned=true`,
-      };
+    void ctx;
+    void projectId;
+    throw new GoneException({
+      code: 'BULK_IMPORT_UNAVAILABLE',
+      detail: 'Bulk zip import pipeline is disabled until worker-based extraction and verification are implemented.',
     });
   }
 
@@ -887,29 +1080,11 @@ export class DocumentsService {
    * API-096 POST /bulk-imports/:id/dry-run (RT-001)
    */
   async dryRunBulkImport(ctx: ExecutionContext, jobId: string) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
-      const report = {
-        matchedCount: 5,
-        unmatchedCount: 0,
-        items: [
-          { filename: 'chiller_fat_r0.pdf', status: 'MATCHED', requirementKey: 'CHILLER-FAT' },
-          { filename: 'duct_leak_test_b1.pdf', status: 'MATCHED', requirementKey: 'DUCT-TEST' },
-        ],
-      };
-
-      const updatedRes = await client.query(
-        `UPDATE bulk_import_jobs
-         SET status = $1, dry_run_report_json = $2, updated_at = now()
-         WHERE org_id = $3 AND id = $4
-         RETURNING *`,
-        [BulkImportStatus.DRY_RUN_READY, JSON.stringify(report), ctx.orgId, jobId],
-      );
-
-      if (!updatedRes.rows.length) {
-        throw new NotFoundException('BULK_IMPORT_JOB_NOT_FOUND');
-      }
-
-      return updatedRes.rows[0];
+    void ctx;
+    void jobId;
+    throw new GoneException({
+      code: 'BULK_IMPORT_UNAVAILABLE',
+      detail: 'Bulk zip import pipeline is disabled until worker-based extraction and verification are implemented.',
     });
   }
 
@@ -917,21 +1092,11 @@ export class DocumentsService {
    * API-097 POST /bulk-imports/:id/commit (RT-001, CB-003 schema conformance)
    */
   async commitBulkImport(ctx: ExecutionContext, jobId: string) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
-      const outcome = { importedDocuments: 5, failedDocuments: 0 };
-      const updatedRes = await client.query(
-        `UPDATE bulk_import_jobs
-         SET status = $1, outcome_report_json = $2, updated_at = now()
-         WHERE org_id = $3 AND id = $4
-         RETURNING *`,
-        [BulkImportStatus.COMPLETED, JSON.stringify(outcome), ctx.orgId, jobId],
-      );
-
-      if (!updatedRes.rows.length) {
-        throw new NotFoundException('BULK_IMPORT_JOB_NOT_FOUND');
-      }
-
-      return updatedRes.rows[0];
+    void ctx;
+    void jobId;
+    throw new GoneException({
+      code: 'BULK_IMPORT_UNAVAILABLE',
+      detail: 'Bulk zip import pipeline is disabled until worker-based extraction and verification are implemented.',
     });
   }
 
@@ -1061,7 +1226,15 @@ export class DocumentsService {
     documentIds: string[],
     notes?: string,
   ) {
+    const uniqueDocumentIds = Array.from(new Set(documentIds || []));
+    if (uniqueDocumentIds.length === 0 || uniqueDocumentIds.length > 250) {
+      throw new BadRequestException('TRANSMITTAL_DOCUMENT_COUNT_INVALID');
+    }
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+      await client.query(
+        `SELECT id FROM projects WHERE org_id = $1 AND id = $2 FOR UPDATE`,
+        [ctx.orgId, projectId],
+      );
       const { rows: projRows } = await client.query(
         `SELECT code, name FROM projects WHERE org_id = $1 AND id = $2`,
         [ctx.orgId, projectId],
@@ -1070,29 +1243,60 @@ export class DocumentsService {
         throw new NotFoundException('PROJECT_NOT_FOUND');
       }
       const proj = projRows[0];
-      const transmittalNo = `TRN-${proj.code}-${Date.now().toString().slice(-6)}`;
-
       const { rows: docRows } = await client.query(
-        `SELECT d.id AS document_id, d.title, d.doc_type_key, dv.id AS version_id, dv.version_no, dv.revision_code
+        `SELECT d.id AS document_id, d.title, d.doc_type_key,
+                dv.id AS version_id, dv.version_no, dv.revision_code,
+                dv.file_status, dv.review_status
            FROM documents d
            JOIN document_versions dv ON dv.id = d.latest_version_id
-          WHERE d.org_id = $1 AND d.project_id = $2 AND d.id = ANY($3::uuid[]) AND d.deleted_at IS NULL`,
-        [ctx.orgId, projectId, documentIds],
+          WHERE d.org_id = $1 AND d.project_id = $2 AND d.id = ANY($3::uuid[])
+            AND d.deleted_at IS NULL AND dv.project_id = d.project_id
+          ORDER BY d.title, d.id
+          FOR UPDATE OF d, dv`,
+        [ctx.orgId, projectId, uniqueDocumentIds],
       );
-
-      const appUrl = process.env.PUBLIC_APP_URL || 'http://localhost:3000';
+      if (docRows.length !== uniqueDocumentIds.length) {
+        throw new NotFoundException('TRANSMITTAL_DOCUMENT_NOT_FOUND_IN_PROJECT');
+      }
+      if (docRows.some((doc: any) => doc.file_status !== 'READY')) {
+        throw new ConflictException('TRANSMITTAL_CONTAINS_UNVERIFIED_FILE');
+      }
+      const { rows: countRows } = await client.query(
+        `SELECT count(*)::int AS count FROM transmittals WHERE org_id = $1 AND project_id = $2`,
+        [ctx.orgId, projectId],
+      );
+      const nextNo = Number(countRows[0]?.count || 0) + 1;
+      const transmittalNo = `TRN-${proj.code}-${String(nextNo).padStart(4, '0')}`;
+      const transmittalId = uuidv7();
+      await client.query(
+        `INSERT INTO transmittals (id, org_id, project_id, transmittal_no, status, notes, created_by)
+         VALUES ($1, $2, $3, $4, 'DRAFT', $5, $6)`,
+        [transmittalId, ctx.orgId, projectId, transmittalNo, notes || null, ctx.userId],
+      );
       const items = docRows.map((doc: any, index: number) => ({
         itemNo: index + 1,
+        transmittalItemId: uuidv7(),
         documentId: doc.document_id,
         versionId: doc.version_id,
         title: doc.title,
         docTypeKey: doc.doc_type_key,
         revisionCode: doc.revision_code,
-        qrPayload: `${appUrl}/api/v1/projects/${projectId}/transmittals/stamp-back?trn=${transmittalNo}&doc=${doc.document_id}&v=${doc.version_id}`,
+        fileStatus: doc.file_status,
+        reviewStatus: doc.review_status,
       }));
+      for (const item of items) {
+        await client.query(
+          `INSERT INTO transmittal_items
+            (id, org_id, project_id, transmittal_id, document_version_id, sort_order)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [item.transmittalItemId, ctx.orgId, projectId, transmittalId, item.versionId, item.itemNo],
+        );
+      }
 
       return {
+        transmittalId,
         transmittalNo,
+        status: 'DRAFT',
         projectCode: proj.code,
         projectName: proj.name,
         documentCount: items.length,
@@ -1104,8 +1308,8 @@ export class DocumentsService {
   }
 
   /**
-   * Transmittal Stamp-Back External Approval (Business Risk 3 / WF-23)
-   * Batch-advances external approval when consultant returns the stamped transmittal.
+   * Legacy stamp-back route is disabled until it can resolve a persisted transmittal item
+   * and invoke the canonical, authority-checked external-response command.
    */
   async processTransmittalStampBack(
     ctx: ExecutionContext,
@@ -1119,43 +1323,12 @@ export class DocumentsService {
       versionIds: string[];
     },
   ) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
-      const results: any[] = [];
-      for (const versionId of input.versionIds) {
-        const { rows: verRows } = await client.query(
-          `SELECT id, document_id, row_version FROM document_versions
-            WHERE org_id = $1 AND project_id = $2 AND id = $3 FOR UPDATE`,
-          [ctx.orgId, projectId, versionId],
-        );
-        if (verRows.length > 0) {
-          await client.query(
-            `UPDATE document_versions
-                SET review_status = 'APPROVED', row_version = row_version + 1, updated_at = now()
-              WHERE org_id = $1 AND project_id = $2 AND id = $3`,
-            [ctx.orgId, projectId, versionId],
-          );
-          await client.query(
-            `UPDATE documents
-                SET current_approved_version_id = $3, row_version = row_version + 1, updated_at = now()
-              WHERE org_id = $1 AND project_id = $2 AND id = $4`,
-            [ctx.orgId, projectId, versionId, verRows[0].document_id],
-          );
-          await client.query(
-            `UPDATE requirements
-                SET status = 'APPROVED', row_version = row_version + 1, updated_at = now()
-              WHERE org_id = $1 AND project_id = $2
-                AND id IN (SELECT requirement_id FROM document_requirements WHERE org_id = $1 AND project_id = $2 AND document_id = $3)`,
-            [ctx.orgId, projectId, verRows[0].document_id],
-          );
-          results.push({ versionId, approved: true });
-        }
-      }
-
-      return {
-        transmittalNo: input.transmittalNo,
-        approvedDocumentsCount: results.length,
-        results,
-      };
+    void ctx;
+    void projectId;
+    void input;
+    throw new GoneException({
+      code: 'STAMP_BACK_RETIRED',
+      detail: 'This approval path has been retired. Record each response against its persisted transmittal item.',
     });
   }
 }

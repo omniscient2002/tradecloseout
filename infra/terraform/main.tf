@@ -27,6 +27,11 @@ variable "db_master_password" {
   sensitive = true
 }
 
+variable "web_origin" {
+  description = "Exact HTTPS origin allowed to upload browser files directly to the private upload bucket."
+  type        = string
+}
+
 # 1. KMS Key for Encryption at Rest (DB, S3, Backups per NFR-SEC-003)
 resource "aws_kms_key" "tc_kms" {
   description             = "TradeCloseout-${var.environment} Master KMS Key"
@@ -72,6 +77,70 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "tc_sse" {
   }
 }
 
+resource "aws_s3_bucket_cors_configuration" "tc_uploads_cors" {
+  bucket = aws_s3_bucket.tc_private["uploads"].id
+
+  cors_rule {
+    allowed_methods = ["PUT", "HEAD"]
+    allowed_origins = [var.web_origin]
+    allowed_headers = ["content-type", "x-amz-*"]
+    expose_headers  = ["ETag", "x-amz-version-id"]
+    max_age_seconds = 3000
+  }
+}
+
+resource "aws_iam_role" "tc_app_host" {
+  name = "tradecloseout-${var.environment}-app-host"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = { Service = "ec2.amazonaws.com" }
+      Action = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "tc_app_storage" {
+  name = "tradecloseout-${var.environment}-private-storage"
+  role = aws_iam_role.tc_app_host.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = ["s3:ListBucket", "s3:ListBucketMultipartUploads"]
+        Resource = [
+          aws_s3_bucket.tc_private["uploads"].arn,
+          aws_s3_bucket.tc_private["packages"].arn,
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:AbortMultipartUpload", "s3:DeleteObject", "s3:DeleteObjectVersion",
+          "s3:GetObject", "s3:GetObjectVersion", "s3:ListMultipartUploadParts",
+          "s3:PutObject", "s3:PutObjectTagging",
+        ]
+        Resource = [
+          "${aws_s3_bucket.tc_private["uploads"].arn}/*",
+          "${aws_s3_bucket.tc_private["packages"].arn}/*",
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = ["kms:Decrypt", "kms:DescribeKey", "kms:Encrypt", "kms:GenerateDataKey"]
+        Resource = aws_kms_key.tc_kms.arn
+      },
+    ]
+  })
+}
+
+resource "aws_iam_instance_profile" "tc_app_host" {
+  name = "tradecloseout-${var.environment}-app-host"
+  role = aws_iam_role.tc_app_host.name
+}
+
 # 3. Managed PostgreSQL 16 with 35-Day PITR (15 §2 & §7)
 resource "aws_db_instance" "tc_postgres" {
   identifier                  = "tradecloseout-${var.environment}-pg16"
@@ -97,6 +166,7 @@ resource "aws_db_instance" "tc_postgres" {
 resource "aws_instance" "tc_app_host" {
   ami           = "ami-0f58b397bc5c1f2e8" # Ubuntu 24.04 LTS ARM64 ap-south-1
   instance_type = "t4g.xlarge"            # 4 vCPU, 16 GB RAM (>= 8 GB RAM mandate per RT-026)
+  iam_instance_profile = aws_iam_instance_profile.tc_app_host.name
 
   root_block_device {
     volume_size = 80

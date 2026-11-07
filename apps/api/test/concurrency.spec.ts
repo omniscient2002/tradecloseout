@@ -16,11 +16,11 @@ describe('Concurrency Suite: FOR UPDATE Row Locking & Race Condition Prevention'
     db = new TenantDbService();
 
     migratorPool = new Pool({
-      host: '127.0.0.1',
-      port: 5432,
-      database: 'tradecloseout',
-      user: 'tc_migrator',
-      password: 'migrator_local_pw',
+      host: process.env.DB_HOST || '127.0.0.1',
+      port: Number(process.env.DB_PORT) || 5432,
+      database: process.env.DB_NAME || 'tradecloseout',
+      user: process.env.DB_MIGRATOR_USER || 'tc_migrator',
+      password: process.env.DB_MIGRATOR_PASSWORD || 'migrator_local_pw',
     });
 
     // Seed test organisation

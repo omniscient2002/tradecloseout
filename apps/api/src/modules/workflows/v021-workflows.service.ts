@@ -287,7 +287,7 @@ export class V021WorkflowsService {
 
     return withTenantTransaction(this.pool, ctx, async (client, emit) => {
       const { rows } = await client.query(
-        `SELECT dv.id, dv.document_id, dv.file_status, dv.uploaded_by,
+        `SELECT dv.id, dv.document_id, dv.file_status, dv.uploaded_by, dv.object_id,
                 d.current_approved_version_id,
                 r.id AS requirement_id
            FROM document_versions dv
@@ -303,10 +303,33 @@ export class V021WorkflowsService {
       }
       const ver = rows[0];
 
+      if (ver.uploaded_by === ctx.userId) {
+        throw new ForbiddenException({
+          code: 'SELF_APPROVAL_DENIED',
+          message: 'SELF_APPROVAL_DENIED: Uploaders cannot record approvals for their own uploaded document version (FR-REV-009).',
+          detail: 'Uploaders cannot record approvals for their own uploaded document version (FR-REV-009).',
+        });
+      }
+
       if (ver.file_status !== 'READY') {
         throw new ConflictException({
           code: 'INVALID_STATE_TRANSITION',
           detail: 'Document version must be READY before recording an external approval.',
+        });
+      }
+
+      const { rows: storageRows } = await client.query(
+        `SELECT 1 FROM storage_objects
+          WHERE org_id = $1 AND id = $2 AND status = 'READY'
+            AND sha256 IS NOT NULL AND provider_version_id IS NOT NULL
+            AND observed_size_bytes = size_bytes
+          LIMIT 1`,
+        [ctx.orgId, ver.object_id],
+      );
+      if (!storageRows.length) {
+        throw new ConflictException({
+          code: 'EVIDENCE_OBJECT_NOT_VERIFIED',
+          detail: 'The evidence version has no verified immutable storage object.',
         });
       }
 
@@ -354,13 +377,6 @@ export class V021WorkflowsService {
             SET current_approved_version_id = $4, row_version = row_version + 1, updated_at = now()
           WHERE org_id = $1 AND project_id = $2 AND id = $3`,
         [ctx.orgId, projectId, ver.document_id, versionId],
-      );
-
-      await client.query(
-        `UPDATE requirements
-            SET status = 'APPROVED', row_version = row_version + 1, updated_at = now()
-          WHERE org_id = $1 AND project_id = $2 AND id = $3`,
-        [ctx.orgId, projectId, ver.requirement_id],
       );
 
       emit({
@@ -455,29 +471,6 @@ export class V021WorkflowsService {
           [ctx.orgId, projectId, submission.package_id, aggregateStatus],
         );
 
-        // RT-024: If submission is REJECTED, revert HANDED_OVER requirements back to APPROVED / WAIVED
-        if (aggregateStatus === 'REJECTED') {
-          await client.query(
-            `UPDATE requirements r
-                SET status = CASE
-                      WHEN EXISTS (
-                        SELECT 1 FROM waivers w
-                         WHERE w.org_id = r.org_id AND w.project_id = r.project_id
-                           AND w.requirement_id = r.id AND w.status = 'ACTIVE'
-                      ) THEN 'WAIVED'
-                      ELSE 'APPROVED'
-                    END,
-                    row_version = r.row_version + 1,
-                    updated_at = now()
-              WHERE r.org_id = $1 AND r.project_id = $2
-                AND r.status = 'HANDED_OVER'
-                AND r.id IN (
-                  SELECT pr.requirement_id FROM package_requirements pr
-                   WHERE pr.org_id = $1 AND pr.project_id = $2 AND pr.package_id = $3
-                )`,
-            [ctx.orgId, projectId, submission.package_id],
-          );
-        }
       }
 
       emit({

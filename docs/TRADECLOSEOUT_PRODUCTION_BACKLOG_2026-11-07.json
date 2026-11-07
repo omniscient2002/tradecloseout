@@ -1,0 +1,851 @@
+{
+  "date": "2026-11-07",
+  "status": "implementation_plan_not_implemented_by_this_audit",
+  "audit_document": "TRADECLOSEOUT_PRODUCTION_CODE_AUDIT_2026-11-07.md",
+  "implementation_document": "TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md",
+  "findings": [
+    {
+      "id": "PA01",
+      "priority": "P0",
+      "title": "A project-scoped guest can read another project",
+      "status": "open",
+      "details_markdown": "**HTTP, confirmed.** With a CLIENT_VIEW grant tied to project A0 and `project.read`, `GET /api/v1/projects/A1` returned 200 and A1's project record in the same organisation. Project-list denial worked, so list protection does not establish item protection.\n\nSources: [permission.guard.ts](../apps/api/src/common/guards/permission.guard.ts), [session-csrf.guard.ts](../apps/api/src/common/guards/session-csrf.guard.ts), `ProjectsService.getProject` in [projects.service.ts](../apps/api/src/modules/projects/projects.service.ts). The guard skips membership checks for guests; the service filters tenant/id but not the guest grant's project. Tenant RLS does not substitute for project/grant authorization.\n\nImplement canonical resource/grant resolution and command/query policy; recheck grant status/expiry/project/capability/resource scope. Audit every project, asset, checklist, review, handover, commissioning and commercial read/write route, including direct IDs and collections. Return indistinguishable denials outside scope. Acceptance must exercise actual member and guest sessions over HTTP, not only mocked permission functions.",
+      "work_packages": [
+        "A01",
+        "A09"
+      ]
+    },
+    {
+      "id": "PA02",
+      "priority": "P0",
+      "title": "External response projection misses roles and damages dates",
+      "status": "open",
+      "details_markdown": "**HTTP, confirmed.** An R-CONSULT guest reading its permitted project received synthetic `settings_json.internal_note`. An R-CLIENT response turned PostgreSQL `created_at`/`updated_at` Date values into `{}`.\n\nSource: [visibility-projection.interceptor.ts](../apps/api/src/common/interceptors/visibility-projection.interceptor.ts), [main.ts](../apps/api/src/main.ts). The restricted-role set omits several guest roles; auth context does not carry the guest flag read by the interceptor fallback. Unknown objects use heuristic deny patterns. Dates are traversed as plain objects. Bootstrap manually constructs the interceptor without Reflector, so route allowlists are not resolved there.\n\nImplement explicit audience-specific DTO serializers, an authoritative actor classification, safe scalar/date serialization and DI-managed metadata. Test every guest role and nested envelope, raw/camel/snake fields, commercial/internal metadata, comments, timestamps and streaming responses. Preserve needed external fields while proving sensitive fields never appear.",
+      "work_packages": [
+        "A01"
+      ]
+    },
+    {
+      "id": "PA03",
+      "priority": "P1",
+      "title": "New API surfaces do not use the application's versioned route namespace",
+      "status": "open",
+      "details_markdown": "**HTTP, confirmed.** `/api/v1/work-items` and `/api/v1/projects/:id/commissioning/tab-worksheets` returned 404; `/work-items` and `/projects/:id/commissioning/tab-worksheets` returned 200. Sources: their controller decorators and the web rewrite, which forwards `/api/*` only.\n\nImplement one route-prefix policy and generated route/client contracts. Test routes through the Next proxy as well as directly against Nest. Either deliberately support/document compatibility aliases or remove them through a versioned transition; do not accidentally expose a second namespace. Add the missing product screens under the intended prefix.",
+      "work_packages": [
+        "A02",
+        "A17"
+      ]
+    },
+    {
+      "id": "PA04",
+      "priority": "P1",
+      "title": "Organisation switcher cannot discover a valid membership",
+      "status": "open",
+      "details_markdown": "**HTTP, confirmed.** An owner with an active seeded membership received `[]` from `/api/v1/auth/orgs`; `/auth/me` returned the active organisation correctly and logout persisted revocation. `IdentityController.getOrgs` queries memberships without user-local RLS context, while the guard's transaction has already committed.\n\nImplement this query in a user-scoped transaction. Test multiple memberships, revoked membership, guest denial, organisation switch and fresh CSRF state on separate pooled connections. Keep each transaction's context local; never fix this by making connection-global tenant/user state persist.",
+      "work_packages": [
+        "A02"
+      ]
+    },
+    {
+      "id": "PA05",
+      "priority": "P1",
+      "title": "Review submission fails against the current database constraint",
+      "status": "open",
+      "details_markdown": "**DB, confirmed.** `ReviewsService.submitReview` failed with SQLSTATE 23514 on `requirements_status_v021_chk`; the transaction rolled back and the version remained NOT_SUBMITTED. It writes UNDER_REVIEW, but migration 0003's effective requirement constraint permits IN_REVIEW. Shared enum comments disagree with that effective constraint.\n\nSources: [reviews.service.ts](../apps/api/src/modules/reviews/reviews.service.ts), [status-enums.ts](../packages/shared/src/status-enums.ts), migration 0003. Consolidate state definitions and transition commands; inventory all consumers of IN_REVIEW/UNDER_REVIEW, status counts and UI badges. Add a real submitted \u2192 assigned \u2192 reviewed workflow with both success and rollback assertions. Do not only edit the enum to make a mocked assertion pass.",
+      "work_packages": [
+        "A03",
+        "A16"
+      ]
+    },
+    {
+      "id": "PA06",
+      "priority": "P1",
+      "title": "The work queue hides pending waivers and carries stale action metadata",
+      "status": "open",
+      "details_markdown": "**DB, confirmed for waiver omission; Source for other action metadata.** `requestWaiver` created PENDING_SECOND_APPROVAL, but `listWorkItems` reported zero waivers because it filters `w.status = 'PENDING'`. Revalidation entity version is hardcoded to 1 despite real row-version increments. Review links identify a document version where the advertised review route expects a review ID; execute the returned command contracts in tests before declaring them usable.\n\nSource: [work-items.service.ts](../apps/api/src/modules/work-items/work-items.service.ts). Build query projections from canonical states, actual resource IDs/versions and authorized next commands. Include IN_PROGRESS defect behavior and pagination/filter contracts. Test that every returned next action is executable by its audience and disappears/changes correctly after completion.",
+      "work_packages": [
+        "A03",
+        "A17"
+      ]
+    },
+    {
+      "id": "PA07",
+      "priority": "P1",
+      "title": "Generic guest-link creation defaults violate schema and permission vocabulary",
+      "status": "open",
+      "details_markdown": "**DB, confirmed.** `PartiesService.createGuestGrant` with party/email and omitted optional grant type failed 23514 on `guest_grants_grant_type_check`: the default SUPPLIER is not a persisted type such as SUPPLIER_UPLOAD. Default capabilities REQUIREMENT_UPLOAD/DOCUMENT_VIEW also differ from the guard's `document.upload`/`document.read` vocabulary. The optional party ID conflicts with the database's mandatory party binding.\n\nImplement typed, server-owned grant profiles mapping business purpose to persisted type, role and least-privilege capabilities. Validate party/project/target/scope and expiry before insertion, and reject arbitrary privilege expansion. Unify generic and supplier-specific grant creation without regressing working supplier scope checks. Test default and explicit profiles through HTTP, issuance/delivery/expiry/revocation and actual granted actions.",
+      "work_packages": [
+        "A02"
+      ]
+    },
+    {
+      "id": "PA08",
+      "priority": "P1",
+      "title": "The real guest page sends a decision the API does not accept",
+      "status": "open",
+      "details_markdown": "**HTTP payload reproduction and Source, confirmed.** The page posts ACCEPTED/REJECTED plus `remarks`; the recipient controller expects ACCEPT/ACCEPT_WITH_EXCEPTIONS/REJECT and reads `comment`. Its exact current payload returned 422 REMARKS_REQUIRED. The page also collapses acceptance with exceptions into ACCEPTED.\n\nSources: [guest page](../apps/web/src/app/(guest)/guest/[token]/page.tsx), [handover.controller.ts](../apps/api/src/modules/handover/handover.controller.ts). Define a single runtime-validated command DTO and generated client type, preserve all three decision meanings and exception items, and reject unknown values before domain logic. Test real browser submissions and durable recipient/aggregate/package/audit results for each choice.",
+      "work_packages": [
+        "A02",
+        "A09"
+      ]
+    },
+    {
+      "id": "PA09",
+      "priority": "P1",
+      "title": "Project retention calculations still disagree with zero-retention contracts",
+      "status": "open",
+      "details_markdown": "**DB, confirmed.** A contract with value 1,000,000 paise and retention 0 produced project-dashboard retention 50,000 paise (\u20b9500), rather than zero. This query uses `retention_rate || 500`; the previously fixed organisation dashboard is a different projection. This dashboard also selects the latest one ACTIVE contract rather than a defined effective multi-contract/variation basis.\n\nSource: `getProjectDashboard` in [projects.service.ts](../apps/api/src/modules/projects/projects.service.ts). Use exact paise/basis-point arithmetic and explicit null handling in one commercial projection. Define contract/variation effective dates and multiple-scope rules; distinguish total retention exposure from a specific blocker-attributable amount. Test zero, null, multiple ACTIVE scopes, superseded revisions and large integers across every UI/API/digest.",
+      "work_packages": [
+        "A03",
+        "A14",
+        "A15"
+      ]
+    },
+    {
+      "id": "PA10",
+      "priority": "P1",
+      "title": "OTP failure cleanup can invalidate a newer successful request; fallback behavior differs",
+      "status": "open",
+      "details_markdown": "**Redis, confirmed.** Request A waited in a controlled email adapter; request B issued successfully; A then failed. A's catch block unconditionally deleted the current recipient alias, so B's valid code immediately returned OTP_EXPIRED. The normal issuance/consume generation checks remain intact; failure cleanup is the separate race.\n\n**Fallback control, confirmed:** with the module's in-memory Redis provider, a newly issued debug code immediately returned OTP_EXPIRED. Its generic `eval` script detection sees INCR/EXPIRE inside the verification script and treats it as the rate-limit script.\n\nSources: identity controller/module. Make every failure/supersession/consume cleanup generation-conditional and atomic. Use one tested challenge-store abstraction with behavioral contract tests, or require Redis in all integration/development modes. Add barrier-controlled provider rejection/reissue cases, DB session assertions, request/IP budgets, purpose/identity binding and provider receipt lifecycles. Never print real codes in logs.",
+      "work_packages": [
+        "A04"
+      ]
+    },
+    {
+      "id": "PA11",
+      "priority": "P1",
+      "title": "Production dependencies have unresolved advisory matches",
+      "status": "open",
+      "details_markdown": "**Registry audit, confirmed dependency matches; application exploitability requires reachability review.** Seven high entries include xlsx 0.18.5 (two), drizzle-orm 0.40.1, zod 3.25.76, multer 2.4.0 and two PostCSS entries through Next's postcss 8.4.31. Four moderate entries are also recorded in evidence. The project imports arbitrary consultant spreadsheets through `XLSX.read`, so parser exposure deserves immediate attention.\n\nImplement a controlled upgrade/replacement PR with lockfile integrity, compatibility tests and advisory-path review. SheetJS documents its authoritative distribution outside the stale npm package: [maintainer installation guidance](https://docs.sheetjs.com/docs/getting-started/installation/nodejs/). The Drizzle maintainer describes the identifier/alias precondition; static parameterized application queries do not by themselves establish that exploit: [maintainer advisory](https://github.com/drizzle-team/drizzle-orm/security/advisories/GHSA-gpj5-g38j-94v9). Re-evaluate exact versions when implementing. Do not hide high findings with blanket exclusions or assume a direct PostCSS bump replaces Next's nested copy.",
+      "work_packages": [
+        "A05"
+      ]
+    },
+    {
+      "id": "PA12",
+      "priority": "P1",
+      "title": "Archive download still accepts missing observed size",
+      "status": "open",
+      "details_markdown": "**DB, confirmed.** After the provider-version fix, a READY row with a real provider version but NULL observed size still reached the signer. The API substitutes declared `size_bytes`. Source: `getArchiveExport` in [handover.service.ts](../apps/api/src/modules/handover/handover.service.ts).\n\nRequire authoritative observed size, declared size, artifact size and digest/version/key/bucket consistency; missing or invalid facts must reject. Preserve producer readback verification and pinned versions. Test corrupt/legacy rows, missing facts independently and actual API download bytes. Plan a preflight/backfill-or-quarantine migration for existing incomplete READY records rather than silently asserting they were verified.",
+      "work_packages": [
+        "A07"
+      ]
+    },
+    {
+      "id": "PA13",
+      "priority": "P1",
+      "title": "Runtime request contracts are incomplete",
+      "status": "open",
+      "details_markdown": "**Source/inventory.** At least 51 of 71 body-taking handlers use inline/`any` types. Named commissioning and review inputs are interfaces too. Global ValidationPipe cannot validate their erased property schemas. Missing enum/UUID/array/size/finite-number checks surface as domain mistakes, SQL 500s or partial semantics. PA05/07/08 illustrate protocol drift; those failures are not fixed just by adding a global pipe.\n\nImplement a per-route schema registry, UUID/parent validation, bounded nested DTOs, exact money/date types, unknown-field policy and consistent error/precondition semantics. Generate clients/OpenAPI from executable contracts. Validate each command before mutation, and distinguish declared values from authoritative persisted values.",
+      "work_packages": [
+        "A02",
+        "A16"
+      ]
+    },
+    {
+      "id": "PA14",
+      "priority": "P1",
+      "title": "Command effects and idempotency receipts commit separately",
+      "status": "open",
+      "details_markdown": "**Source/architectural gap.** [idempotency.interceptor.ts](../apps/api/src/common/interceptors/idempotency.interceptor.ts) claims a receipt, runs a handler in its own business transaction, then writes the response in another transaction. Receipt-write crashes can leave unknown outcomes; error handling can delete a claim without proving no business effect committed. Cleanup correctly retains unresolved claims, but retention is not reconciliation. Mandatory declarations cover only selected POSTs; PATCH/DELETE behavior must be deliberately classified.\n\nImplement a durable command ledger and shared unit of work for local effects/audit/outbox/outcome. External effects need stable operation IDs and reconciliation. Explicitly represent accepted/running/succeeded/rejected/unknown outcomes and provide safe status/recovery commands. Test commit-before-receipt failure, unknown-outcome retries and process death; never solve this by age-based claim deletion.",
+      "work_packages": [
+        "A06"
+      ]
+    },
+    {
+      "id": "PA15",
+      "priority": "P1",
+      "title": "Evidence qualification and review transitions still have multiple authorities",
+      "status": "open",
+      "details_markdown": "**Source/architectural gap.** Readiness, package generation, RA packs, commercial readiness, passports and review services contain separate qualification SQL/status projections. Document-wide current approval and requirement links do not fully encode qualification for asset identity + requirement revision + procedure/test scope. Multiple review/workflow implementations retain independent rules and transaction ownership.\n\nImplement immutable evidence qualification and review/exception records with composite tenant/project/asset/revision/slot scope. Use one domain policy/query definition in every projection; a document may be technically valid for one obligation and not another. Make one layer own each transaction and pass its client/unit of work explicitly. Test shared manuals, replacement plant, baseline changes, stale approvals, independent verifier and concurrent edits across all read models.",
+      "work_packages": [
+        "A03",
+        "A07",
+        "A09"
+      ]
+    },
+    {
+      "id": "PA16",
+      "priority": "P1",
+      "title": "Not every material command emits transactional audit/outbox evidence",
+      "status": "open",
+      "details_markdown": "**Source.** Helpers only flush staged emitted events. Commands including waiver request/countersign and several requirement/contract changes call transaction helpers without emitting a corresponding domain event. Other services use a separate transaction wrapper with no automatic event behavior. A hash chain proves integrity of recorded events, not completeness of missing events. Authenticated `userContext` also omits IP/userAgent supplied by some other context shapes.\n\nDefine a command/event/audit contract inventory; atomically persist business state, actor/delegation/recorded-and-occurred time, reason, before/after or immutable references and outcome. Test presence and scope per material command, rollback absence and secret redaction. Do not log business payloads indiscriminately.",
+      "work_packages": [
+        "A06"
+      ]
+    },
+    {
+      "id": "PA17",
+      "priority": "P1",
+      "title": "Outbox dispatch is not durable execution completion",
+      "status": "open",
+      "details_markdown": "**Source/Unverified.** Registry coverage improved. The poller marks dispatched after BullMQ enqueue, while Redis loss can remove accepted jobs; informational events are acknowledged with logs and no downstream effects. There is no complete DB execution ledger/reconciliation/dead-letter operator workflow. Five failed dispatch attempts leave events outside the normal query. Overlapping timer cycles and multi-instance recovery need acceptance tests.\n\nImplement versioned payload validators, durable logical executions, retryable/terminal classifications and reconciliation from DB state to queues/results. Keep event IDs and queue job IDs stable. Distinguish intentional audit-only events from events requiring delivery/workflow actions. Kill processes before/after enqueue/commit and simulate Redis loss; prove eventual correct outcome or visible actionable failure.",
+      "work_packages": [
+        "A08"
+      ]
+    },
+    {
+      "id": "PA18",
+      "priority": "P1",
+      "title": "File verification needs complete format and parser containment",
+      "status": "open",
+      "details_markdown": "**Artifact probe, confirmed; Source/Unverified for the broader pipeline.** The exported PDF-engine `inspectAndSanitisePdf` fallback returned success but retained a synthetic JavaScript OpenAction after rewriting. This proves its sanitization contract is incomplete; it does not prove execution in a user's browser or that every worker path uses that helper. The worker has another sanitizer, so implementations need consolidation and separate verification.\n\nThe qpdf branch also tests the whole `parsed.encrypt` object for truthiness and requests an old `objects` JSON key. The maintainer documents populated `encrypt` values even for unencrypted files and the JSON v2 replacement of `objects` with `qpdf`: [qpdf JSON contract](https://qpdf.readthedocs.io/en/stable/json.html). The installed-qpdf branch therefore needs a corrected versioned parser and real CI/tool-image tests. qpdf was absent locally, so the passing local PDF checks used the fallback.\n\nFail-closed ClamAV and bounded scan download are useful. A generic ZIP signature also covers OOXML without a complete declared-format/container relationship. Extension/magic/MIME consistency and normalized detected metadata are not established comprehensively. PDF fallback parsing occurs before some object limits and in the worker process. Approved formats need real fixtures; unavailable conversion tools cannot be treated as successful conversion.\n\nImplement bounded format-specific inspection in isolated processes, decompression/entry/pixel/object/time/memory limits, antivirus signature freshness, persisted scan receipts and positive MIME/container mapping. Bind expected bytes/checksum/version to the storage record. Test benign/invalid/polyglot/archive-bomb samples and actual ClamAV unavailability/retry; retain original bytes and derived-artifact lineage.",
+      "work_packages": [
+        "A05",
+        "A08"
+      ]
+    },
+    {
+      "id": "PA19",
+      "priority": "P1",
+      "title": "Artifact workers need transfer deadlines, leases and aggregate resource budgets",
+      "status": "open",
+      "details_markdown": "**Source/Unverified.** Portable archive source/output byte caps, pinned readback and advisory exclusion exist. Several storage streams lack a total deadline; a stalled body can hold a worker/database connection/advisory lock indefinitely. PDF/archive concurrency and temp-space aggregate limits need enforcement beyond per-object caps. Format conversion has local-path parameters and incomplete external tool lifecycle acceptance.\n\nImplement request and body deadlines, cancellation propagation, per-job/per-host byte/disk/CPU/process budgets, safe temp cleanup and recoverable ownership/heartbeats. Crash mid-download/render/upload/commit and reconcile orphaned artifacts. Prove that a slow client/job cannot starve unrelated tenants. Do not remove the existing integrity and size checks.",
+      "work_packages": [
+        "A08",
+        "A19"
+      ]
+    },
+    {
+      "id": "PA20",
+      "priority": "P2",
+      "title": "Messaging has an acceptance seam, not a complete delivery lifecycle",
+      "status": "open",
+      "details_markdown": "**Source/Capability.** The gateway deduplicates by notification ID contract and requires matching acknowledgement before SENT. There is no full provider delivery/bounce/failure callback model, bounded attempt scheduling or operator workflow. Null-recipient IN_APP broadcasts lack an explicit project audience contract; project membership must constrain who sees project content. Calls can hold notification row locks/transactions across multiple network deadlines.\n\nImplement domain reminder commands, resolved audiences/preferences, provider message IDs and inbox receipts, idempotent callbacks, accepted/delivered/failed states, backoff and terminal handling. Preserve quiet hours and the existing acknowledgement check. Separate claim/delivery/reconcile steps using leases rather than long network transactions.",
+      "work_packages": [
+        "A08"
+      ]
+    },
+    {
+      "id": "PA21",
+      "priority": "P1",
+      "title": "Production configuration and readiness are not consistently enforced",
+      "status": "open",
+      "details_markdown": "**Source/Unverified.** `loadAndValidateEnv` is only referenced by tests; API/worker bootstrap do not call it. The schema and adapters use different DB/S3/DLT variable names. Some production connections still have local defaults. Runtime DB role privilege validation is in test helpers, not complete startup readiness. Health checks only SELECT 1 and return raw caught messages.\n\nImplement one validated configuration contract with intentional optional feature flags. Check runtime role and required dependency capabilities at startup. Separate live/readiness/diagnostic endpoints; readiness must reflect migration, Redis, storage/versioning, scanner/worker and configured delivery readiness appropriately. Keep sensitive details in protected logs and use bounded health checks.",
+      "work_packages": [
+        "A04",
+        "A18"
+      ]
+    },
+    {
+      "id": "PA22",
+      "priority": "P1",
+      "title": "CI does not run the actual contractor application journey",
+      "status": "open",
+      "details_markdown": "**Source/Unverified.** Root tests and CI execute the archive browser project. The application project has two persona/seed-specific scenarios and is not run by the workflow. No real lifecycle validates the browser payload in PA08. The root build has a local process-spawn failure while individual builds pass; the clean supported-runtime pipeline is the deciding evidence.\n\nImplement isolated fixtures and real app/API/worker/storage/scanner orchestration, deterministic provider capture, artifacts/traces and API/route/role matrices. Run full HTTP boundary tests and a meaningful application browser suite in CI; keep unit/DB/worker tests as separate layers. Do not call a direct-service fixture a browser end-to-end test.",
+      "work_packages": [
+        "A18",
+        "A20"
+      ]
+    },
+    {
+      "id": "PA23",
+      "priority": "P1",
+      "title": "Restore drill verifies database metadata rather than restored object bytes",
+      "status": "open",
+      "details_markdown": "**Source/Unverified.** The script restores PostgreSQL, checks audit digests and storage verification metadata, and enforces an RTO. It does not restore/retrieve S3 versions or independently hash restored bytes. It compares a snapshot against later live source counts, which can legitimately diverge. RPO and successful application use after recovery are not established.\n\nImplement a snapshot-consistent backup manifest, object/version recovery and independent hashes, audit anchor validation and recovery through the actual runtime role/application. Exercise lost Redis/job reconstruction and lost object/version cases. Add cleanup traps and preserve evidence securely. Measure RPO/RTO from documented incident/recovery points; do not relabel metadata checks as object recovery.",
+      "work_packages": [
+        "A19"
+      ]
+    },
+    {
+      "id": "PA24",
+      "priority": "P1",
+      "title": "Reachable billing UI can display another company's sample facts",
+      "status": "open",
+      "details_markdown": "**Source, confirmed active page.** The billing page hardcodes a sample legal name/GSTIN/PAN, price and project limit; failed API calls become null/empty values and fabricated default plan information. Backend plan definitions, subscription values and UI limits can disagree. A separate dormant client-guest component simulates signed acceptance with a timer; no active caller was found, so this is dormant misleading code, not proof that the live guest route records a fake signature.\n\nImplement truthful profile/subscription/invoice view models, explicit unavailable/error states and exact money formatting. Remove dormant simulated certification/acceptance claims or confine them to clearly labelled isolated demos. Trace every visible badge/button to a persisted authoritative state or functioning command.",
+      "work_packages": [
+        "A15",
+        "A17"
+      ]
+    },
+    {
+      "id": "PA25",
+      "priority": "P1",
+      "title": "Offline uploads have no complete stale-URL and multi-tab recovery contract",
+      "status": "open",
+      "details_markdown": "**Source/Unverified.** Actor partitioning, retained original blobs and stable queue-based command keys are good. Drain reuses persisted signed URLs without a refresh branch after expiration, despite a server refresh endpoint. There is no cross-tab drain lease; the actor is checked once before long asynchronous work. Reload/reconnect/logout/switch-org/revoked-grant scenarios are not browser-tested. Legacy draft keys lack actor partitioning.\n\nImplement queue ownership/lease, versioned intent/URL refresh, retries/backoff and actor rechecks at command boundaries. Query authoritative uploaded parts; preserve immutable original blobs/checksums and expose local storage quota/purge controls. Make background behavior honest when no client window is open. Test physical-style offline/reconnect/session changes across tabs with actual IndexedDB and storage contracts.",
+      "work_packages": [
+        "A10"
+      ]
+    },
+    {
+      "id": "PA26",
+      "priority": "P1",
+      "title": "Database models and migrations have drifted",
+      "status": "open",
+      "details_markdown": "**Source/DB evidence.** Schema declarations omit new commissioning tables and new revalidation/remedy columns. State strings disagree across effective SQL constraints, shared enums and services. Fresh/0005-upgrade tests are useful but do not cover every populated upgrade constraint or old READY record preflight.\n\nReconcile declared schema with catalog introspection; generate/check enum, key, default, RLS and FK contracts. Use forward migrations with population preflight, backfill/quarantine and rollback/roll-forward strategy. Preserve applied checksums. Test representative populated prior baselines and nonprivileged access after upgrade, including newly added domain tables and shared/global exceptions.",
+      "work_packages": [
+        "A16"
+      ]
+    },
+    {
+      "id": "PA27",
+      "priority": "P2",
+      "title": "Native HVAC quality and commissioning are incomplete workflows",
+      "status": "open",
+      "details_markdown": "**Capability.** Three tables and several record/list/sign commands exist. Missing: approved versioned procedures, prerequisite/hold/release/review/retest states, required reading completeness, conditions, instrument/calibration-at-test, sourced design/tolerances and immutable correction lineage. Witness signing accepts arbitrary role/name strings with document.upload permission. Functional controls/BMS sequences and seasonal perform/defer/waive/return-visit commands are absent. No web callers for the commissioning routes were found.\n\nImplement engineer-approved procedures and scoped test runs with explicit measurement versus acceptance outcomes. Treat default tolerance arithmetic as a calculation foundation, not certification. Link accepted results to ordinary immutable evidence/qualification and revalidate impacted tests when plant/control logic changes. See A12/A13 in the implementation plan.",
+      "work_packages": [
+        "A12",
+        "A13"
+      ]
+    },
+    {
+      "id": "PA28",
+      "priority": "P2",
+      "title": "Baseline/import work needs a persisted preview-to-commit contract",
+      "status": "open",
+      "details_markdown": "**Capability/Source.** Checklist/asset import and collision handling foundations exist. Customer-scale ingestion still needs bounded parser isolation, mappings/units/provenance, a persisted reviewed preview tied to source and target revision, atomic commit receipts and actionable row errors. Browser parsing and recomputed preview alone do not establish a stable approved baseline.\n\nImplement import sessions, source hash/object identity, mapping/procedure revision, row disposition and expected baseline. Commit the reviewed preview or reject stale changes; never silently merge duplicates. Preserve consultants' original row IDs and revision history and connect changed obligations to existing evidence impact.",
+      "work_packages": [
+        "A05",
+        "A11"
+      ]
+    },
+    {
+      "id": "PA29",
+      "priority": "P2",
+      "title": "Procurement stops short of material-to-installed-unit trace",
+      "status": "open",
+      "details_markdown": "**Capability.** PO lines, supplier obligations and guest intake exist. Complete lot/receipt/inspection/quarantine/short-delivery/allocation/replacement trace and staged supplier return/review are not implemented as an end-to-end workflow. A PO line with quantity is not a substitute for actual installed serial-unit evidence.\n\nImplement accepted quantities and batch/serial allocations, delivery records, approved substitution and proof links under composite scope; resolve obligations per stage and responsibility. Derive next work items and installed-unit passports from those records. Include partial delivery, wrong make/model, rejected lot, split allocation, return and alternate supplier cases.",
+      "work_packages": [
+        "A11"
+      ]
+    },
+    {
+      "id": "PA30",
+      "priority": "P2",
+      "title": "Aftercare and commercial closure need sectional acceptance and exception lineage",
+      "status": "open",
+      "details_markdown": "**Capability/Source.** Defect/warranty/retention foundations are present. Remaining product behavior includes sectional handover, effective acceptance dates, warranty basis conflicts, service/OEM claims, responsibility/SLA/remedy revisions, controlled waiver and retention application evidence. Separate project-contractor commercial support from SaaS subscription invoicing. Payment processing and cryptographic signing remain explicitly unavailable.\n\nImplement scoped acceptance/aftercare events and derived dates with source references; preserve disputed basis and timezone/date precision. Create evidence-backed commercial applications and reconciliation states without claiming payment or legal certification automatically. Real signing/provider ingestion should be optional integrations with independent verification and failure recovery.",
+      "work_packages": [
+        "A09",
+        "A14",
+        "A15"
+      ]
+    },
+    {
+      "id": "PA31",
+      "priority": "P2",
+      "title": "Daily product UX is not connected across all new backend capabilities",
+      "status": "open",
+      "details_markdown": "**Capability/Source.** Work items, equipment passport and commissioning lack complete integrated web journeys. Search/navigation, next responsible person, rejected-return handling and mobile/offline state need one coherent flow. The large project page imports spreadsheet/UI concerns together; split by domain and lazy-load heavy features after measuring. Several dormant view components contain sample assertions/actions.\n\nBuild an authorized next-action desk, project/equipment/procurement/quality/handover/aftercare navigation and explicit empty/error/pending states. Add global search with permission-aware indexing, responsive field capture and accessible labels/focus/keyboard/error behavior. Test assisted and independent completion on representative contractor devices; measure actual task success/time rather than count screens.",
+      "work_packages": [
+        "A10",
+        "A17"
+      ]
+    },
+    {
+      "id": "PA32",
+      "priority": "P1",
+      "title": "Deployability, observability and capacity need operating proof",
+      "status": "open",
+      "details_markdown": "**Source/Unverified.** CI verifies/builds but does not define a complete release/deploy/rollback procedure. Terraform provisions selected resources; production network/TLS/app packaging/secrets/process supervision/Redis recovery and failover need a runnable environment and acceptance evidence. There is no complete structured tracing/metrics/SLO/alert loop. Single-host resources and fallback configuration cannot establish HA or capacity claims.\n\nImplement reproducible images, supported runtime/architecture/tooling, migration-before-traffic gates, readiness-aware rollout/rollback, secret rotation and least-privilege runtime access. Define workload envelopes with customer data, then measure p95/p99 latency, queue age, failure rate, memory/disk/DB saturation and tenant fairness. Wire alerts to owned runbooks and rehearse dependency failure/recovery before expanding rollout.",
+      "work_packages": [
+        "A18",
+        "A19"
+      ]
+    }
+  ],
+  "work_packages": [
+    {
+      "id": "A01",
+      "title": "Canonical actor/resource policy and external response contracts",
+      "status": "open",
+      "priority": "P0",
+      "depends_on": [],
+      "findings": [
+        "PA01",
+        "PA02"
+      ],
+      "implementation_markdown": "**Priority P0. Findings PA01/PA02; original XP02.** Start in common guards, tenant contexts, shared permissions, project/asset/checklist/review/handover queries and the global projection registration.\n\n**Implementation:** define one `ActorContext` carrying actual user, active tenant, member/guest classification, grant ID, relevant project membership, request ID/IP/user agent and delegation. Resolve target resource tenant/project/parent/version from persisted data, then evaluate action, scope and workflow state. For guests, load the active grant and check expiry, capability, exact project and defined resource scope inside the command/query boundary. Treat collection/item routes consistently. Do not infer authority from URL fragments or allow a guest capability to become tenant-wide access.\n\nCreate audience-specific query DTOs for contractor, consultant, client, supplier and auditor. Classify all external actors by actor type, not a partial role-name set. Serialize dates explicitly and pass streams/buffers through deliberate paths. Register metadata-dependent interceptors through DI. Replace unknown-object deny heuristics with schema-based projections for sensitive routes.\n\n**Acceptance:** HTTP grant for A0 cannot read/write A1 using project IDs, nested resources, direct IDs, filters or collection routes. Every external role loses synthetic internal/pricing fields in nested structures. Dates remain ISO/date-only values. Positive own-scope actions still succeed; expired/revoked grants and removed membership fail. Run the matrix on reused pool connections and direct application commands too.",
+      "plan_document": "TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md",
+      "section": "A01"
+    },
+    {
+      "id": "A02",
+      "title": "Executable API schemas, routes and generated clients",
+      "status": "open",
+      "priority": "P1",
+      "depends_on": [
+        "A01"
+      ],
+      "findings": [
+        "PA03",
+        "PA04",
+        "PA07",
+        "PA08",
+        "PA13"
+      ],
+      "implementation_markdown": "**Priority P1. Depends A01. Findings PA03/04/07/08/13; XP00/XP03.** Use the retained 144-handler inventory to make an explicit contract table: method/path, actor policy, DTO, precondition, idempotency class, response schema, errors and tests.\n\n**Implementation:** adopt one `/api/v1` routing strategy without double-prefixing existing controllers. Correct work-item/commissioning routes and verify the Next rewrite. Put `getOrgs` inside a user-scoped transaction and wire switcher/CSRF refresh correctly. Replace erased/inline DTOs in high-risk commands first: guest profiles, recipient decisions, reviews, commissioning, financial amounts, nested import data and memberships. Add enum/UUID/finite/range/array bounds and typed money/date fields. Define accepted unknown-field behavior.\n\nUse one decision enum and one remarks/exception schema across browser and API. Map business-purpose guest profiles to persisted grant types/roles/capabilities on the server; validate mandatory party/target/scope and prevent privilege escalation. Generate client types and route constants from executable schemas, and check them in CI. Normalize 400/404/409/412/422/428 semantics deliberately without masking domain errors.\n\n**Acceptance:** the current guest-page acceptance/rejection/exception payloads complete over HTTP and persist the correct meaning. All new routes work through the web proxy. Owner with multiple memberships sees exactly those organisations. Unknown enums, invalid nested objects, oversized arrays, invalid IDs and unsafe amounts reject before writes. Classify legitimate public endpoints and compatibility aliases rather than blanket-protecting every handler.",
+      "plan_document": "TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md",
+      "section": "A02"
+    },
+    {
+      "id": "A03",
+      "title": "One workflow state vocabulary and executable next actions",
+      "status": "open",
+      "priority": "P1",
+      "depends_on": [
+        "A02",
+        "A16"
+      ],
+      "findings": [
+        "PA05",
+        "PA06",
+        "PA09",
+        "PA15"
+      ],
+      "implementation_markdown": "**Priority P1. Depends A02 and A16 migration contract work. Findings PA05/06/09/15.** Start with review submission, pending waivers and work-item queries.\n\n**Implementation:** reconcile the effective SQL constraints, shared enums, services and UI states. Select the canonical persisted vocabulary using the actual deployed ledger; use forward migration if changing it. Add transition functions with explicit predecessor, actor, expected revision and side effects. Review submission must assign the intended reviewer and atomically link evidence and update states. Preserve separate returned/rejected/superseded outcomes.\n\nWork-item projections should return actual entity ID, row version, responsibility, waiting reason and a typed next-command descriptor. Use PENDING_SECOND_APPROVAL for waiver work and `er.row_version` for revalidation; handle OPEN/IN_PROGRESS/RECTIFIED distinctly. Resolve reviewer roles/resource IDs instead of advertising a route that accepts another ID type. Define required versus optional recipient aggregates and zero-required behavior explicitly.\n\n**Acceptance:** real database submit \u2192 assignment \u2192 changes requested \u2192 revised submission \u2192 independent approval; mandatory waiver request \u2192 independent countersign; pending items appear and disappear correctly. Execute every returned next-command type through its real route. Concurrent stale commands fail; no change leaves a state permitted in TypeScript but rejected by SQL. Dashboard counts reconcile with the authoritative underlying rows/qualifications.",
+      "plan_document": "TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md",
+      "section": "A03"
+    },
+    {
+      "id": "A04",
+      "title": "OTP challenge lifecycle and production identity recovery",
+      "status": "open",
+      "priority": "P1",
+      "depends_on": [],
+      "findings": [
+        "PA10",
+        "PA21"
+      ],
+      "implementation_markdown": "**Priority P1, immediate. Findings PA10/PA21; XP01.** Preserve the working atomic issuance and generation-bound consume.\n\n**Implementation:** encapsulate challenge issuance, supersession, attempt accounting, consume and cleanup in a challenge-store interface backed by atomic Redis operations. Cleanup on provider failure must compare the alias's generation before deleting anything. Define how rejected/unknown delivery affects that generation. Remove the in-memory `eval` string classifier; either require Redis for development/integration or implement the same store contract without pretending to interpret arbitrary Lua. Validate exact challenge/identifier/purpose semantics and shared attempt/cooldown/IP budgets.\n\nPersist security/session results after successful identity verification with actual schema fixtures; account/bootstrap/invitation/organisation selection must be deterministic. Define what happens if Redis consume succeeds but the DB session transaction fails. Return retry guidance without exposing codes or provider secrets. Wire provider acceptance/message IDs and later delivery receipts distinctly.\n\n**Acceptance:** barrier-controlled A-pending/B-issued/A-delivery-fails leaves B usable; old generations remain rejected. Correct fallback/development behavior matches Redis or the unsupported mode fails clearly at boot. Wrong code/identity/purpose, replay, rate exhaustion, concurrent verifies and DB/provider outages are tested. Session creation, revocation and switched-organisation CSRF behavior use real HTTP/database state.",
+      "plan_document": "TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md",
+      "section": "A04"
+    },
+    {
+      "id": "A05",
+      "title": "Dependency and untrusted parser remediation",
+      "status": "open",
+      "priority": "P1",
+      "depends_on": [],
+      "findings": [
+        "PA11",
+        "PA18",
+        "PA28"
+      ],
+      "implementation_markdown": "**Priority P1. Findings PA11/PA18/PA28.** Start with the recorded production audit paths and the reachable consultant spreadsheet parser.\n\n**Implementation:** create a dependency reachability/advisory matrix with exact installed versions, responsible package, reachable input, fixed supported version/distribution and test impact. Replace/upgrade the stale xlsx distribution using a maintained verified source or choose a maintained parser after fixture comparison. Isolate parsing and enforce workbook sheet/row/cell/byte/time/memory limits. Move heavy parsing off the UI thread. Do not evaluate formulas or trust spreadsheet markup/links as HTML.\n\nUpgrade Drizzle/Zod and nested Next/PostCSS/multer paths through supported parent upgrades or narrowly justified overrides with compatibility tests. Zod major-version migration needs schema/output validation. Do not assert SQL injection is reachable solely because Drizzle is installed; check identifier/alias construction. Retain lockfile checksums, a software inventory and a CI audit policy with scoped, expiring exceptions only when exposure is understood.\n\n**Acceptance:** advisory scan after installation has no unexplained high/critical production path. Original permissioned consultant files import correctly; malicious/oversized structures terminate within budget and leave no partial baseline. Framework builds and file upload routes still work. No blanket suppression replaces remediation or an explicit documented reachability decision.",
+      "plan_document": "TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md",
+      "section": "A05"
+    },
+    {
+      "id": "A06",
+      "title": "Atomic durable commands, complete audit and idempotent outcomes",
+      "status": "open",
+      "priority": "P1",
+      "depends_on": [
+        "A01",
+        "A02",
+        "A03"
+      ],
+      "findings": [
+        "PA14",
+        "PA16"
+      ],
+      "implementation_markdown": "**Priority P1. Depends A01\u2013A03. Findings PA14/PA16; XP03/XP05.** Replace the interceptor's separate business/outcome transaction with application command ownership.\n\n**Schema/contract:** introduce a command record keyed by tenant, actor/delegation, stable command type and idempotency key, with request hash/schema version, expected entity revision, outcome state, result reference/error, timestamps and reconciliation metadata. Keep command attempts separately where needed. Use an appropriate uniqueness rule; do not rely on a random request key generated again for every retry.\n\n**Implementation:** pass one unit of work through validation of persisted state, policy recheck, domain mutation, audit, outbox and durable result. Own BEGIN/COMMIT at one layer. Local failures roll back all effects; external operations get stable provider IDs and explicit unknown outcomes. Expose command status and an authorized recovery action. Apply required client preconditions consistently to mutable commands and propagate actual versions to the UI. Audit completeness must be tested per command, including contracts, waivers, requirement changes and grant/member actions.\n\n**Acceptance:** process dies before mutation, after business writes, during outcome persistence and after response loss; retries return one durable effect or a visible reconciliable unknown state. Payload/key mismatch rejects. No timeout/handler error deletes a committed effect's protection. Audit/outbox/result all exist together or none does, and no secret/OTP is recorded.",
+      "plan_document": "TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md",
+      "section": "A06"
+    },
+    {
+      "id": "A07",
+      "title": "Scoped evidence qualification and verified artifact identity",
+      "status": "open",
+      "priority": "P1",
+      "depends_on": [
+        "A01",
+        "A03",
+        "A06"
+      ],
+      "findings": [
+        "PA12",
+        "PA15"
+      ],
+      "implementation_markdown": "**Priority P1. Depends A01/A03/A06. Findings PA12/PA15/PA26; XP07/XP08/XP09.** Centralize readiness and qualification before expanding commissioning claims.\n\n**Schema:** model immutable evidence version references, requirement/baseline revision, asset identity revision or project scope, qualification procedure/slot, verifier/authority, validity basis, decision/disposition and superseding/correction links. Retain document versions as source containers; one document can have different qualification outcomes for different obligations.\n\n**Implementation:** make readiness, package transaction recheck, RA packs, passport and commercial gates consume the same scoped qualification policy/view. On equipment/baseline/procedure changes, create targeted revalidation impacts, not global approval clearing. Keep immutable accepted pointers and decisions. For artifacts, require persisted observed size, declared/artifact size equality, digest and exact provider key/bucket/version. Preflight legacy incomplete READY rows and quarantine unavailable facts instead of synthesizing verification.\n\n**Acceptance:** changing A blocks A's affected evidence while valid B coverage using the same manual remains usable through actual package generation. Old asset/baseline/procedure acceptance cannot qualify the new revision. Missing observed size/version/digest and mismatched receipts reject; valid compiled/downloaded bytes independently hash correctly. Independent verifier/current revision rules hold under concurrency.",
+      "plan_document": "TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md",
+      "section": "A07"
+    },
+    {
+      "id": "A08",
+      "title": "Durable outbox, bounded file/artifact execution and recovery",
+      "status": "open",
+      "priority": "P1",
+      "depends_on": [
+        "A06",
+        "A07"
+      ],
+      "findings": [
+        "PA17",
+        "PA18",
+        "PA19",
+        "PA20"
+      ],
+      "implementation_markdown": "**Priority P1. Depends A06/A07. Findings PA17\u2013PA20; XP04\u2013XP06.** Preserve registered producer coverage, pinned source checks, stream caps and fail-closed scanning.\n\n**Schema:** logical executions keyed by event/operation ID, payload schema version, owner/lease, attempt scheduling, accepted/running/succeeded/retryable/terminal state, result receipt and reconciliation history. Queue dispatch state is separate from execution completion. Informational-only events have an explicit contract; workflow/delivery events require real handlers.\n\n**Implementation:** validate payloads before enqueue and reload authoritative object/command identities in workers. Add connection/body/whole-job deadlines and cancellation, parser child-process limits, host-wide disk/temp/process quotas and fair tenant scheduling. Validate extension/MIME/magic/OOXML/ZIP contents and persist detected metadata/scan receipt. Hash and count exact source bytes. Keep source/derived lineage, safe temp cleanup and idempotent output ownership. Use stable provider idempotency IDs, callbacks/inbox receipts and accepted/delivered/failed delivery states. Move network work outside long database locks using leased claims/reconciliation.\n\n**Acceptance:** actual ClamAV and versioned S3-compatible storage fixtures; bad signature/format, archive/pixel/PDF bombs, slow/truncated/excess streams, missing scanner and conversion tools all fail safely. For every sanitizer, independently inspect output for catalog/page JavaScript, OpenAction/AA/Launch and attachments according to the approved policy; saving a PDF is not proof of removing actions. Run real installed-qpdf JSON-version and fallback cases, including the synthetic retained-OpenAction regression. Kill before/after enqueue/upload/commit, restart with lost Redis and verify reconstruction. Multiple workers cannot complete conflicting outputs; terminal failures appear with an authorized retry/runbook. No tenant can monopolize all workers/disk.",
+      "plan_document": "TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md",
+      "section": "A08"
+    },
+    {
+      "id": "A09",
+      "title": "Frozen handover, recipient authority and decision corrections",
+      "status": "open",
+      "priority": "P1",
+      "depends_on": [
+        "A01",
+        "A02",
+        "A06",
+        "A07",
+        "A08"
+      ],
+      "findings": [
+        "PA01",
+        "PA08",
+        "PA15",
+        "PA30"
+      ],
+      "implementation_markdown": "**Priority P1. Depends A01/A02/A06/A07/A08. Findings PA01/PA08/PA15/PA30; XP09/XP20.** A package and its exact acceptance audience are immutable business revisions.\n\n**Implementation:** freeze scope, evidence versions/qualification decisions, package digest, exclusions/waivers, recipient party/role and required-approver policy at dispatch. Resolve direct recipient from session/grant and frozen binding; member-recorded external responses require explicit delegation/method/proof rather than silently impersonating a client. Define exact typed grant scopes for submission/recipient and recheck expiry/revocation. Derive aggregates from required recipients; optional observations cannot acquire veto authority. Define zero-required policy and correction/supersession rather than overwriting decided facts.\n\nUse durable dispatch/transmittal/delivery receipts and a single validated decision DTO. Acceptance with exceptions creates traceable return/change work without silently changing the frozen original baseline. A late decision on withdrawn/superseded submissions must have a defined rejection/history path. Sectional scope must be explicit.\n\n**Acceptance:** wrong grant/recipient/project, revoked/expired grant, unauthorized member recording, concurrent decisions, required/optional mixture, exceptions, withdrawal/revision and correction. Download digest equals the dispatch/acceptance digest. Run all three outcomes from the actual guest browser page and show truthful persisted receipts.",
+      "plan_document": "TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md",
+      "section": "A09"
+    },
+    {
+      "id": "A10",
+      "title": "Recoverable field uploads and actor-safe offline behavior",
+      "status": "open",
+      "priority": "P1",
+      "depends_on": [
+        "A02",
+        "A06",
+        "A07"
+      ],
+      "findings": [
+        "PA25",
+        "PA31"
+      ],
+      "implementation_markdown": "**Priority P1. Depends A02/A06/A07. Findings PA25/PA31; XP14/XP27.** Build on current partitioned IndexedDB, original blobs and stable queue IDs.\n\n**Implementation:** model local queued/uploading/received/processing/ready/rejected/blocked states explicitly. Store upload-intent generation/expiry and a lease per queue item; use Web Locks or an IndexedDB lease with owner/expiry for cross-tab drains. Recheck actor/tenant/grant before each server command and stop on logout/switch/revocation. Refresh expired URLs through the existing endpoint, reconcile uploaded part numbers/ETags authoritatively and reset only parts belonging to an obsolete multipart generation. Retain original hash/bytes; derived image compression needs explicit source lineage and user visibility.\n\nImplement bounded backoff, resume/cancel, storage quota feedback and explicit cleanup/export controls. Partition or remove the legacy unpartitioned draft helper. A service-worker message to an open tab is not guaranteed closed-browser uploading; describe the actual supported behavior.\n\n**Acceptance:** actual IndexedDB/browser tests for offline capture, reload, tab contention, hours-later expired URLs, lost completion response, processing failure, signout/switch-org/switch-user and revoked guest. Confirm one server command effect and no wrong-actor resume; local originals survive interrupted/failed verification.",
+      "plan_document": "TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md",
+      "section": "A10"
+    },
+    {
+      "id": "A11",
+      "title": "Stable baseline/import and material-to-equipment trace",
+      "status": "open",
+      "priority": "P2",
+      "depends_on": [
+        "A03",
+        "A05",
+        "A06",
+        "A07",
+        "A16"
+      ],
+      "findings": [
+        "PA28",
+        "PA29"
+      ],
+      "implementation_markdown": "**Priority P2. Depends A03/A05/A06/A07/A16. Findings PA28/PA29; XP11/XP12/XP13/XP15.** Start with permissioned contractor equipment schedules/checklists and real PO/supplier returns.\n\n**Schema:** import session with immutable source object/hash, parser/mapping version, target baseline revision, row IDs, validation/collision dispositions and committed receipt. Add PO/line, delivery/receipt/lot inspection, accepted/rejected/quarantined quantity and installed serial/batch allocation records where absent. All references use tenant/project composite scope.\n\n**Implementation:** bound parser work; show row-specific actionable preview and source/normalized values. Persist the reviewed preview; commit it atomically against an expected baseline or reject stale scope. Preserve consultant IDs and changes across revisions. Support partial deliveries, substitutions, manufacturer/model conflicts, split allocation, returns and replacement-unit identity. Derive supplier obligations by stage and responsible party, link intake/review evidence, and project the full chain into passport/work items.\n\n**Acceptance:** duplicate/case/serial collisions, stale preview, partial commit failure, source revision, wrong-project PO/asset, partial delivery, rejected lot and replacement. Quantities reconcile and an installed unit traces to accepted material and qualified evidence. Preserve and test import receipts rather than recomputing an unreviewed preview at commit time.",
+      "plan_document": "TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md",
+      "section": "A11"
+    },
+    {
+      "id": "A12",
+      "title": "Native inspection, witness and traceable TAB",
+      "status": "open",
+      "priority": "P2",
+      "depends_on": [
+        "A01",
+        "A07",
+        "A10",
+        "A11"
+      ],
+      "findings": [
+        "PA27"
+      ],
+      "implementation_markdown": "**Priority P2. Depends A01/A07/A10/A11. Finding PA27; XP16/XP17.** Use engineer-approved customer procedures; do not add universal HVAC tolerances based on equipment names or a standards label.\n\n**Schema:** procedure/template revision; test scope and design source; planned run/prerequisites/hold/witness request; performer and actual conditions/time; instrument identity/certification version; measurement value/unit/precision; sourced tolerance/formula version; disposition/acceptance/retest/correction lineage. Store decimal values deliberately, including original input/display precision.\n\n**Implementation:** use planned \u2192 prerequisites ready \u2192 performed \u2192 witness/review pending \u2192 accepted/failed/deferred \u2192 linked retest transitions. Separate raw calculation compliance from authorized acceptance. Bind witness to an actual authenticated party/delegation and required attendance; document.upload is not witness authority. Evaluate calibration at actual test time. For TAB, model system/branch/terminal design relationships, required readings, approved conversions/correction factors and explicit missing data. Retain unrounded-versus-display policy and independent calculation vectors. Generate reviewable immutable evidence sheets linked to original readings.\n\n**Acceptance:** missing mandatory reading/witness/design/tolerance, incompatible units, precision boundaries, expired calibration, failed/retest and corrected values. Offline form conflicts are resolved explicitly. An HVAC engineer reviews a complete original/generated commissioning pack before the procedure is offered as accepted practice.",
+      "plan_document": "TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md",
+      "section": "A12"
+    },
+    {
+      "id": "A13",
+      "title": "Functional controls and seasonal/deferred commissioning",
+      "status": "open",
+      "priority": "P2",
+      "depends_on": [
+        "A09",
+        "A12"
+      ],
+      "findings": [
+        "PA27"
+      ],
+      "implementation_markdown": "**Priority P2. Depends A12/A09. Finding PA27; XP18.** Extend the current schedule foundation into actual execution and return-visit closure.\n\n**Schema:** versioned controls source/sequence, operating mode, stimulus, expected/observed response, BMS point/trend slice, responsible discipline, witness, due season/load/ambient condition, deferral reason/impact/acceptance exception and return-visit linkage.\n\n**Implementation:** support approved startup/shutdown, alarms/interlocks, duty/standby and integrated interface tests through source-defined procedures. Read-only trend import first, with explicit time/point/units provenance; do not silently command live plant. Add perform/defer/waive/retest/return-visit commands under policy and version checks. A deferred seasonal test stays open with an accountable owner and impact; it must not become passed because the project closed. Changed plant or controls sequences generate scoped requalification work.\n\n**Acceptance:** unavailable season/load, missing witness, wrong trend interval/point, failed interlock, changed sequence and completed return visit. Required open work remains visible to consultant/FM after sectional handover. Validate one representative customer commissioning/return cycle.",
+      "plan_document": "TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md",
+      "section": "A13"
+    },
+    {
+      "id": "A14",
+      "title": "Sectional aftercare, warranty conflicts and commercial evidence",
+      "status": "open",
+      "priority": "P2",
+      "depends_on": [
+        "A07",
+        "A09",
+        "A11",
+        "A12"
+      ],
+      "findings": [
+        "PA09",
+        "PA30"
+      ],
+      "implementation_markdown": "**Priority P2. Depends A07/A09/A11/A12. Findings PA09/PA30; XP21\u2013XP23.** Retain the new mandatory defect versions, RECTIFIED predecessor and performer independence checks.\n\n**Schema:** accepted section/equipment scope with effective date/source; warranty/OEM registration events and basis disputes; service/claim responsibility/SLA; remedy revision with exact qualified proof; independent verification/correction; retention/application milestones and supporting evidence. Keep SaaS accounting separate from the contractor's project-commercial records.\n\n**Implementation:** derive dates from approved source/basis, preserve disputed dates and date-only versus instant precision. Defect evidence must positively qualify for the defect/asset/remedy; eliminate path-substring authorization and ambiguous LIMIT 1 association. Close the submitted remedy or record an explicit verified-evidence correction. Calculate retention/exposure in integer paise with explicit zero/null rules and effective contract scopes. Return evidence-supported application readiness, not a fabricated payment receipt or legal entitlement.\n\n**Acceptance:** sectional acceptance, conflicting OEM basis, wrong/missing asset proof, superseded remedy, self-verification, concurrent close, unresolved critical states, approved waiver and retention applications with zero/multiple contracts. Client/FM can retrieve exact unit evidence and reopen/claim through the documented lifecycle.",
+      "plan_document": "TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md",
+      "section": "A14"
+    },
+    {
+      "id": "A15",
+      "title": "Truthful billing/profile UI and optional financial/signing integrations",
+      "status": "open",
+      "priority": "P1",
+      "depends_on": [
+        "A02",
+        "A03",
+        "A06"
+      ],
+      "findings": [
+        "PA09",
+        "PA24",
+        "PA30"
+      ],
+      "implementation_markdown": "**Priority P1 for truthfulness; P2 for optional integrations. Depends A02/A03/A06. Findings PA09/PA24/PA30.** Remove sample company/tax/plan assertions from the active billing page immediately as part of its real data integration.\n\n**Implementation:** build explicit profile/subscription/plan/invoice query DTOs and load/error/unavailable states. Display returned values without fabricated defaults or swallowed authorization/outage errors. Centralize subscription limits and exact money types; use effective dated tax/accounting configuration and an accountant-reviewed workflow where the product intends to issue real invoices. Consolidate competing invoice/TDS code paths and keep external requests out of transactions through durable intents/receipts.\n\nKeep payment webhook and cryptographic signature functions unavailable until raw-body signature validation, durable provider inbox/dedup/account/amount/currency reconciliation, and actual signature/trust-chain verification exist. Unsupported features must not advertise completion or certification. Separate simple acknowledgement, verified document digest and cryptographic signing in product language.\n\n**Acceptance:** a new tenant sees its own actual profile/limits; outages show error/unavailable. Zero/large values and multiple invoice paths agree. If enabling providers, test duplicate/concurrent callbacks, unknown outcomes, altered raw bytes/digests and provider rejection. Otherwise verify the unavailable feature stays honestly disabled.",
+      "plan_document": "TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md",
+      "section": "A15"
+    },
+    {
+      "id": "A16",
+      "title": "Schema reconciliation and safe populated upgrades",
+      "status": "open",
+      "priority": "P1",
+      "depends_on": [],
+      "findings": [
+        "PA05",
+        "PA13",
+        "PA26"
+      ],
+      "implementation_markdown": "**Priority P1, foundational. Findings PA05/PA13/PA26; XP00/XP03/XP30.** Run alongside each dependent domain slice, not as a final cleanup.\n\n**Implementation:** introspect fresh and representative upgraded PostgreSQL catalogs and compare tables/columns/types/defaults/constraints/indexes/RLS to declared models. Reconcile commissioning tables and revalidation/remedy fields; make canonical status contracts executable. Inventory effective RLS policies, bootstrap/global surfaces and composite FKs, not just whether FORCE RLS is enabled. Test deliberately conflicting tenant aliases and nonprivileged role capabilities.\n\nFor each forward migration, document preflight of invalid legacy data, controlled backfill or quarantine, lock duration, batching/index strategy, application compatibility and failure recovery. Preserve applied checksums and never use privileged runtime access to hide RLS bugs. Do not silently turn missing observed storage facts into verification during a backfill.\n\n**Acceptance:** fresh plus populated historical upgrades converge, mismatched ledger fails, tenant/user/token bootstrap remains usable, wrong-tenant/project inserts reject, and the previous application behavior is compatible during the intended rollout window. Real SQL projections and every command state are tested against the resulting schema.",
+      "plan_document": "TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md",
+      "section": "A16"
+    },
+    {
+      "id": "A17",
+      "title": "Connected contractor UI, work desk, search and accessible mobile flows",
+      "status": "open",
+      "priority": "P2",
+      "depends_on": [
+        "A01",
+        "A02",
+        "A03"
+      ],
+      "findings": [
+        "PA03",
+        "PA06",
+        "PA24",
+        "PA31"
+      ],
+      "implementation_markdown": "**Priority P2, minimum R2/R3 slice required. Depends A01\u2013A03 and relevant domain packages. Findings PA24/PA31; XP19/XP24\u2013XP27.** Deliver daily task completion, not isolated backend endpoints.\n\n**Implementation:** connect the next-action work desk, equipment passports, supplier return/intake, quality/TAB/retest, package/recipient decisions and aftercare screens. Each state shows scope, source, owner, waiting reason and permitted next action. Add permission-aware search/facets with exact equipment tag/serial, source/revision and document lookup. Define loading/empty/permission/offline/error states; never substitute seed content or simulated success. Remove dormant demonstration code after checking references.\n\nSplit the large project detail page into domain views/hooks and lazy-load heavy spreadsheet/preview features. Measure before optimizing. Implement accessible labels, focus restoration, keyboard forms/tables, contrast and readable mobile field capture, including gloves/poor connectivity where customer observation supports the choice.\n\n**Acceptance:** role-specific task scripts on representative phone/tablet/desktop hardware, keyboard/screen-reader checks, slow network and large project data. Every important button has a real authorized outcome or an honest unavailable reason. Track task success, rework and time-to-resolution against a baseline.",
+      "plan_document": "TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md",
+      "section": "A17"
+    },
+    {
+      "id": "A18",
+      "title": "Validated configuration, release packaging and observability",
+      "status": "open",
+      "priority": "P1",
+      "depends_on": [
+        "A01",
+        "A08",
+        "A16"
+      ],
+      "findings": [
+        "PA21",
+        "PA22",
+        "PA32"
+      ],
+      "implementation_markdown": "**Priority P1. Depends A01/A08/A16. Findings PA21/PA22/PA32; XP10/XP29.** Produce a runnable supported environment rather than infer deployability from Terraform resources.\n\n**Implementation:** one startup configuration schema for API/worker/adapters with canonical DB/Redis/S3/DLT/provider names and explicit optional feature flags. Reject development credentials/fallbacks when their production dependencies are required. Verify runtime DB role/migrations, storage versioning and required scanner/worker tooling. Add bounded liveness/readiness/diagnostic behavior and graceful drain/shutdown.\n\nBuild immutable images for the intended runtime/architecture; include qpdf/converter/scanner tooling deliberately. Define private networking/security groups, TLS ingress, secrets/rotation, supervised API/web/worker/Redis and rollout/rollback with migrations and readiness gates. Reproduce the root build in clean Node 22 CI; do not label the local Turbo spawn error a compiler fix. Add structured request/command/event/job IDs, redacted logs, dependency/queue/latency/resource metrics and traces across asynchronous work. Give each alert an owner and tested runbook.\n\n**Acceptance:** empty/misnamed production config fails early, permitted optional integrations stay unavailable honestly, role/versioning checks reject unsafe modes, clean deployment serves the journey, process termination drains or recovers, and induced dependency/queue failures produce actionable alerts without exposing secrets.",
+      "plan_document": "TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md",
+      "section": "A18"
+    },
+    {
+      "id": "A19",
+      "title": "Recovery, load envelopes and failure rehearsals",
+      "status": "open",
+      "priority": "P1",
+      "depends_on": [
+        "A06",
+        "A07",
+        "A08",
+        "A18"
+      ],
+      "findings": [
+        "PA19",
+        "PA23",
+        "PA32"
+      ],
+      "implementation_markdown": "**Priority P1 for R3; continuous for R5. Depends A06\u2013A08/A18. Findings PA19/PA23/PA32.** Choose and document customer-backed workload and recovery objectives before claiming capacity or HA.\n\n**Implementation:** create a backup manifest at a consistent database snapshot with object bucket/key/version/digest/size, audit anchor and logical execution state. Restore into isolation, retrieve/restore object versions, independently hash bytes and execute the application as the restricted role. Reconstruct missing Redis jobs from durable state; test lost/missing object versions as visible recovery failures. Preserve encrypted drill evidence and use cleanup traps. Measure RPO/RTO from explicit incident/recovery points.\n\nBuild representative tenant/project/asset/document/measurement datasets and request/job mixes, including concurrent large uploads/compiles and noisy tenants. Measure p50/p95/p99 latency, time-to-ready, queue age, DB locks/connections, memory/temp disk and fair progress. Set product budgets from measured/customer needs, then add limits, indexes/keyset pagination, isolation/failover where demonstrated bottlenecks justify them.\n\n**Acceptance:** process kill, DB/Redis outage, storage latency, scanner failure, disk pressure, partial rollout and restore/replay rehearsals. No duplicate domain effects, silent loss or falsely complete evidence. Recorded results meet the agreed envelope/objectives; untested larger loads are not advertised as proven.",
+      "plan_document": "TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md",
+      "section": "A19"
+    },
+    {
+      "id": "A20",
+      "title": "Boundary tests, customer acceptance and the completion protocol",
+      "status": "open",
+      "priority": "P1",
+      "depends_on": [],
+      "findings": [
+        "PA22"
+      ],
+      "implementation_markdown": "**Priority P1 for R2/R3 and continuous. Depends relevant packages. Findings PA22 and all acceptance gaps; XP00/XP27/XP28/XP31.** Use the existing [extensive test guide](TRADECLOSEOUT_EXTENSIVE_TEST_IMPLEMENTATION_GUIDE.md) as the area inventory, with today's reproduced cases added as mandatory regressions.\n\n**Implementation:** retain unit/property tests for pure rules; real PostgreSQL/RLS/Redis for transactions and state; actual HTTP for guards/DTOs/metadata; browser/IndexedDB for user contracts; real storage/scanner and capture providers for pipeline boundaries; process-fault tests for recovery. CI must run the application browser project on isolated fixtures and preserve traces/artifacts. Avoid hardcoded customer personas or live data dependence.\n\nCreate the flagship acceptance journey: new tenant \u2192 multiple memberships/switch \u2192 baseline import \u2192 equipment/PO/material allocation \u2192 scoped supplier evidence \u2192 actual scan \u2192 assigned independent review/return \u2192 native commissioning/retest \u2192 readiness/package download \u2192 frozen recipient acceptance/exceptions \u2192 sectional warranty/defect verification \u2192 commercial evidence/archive \u2192 backup restore and same evidence retrieval. Run a smaller complete closeout journey before deeper domain packages land, then extend it.\n\nRecruit representative contractor/site/QC/procurement/consultant/FM participants only with the user's authorization; do not send outreach automatically. Review permissioned procedures/templates and observe independent task completion. Measure failures/rework/support burden and feed concrete priorities back into the backlog. A pilot is evidence of its tested scope, not proof of universal standards compliance or market leadership.",
+      "plan_document": "TRADECLOSEOUT_PRODUCTION_AGENT_IMPLEMENTATION_PLAN_2026-11-07.md",
+      "section": "A20"
+    }
+  ],
+  "mandatory_regressions": [
+    {
+      "id": "PROD-001",
+      "acceptance": "Guest project A0 cannot retrieve A1 by direct HTTP ID; own scope succeeds",
+      "work_packages": [
+        "A01"
+      ]
+    },
+    {
+      "id": "PROD-002",
+      "acceptance": "Every external role loses nested internal/commercial fields; dates serialize correctly",
+      "work_packages": [
+        "A01"
+      ]
+    },
+    {
+      "id": "PROD-003",
+      "acceptance": "Work items/commissioning routes work through `/api/v1` and Next proxy",
+      "work_packages": [
+        "A02"
+      ]
+    },
+    {
+      "id": "PROD-004",
+      "acceptance": "Active owner gets all and only memberships; switch rotates usable CSRF context",
+      "work_packages": [
+        "A02"
+      ]
+    },
+    {
+      "id": "PROD-005",
+      "acceptance": "Review submission/return/revision/approval succeeds against migrated constraints",
+      "work_packages": [
+        "A03"
+      ]
+    },
+    {
+      "id": "PROD-006",
+      "acceptance": "Pending second-approval waiver appears; next action uses actual ID/version",
+      "work_packages": [
+        "A03"
+      ]
+    },
+    {
+      "id": "PROD-007",
+      "acceptance": "Default supplier/client/consultant grant profiles persist and authorize only intended actions",
+      "work_packages": [
+        "A02"
+      ]
+    },
+    {
+      "id": "PROD-008",
+      "acceptance": "Browser ACCEPT/EXCEPTIONS/REJECT persists the exact meaning and required-recipient aggregate",
+      "work_packages": [
+        "A02",
+        "A09"
+      ]
+    },
+    {
+      "id": "PROD-009",
+      "acceptance": "Zero retention remains zero in every dashboard/digest; multiple contracts reconcile",
+      "work_packages": [
+        "A03",
+        "A14"
+      ]
+    },
+    {
+      "id": "PROD-010",
+      "acceptance": "Older OTP delivery failure cannot remove newer generation; real/fallback store contracts agree",
+      "work_packages": [
+        "A04"
+      ]
+    },
+    {
+      "id": "PROD-011",
+      "acceptance": "Production advisory paths remediated or precisely justified; hostile spreadsheet bounded",
+      "work_packages": [
+        "A05"
+      ]
+    },
+    {
+      "id": "PROD-012",
+      "acceptance": "Missing observed artifact size or version rejects before signer; valid download hash matches",
+      "work_packages": [
+        "A07"
+      ]
+    },
+    {
+      "id": "PROD-013",
+      "acceptance": "Commit/outcome response-loss retry produces one effect and recoverable outcome",
+      "work_packages": [
+        "A06"
+      ]
+    },
+    {
+      "id": "PROD-014",
+      "acceptance": "Queued execution survives process death/Redis loss or becomes visible terminal failure",
+      "work_packages": [
+        "A08"
+      ]
+    },
+    {
+      "id": "PROD-015",
+      "acceptance": "Hours-old offline multipart upload refreshes and resumes once across two tabs",
+      "work_packages": [
+        "A10"
+      ]
+    },
+    {
+      "id": "PROD-016",
+      "acceptance": "Plant A replacement leaves valid B manual coverage usable through package generation",
+      "work_packages": [
+        "A07"
+      ]
+    },
+    {
+      "id": "PROD-017",
+      "acceptance": "Required witness/calibration/source tolerance absent cannot become accepted commissioning",
+      "work_packages": [
+        "A12"
+      ]
+    },
+    {
+      "id": "PROD-018",
+      "acceptance": "Deferred seasonal test remains accountable and closes only on verified return visit",
+      "work_packages": [
+        "A13"
+      ]
+    },
+    {
+      "id": "PROD-019",
+      "acceptance": "Restored DB plus actual pinned object bytes support the same unit/guest retrieval under policy",
+      "work_packages": [
+        "A19"
+      ]
+    },
+    {
+      "id": "PROD-020",
+      "acceptance": "End-to-end contractor journey passes in clean supported-runtime CI and customer observation",
+      "work_packages": [
+        "A18",
+        "A20"
+      ]
+    }
+  ]
+}

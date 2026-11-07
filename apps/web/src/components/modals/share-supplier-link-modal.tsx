@@ -92,11 +92,11 @@ export function ShareSupplierLinkModal({
           supplierPartyId: selectedPartyId,
           requirementIds: [requirementId],
           expiresInDays: 30,
-          otpRequired: false, // Zero-friction supplier access
+          otpRequired: true,
         }),
       });
 
-      const messageText = `Hi ${supplierName}, please upload the requested technical certificate/warranty on TradeCloseout: ${data.guestUrl} (Project PIN: ${data.projectPin}). No login required.`;
+      const messageText = `Hi ${supplierName}, please upload the requested technical certificate/warranty on TradeCloseout: ${data.guestUrl}. A one-time verification code will be sent to the registered contact.`;
       setGeneratedResult({
         guestUrl: data.guestUrl,
         whatsappDeepLink: phone
@@ -113,9 +113,7 @@ export function ShareSupplierLinkModal({
 
   const handleCopy = () => {
     if (!generatedResult) return;
-    navigator.clipboard.writeText(
-      `${generatedResult.guestUrl}\nProject Access PIN: ${generatedResult.projectPin}`
-    );
+    navigator.clipboard.writeText(generatedResult.guestUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -279,10 +277,8 @@ export function ShareSupplierLinkModal({
 
             <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 flex items-center justify-between">
               <div>
-                <span className="text-[11px] uppercase font-bold text-slate-500 block">Project Access PIN</span>
-                <span className="text-xl font-bold font-mono text-slate-900 tracking-wider">
-                  {generatedResult.projectPin}
-                </span>
+                <span className="text-[11px] uppercase font-bold text-slate-500 block">Supplier verification</span>
+                <span className="text-sm font-semibold text-slate-900">One-time code required</span>
               </div>
               <span className="text-[11px] text-slate-500">Valid for 30 days</span>
             </div>

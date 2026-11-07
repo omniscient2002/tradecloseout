@@ -1,0 +1,637 @@
+{
+  "as_of": "2026-11-06",
+  "target": "HVAC contractor product excellence with demonstrated production/customer evidence",
+  "effort_note": "Proposed planning bands only: S 1–3, M 4–8, L 8–15, XL 15–30 focused engineer-days including implementation/tests/review; re-estimate after XP00 and customer template discovery. Ongoing validation is not a one-off task. These are not delivery promises.",
+  "audit_document": "TRADECLOSEOUT_HVAC_PRODUCTION_REAUDIT_2026-11-06.md",
+  "source_manifest": "TRADECLOSEOUT_REAUDIT_SOURCE_MANIFEST_2026-11-06.json",
+  "tasks": [
+    {
+      "task_id": "XP00",
+      "title": "Establish the current baseline and complete journey boundaries",
+      "priority": "P0",
+      "depends_on": [],
+      "release_gate": "G1",
+      "proposed_effort_band": "S",
+      "status": "PLANNED_NOT_COMPLETE",
+      "instructions_document": "TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md",
+      "instructions_heading": "XP00 — Establish the current baseline and complete journey boundaries"
+    },
+    {
+      "task_id": "XP01",
+      "title": "Repair OTP identity and delivery assurance",
+      "priority": "P0",
+      "depends_on": [
+        "XP00"
+      ],
+      "release_gate": "G1",
+      "proposed_effort_band": "M",
+      "status": "PLANNED_NOT_COMPLETE",
+      "instructions_document": "TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md",
+      "instructions_heading": "XP01 — Repair OTP identity and delivery assurance"
+    },
+    {
+      "task_id": "XP02",
+      "title": "Centralize real resource authority and response contracts",
+      "priority": "P0",
+      "depends_on": [
+        "XP01"
+      ],
+      "release_gate": "G1",
+      "proposed_effort_band": "L",
+      "status": "PLANNED_NOT_COMPLETE",
+      "instructions_document": "TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md",
+      "instructions_heading": "XP02 — Centralize real resource authority and response contracts"
+    },
+    {
+      "task_id": "XP03",
+      "title": "Implement durable command outcomes and strict API contracts",
+      "priority": "P0",
+      "depends_on": [
+        "XP00",
+        "XP02"
+      ],
+      "release_gate": "G1",
+      "proposed_effort_band": "XL",
+      "status": "PLANNED_NOT_COMPLETE",
+      "instructions_document": "TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md",
+      "instructions_heading": "XP03 — Implement durable command outcomes and strict API contracts"
+    },
+    {
+      "task_id": "XP04",
+      "title": "Finish immutable, bounded file processing",
+      "priority": "P0",
+      "depends_on": [
+        "XP02",
+        "XP03"
+      ],
+      "release_gate": "G2",
+      "proposed_effort_band": "L",
+      "status": "PLANNED_NOT_COMPLETE",
+      "instructions_document": "TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md",
+      "instructions_heading": "XP04 — Finish immutable, bounded file processing"
+    },
+    {
+      "task_id": "XP05",
+      "title": "Make outbox, worker effects and recovery explicit",
+      "priority": "P0",
+      "depends_on": [
+        "XP03"
+      ],
+      "release_gate": "G2",
+      "proposed_effort_band": "L",
+      "status": "PLANNED_NOT_COMPLETE",
+      "instructions_document": "TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md",
+      "instructions_heading": "XP05 — Make outbox, worker effects and recovery explicit"
+    },
+    {
+      "task_id": "XP06",
+      "title": "Complete messaging and actionable reminders",
+      "priority": "P1",
+      "depends_on": [
+        "XP01",
+        "XP05"
+      ],
+      "release_gate": "G2",
+      "proposed_effort_band": "L",
+      "status": "PLANNED_NOT_COMPLETE",
+      "instructions_document": "TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md",
+      "instructions_heading": "XP06 — Complete messaging and actionable reminders"
+    },
+    {
+      "task_id": "XP07",
+      "title": "Introduce coverage-aware evidence qualification",
+      "priority": "P0",
+      "depends_on": [
+        "XP03",
+        "XP04"
+      ],
+      "release_gate": "G2",
+      "proposed_effort_band": "XL",
+      "status": "PLANNED_NOT_COMPLETE",
+      "instructions_document": "TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md",
+      "instructions_heading": "XP07 — Introduce coverage-aware evidence qualification"
+    },
+    {
+      "task_id": "XP08",
+      "title": "Deliver one canonical review and external-response workflow",
+      "priority": "P0",
+      "depends_on": [
+        "XP02",
+        "XP03",
+        "XP07"
+      ],
+      "release_gate": "G2",
+      "proposed_effort_band": "L",
+      "status": "PLANNED_NOT_COMPLETE",
+      "instructions_document": "TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md",
+      "instructions_heading": "XP08 — Deliver one canonical review and external-response workflow"
+    },
+    {
+      "task_id": "XP09",
+      "title": "Finish practical dossiers, archives and recipient acceptance",
+      "priority": "P0",
+      "depends_on": [
+        "XP05",
+        "XP07",
+        "XP08"
+      ],
+      "release_gate": "G2",
+      "proposed_effort_band": "L",
+      "status": "PLANNED_NOT_COMPLETE",
+      "instructions_document": "TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md",
+      "instructions_heading": "XP09 — Finish practical dossiers, archives and recipient acceptance"
+    },
+    {
+      "task_id": "XP10",
+      "title": "Make the deployable service and recovery trustworthy",
+      "priority": "P0",
+      "depends_on": [
+        "XP00",
+        "XP03"
+      ],
+      "release_gate": "G2",
+      "proposed_effort_band": "XL",
+      "status": "PLANNED_NOT_COMPLETE",
+      "instructions_document": "TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md",
+      "instructions_heading": "XP10 — Make the deployable service and recovery trustworthy"
+    },
+    {
+      "task_id": "XP11",
+      "title": "Deliver import-first project onboarding",
+      "priority": "P1",
+      "depends_on": [
+        "XP03",
+        "XP07"
+      ],
+      "release_gate": "G3",
+      "proposed_effort_band": "L",
+      "status": "PLANNED_NOT_COMPLETE",
+      "instructions_document": "TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md",
+      "instructions_heading": "XP11 — Deliver import-first project onboarding"
+    },
+    {
+      "task_id": "XP12",
+      "title": "Build the daily inbox, search and project workspace",
+      "priority": "P1",
+      "depends_on": [
+        "XP02",
+        "XP07"
+      ],
+      "release_gate": "G3",
+      "proposed_effort_band": "L",
+      "status": "PLANNED_NOT_COMPLETE",
+      "instructions_document": "TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md",
+      "instructions_heading": "XP12 — Build the daily inbox, search and project workspace"
+    },
+    {
+      "task_id": "XP13",
+      "title": "Make the equipment passport the physical-unit spine",
+      "priority": "P1",
+      "depends_on": [
+        "XP03",
+        "XP07"
+      ],
+      "release_gate": "G3",
+      "proposed_effort_band": "L",
+      "status": "PLANNED_NOT_COMPLETE",
+      "instructions_document": "TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md",
+      "instructions_heading": "XP13 — Make the equipment passport the physical-unit spine"
+    },
+    {
+      "task_id": "XP14",
+      "title": "Complete the supplier documentary request loop",
+      "priority": "P1",
+      "depends_on": [
+        "XP06",
+        "XP11",
+        "XP13"
+      ],
+      "release_gate": "G3",
+      "proposed_effort_band": "L",
+      "status": "PLANNED_NOT_COMPLETE",
+      "instructions_document": "TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md",
+      "instructions_heading": "XP14 — Complete the supplier documentary request loop"
+    },
+    {
+      "task_id": "XP15",
+      "title": "Trace material approval through delivery and installation",
+      "priority": "P2",
+      "depends_on": [
+        "XP13",
+        "XP14"
+      ],
+      "release_gate": "G4",
+      "proposed_effort_band": "XL",
+      "status": "PLANNED_NOT_COMPLETE",
+      "instructions_document": "TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md",
+      "instructions_heading": "XP15 — Trace material approval through delivery and installation"
+    },
+    {
+      "task_id": "XP16",
+      "title": "Add native inspections, hold points and test runs",
+      "priority": "P2",
+      "depends_on": [
+        "XP07",
+        "XP13",
+        "XP15"
+      ],
+      "release_gate": "G4",
+      "proposed_effort_band": "XL",
+      "status": "PLANNED_NOT_COMPLETE",
+      "instructions_document": "TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md",
+      "instructions_heading": "XP16 — Add native inspections, hold points and test runs"
+    },
+    {
+      "task_id": "XP17",
+      "title": "Deliver air/water TAB with traceable calculations",
+      "priority": "P2",
+      "depends_on": [
+        "XP16"
+      ],
+      "release_gate": "G4",
+      "proposed_effort_band": "XL",
+      "status": "PLANNED_NOT_COMPLETE",
+      "instructions_document": "TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md",
+      "instructions_heading": "XP17 — Deliver air/water TAB with traceable calculations"
+    },
+    {
+      "task_id": "XP18",
+      "title": "Support functional, controls and seasonal commissioning",
+      "priority": "P2",
+      "depends_on": [
+        "XP17"
+      ],
+      "release_gate": "G4",
+      "proposed_effort_band": "XL",
+      "status": "PLANNED_NOT_COMPLETE",
+      "instructions_document": "TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md",
+      "instructions_heading": "XP18 — Support functional, controls and seasonal commissioning"
+    },
+    {
+      "task_id": "XP19",
+      "title": "Add decision register, returned-comment closure and waiting ledger",
+      "priority": "P1",
+      "depends_on": [
+        "XP08",
+        "XP12"
+      ],
+      "release_gate": "G3",
+      "proposed_effort_band": "L",
+      "status": "PLANNED_NOT_COMPLETE",
+      "instructions_document": "TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md",
+      "instructions_heading": "XP19 — Add decision register, returned-comment closure and waiting ledger"
+    },
+    {
+      "task_id": "XP20",
+      "title": "Deliver client/FM-ready handover and information access",
+      "priority": "P1",
+      "depends_on": [
+        "XP09",
+        "XP13"
+      ],
+      "release_gate": "G3",
+      "proposed_effort_band": "L",
+      "status": "PLANNED_NOT_COMPLETE",
+      "instructions_document": "TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md",
+      "instructions_heading": "XP20 — Deliver client/FM-ready handover and information access"
+    },
+    {
+      "task_id": "XP21",
+      "title": "Separate aftercare, warranty and DLP into a real service workflow",
+      "priority": "P1",
+      "depends_on": [
+        "XP13",
+        "XP20"
+      ],
+      "release_gate": "G3",
+      "proposed_effort_band": "XL",
+      "status": "PLANNED_NOT_COMPLETE",
+      "instructions_document": "TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md",
+      "instructions_heading": "XP21 — Separate aftercare, warranty and DLP into a real service workflow"
+    },
+    {
+      "task_id": "XP22",
+      "title": "Build source-backed commercial milestone and retention evidence",
+      "priority": "P1",
+      "depends_on": [
+        "XP07",
+        "XP09",
+        "XP21"
+      ],
+      "release_gate": "G3",
+      "proposed_effort_band": "XL",
+      "status": "PLANNED_NOT_COMPLETE",
+      "instructions_document": "TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md",
+      "instructions_heading": "XP22 — Build source-backed commercial milestone and retention evidence"
+    },
+    {
+      "task_id": "XP23",
+      "title": "Provide truthful portfolio and supplier performance insight",
+      "priority": "P2",
+      "depends_on": [
+        "XP12",
+        "XP22"
+      ],
+      "release_gate": "G5",
+      "proposed_effort_band": "L",
+      "status": "PLANNED_NOT_COMPLETE",
+      "instructions_document": "TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md",
+      "instructions_heading": "XP23 — Provide truthful portfolio and supplier performance insight"
+    },
+    {
+      "task_id": "XP24",
+      "title": "Integrate the tools contractors already use",
+      "priority": "P2",
+      "depends_on": [
+        "XP02",
+        "XP03",
+        "XP05"
+      ],
+      "release_gate": "G4",
+      "proposed_effort_band": "XL",
+      "status": "PLANNED_NOT_COMPLETE",
+      "instructions_document": "TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md",
+      "instructions_heading": "XP24 — Integrate the tools contractors already use"
+    },
+    {
+      "task_id": "XP25",
+      "title": "Add assistive AI only where it saves verified effort",
+      "priority": "P3",
+      "depends_on": [
+        "XP07",
+        "XP24",
+        "XP27"
+      ],
+      "release_gate": "G5",
+      "proposed_effort_band": "XL",
+      "status": "PLANNED_NOT_COMPLETE",
+      "instructions_document": "TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md",
+      "instructions_heading": "XP25 — Add assistive AI only where it saves verified effort"
+    },
+    {
+      "task_id": "XP26",
+      "title": "Make mobile, offline, accessible and localized work dependable",
+      "priority": "P1",
+      "depends_on": [
+        "XP02",
+        "XP12"
+      ],
+      "release_gate": "G3",
+      "proposed_effort_band": "XL",
+      "status": "PLANNED_NOT_COMPLETE",
+      "instructions_document": "TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md",
+      "instructions_heading": "XP26 — Make mobile, offline, accessible and localized work dependable"
+    },
+    {
+      "task_id": "XP27",
+      "title": "Establish complete release, fault, load and recovery gates",
+      "priority": "P1",
+      "depends_on": [
+        "XP00",
+        "XP04",
+        "XP09",
+        "XP10",
+        "XP26"
+      ],
+      "release_gate": "G2",
+      "proposed_effort_band": "XL",
+      "status": "PLANNED_NOT_COMPLETE",
+      "instructions_document": "TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md",
+      "instructions_heading": "XP27 — Establish complete release, fault, load and recovery gates"
+    },
+    {
+      "task_id": "XP28",
+      "title": "Validate workflows with contractors from the beginning",
+      "priority": "P1",
+      "depends_on": [],
+      "release_gate": "G3",
+      "proposed_effort_band": "M + ongoing",
+      "status": "PLANNED_NOT_COMPLETE",
+      "instructions_document": "TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md",
+      "instructions_heading": "XP28 — Validate workflows with contractors from the beginning"
+    },
+    {
+      "task_id": "XP29",
+      "title": "Build onboarding, support and adoption into the product",
+      "priority": "P1",
+      "depends_on": [
+        "XP11",
+        "XP12",
+        "XP20"
+      ],
+      "release_gate": "G3",
+      "proposed_effort_band": "L",
+      "status": "PLANNED_NOT_COMPLETE",
+      "instructions_document": "TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md",
+      "instructions_heading": "XP29 — Build onboarding, support and adoption into the product"
+    },
+    {
+      "task_id": "XP30",
+      "title": "Make evidence governance and client-specific rule packs explicit",
+      "priority": "P1",
+      "depends_on": [
+        "XP02",
+        "XP10"
+      ],
+      "release_gate": "G2",
+      "proposed_effort_band": "L",
+      "status": "PLANNED_NOT_COMPLETE",
+      "instructions_document": "TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md",
+      "instructions_heading": "XP30 — Make evidence governance and client-specific rule packs explicit"
+    },
+    {
+      "task_id": "XP31",
+      "title": "Keep implementation maintainable and contracts traceable",
+      "priority": "P1",
+      "depends_on": [
+        "XP00",
+        "XP03"
+      ],
+      "release_gate": "G3",
+      "proposed_effort_band": "L",
+      "status": "PLANNED_NOT_COMPLETE",
+      "instructions_document": "TRADECLOSEOUT_HVAC_EXCELLENCE_AGENT_PLAN.md",
+      "instructions_heading": "XP31 — Keep implementation maintainable and contracts traceable"
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "N01",
+      "summary": "Observed and corrected during review: regression fixture failures; end-to-end evidence remains partial",
+      "status": "FIXTURE_FAILURE_CORRECTED_BOUNDARY_COVERAGE_REMAINS"
+    },
+    {
+      "finding_id": "N02",
+      "summary": "Critical, reproduced Lua boundary: OTP aliases permit independent consumption",
+      "status": "OPEN_OR_REQUIRES_VALIDATION"
+    },
+    {
+      "finding_id": "N03",
+      "summary": "High, confirmed: production can enable fake OTP delivery",
+      "status": "OPEN_OR_REQUIRES_VALIDATION"
+    },
+    {
+      "finding_id": "N04",
+      "summary": "High, confirmed: archive download signs the wrong object",
+      "status": "OPEN_OR_REQUIRES_VALIDATION"
+    },
+    {
+      "finding_id": "N05",
+      "summary": "High, confirmed: payment webhook claims processing it never performs",
+      "status": "OPEN_OR_REQUIRES_VALIDATION"
+    },
+    {
+      "finding_id": "N06",
+      "summary": "Medium, confirmed: OTP rate-limit transport status is wrong",
+      "status": "OPEN_OR_REQUIRES_VALIDATION"
+    },
+    {
+      "finding_id": "N07",
+      "summary": "High, confirmed configuration inconsistency: API and worker resolve different DB settings",
+      "status": "OPEN_OR_REQUIRES_VALIDATION"
+    },
+    {
+      "finding_id": "N08",
+      "summary": "High, confirmed policy split: actual guard omits richer state gates",
+      "status": "OPEN_OR_REQUIRES_VALIDATION"
+    },
+    {
+      "finding_id": "N09",
+      "summary": "High, confirmed predicate: in-app notification listing includes other recipients",
+      "status": "OPEN_OR_REQUIRES_VALIDATION"
+    },
+    {
+      "finding_id": "N10",
+      "summary": "High, confirmed authority mismatch: document readers may create notifications",
+      "status": "OPEN_OR_REQUIRES_VALIDATION"
+    },
+    {
+      "finding_id": "N11",
+      "summary": "High, confirmed missing service binding: recipient decisions trust caller target",
+      "status": "OPEN_OR_REQUIRES_VALIDATION"
+    },
+    {
+      "finding_id": "N12",
+      "summary": "High, confirmed incomplete projection: heuristic resource detection and nested metadata",
+      "status": "OPEN_OR_REQUIRES_VALIDATION"
+    },
+    {
+      "finding_id": "N13",
+      "summary": "High, confirmed: revalidation ignores the asset URL and lacks review concurrency",
+      "status": "OPEN_OR_REQUIRES_VALIDATION"
+    },
+    {
+      "finding_id": "N14",
+      "summary": "High, confirmed: revalidation blocks shared evidence too broadly",
+      "status": "OPEN_OR_REQUIRES_VALIDATION"
+    },
+    {
+      "finding_id": "N15",
+      "summary": "High, confirmed model limitation: one document decision approves all linked requirements",
+      "status": "OPEN_OR_REQUIRES_VALIDATION"
+    },
+    {
+      "finding_id": "N16",
+      "summary": "High, confirmed: receipts and business mutation still have separate commits",
+      "status": "OPEN_OR_REQUIRES_VALIDATION"
+    },
+    {
+      "finding_id": "N17",
+      "summary": "Medium/high under load, confirmed architecture: nested transaction ownership",
+      "status": "OPEN_OR_REQUIRES_VALIDATION"
+    },
+    {
+      "finding_id": "N18",
+      "summary": "High, confirmed dispatch semantics: unknown outbox events are acknowledged",
+      "status": "OPEN_OR_REQUIRES_VALIDATION"
+    },
+    {
+      "finding_id": "N19",
+      "summary": "High, confirmed resource gap: scanner download has no byte ceiling",
+      "status": "OPEN_OR_REQUIRES_VALIDATION"
+    },
+    {
+      "finding_id": "N20",
+      "summary": "High, confirmed assurance gap: defect close can report success without a row",
+      "status": "OPEN_OR_REQUIRES_VALIDATION"
+    },
+    {
+      "finding_id": "N21",
+      "summary": "Medium, confirmed arithmetic/read-model defects",
+      "status": "OPEN_OR_REQUIRES_VALIDATION"
+    },
+    {
+      "finding_id": "N22",
+      "summary": "Medium, confirmed runtime-contract gaps",
+      "status": "OPEN_OR_REQUIRES_VALIDATION"
+    },
+    {
+      "finding_id": "N23",
+      "summary": "High operational risk, observed build mismatch",
+      "status": "OPEN_OR_REQUIRES_VALIDATION"
+    },
+    {
+      "finding_id": "N24",
+      "summary": "High release evidence gap: liveness is reported as readiness",
+      "status": "OPEN_OR_REQUIRES_VALIDATION"
+    },
+    {
+      "finding_id": "N25",
+      "summary": "High operational gap: restore drill does not restore evidence objects",
+      "status": "OPEN_OR_REQUIRES_VALIDATION"
+    },
+    {
+      "finding_id": "N26",
+      "summary": "Medium/high under load: long-running job/recovery acceptance remains unproved",
+      "status": "OPEN_OR_REQUIRES_VALIDATION"
+    },
+    {
+      "finding_id": "N27",
+      "summary": "Medium, confirmed incomplete import contract",
+      "status": "OPEN_OR_REQUIRES_VALIDATION"
+    },
+    {
+      "finding_id": "N28",
+      "summary": "Medium, confirmed maintenance and UX concentration",
+      "status": "OPEN_OR_REQUIRES_VALIDATION"
+    },
+    {
+      "finding_id": "N29",
+      "summary": "Risk, not established as active leak: legacy offline drafts are unpartitioned",
+      "status": "OPEN_OR_REQUIRES_VALIDATION"
+    },
+    {
+      "finding_id": "N30",
+      "summary": "High policy risk: mixed tenant-setting aliases can widen visible scope",
+      "status": "OPEN_OR_REQUIRES_VALIDATION"
+    },
+    {
+      "finding_id": "N31",
+      "summary": "High authority risk: archive read uses ordinary document.read",
+      "status": "OPEN_OR_REQUIRES_VALIDATION"
+    },
+    {
+      "finding_id": "N32",
+      "summary": "Risk: infrastructure declarations are not an operating service",
+      "status": "OPEN_OR_REQUIRES_VALIDATION"
+    }
+  ],
+  "validation": {
+    "typecheck": "passed",
+    "full_suite": "passed on final recheck",
+    "api_suites": 22,
+    "api_tests": 151,
+    "shared_suites": 4,
+    "shared_tests": 44,
+    "db_behavioral_subtests": 8,
+    "worker_behavioral_subtests": 10,
+    "offline_browser_cases": 6,
+    "pdf_scripted_checks": 3,
+    "otp_alias_lua_probe": {
+      "first_consumption": "OK",
+      "second_consumption": "OK",
+      "sessions_created": false,
+      "interpretation": "Critical duplicate-alias consumption reproduced; green suite does not cover it"
+    }
+  }
+}

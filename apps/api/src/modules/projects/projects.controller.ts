@@ -15,6 +15,8 @@ import {
 import { ProjectsService } from './projects.service';
 import { SessionCsrfGuard } from '../../common/guards/session-csrf.guard';
 import { PermissionGuard, RequirePermission } from '../../common/guards/permission.guard';
+import { RequireIdempotency } from '../../common/decorators/idempotency.decorator';
+import { CloseProjectDto } from './dto/close-project.dto';
 
 @Controller('api/v1/projects')
 @UseGuards(SessionCsrfGuard, PermissionGuard)
@@ -88,8 +90,11 @@ export class ProjectsController {
 
   @Post(':id/close')
   @RequirePermission('project.manage')
-  async closeProject(@Req() req: any, @Param('id') id: string) {
-    return this.projectsService.closeProject(req.userContext, id);
+  @RequireIdempotency()
+  async closeProject(@Req() req: any, @Param('id') id: string, @Body() dto?: CloseProjectDto) {
+    return this.projectsService.closeProject(req.userContext, id, undefined, {
+      closureDate: dto?.closureDate,
+    });
   }
 
   @Post(':id/reopen')

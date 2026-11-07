@@ -10,15 +10,21 @@ import {
   Body,
   Req,
   UseGuards,
+  ValidationPipe,
+  Headers,
+  HttpException,
+  BadRequestException,
 } from '@nestjs/common';
 import {
   ReviewsService,
   DecisionDto,
-  ExternalApprovalDto,
   ReviewCommentDto,
 } from './reviews.service';
 import { SessionCsrfGuard } from '../../common/guards/session-csrf.guard';
 import { PermissionGuard, RequirePermission } from '../../common/guards/permission.guard';
+import { RequireIdempotency } from '../../common/decorators/idempotency.decorator';
+import { DecideVersionReviewDto } from './dto/decide-review.dto';
+import { ExternalApprovalDto } from './dto/external-approval.dto';
 
 @Controller('api/v1')
 @UseGuards(SessionCsrfGuard, PermissionGuard)
@@ -56,9 +62,12 @@ export class ReviewsController {
   async decideReview(
     @Req() req: any,
     @Param('id') id: string,
+    @Headers('if-match') ifMatch: string | undefined,
     @Body() dto: DecisionDto,
   ) {
-    return this.reviewsService.decideReview(req.userContext, id, dto);
+    const match = ifMatch?.match(/^"?([1-9]\d*)"?$/);
+    const expectedRowVersion = match ? Number(match[1]) : dto.expectedRowVersion;
+    return this.reviewsService.decideReview(req.userContext, id, { ...dto, expectedRowVersion });
   }
 
   @Post('projects/:projectId/reviews')
@@ -66,9 +75,12 @@ export class ReviewsController {
   async recordProjectReview(
     @Req() req: any,
     @Param('projectId') projectId: string,
-    @Body() dto: { documentVersionId: string; decision: any; comment?: string; method?: any },
+    @Headers('if-match') ifMatch: string | undefined,
+    @Body() dto: { documentVersionId: string; decision: any; comment?: string; method?: any; expectedRowVersion?: number },
   ) {
-    return this.reviewsService.recordVersionReview(req.userContext, projectId, dto);
+    const match = ifMatch?.match(/^"?([1-9]\d*)"?$/);
+    const expectedRowVersion = match ? Number(match[1]) : dto.expectedRowVersion;
+    return this.reviewsService.recordVersionReview(req.userContext, projectId, { ...dto, expectedRowVersion });
   }
 
   @Get('projects/:projectId/document-versions/:versionId')
@@ -81,19 +93,46 @@ export class ReviewsController {
     return this.reviewsService.getVersionReviewDetail(req.userContext, projectId, versionId);
   }
 
-  @Post('projects/:projectId/document-versions/:versionId/decision')
+  @Post([
+    'projects/:projectId/document-versions/:versionId/decision',
+    'projects/:projectId/reviews/:versionId/decision',
+    'projects/:projectId/reviews/:versionId',
+  ])
   @RequirePermission('review.decide')
+  @RequireIdempotency()
   async decideVersionReview(
     @Req() req: any,
     @Param('projectId') projectId: string,
     @Param('versionId') versionId: string,
-    @Body() dto: { method: string; decision: any; comment?: string },
+    @Headers('if-match') ifMatch: string | undefined,
+    @Body() dto: DecideVersionReviewDto,
   ) {
+    const decisionMap: Record<string, 'APPROVE' | 'REQUEST_CHANGES' | 'REJECT'> = {
+      APPROVE: 'APPROVE',
+      APPROVED: 'APPROVE',
+      REQUEST_CHANGES: 'REQUEST_CHANGES',
+      CHANGES_REQUESTED: 'REQUEST_CHANGES',
+      REJECT: 'REJECT',
+      REJECTED: 'REJECT',
+    };
+    const mappedDecision = decisionMap[dto.decision];
+    if (!mappedDecision) {
+      throw new BadRequestException({
+        code: 'INVALID_DECISION',
+        detail: `Decision must be one of: APPROVE, APPROVED, REQUEST_CHANGES, CHANGES_REQUESTED, REJECT, REJECTED`,
+      });
+    }
+    const match = ifMatch?.match(/^"?([1-9]\d*)"?$/);
+    const expectedRowVersion = match ? Number(match[1]) : dto.expectedRowVersion;
     return this.reviewsService.recordVersionReview(req.userContext, projectId, {
       documentVersionId: versionId,
-      decision: dto.decision,
+      decision: mappedDecision,
       comment: dto.comment,
-      method: dto.method,
+      expectedRowVersion,
+      method: dto.method || 'IN_APP',
+      occurredAt: dto.occurredAt,
+      occurredAtPrecision: dto.occurredAtPrecision,
+      backdatingReason: dto.backdatingReason,
     });
   }
 
@@ -108,7 +147,8 @@ export class ReviewsController {
   }
 
   @Post('reviews/:id/override')
-  @RequirePermission('review.override')
+  @RequirePermission('review.decide')
+  @RequireIdempotency()
   async overrideReview(
     @Req() req: any,
     @Param('id') id: string,
@@ -128,11 +168,21 @@ export class ReviewsController {
 
   @Post('document-versions/:id/external-approval')
   @RequirePermission('review.record_external')
+  @RequireIdempotency()
   async recordExternalApproval(
     @Req() req: any,
     @Param('id') id: string,
-    @Body() dto: ExternalApprovalDto,
+    @Headers('if-match') ifMatch: string | undefined,
+    @Body(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true })) dto: ExternalApprovalDto,
   ) {
-    return this.reviewsService.recordExternalApproval(req.userContext, id, dto);
+    const match = ifMatch?.match(/^"([1-9]\d*)"$/);
+    if (!match) throw new HttpException({ code: 'IF_MATCH_REQUIRED', detail: 'Supply the current document version in If-Match.' }, 428);
+    return this.reviewsService.recordExternalApproval(req.userContext, id, dto, Number(match[1]));
+  }
+
+  @Get('projects/:projectId/external-review-options')
+  @RequirePermission('review.record_external')
+  async getExternalReviewOptions(@Req() req: any, @Param('projectId') projectId: string) {
+    return this.reviewsService.getExternalReviewOptions(req.userContext, projectId);
   }
 }

@@ -20,22 +20,33 @@ import { apiFetch, ApiProblemError } from "../../../../../../lib/api-client";
 interface VersionReviewDetailDto {
   versionId: string;
   documentId: string;
-  requirementId: string;
-  requirementKey: string;
+  requirementId: string | null;
+  requirementKey: string | null;
   requirementTitle: string;
   docTypeKey: string;
   assetTag: string | null;
   revisionCode: string;
-  issueDate: string;
+  issueDate: string | null;
   expiryDate: string | null;
   fileStatus: string;
   reviewStatus: string;
   pageCount: number | null;
-  sha256: string;
-  uploadedByName: string;
+  sha256: string | null;
+  uploadedByName: string | null;
   reviewerRole: string | null;
   rowVersion: number;
   reviewId: string | null;
+  companions?: Array<{
+    ruleCode: string;
+    ruleName: string;
+    companionDocType: string;
+    status: "SATISFIED" | "MISSING";
+    isMandatory: boolean;
+    message: string;
+    companionRevision?: string;
+  }>;
+  hasMissingCompanions?: boolean;
+  hasMissingMandatoryCompanions?: boolean;
   comments: Array<{
     id: string;
     pageNo: number | null;
@@ -59,7 +70,6 @@ export default function DocumentReviewWorkbenchPage() {
   const [submitting, setSubmitting] = useState(false);
 
   const [currentUser, setCurrentUser] = useState<{ id: string; name: string; orgRole: string } | null>(null);
-  const [dscSealedCode, setDscSealedCode] = useState<string | null>(null);
 
   // Decision & Comment Form State (11 §4.9)
   const [tab, setTab] = useState<"IN_APP" | "EXTERNAL">("IN_APP");
@@ -69,6 +79,10 @@ export default function DocumentReviewWorkbenchPage() {
   const [newPinVisibility, setNewPinVisibility] = useState<"EXTERNAL" | "INTERNAL">(
     "EXTERNAL",
   );
+
+  // Mobile layout & Viewer Navigation State (VQ02)
+  const [mobileTab, setMobileTab] = useState<"preview" | "dock">("preview");
+  const [targetPage, setTargetPage] = useState<number | null>(null);
 
   // External Approval Form State (WF-23 / SCR-027 / RT-022)
   const [extApproverName, setExtApproverName] = useState("");
@@ -80,7 +94,23 @@ export default function DocumentReviewWorkbenchPage() {
     "STAMPED_PDF" | "EMAIL" | "PORTAL" | "PHYSICAL"
   >("STAMPED_PDF");
   const [extReference, setExtReference] = useState("");
-  const [extEvidenceObjectId, setExtEvidenceObjectId] = useState("");
+  const [extPartyId, setExtPartyId] = useState("");
+  const [extProofVersionId, setExtProofVersionId] = useState("");
+  const [externalOptions, setExternalOptions] = useState<{
+    authorities: Array<{ id: string; name: string }>;
+    proofVersions: Array<{ id: string; title: string; revision_code: string }>;
+  } | null>(null);
+
+  useEffect(() => {
+    if (tab !== 'EXTERNAL' || !projectId) return;
+    let cancelled = false;
+    setExternalOptions(null);
+    apiFetch<{ authorities: Array<{ id: string; name: string }>; proofVersions: Array<{ id: string; title: string; revision_code: string }> }>(
+      `/api/v1/projects/${encodeURIComponent(projectId)}/external-review-options`,
+    ).then((result) => { if (!cancelled) setExternalOptions(result); })
+      .catch((optionError: any) => { if (!cancelled) setError(optionError.message || 'Could not load authorities and proof.'); });
+    return () => { cancelled = true; };
+  }, [tab, projectId]);
 
   const loadVersionDetail = useCallback(async () => {
     if (!projectId || !versionId) return;
@@ -130,7 +160,10 @@ export default function DocumentReviewWorkbenchPage() {
   const handleInAppDecision = async (
     decision: "APPROVE" | "REQUEST_CHANGES" | "REJECT",
   ) => {
-    if (!detail) return;
+    if (!detail?.reviewId) {
+      setError('A review must be assigned to you before you can record a decision.');
+      return;
+    }
     if (decision !== "APPROVE" && decisionComment.trim().length < 10) {
       setError(
         "Comment of at least 10 characters is required when requesting changes or rejecting (11 §4.9).",
@@ -153,7 +186,7 @@ export default function DocumentReviewWorkbenchPage() {
           }),
         },
       );
-      setBanner(`Decision '${decision}' committed. Requirement status updated.`);
+      setBanner(`Review decision '${decision}' recorded.`);
       await loadVersionDetail();
     } catch (err: any) {
       setError(err instanceof ApiProblemError ? err.message : "Decision failed.");
@@ -165,8 +198,8 @@ export default function DocumentReviewWorkbenchPage() {
   const handleRecordExternalApproval = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!detail) return;
-    if (!extApproverName.trim() || !extDecisionDate || !extReference.trim()) {
-      setError("Approver name, decision date, and reference are required (WF-23).");
+    if (!extApproverName.trim() || !extApproverRoleOrg.trim() || !extDecisionDate || !extReference.trim() || !extPartyId || !extProofVersionId) {
+      setError("Choose the authority and verified proof, and provide the approver, role, date and reference.");
       return;
     }
 
@@ -179,51 +212,23 @@ export default function DocumentReviewWorkbenchPage() {
           method: "POST",
           rowVersion: detail.rowVersion,
           body: JSON.stringify({
-            projectId,
-            approverName: extApproverName.trim(),
-            approverRoleOrg: extApproverRoleOrg.trim(),
-            decisionDate: extDecisionDate,
+            decision: 'APPROVE',
+            externalPartyId: extPartyId,
+            externalApproverName: extApproverName.trim(),
+            externalApproverRole: extApproverRoleOrg.trim(),
+            decidedAt: extDecisionDate,
             externalMethod: extMethod,
-            reference: extReference.trim(),
-            evidenceObjectId: extEvidenceObjectId.trim() || undefined,
+            externalReference: extReference.trim(),
+            proofVersionId: extProofVersionId,
           }),
         },
       );
       setBanner(
-        "External approval recorded. This item will be labelled 'Approved (external)' in the handover package.",
+        "External approval recorded with the selected authority and proof.",
       );
       await loadVersionDetail();
     } catch (err: any) {
       setError(err instanceof ApiProblemError ? err.message : "External approval failed.");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleApplyDsc = async () => {
-    if (!detail) return;
-    setSubmitting(true);
-    setError(null);
-    try {
-      const res = await apiFetch<any>(`/api/v1/projects/${projectId}/signatures`, {
-        method: "POST",
-        body: JSON.stringify({
-          targetType: "DOCUMENT_VERSION",
-          targetId: detail.versionId,
-          signerName: currentUser?.name || "Karthikeya Sharma",
-          signerDesignation: "Lead QA/QC Engineer",
-          signatureStandard: "CLASS_3_DSC_PKCS7",
-          certificateSerial: "EMUDHRA-DSC-2026-QC",
-          certificateIssuer: "CN=eMudhra Sub-CA, O=eMudhra Limited, C=IN",
-          certificateSubject: `CN=${currentUser?.name || "Karthikeya Sharma"}, O=Deccan EnviroTech MEP Pvt Ltd, C=IN`,
-          signedPdfSha256: detail.sha256,
-          pkcs7SignatureHex: "3082046a06092a864886f70d010702a082045b30820457020101",
-        }),
-      });
-      setDscSealedCode(res.verificationCode);
-      setBanner(`✓ Cryptographic DSC Applied: Document sealed with Class 3 DSC. Verification Code: ${res.verificationCode}`);
-    } catch (err: any) {
-      setError(err.message || "Failed to apply digital signature");
     } finally {
       setSubmitting(false);
     }
@@ -239,59 +244,101 @@ export default function DocumentReviewWorkbenchPage() {
 
   const streamUrl = `/api/v1/projects/${encodeURIComponent(
     projectId,
-  )}/document-versions/${encodeURIComponent(versionId)}/stream`;
+  )}/document-versions/${encodeURIComponent(versionId)}/stream${targetPage ? `#page=${targetPage}` : ''}`;
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#0F172A] font-sans">
-      {/* Left 70% Pane: Dark Engineering PDF Stage (SCR-025) */}
-      <div className="flex flex-1 flex-col min-w-0">
-        <header className="flex h-12 shrink-0 items-center justify-between border-b border-slate-800 bg-[#0B1120] px-4 text-xs text-slate-200">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => router.push(`/projects/${projectId}`)}
-              className="inline-flex items-center gap-1.5 rounded border border-slate-700 bg-slate-800 px-2.5 py-1 text-slate-200 hover:bg-slate-700"
-            >
-              <ArrowLeft className="h-3.5 w-3.5" />
-              <span>Back to Project</span>
-            </button>
-            {detail && (
-              <div className="flex items-center gap-2 truncate">
-                <span className="rounded bg-blue-500/20 border border-blue-400/30 px-2 py-0.5 font-mono text-[11px] font-semibold text-blue-300">
-                  {detail.requirementKey}
-                </span>
-                <span className="font-semibold text-white truncate">
-                  {detail.requirementTitle}
-                </span>
-                <span className="rounded bg-slate-800 px-2 py-0.5 font-mono text-[11px] text-slate-300">
-                  Rev {detail.revisionCode}
-                </span>
-              </div>
-            )}
-          </div>
-
-          <a
-            href={streamUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1.5 rounded border border-slate-700 bg-slate-800 px-3 py-1 text-xs font-medium text-slate-200 hover:bg-slate-700"
-          >
-            <Download className="h-3.5 w-3.5" />
-            <span>Download Original PDF</span>
-          </a>
-        </header>
-
-        {/* Real Binary PDF Stream Frame */}
-        <div className="flex-1 bg-[#1E293B] p-3">
-          <iframe
-            src={streamUrl}
-            title="Verified Engineering PDF Preview"
-            className="h-full w-full rounded border border-slate-700 bg-white shadow-2xl"
-          />
-        </div>
+    <div className="flex h-screen w-screen flex-col overflow-hidden bg-[#0F172A] font-sans">
+      {/* Mobile Tab Switcher (VQ02: Pixel/Narrow Screen usability) */}
+      <div className="flex md:hidden shrink-0 items-center justify-around border-b border-slate-700 bg-slate-900 p-1.5 text-xs">
+        <button
+          onClick={() => setMobileTab('preview')}
+          className={`flex-1 py-1.5 rounded font-medium text-center transition-colors ${
+            mobileTab === 'preview' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          Document Preview
+        </button>
+        <button
+          onClick={() => setMobileTab('dock')}
+          className={`flex-1 py-1.5 rounded font-medium text-center transition-colors ${
+            mobileTab === 'dock' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          Review & Decisions
+        </button>
       </div>
 
-      {/* Right 30% Pane: Metadata, Page Comments & Decision Dock (SCR-027) */}
-      <aside className="w-[420px] shrink-0 border-l border-slate-200 bg-white text-[#0F172A] flex flex-col justify-between overflow-y-auto">
+      <div className="flex flex-1 flex-col md:flex-row overflow-hidden min-h-0">
+        {/* Left Pane: Dark Engineering PDF Stage (SCR-025, VQ02) */}
+        <div className={`flex flex-1 flex-col min-w-0 ${mobileTab === 'dock' ? 'hidden md:flex' : 'flex'}`}>
+          <header className="flex h-12 shrink-0 items-center justify-between border-b border-slate-800 bg-[#0B1120] px-4 text-xs text-slate-200">
+            <div className="flex items-center gap-3 truncate">
+              <button
+                onClick={() => router.push(`/projects/${projectId}`)}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded border border-slate-700 bg-slate-800 px-2.5 py-1 text-slate-200 hover:bg-slate-700"
+              >
+                <ArrowLeft className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Back to Project</span>
+              </button>
+              {detail && (
+                <div className="flex items-center gap-2 truncate">
+                  <span className="rounded bg-blue-500/20 border border-blue-400/30 px-2 py-0.5 font-mono text-[11px] font-semibold text-blue-300">
+                    {detail.requirementKey || "Unlinked evidence"}
+                  </span>
+                  <span className="font-semibold text-white truncate max-w-[180px] sm:max-w-xs">
+                    {detail.requirementTitle}
+                  </span>
+                  <span className="rounded bg-slate-800 px-2 py-0.5 font-mono text-[11px] text-slate-300">
+                    Rev {detail.revisionCode}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 text-slate-300">
+                <span className="text-[11px] text-slate-400">Page:</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={detail?.pageCount || 999}
+                  placeholder="1"
+                  value={targetPage ?? ''}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value, 10);
+                    if (!isNaN(val) && val >= 1) setTargetPage(val);
+                    else if (!e.target.value) setTargetPage(null);
+                  }}
+                  className="w-14 rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 text-center text-xs text-white focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+
+              <a
+                href={streamUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 rounded border border-slate-700 bg-slate-800 px-2.5 py-1 text-xs font-medium text-slate-200 hover:bg-slate-700"
+              >
+                <Download className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Download</span>
+              </a>
+            </div>
+          </header>
+
+          {/* Real Binary PDF Stream Frame */}
+          <div className="flex-1 bg-[#1E293B] p-2 sm:p-3 min-h-0">
+            <iframe
+              src={streamUrl}
+              title="Verified Engineering PDF Preview"
+              className="h-full w-full rounded border border-slate-700 bg-white shadow-2xl"
+            />
+          </div>
+        </div>
+
+        {/* Right Pane: Metadata, Page Comments & Decision Dock (SCR-027, VQ02) */}
+        <aside className={`w-full md:w-[420px] shrink-0 border-t md:border-t-0 md:border-l border-slate-200 bg-white text-[#0F172A] flex flex-col justify-between overflow-y-auto ${
+          mobileTab === 'preview' ? 'hidden md:flex' : 'flex'
+        }`}>
         <div className="p-4 space-y-4 text-xs">
           {banner && (
             <div className="flex items-start gap-2 rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-emerald-950">
@@ -315,17 +362,63 @@ export default function DocumentReviewWorkbenchPage() {
                     Revision {detail.revisionCode} ({detail.reviewStatus})
                   </span>
                   <span className="font-mono text-[11px] text-emerald-700 font-semibold">
-                    ✓ ClamAV & qpdf Verified
+                    File status: {detail.fileStatus}
                   </span>
                 </div>
                 <div className="text-[11px] text-slate-600">
                   Equipment: <strong>{detail.assetTag || "Project-wide"}</strong> · Issue
-                  Date: <strong className="font-mono">{detail.issueDate}</strong>
+                  Date: <strong className="font-mono">{detail.issueDate || "Not recorded"}</strong>
                 </div>
                 <div className="font-mono text-[10px] text-slate-400 truncate">
-                  SHA-256: {detail.sha256}
+                  SHA-256: {detail.sha256 || "Not available"}
                 </div>
               </div>
+
+              {/* Evidence Companions & Missing Attachment Checks (Top 25 Item 6) */}
+              {detail.companions && detail.companions.length > 0 && (
+                <div className="rounded-lg border border-amber-300 bg-amber-50/80 p-3 space-y-2">
+                  <div className="flex items-center justify-between font-semibold text-amber-950">
+                    <span>Evidence Companions</span>
+                    {detail.hasMissingCompanions ? (
+                      <span className="rounded bg-amber-200 px-1.5 py-0.5 text-[10px] text-amber-900 font-bold">
+                        Missing Attachments
+                      </span>
+                    ) : (
+                      <span className="rounded bg-emerald-200 px-1.5 py-0.5 text-[10px] text-emerald-950 font-bold">
+                        ✓ All Satisfied
+                      </span>
+                    )}
+                  </div>
+                  <div className="space-y-1.5">
+                    {detail.companions.map((comp) => (
+                      <div
+                        key={comp.ruleCode}
+                        className={`rounded border p-2 text-[11px] ${
+                          comp.status === "SATISFIED"
+                            ? "border-emerald-300 bg-emerald-50 text-emerald-950"
+                            : "border-amber-300 bg-white text-amber-950"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between font-medium">
+                          <span>
+                            {comp.ruleName} ({comp.companionDocType})
+                          </span>
+                          <span
+                            className={
+                              comp.status === "SATISFIED"
+                                ? "text-emerald-700 font-bold"
+                                : "text-amber-800 font-bold"
+                            }
+                          >
+                            {comp.status === "SATISFIED" ? "✓ Satisfied" : "⚠ Missing"}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-600 mt-0.5">{comp.message}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Page-Specific Comments List (FR-REV-004) */}
               <div className="space-y-2">
@@ -335,11 +428,23 @@ export default function DocumentReviewWorkbenchPage() {
                 {detail.comments.map((c) => (
                   <div
                     key={c.id}
-                    className="rounded-lg border border-slate-200 p-2.5 space-y-1"
+                    onClick={() => {
+                      if (c.pageNo) {
+                        setTargetPage(c.pageNo);
+                        setMobileTab("preview");
+                      }
+                    }}
+                    className={`rounded-lg border border-slate-200 p-2.5 space-y-1 transition-colors ${
+                      c.pageNo ? "cursor-pointer hover:border-blue-400 hover:bg-blue-50/40" : ""
+                    }`}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="font-semibold text-slate-900">
-                        {c.pageNo ? `Page ${c.pageNo} · ` : ""}
+                      <span className="font-semibold text-slate-900 flex items-center gap-1.5">
+                        {c.pageNo && (
+                          <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-mono text-blue-700">
+                            P.{c.pageNo} ↗
+                          </span>
+                        )}
                         {c.authorName}
                       </span>
                       <span className="inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-700">
@@ -435,11 +540,12 @@ export default function DocumentReviewWorkbenchPage() {
                 <span>Uploader Mode (Site Engineer) — Review Decision Restricted</span>
               </div>
               <p className="text-[11px] leading-relaxed text-amber-900">
-                Under <strong>FR-REV-009</strong> &amp; <strong>05 §3.2 (Separation of Duties)</strong>, uploader self-approval is forbidden. As Site Execution Engineer, you may annotate and add page comments; technical approvals must be certified by Lead QC (Karthikeya Sharma) or Project Manager (Meera Deshmukh).
+                Uploaders cannot approve their own evidence. An assigned reviewer must record the technical decision.
               </p>
             </div>
           ) : tab === "IN_APP" ? (
             <div className="space-y-2.5">
+              {!detail?.reviewId && <p className="rounded bg-amber-50 p-2 text-amber-900">No review is assigned to you for this version.</p>}
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">
                   Review Decision Remarks (Min 10 chars for Request Changes / Reject)
@@ -456,7 +562,7 @@ export default function DocumentReviewWorkbenchPage() {
               <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
-                  disabled={submitting}
+                  disabled={submitting || !detail?.reviewId}
                   onClick={() => handleInAppDecision("APPROVE")}
                   className="flex items-center justify-center gap-1 rounded-md bg-emerald-700 py-2 font-semibold text-white hover:bg-emerald-800 disabled:opacity-50 cursor-pointer"
                 >
@@ -465,7 +571,7 @@ export default function DocumentReviewWorkbenchPage() {
                 </button>
                 <button
                   type="button"
-                  disabled={submitting}
+                  disabled={submitting || !detail?.reviewId}
                   onClick={() => handleInAppDecision("REQUEST_CHANGES")}
                   className="flex items-center justify-center gap-1 rounded-md bg-orange-600 py-2 font-semibold text-white hover:bg-orange-700 disabled:opacity-50 cursor-pointer"
                 >
@@ -474,7 +580,7 @@ export default function DocumentReviewWorkbenchPage() {
                 </button>
                 <button
                   type="button"
-                  disabled={submitting}
+                  disabled={submitting || !detail?.reviewId}
                   onClick={() => handleInAppDecision("REJECT")}
                   className="flex items-center justify-center gap-1 rounded-md bg-red-600 py-2 font-semibold text-white hover:bg-red-700 disabled:opacity-50 cursor-pointer"
                 >
@@ -484,21 +590,27 @@ export default function DocumentReviewWorkbenchPage() {
               </div>
 
               {currentUser?.orgRole === "R-QC" && (
-                <div className="pt-2 border-t border-slate-200">
-                  <button
-                    type="button"
-                    disabled={submitting || Boolean(dscSealedCode)}
-                    onClick={handleApplyDsc}
-                    className="w-full flex items-center justify-center gap-1.5 rounded-md bg-sky-800 py-2 font-semibold text-white hover:bg-sky-900 disabled:opacity-50 text-xs shadow-xs cursor-pointer"
-                  >
-                    <Stamp className="h-3.5 w-3.5 text-sky-300" />
-                    <span>{dscSealedCode ? `✓ Sealed (${dscSealedCode})` : "Apply Class 3 DSC Cryptographic Seal (eMudhra)"}</span>
-                  </button>
+                <div className="pt-2 border-t border-slate-200 text-xs text-slate-600">
+                  Digital signing is not enabled. Upload the signed original as evidence; TradeCloseout will not create or certify a signature.
                 </div>
               )}
             </div>
           ) : (
             <form onSubmit={handleRecordExternalApproval} className="space-y-2.5">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Project authority</label>
+                <select required value={extPartyId} onChange={(e) => setExtPartyId(e.target.value)} className="w-full rounded border border-slate-300 bg-white px-2 py-1.5">
+                  <option value="">Select an assigned authority</option>
+                  {externalOptions?.authorities.map((party) => <option key={party.id} value={party.id}>{party.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Verified proof document</label>
+                <select required value={extProofVersionId} onChange={(e) => setExtProofVersionId(e.target.value)} className="w-full rounded border border-slate-300 bg-white px-2 py-1.5">
+                  <option value="">Select the recorded response</option>
+                  {externalOptions?.proofVersions.map((proof) => <option key={proof.id} value={proof.id}>{proof.title} · Rev {proof.revision_code}</option>)}
+                </select>
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">
@@ -574,7 +686,7 @@ export default function DocumentReviewWorkbenchPage() {
 
               <button
                 type="submit"
-                disabled={submitting}
+                disabled={submitting || !externalOptions || !extPartyId || !extProofVersionId}
                 className="w-full flex items-center justify-center gap-1.5 rounded-md bg-teal-700 py-2 font-semibold text-white hover:bg-teal-800 disabled:opacity-50"
               >
                 <Stamp className="h-3.5 w-3.5" />
@@ -584,6 +696,7 @@ export default function DocumentReviewWorkbenchPage() {
           )}
         </div>
       </aside>
+      </div>
     </div>
   );
 }

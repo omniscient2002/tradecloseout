@@ -32,33 +32,55 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install qpdf for PDF bomb & linearization checks (RT-034)
-        run: sudo apt-get update && sudo apt-get install -y qpdf
+      - name: Install PDF and independent archive test tools
+        run: sudo apt-get update && sudo apt-get install -y qpdf unzip
 
       - name: Setup pnpm & Node.js 22
         uses: pnpm/action-setup@v4
         with:
-          version: 9.12.0
+          version: 12.4.1
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: 'pnpm'
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile=false
+        run: pnpm install --frozen-lockfile
+
+      - name: Install offline verifier test browser
+        run: pnpm --filter @tradecloseout/web exec playwright install --with-deps chromium
+
+      - name: Static Type Verification
+        run: pnpm typecheck
+
+      - name: Build Monorepo Workspaces
+        run: pnpm build
 
       - name: Apply PostgreSQL 16 Migrations & Forced RLS
         env:
           MIGRATOR_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/tradecloseout
         run: pnpm db:migrate
 
-      - name: Seed Deccan EnviroTech MEP Portfolio & Real Binary PDFs
+      - name: Run API, isolated DB and worker, shared, PDF and offline browser regressions
         env:
+          APP_DATABASE_URL: postgres://tc_app:app_local_pw@127.0.0.1:5432/tradecloseout
           MIGRATOR_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/tradecloseout
-        run: pnpm db:seed
+          REDIS_URL: redis://127.0.0.1:6379
+        run: pnpm test
 
       - name: Run Mandatory Negative Security & RLS Test Suite (05 §12)
         env:
-          APP_DATABASE_URL: postgres://tc_app:tc_app_pass@127.0.0.1:5432/tradecloseout
+          APP_DATABASE_URL: postgres://tc_app:app_local_pw@127.0.0.1:5432/tradecloseout
           MIGRATOR_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/tradecloseout
-        run: pnpm tsx apps/api/test/rls-and-integrity.spec.ts
+        run: pnpm test:security
+
+      - name: Preserve browser failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: offline-verifier-browser-results
+          path: |
+            apps/web/playwright-report
+            apps/web/test-results
+          if-no-files-found: ignore
