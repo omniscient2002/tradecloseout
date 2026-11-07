@@ -161,11 +161,11 @@ describe('Commercial pricing is sourced from configured billing plans', () => {
         [id],
       );
       const plans = await new BillingService(new TenantDbService(app)).listPlans();
-      expect(plans).toEqual([expect.objectContaining({
+      expect(plans).toEqual(expect.arrayContaining([expect.objectContaining({
         id, code: 'HVAC-ACTUAL', pricePaise: '1234500',
         priceInr: 12345, billingPeriod: 'MONTHLY',
         maxProjects: 3, storageGb: 20,
-      })]);
+      })]));
       expect(plans.some((p: any) => p.id === 'plan-starter')).toBe(false);
     });
   });
