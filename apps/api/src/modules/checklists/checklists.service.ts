@@ -91,6 +91,15 @@ export class ChecklistsService {
     }
 
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      // Serialize competing snapshot writers, including the first snapshot when
+      // there is no existing checklist row to lock.
+      const { rows: projectLock } = await client.query(
+        `SELECT id FROM projects WHERE org_id = $1 AND id = $2 FOR UPDATE`,
+        [ctx.orgId, projectId],
+      );
+      if (!projectLock.length) {
+        throw new NotFoundException({ code: 'PROJECT_NOT_FOUND', detail: 'Project not found.' });
+      }
       // Supersede prior ACTIVE snapshot if one exists (06 §3.5)
       const { rows: priorSnaps } = await client.query(
         `SELECT id, version_no FROM checklist_snapshots
@@ -135,17 +144,6 @@ export class ChecklistsService {
           WHERE org_id = $1 AND project_id = $2 AND status = 'ACTIVE' AND deleted_at IS NULL`,
         [ctx.orgId, projectId],
       );
-
-      // Validate the project exists inside the current tenant before resolving
-      // asset-scoped obligations. Rule evaluation occurs in template selection,
-      // not when replaying an already explicit consultant contract checklist.
-      const { rows: projRows } = await client.query(
-        `SELECT id FROM projects WHERE org_id = $1 AND id = $2`,
-        [ctx.orgId, projectId],
-      );
-      if (!projRows.length) {
-        throw new NotFoundException({ code: 'PROJECT_NOT_FOUND', detail: 'Project not found.' });
-      }
 
       // Requirements in an explicitly approved contract/consultant checklist
       // are already applicable. In particular, optional consultant records
@@ -301,6 +299,28 @@ export class ChecklistsService {
           );
         }
       }
+
+      // A new snapshot supersedes obligations removed from its scope. Leaving
+      // these active would make readiness evaluate requirements that no longer
+      // belong to the contract, or allow old evidence to satisfy a new version.
+      // jsonb_to_recordset keeps the (requirement_key, scope_key) comparison
+      // exact and parameterized, including asset-expanded requirements.
+      const activeKeys = targetInstances.map((inst) => ({
+        requirement_key: inst.spec.key,
+        scope_key: inst.scopeKey,
+      }));
+      await client.query(
+        `UPDATE requirements r
+            SET superseded_at = now(), row_version = row_version + 1, updated_at = now()
+          WHERE r.org_id = $1 AND r.project_id = $2 AND r.superseded_at IS NULL
+            AND NOT EXISTS (
+              SELECT 1 FROM jsonb_to_recordset($3::jsonb)
+                AS active(requirement_key text, scope_key text)
+               WHERE active.requirement_key = r.requirement_key
+                 AND active.scope_key = r.scope_key
+            )`,
+        [ctx.orgId, projectId, JSON.stringify(activeKeys)],
+      );
 
       emit({
         eventType: 'CHECKLIST_SNAPSHOT_CREATED',
