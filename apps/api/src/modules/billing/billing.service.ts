@@ -2,7 +2,7 @@
 // Rule 46 GST Invoicing, Section 194J TDS & Razorpay Webhooks (FR-BIL-001..012, RT-015, RT-030)
 
 import { Injectable, BadRequestException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
-import { createHmac } from 'crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
 import { PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { TenantDbService, ExecutionContext } from '../../database/tenant-db.service';
@@ -182,7 +182,7 @@ export class BillingService {
   /**
    * API-160 POST /webhooks/razorpay (Idempotent signature verification, Finding N05 & XP03)
    */
-  async handleRazorpayWebhook(payload: Record<string, any>, signature: string) {
+  async handleRazorpayWebhook(payload: Buffer | undefined, signature: string) {
     const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
     if (!webhookSecret) {
       throw new ServiceUnavailableException({
@@ -196,11 +196,15 @@ export class BillingService {
       throw new BadRequestException('PAYMENT_WEBHOOK_SIGNATURE_REQUIRED');
     }
 
-    // Verify HMAC signature
-    const bodyStr = typeof payload === 'string' ? payload : JSON.stringify(payload);
-    const expectedSignature = createHmac('sha256', webhookSecret).update(bodyStr).digest('hex');
-
-    if (expectedSignature !== signature) {
+    // Razorpay signs the exact raw bytes, not JSON.stringify(parsedBody).
+    // Malformed signatures never reach timingSafeEqual, which requires
+    // buffers of equal length.
+    if (!Buffer.isBuffer(payload)) {
+      throw new BadRequestException('PAYMENT_WEBHOOK_RAW_BODY_REQUIRED');
+    }
+    const expected = createHmac('sha256', webhookSecret).update(payload).digest();
+    const supplied = /^[a-f0-9]{64}$/i.test(signature) ? Buffer.from(signature, 'hex') : Buffer.alloc(0);
+    if (supplied.length !== expected.length || !timingSafeEqual(expected, supplied)) {
       throw new BadRequestException('INVALID_PAYMENT_WEBHOOK_SIGNATURE');
     }
 
