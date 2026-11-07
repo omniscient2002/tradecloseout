@@ -38,6 +38,7 @@ export class ProjectsService {
       contractValuePaise?: bigint;
       siteJson?: Record<string, unknown>;
       settingsJson?: Record<string, unknown>;
+      projectType?: string;
     },
   ) {
     const parsedCode = ProjectCodeSchema.safeParse(input.code);
@@ -60,8 +61,8 @@ export class ProjectsService {
       await client.query(
         `INSERT INTO projects
           (id, org_id, code, name, client_party_id, mc_party_id, consultant_party_id,
-           status, site_json, start_date, target_handover_date, settings_json, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 'DRAFT', $8, $9, $10, $11, $12)`,
+           status, site_json, start_date, target_handover_date, settings_json, created_by, project_type)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'DRAFT', $8, $9, $10, $11, $12, $13)`,
         [
           projectId,
           ctx.orgId,
@@ -75,6 +76,7 @@ export class ProjectsService {
           input.targetHandoverDate ?? null,
           JSON.stringify(settingsJson),
           ctx.userId,
+          input.projectType ?? 'PRIVATE_COMMERCIAL',
         ],
       );
 
@@ -116,6 +118,7 @@ export class ProjectsService {
     return this.createDraftProject(ctx, {
       code: dto.code,
       name: dto.name,
+      projectType: dto.projectType,
       clientPartyId: dto.clientPartyId,
       mcPartyId: dto.mcPartyId,
       consultantPartyId: dto.consultantPartyId,
@@ -351,7 +354,7 @@ export class ProjectsService {
       const { rows: acceptedSubmissions } = await client.query(
         `SELECT id FROM submissions
           WHERE org_id = $1 AND project_id = $2
-            AND status IN ('ACCEPTED', 'PARTIALLY_ACCEPTED')
+            AND status = 'ACCEPTED'
           LIMIT 1`,
         [ctx.orgId, projectId],
       );
@@ -362,17 +365,9 @@ export class ProjectsService {
         });
       }
 
-      // Precedence Rule (AUD-P-08 / FR-AST-012): Only set warranty_start where NULL
-      await client.query(
-        `UPDATE assets
-            SET warranty_start = $3,
-                row_version = row_version + 1,
-                updated_at = now()
-          WHERE org_id = $1 AND project_id = $2
-            AND warranty_start IS NULL
-            AND warranty_start_basis IN ('HANDOVER', 'ACCEPTANCE')`,
-        [ctx.orgId, projectId, closureDate],
-      );
+      // Closing a project is not itself evidence of the contractual HANDOVER
+      // or ACCEPTANCE date. Leave warranty dates unchanged until the relevant
+      // independently evidenced contractual event is recorded.
 
       const { rows: updatedRows } = await client.query(
         `UPDATE projects
