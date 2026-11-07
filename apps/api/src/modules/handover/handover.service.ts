@@ -84,11 +84,15 @@ export class HandoverService {
       );
 
       const { rows: snapshots } = await client.query(
-        `SELECT id FROM checklist_snapshots WHERE org_id = $1 AND project_id = $2
-           AND status = 'ACTIVE' LIMIT 1`,
+        `SELECT id, resolved_payload_json FROM checklist_snapshots
+          WHERE org_id = $1 AND project_id = $2
+            AND status = 'ACTIVE' LIMIT 1`,
         [ctx.orgId, projectId],
       );
-      const configured = snapshots.length > 0 &&
+      const rawConfig = snapshots[0]?.resolved_payload_json;
+      const snapshotConfig = typeof rawConfig === 'string' ? JSON.parse(rawConfig) : rawConfig;
+      const configured = Array.isArray(snapshotConfig?.requirements) &&
+        snapshotConfig.requirements.length > 0 &&
         reqs.some((r: any) => r.mandatory === true);
       const missingMandatory: any[] = [];
       const expiredMandatory: any[] = [];
@@ -161,7 +165,7 @@ export class HandoverService {
       // Recheck in the package-creation transaction so a concurrent review or evidence
       // change cannot invalidate the readiness result calculated immediately above.
       const { rows: configuredRows } = await client.query(
-        `SELECT 1
+        `SELECT s.resolved_payload_json
            FROM checklist_snapshots s
           WHERE s.org_id = $1 AND s.project_id = $2 AND s.status = 'ACTIVE'
             AND EXISTS (
@@ -173,7 +177,10 @@ export class HandoverService {
           LIMIT 1`,
         [ctx.orgId, projectId],
       );
-      if (configuredRows.length === 0) {
+      const rawSnapshot = configuredRows[0]?.resolved_payload_json;
+      const configuredSnapshot = typeof rawSnapshot === 'string' ? JSON.parse(rawSnapshot) : rawSnapshot;
+      if (!Array.isArray(configuredSnapshot?.requirements) ||
+          configuredSnapshot.requirements.length === 0) {
         throw new UnprocessableEntityException({
           code: 'NO_APPLICABLE_MANDATORY_CHECKLIST',
           detail: 'The project needs an active, non-empty checklist with mandatory requirements before handover.',
