@@ -809,7 +809,8 @@ export class ChecklistsService {
       dueDate?: string;
     },
   ) {
-    if (!dto?.key?.trim() || !dto.title?.trim() || !dto.docTypeCode?.trim()) {
+    const requiredDocType = dto?.docTypeCode?.trim();
+    if (!dto?.key?.trim() || !dto.title?.trim() || !requiredDocType) {
       throw new UnprocessableEntityException({
         code: 'REQUIREMENT_MAPPING_REQUIRED',
         detail: 'A new contractual requirement must have a key, title, and mapped document type.',
@@ -861,7 +862,7 @@ export class ChecklistsService {
         key,
         title: dto.title.trim(),
         groupKey: dto.groupKey?.trim() || 'CONSULTANT',
-        docTypeKey: dto.docTypeCode.trim(),
+        docTypeKey: requiredDocType,
         mandatory: dto.mandatory !== false,
         scopeType,
         ...(assetId ? { assetId } : {}),
