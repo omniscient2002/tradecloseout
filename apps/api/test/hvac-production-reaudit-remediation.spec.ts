@@ -272,7 +272,7 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
       delete process.env.RAZORPAY_WEBHOOK_SECRET;
 
       await expect(
-        billingService.handleRazorpayWebhook({ id: 'evt_123' }, 'fake_sig'),
+        billingService.handleRazorpayWebhook(Buffer.from('{"id":"evt_123"}'), 'fake_sig'),
       ).rejects.toThrow(ServiceUnavailableException);
     });
 
