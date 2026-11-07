@@ -1,0 +1,85 @@
+{
+  "captured_at_utc": "2026-11-07T21:00:41.549278+00:00",
+  "baseline": "cc1d1881364ea2ad27846de4c4af78f48e536664",
+  "application_commit": "2b1cf2c76727d711576fec6ce83fb6d1ce69d941",
+  "github_default_branch": "main",
+  "probes": [
+    {
+      "probe": "existing_project_empty_checklist",
+      "result": {
+        "readyWithoutOverride": true,
+        "blockers": {
+          "missingMandatoryCount": 0,
+          "expiredMandatoryCount": 0,
+          "missingMandatory": [],
+          "expiredMandatory": []
+        },
+        "warnings": {
+          "expiringSoonCount": 0,
+          "expiringWarnings": []
+        }
+      }
+    },
+    {
+      "probe": "nonexistent_project_readiness",
+      "result": {
+        "readyWithoutOverride": true,
+        "blockers": {
+          "missingMandatoryCount": 0,
+          "expiredMandatoryCount": 0,
+          "missingMandatory": [],
+          "expiredMandatory": []
+        },
+        "warnings": {
+          "expiringSoonCount": 0,
+          "expiringWarnings": []
+        }
+      }
+    },
+    {
+      "probe": "project_type_roundtrip",
+      "requested": "HOSPITAL",
+      "persisted": "PRIVATE_COMMERCIAL"
+    },
+    {
+      "probe": "default_snapshot",
+      "errorCode": "42703",
+      "message": "column \"client_type\" does not exist"
+    },
+    {
+      "probe": "consultant_import",
+      "errorCode": "42703",
+      "message": "column \"snapshot_json\" does not exist"
+    },
+    {
+      "probe": "closure_partial_submission_without_package_or_checklist",
+      "status": "CLOSED"
+    }
+  ],
+  "checks": {
+    "typecheck": "PASS",
+    "api_build": "PASS",
+    "root_test": "PASS",
+    "api": {
+      "suites": 26,
+      "tests": 232
+    },
+    "db_tests_including_parent": 10,
+    "shared_tests": 44,
+    "archive_browser_tests": 6,
+    "pdf_scripted_checks": 3,
+    "worker_tests_including_parent": 13
+  },
+  "limits": [
+    "Service probes, not fresh public HTTP exploit tests",
+    "No real provider, payment, deployment, load or restore acceptance"
+  ],
+  "source_sha256": {
+    "apps/api/src/modules/checklists/checklists.service.ts": "f4363fbef91e0bb93525d7de6a989b42ff4d2d3e36eec1e15b48bc8361b53881",
+    "apps/api/src/modules/projects/projects.service.ts": "3d9d68c96eaec526815a488837639b1fd63f334cd4d7e3516b88519bef216faa",
+    "apps/api/src/modules/handover/handover.service.ts": "3762bcb1d403df18c8481121f64e912b745978e9bc14c80ca336153bdc75c7b5",
+    "apps/api/src/modules/billing/billing.service.ts": "0eec31999eb4338a9a388f20258e05df77476efe1ce863aace6016684cb2b0a2",
+    "packages/db/src/catalogue-rules.ts": "2eaeb6a0dd1095341d8cd5ab36171fa425a1671544d30d2b2b4128942b36a1bc",
+    "packages/db/migrations/0000_complete_v021_schema_and_rls.sql": "0704f4f1c5abea5eaa1c6663646c1abe58a793a23440c3293a6d238fa9a9ca8b"
+  }
+}

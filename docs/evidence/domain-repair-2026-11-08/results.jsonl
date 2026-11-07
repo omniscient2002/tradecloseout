@@ -1,0 +1,6 @@
+{"probe":"existing_project_empty_checklist","result":{"readyWithoutOverride":true,"blockers":{"missingMandatoryCount":0,"expiredMandatoryCount":0,"missingMandatory":[],"expiredMandatory":[]},"warnings":{"expiringSoonCount":0,"expiringWarnings":[]}}}
+{"probe":"nonexistent_project_readiness","result":{"readyWithoutOverride":true,"blockers":{"missingMandatoryCount":0,"expiredMandatoryCount":0,"missingMandatory":[],"expiredMandatory":[]},"warnings":{"expiringSoonCount":0,"expiringWarnings":[]}}}
+{"probe":"project_type_roundtrip","requested":"HOSPITAL","persisted":"PRIVATE_COMMERCIAL"}
+{"probe":"default_snapshot","errorCode":"42703","message":"column \"client_type\" does not exist"}
+{"probe":"consultant_import","errorCode":"42703","message":"column \"snapshot_json\" does not exist"}
+{"probe":"closure_partial_submission_without_package_or_checklist","status":"CLOSED"}
