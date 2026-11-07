@@ -929,6 +929,27 @@ export class HandoverService {
       });
     }
     return withTenantTransaction(this.pool, ctx, async (client, emit) => {
+      // The legacy packages/:id/submit route supplies only a package ID.
+      // Resolve the project from that tenant-owned package, never from a
+      // missing/empty UUID or an untrusted request body.
+      let targetProjectId = projectId;
+      if (!targetProjectId) {
+        if (!dto.packageId) {
+          throw new UnprocessableEntityException({
+            code: 'PROJECT_OR_PACKAGE_REQUIRED',
+            detail: 'Provide a project or an existing handover package.',
+          });
+        }
+        const { rows: ownedPackage } = await client.query(
+          `SELECT project_id FROM handover_packages
+             WHERE org_id = $1 AND id = $2`,
+          [ctx.orgId, dto.packageId],
+        );
+        if (!ownedPackage.length) {
+          throw new NotFoundException('HANDOVER_PACKAGE_NOT_FOUND');
+        }
+        targetProjectId = ownedPackage[0].project_id;
+      }
       // The package must belong to this project, be the newest revision, and
       // have completed real artifact generation. Never submit QUEUED/FAILED
       // packages or older versions after a corrected dossier is generated.
@@ -936,7 +957,7 @@ export class HandoverService {
         `SELECT hp.id, hp.status FROM handover_packages hp
            WHERE hp.org_id = $1 AND hp.project_id = $2
            ORDER BY hp.version_no DESC LIMIT 1 FOR UPDATE`,
-        [ctx.orgId, projectId],
+        [ctx.orgId, targetProjectId],
       );
       if (latestPkg.length === 0) {
         throw new NotFoundException('No handover package found for project');
@@ -953,7 +974,7 @@ export class HandoverService {
       await client.query(
         `INSERT INTO submissions (id, org_id, project_id, package_id, status, submitted_by, submitted_at, cover_note)
          VALUES ($1, $2, $3, $4, 'SUBMITTED', $5, now(), $6)`,
-        [submissionId, ctx.orgId, projectId, packageId, ctx.userId, dto.coverNote || null],
+        [submissionId, ctx.orgId, targetProjectId, packageId, ctx.userId, dto.coverNote || null],
       );
 
       for (const rec of dto.recipients) {
@@ -964,7 +985,7 @@ export class HandoverService {
           [
             uuidv7(),
             ctx.orgId,
-            projectId,
+            targetProjectId,
             submissionId,
             rec.partyId || null,
             rec.name,
@@ -977,7 +998,7 @@ export class HandoverService {
 
       emit({
         eventType: 'SUBMISSION_DISPATCHED',
-        projectId,
+        projectId: targetProjectId,
         entityType: 'SUBMISSION',
         entityId: submissionId,
         afterJson: { packageId, recipientCount: dto.recipients.length },
