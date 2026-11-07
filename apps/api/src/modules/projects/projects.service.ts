@@ -362,18 +362,50 @@ export class ProjectsService {
         });
       }
 
-      // 3. Accepted handover submission required
+      // 3. Accept the CURRENT dossier revision, not any historic submission.
+      // A later package or updated checklist invalidates older acceptance for
+      // full-project closure. Required recipients must all have accepted.
       const { rows: acceptedSubmissions } = await client.query(
-        `SELECT id FROM submissions
-          WHERE org_id = $1 AND project_id = $2
-            AND status = 'ACCEPTED'
+        `SELECT s.id
+           FROM submissions s
+           JOIN handover_packages hp
+             ON hp.org_id = s.org_id AND hp.project_id = s.project_id
+            AND hp.id = s.package_id
+           JOIN checklist_snapshots cs
+             ON cs.org_id = hp.org_id AND cs.project_id = hp.project_id
+            AND cs.id = hp.snapshot_id AND cs.status = 'ACTIVE'
+            AND cs.checksum = hp.snapshot_checksum
+          WHERE s.org_id = $1 AND s.project_id = $2
+            AND s.status = 'ACCEPTED' AND hp.status = 'ACCEPTED'
+            AND hp.version_no = (
+              SELECT MAX(p.version_no) FROM handover_packages p
+               WHERE p.org_id = $1 AND p.project_id = $2
+            )
+            AND s.id = (
+              SELECT s2.id FROM submissions s2
+               WHERE s2.org_id = s.org_id AND s2.project_id = s.project_id
+                 AND s2.package_id = hp.id
+               ORDER BY s2.submitted_at DESC, s2.id DESC LIMIT 1
+            )
+            AND EXISTS (
+              SELECT 1 FROM submission_recipients sr
+               WHERE sr.org_id = s.org_id AND sr.submission_id = s.id
+                 AND sr.is_required_approver = true AND sr.status = 'ACCEPTED'
+                 AND sr.decided_at IS NOT NULL
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM submission_recipients sr
+               WHERE sr.org_id = s.org_id AND sr.submission_id = s.id
+                 AND sr.is_required_approver = true
+                 AND (sr.status <> 'ACCEPTED' OR sr.decided_at IS NULL)
+            )
           LIMIT 1`,
         [ctx.orgId, projectId],
       );
       if (acceptedSubmissions.length === 0) {
         throw new ConflictException({
           code: 'HANDOVER_SUBMISSION_NOT_ACCEPTED',
-          detail: 'Cannot close project: no accepted handover submission found. Record recipient acceptance before closing.',
+          detail: 'Cannot close project: the latest handover package and active checklist must have valid acceptance from every required recipient.',
         });
       }
 
