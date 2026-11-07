@@ -52,6 +52,7 @@ export class ChecklistsService {
     layers: ConfigLayerInput[],
     changeRequestId?: string,
     changeReason = 'Initial project checklist snapshot',
+    transaction?: { client: PoolClient; emit: (ev: DomainOutboxEvent) => void },
   ) {
     const resolved = resolveConfigurationHierarchy(layers);
     if (resolved.conflicts.length > 0) {
@@ -90,7 +91,7 @@ export class ChecklistsService {
       seenKeys.add(spec.key);
     }
 
-    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+    const applySnapshot = async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
       // Serialize competing snapshot writers, including the first snapshot when
       // there is no existing checklist row to lock.
       const { rows: projectLock } = await client.query(
@@ -371,7 +372,12 @@ export class ChecklistsService {
         checksum: resolved.checksum,
         instantiatedRequirements: targetInstances.length,
       };
-    });
+    };
+    // Import/reapply callers provide a transaction which already holds the
+    // project lock. Never commit the baseline read before this write.
+    return transaction
+      ? applySnapshot(transaction.client, transaction.emit)
+      : withTenantTransaction(this.pool, ctx, applySnapshot);
   }
 
   /**
