@@ -375,10 +375,16 @@ export class DocumentsService {
       // If documentId specified, enforce AUD-P-04 revision code uniqueness
       if (documentId) {
         const parentDocument = await client.query(
-          `SELECT id FROM documents WHERE org_id = $1 AND project_id = $2 AND id = $3 FOR UPDATE`,
+          `SELECT id, doc_type_key FROM documents WHERE org_id = $1 AND project_id = $2 AND id = $3 FOR UPDATE`,
           [ctx.orgId, projectId, documentId],
         );
         if (!parentDocument.rows.length) throw new NotFoundException('DOCUMENT_NOT_FOUND_IN_PROJECT');
+        if (linkedDocumentType && parentDocument.rows[0].doc_type_key !== linkedDocumentType) {
+          throw new BadRequestException({
+            code: 'DOCUMENT_TYPE_MISMATCH',
+            detail: 'An existing document cannot satisfy a requirement of another type.',
+          });
+        }
         const dupRev = await client.query(
           `SELECT id FROM document_versions 
             WHERE org_id = $1 AND project_id = $2 AND document_id = $3 AND upper(revision_code) = upper($4)`,
