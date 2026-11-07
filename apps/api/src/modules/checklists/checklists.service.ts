@@ -205,6 +205,17 @@ export class ChecklistsService {
           [ctx.orgId, projectId, inst.spec.key, inst.scopeKey],
         );
 
+        // The canonical DB column is NOT NULL. A consultant import does not
+        // choose review authority; preserve an existing trusted policy, otherwise
+        // use the same server-defined R-QC policy as the SQL column default.
+        const reviewerRole = inst.spec.reviewerRole ?? existingRows[0]?.reviewer_role ?? 'R-QC';
+        if (!['R-QC', 'R-PM', 'R-OWNER', 'R-ADMIN', 'R-REVIEWER', 'R-CONSULTANT'].includes(reviewerRole)) {
+          throw new UnprocessableEntityException({
+            code: 'INVALID_REVIEWER_ROLE',
+            detail: 'Checklist reviewer role must be an authorized review role.',
+          });
+        }
+
         const dueAtSql =
           typeof inst.spec.dueOffsetDays === 'number'
             ? new Date(Date.now() + inst.spec.dueOffsetDays * 86_400_000).toISOString()
@@ -231,7 +242,7 @@ export class ChecklistsService {
               inst.spec.description ?? null,
               inst.spec.docTypeKey,
               inst.spec.mandatory,
-              inst.spec.reviewerRole ?? null,
+              reviewerRole,
               dueAtSql,
             ],
           );
@@ -255,6 +266,22 @@ export class ChecklistsService {
           );
         } else {
           const ex = existingRows[0];
+          const semanticChange =
+            ex.title !== inst.spec.title ||
+            ex.doc_type_key !== inst.spec.docTypeKey ||
+            ex.mandatory !== inst.spec.mandatory ||
+            ex.reviewer_role !== reviewerRole;
+          // An exception is valid for the obligation that was approved, not
+          // for a materially different document, scope, or approval policy.
+          // Keep the historical waiver record but remove its ACTIVE effect.
+          if (semanticChange) {
+            await client.query(
+              `UPDATE waivers SET status = 'SUPERSEDED'
+                 WHERE org_id = $1 AND project_id = $2 AND requirement_id = $3
+                   AND status IN ('ACTIVE', 'PENDING_SECOND_APPROVAL')`,
+              [ctx.orgId, projectId, ex.id],
+            );
+          }
           await client.query(
             `UPDATE requirements
                 SET current_snapshot_id = $4,
@@ -262,6 +289,7 @@ export class ChecklistsService {
                     doc_type_key = $6,
                     mandatory = $7,
                     reviewer_role = $8,
+                    status = CASE WHEN $9::boolean AND status IN ('WAIVED','NOT_APPLICABLE','PENDING_WAIVER') THEN 'NOT_STARTED' ELSE status END,
                     row_version = row_version + 1,
                     updated_at = now()
               WHERE org_id = $1 AND project_id = $2 AND id = $3`,
@@ -273,7 +301,8 @@ export class ChecklistsService {
               inst.spec.title,
               inst.spec.docTypeKey,
               inst.spec.mandatory,
-              inst.spec.reviewerRole ?? null,
+              reviewerRole,
+              semanticChange,
             ],
           );
 
@@ -290,8 +319,10 @@ export class ChecklistsService {
               snapshotId,
               changeRequestId ?? null,
               JSON.stringify({
-                before: { title: ex.title, mandatory: ex.mandatory },
-                after: { title: inst.spec.title, mandatory: inst.spec.mandatory },
+                before: { title: ex.title, docTypeKey: ex.doc_type_key, mandatory: ex.mandatory, reviewerRole: ex.reviewer_role },
+                after: { title: inst.spec.title, docTypeKey: inst.spec.docTypeKey, mandatory: inst.spec.mandatory, reviewerRole },
+                semanticChange,
+                waiversSuperseded: semanticChange,
               }),
               changeReason,
               ctx.userId,
