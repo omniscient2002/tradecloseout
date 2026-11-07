@@ -57,6 +57,7 @@ export class HandoverService {
              JOIN documents d
                ON d.org_id = dr.org_id AND d.project_id = dr.project_id AND d.id = dr.document_id
               AND d.deleted_at IS NULL AND d.status = 'ACTIVE'
+              AND d.doc_type_key = r.doc_type_key
              JOIN document_versions dv
                ON dv.org_id = d.org_id AND dv.project_id = d.project_id
               AND dv.document_id = d.id AND dv.id = d.current_approved_version_id
@@ -204,6 +205,7 @@ export class HandoverService {
                 JOIN documents d
                   ON d.org_id = dr.org_id AND d.project_id = dr.project_id AND d.id = dr.document_id
                  AND d.deleted_at IS NULL AND d.status = 'ACTIVE'
+              AND d.doc_type_key = r.doc_type_key
                 JOIN document_versions dv
                   ON dv.org_id = d.org_id AND dv.project_id = d.project_id
                  AND dv.document_id = d.id AND dv.id = d.current_approved_version_id
@@ -308,6 +310,7 @@ export class HandoverService {
              JOIN documents d
                ON d.org_id = dr.org_id AND d.project_id = dr.project_id AND d.id = dr.document_id
               AND d.deleted_at IS NULL AND d.status = 'ACTIVE'
+              AND d.doc_type_key = r.doc_type_key
              JOIN document_versions dv
                ON dv.org_id = d.org_id AND dv.project_id = d.project_id
               AND dv.document_id = d.id AND dv.id = d.current_approved_version_id
@@ -681,6 +684,7 @@ export class HandoverService {
            JOIN documents d
              ON d.org_id = dr.org_id AND d.project_id = dr.project_id AND d.id = dr.document_id
             AND d.deleted_at IS NULL AND d.status = 'ACTIVE'
+              AND d.doc_type_key = r.doc_type_key
            JOIN document_versions dv
              ON dv.org_id = d.org_id AND dv.project_id = d.project_id
             AND dv.document_id = d.id AND dv.id = d.current_approved_version_id
