@@ -1,8 +1,8 @@
 // apps/api/src/modules/billing/billing.service.ts
 // Rule 46 GST Invoicing, Section 194J TDS & Razorpay Webhooks (FR-BIL-001..012, RT-015, RT-030)
 
-import { Injectable, BadRequestException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
-import { createHmac, timingSafeEqual } from 'crypto';
+import { Injectable, BadRequestException, ConflictException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { createHmac, createHash, timingSafeEqual } from 'crypto';
 import { PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { TenantDbService, ExecutionContext } from '../../database/tenant-db.service';
@@ -182,37 +182,83 @@ export class BillingService {
   /**
    * API-160 POST /webhooks/razorpay (Idempotent signature verification, Finding N05 & XP03)
    */
-  async handleRazorpayWebhook(payload: Buffer | undefined, signature: string) {
+  async handleRazorpayWebhook(
+    payload: Buffer | undefined,
+    signature: string,
+    razorpayEventId?: string,
+  ) {
     const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
     if (!webhookSecret) {
       throw new ServiceUnavailableException({
         code: 'PAYMENT_WEBHOOK_NOT_CONFIGURED',
-        title: 'Payment webhook unavailable',
-        detail: 'Razorpay webhook processing is disabled until HMAC verification and durable processing are configured (XP03/XP22).',
+        detail: 'Configure a Razorpay webhook secret before accepting events.',
       });
     }
-
-    if (!signature) {
+    if (!Buffer.isBuffer(payload) || payload.length === 0 || payload.length > 256 * 1024) {
+      throw new BadRequestException('PAYMENT_WEBHOOK_INVALID_RAW_BODY');
+    }
+    if (!signature || !/^[a-f0-9]{64}$/i.test(signature)) {
       throw new BadRequestException('PAYMENT_WEBHOOK_SIGNATURE_REQUIRED');
     }
-
-    // Razorpay signs the exact raw bytes, not JSON.stringify(parsedBody).
-    // Malformed signatures never reach timingSafeEqual, which requires
-    // buffers of equal length.
-    if (!Buffer.isBuffer(payload)) {
-      throw new BadRequestException('PAYMENT_WEBHOOK_RAW_BODY_REQUIRED');
-    }
+    // Verify Razorpay's HMAC over the exact received request bytes.
     const expected = createHmac('sha256', webhookSecret).update(payload).digest();
-    const supplied = /^[a-f0-9]{64}$/i.test(signature) ? Buffer.from(signature, 'hex') : Buffer.alloc(0);
-    if (supplied.length !== expected.length || !timingSafeEqual(expected, supplied)) {
+    const supplied = Buffer.from(signature, 'hex');
+    if (!timingSafeEqual(expected, supplied)) {
       throw new BadRequestException('INVALID_PAYMENT_WEBHOOK_SIGNATURE');
     }
+    // Razorpay sends a distinct event ID as an HTTP header. Never use its
+    // business entity IDs (payment/subscription) for webhook deduplication.
+    if (!razorpayEventId || !/^[A-Za-z0-9_-]{8,128}$/.test(razorpayEventId)) {
+      throw new BadRequestException('PAYMENT_WEBHOOK_EVENT_ID_REQUIRED');
+    }
+    let body: Record<string, any>;
+    try {
+      body = JSON.parse(payload.toString('utf8'));
+    } catch {
+      throw new BadRequestException('PAYMENT_WEBHOOK_INVALID_JSON');
+    }
+    if (!body || typeof body !== 'object' || Array.isArray(body) ||
+        typeof body.event !== 'string' || !/^[a-z0-9._-]{3,128}$/.test(body.event) ||
+        !body.payload || typeof body.payload !== 'object' || Array.isArray(body.payload)) {
+      throw new BadRequestException('PAYMENT_WEBHOOK_INVALID_EVENT');
+    }
 
-    // V03: Never falsely claim PROCESSED_IDEMPOTENTLY until durable inbox ledger is active
-    throw new ServiceUnavailableException({
-      code: 'PAYMENT_WEBHOOK_PROCESSING_UNAVAILABLE',
-      title: 'Payment webhook processing unavailable',
-      detail: 'Webhook ingestion is disabled until raw-body verification and durable event inbox ledger are enabled.',
-    });
+    // Security boundary: this write-only function stores authenticated global
+    // events without tenant context. It performs NO subscription update, invoice
+    // payment, entitlement grant or payment settlement. Business processing
+    // requires an independently mapped provider reference and reconciliation.
+    let outcome: string;
+    try {
+      const result = await this.db.getPool().query(
+        `SELECT record_verified_razorpay_webhook($1::uuid, $2::text, $3::text, $4::text, $5::jsonb) AS outcome`,
+        [
+          uuidv7(),
+          razorpayEventId,
+          body.event,
+          createHash('sha256').update(payload).digest('hex'),
+          JSON.stringify(body),
+        ],
+      );
+      outcome = result.rows[0]?.outcome;
+    } catch {
+      // Tell Razorpay to retry. Never acknowledge an event that was not
+      // durably recorded, even if its signature was valid.
+      throw new ServiceUnavailableException({
+        code: 'PAYMENT_WEBHOOK_INBOX_UNAVAILABLE',
+        detail: 'Verified event could not be durably recorded. Retry delivery.',
+      });
+    }
+    if (outcome === 'PAYLOAD_CONFLICT') {
+      throw new ConflictException('PAYMENT_WEBHOOK_EVENT_ID_COLLISION');
+    }
+    if (outcome !== 'RECEIVED' && outcome !== 'DUPLICATE') {
+      throw new ServiceUnavailableException('PAYMENT_WEBHOOK_RECEIPT_UNCONFIRMED');
+    }
+    return {
+      status: 'RECEIVED_FOR_RECONCILIATION',
+      eventId: razorpayEventId,
+      duplicate: outcome === 'DUPLICATE',
+      processed: false,
+    };
   }
 }
