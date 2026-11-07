@@ -385,27 +385,35 @@ export class ChecklistsService {
    * not substitute a fake one-item handover dossier when no template exists.
    */
   async createSnapshot(ctx: TenantActorContext, projectId: string, dto?: { comment?: string }) {
-    const existing = await withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      // Lock BEFORE reading the baseline, so reapply cannot overwrite a
+      // concurrent consultant import with a stale snapshot.
+      const { rows: projectRows } = await client.query(
+        `SELECT id FROM projects WHERE org_id = $1 AND id = $2 FOR UPDATE`,
+        [ctx.orgId, projectId],
+      );
+      if (!projectRows.length) throw new NotFoundException('PROJECT_NOT_FOUND');
       const { rows } = await client.query(
         `SELECT resolved_payload_json FROM checklist_snapshots
            WHERE org_id = $1 AND project_id = $2 AND status = 'ACTIVE'
            ORDER BY version_no DESC LIMIT 1`,
         [ctx.orgId, projectId],
       );
-      return rows[0]?.resolved_payload_json;
+      const existing = rows[0]?.resolved_payload_json;
+      const payload = typeof existing === 'string' ? JSON.parse(existing) : existing;
+      if (!Array.isArray(payload?.requirements) || payload.requirements.length === 0) {
+        throw new UnprocessableEntityException({
+          code: 'CHECKLIST_CONFIGURATION_REQUIRED',
+          detail: 'Import a consultant checklist or configure a real HVAC template before creating a snapshot.',
+        });
+      }
+      return this.createAndApplySnapshot(
+        ctx, projectId,
+        [{ level: 'PROJECT', versionId: uuidv7(), payload: { requirements: payload.requirements } }],
+        undefined, dto?.comment || 'Reapply configured checklist',
+        { client, emit },
+      );
     });
-    const payload = typeof existing === 'string' ? JSON.parse(existing) : existing;
-    if (!Array.isArray(payload?.requirements) || payload.requirements.length === 0) {
-      throw new UnprocessableEntityException({
-        code: 'CHECKLIST_CONFIGURATION_REQUIRED',
-        detail: 'Import a consultant checklist or configure a real HVAC template before creating a snapshot.',
-      });
-    }
-    return this.createAndApplySnapshot(
-      ctx, projectId,
-      [{ level: 'PROJECT', versionId: uuidv7(), payload: { requirements: payload.requirements } }],
-      undefined, dto?.comment || 'Reapply configured checklist',
-    );
   }
 
   /**
