@@ -148,3 +148,25 @@ describe('Remaining production gap: verified Razorpay webhook inbox', () => {
     });
   });
 });
+
+describe('Commercial pricing is sourced from configured billing plans', () => {
+  it('never advertises fabricated plan IDs or stale hard-coded prices', async () => {
+    await withDisposableDatabase(async ({ admin, app }) => {
+      const id = uuidv7();
+      await admin.query(
+        `INSERT INTO plans(id, code, name, limits_json, price_paise, interval, status)
+         VALUES($1, 'HVAC-ACTUAL', 'Verified closeout plan',
+                '{"maxActiveProjects":3,"maxStorageBytes":21474836480}'::jsonb,
+                1234500, 'MONTH', 'ACTIVE')`,
+        [id],
+      );
+      const plans = await new BillingService(new TenantDbService(app)).listPlans();
+      expect(plans).toEqual([expect.objectContaining({
+        id, code: 'HVAC-ACTUAL', pricePaise: '1234500',
+        priceInr: 12345, billingPeriod: 'MONTHLY',
+        maxProjects: 3, storageGb: 20,
+      })]);
+      expect(plans.some((p: any) => p.id === 'plan-starter')).toBe(false);
+    });
+  });
+});
