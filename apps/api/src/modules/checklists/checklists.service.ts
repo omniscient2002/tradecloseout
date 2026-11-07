@@ -444,16 +444,21 @@ export class ChecklistsService {
       });
     }
 
-    // Read with the tenant/RLS context and use the actual persisted JSON field.
-    const currentSnapshot = await withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
-      const { rows } = await client.query(
+    // Read AND apply in the same RLS-bound transaction, after taking the
+    // project lock. A second importer observes the first committed snapshot.
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      const { rows: projectRows } = await client.query(
+        `SELECT id FROM projects WHERE org_id = $1 AND id = $2 FOR UPDATE`,
+        [ctx.orgId, projectId],
+      );
+      if (!projectRows.length) throw new NotFoundException('PROJECT_NOT_FOUND');
+      const { rows: activeSnapshots } = await client.query(
         `SELECT resolved_payload_json FROM checklist_snapshots
            WHERE org_id = $1 AND project_id = $2 AND status = 'ACTIVE'
            ORDER BY version_no DESC LIMIT 1`,
         [ctx.orgId, projectId],
       );
-      return rows[0]?.resolved_payload_json;
-    });
+      const currentSnapshot = activeSnapshots[0]?.resolved_payload_json;
     const existingPayload = typeof currentSnapshot === 'string' ? JSON.parse(currentSnapshot) : currentSnapshot;
     const existingReqs: ResolvedRequirementSpec[] =
       Array.isArray(existingPayload?.requirements) ? existingPayload.requirements : [];
@@ -506,7 +511,9 @@ export class ChecklistsService {
       [{ level: 'PROJECT', versionId: uuidv7(), payload: { requirements: combinedReqs } }],
       undefined,
       dto.profileName || 'Consultant Checklist Import',
+      { client, emit },
     );
+    });
   }
 
   /**
