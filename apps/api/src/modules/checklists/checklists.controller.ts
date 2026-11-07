@@ -26,7 +26,7 @@ export class ChecklistsController {
   }
 
   @Post('projects/:projectId/requirements')
-  @RequirePermission('document.upload')
+  @RequirePermission('checklist.manage')
   async createRequirement(
     @Req() req: any,
     @Param('projectId') projectId: string,
