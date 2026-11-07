@@ -16,45 +16,32 @@ export class BillingService {
    * Fix Business Risk 5: Includes Single-Project Closeout Pass (interval = ONE_TIME_PROJECT)
    */
   async listPlans() {
-    return [
-      {
-        id: 'plan-starter',
-        code: 'STARTER',
-        name: 'Starter Tier',
-        priceInr: 4999,
-        billingPeriod: 'MONTHLY',
-        maxProjects: 2,
-        storageGb: 20,
-      },
-      {
-        id: 'plan-growth',
-        code: 'GROWTH',
-        name: 'Growth Tier',
-        priceInr: 9999,
-        billingPeriod: 'MONTHLY',
-        maxProjects: 10,
-        storageGb: 100,
-      },
-      {
-        id: 'plan-project-pass',
-        code: 'PROJECT_PASS',
-        name: 'Single-Project Closeout Pass',
-        priceInr: 24999,
-        billingPeriod: 'ONE_TIME_PROJECT',
-        maxProjects: 1,
-        storageGb: 10,
-        description: '18 months active execution + 8 years read-only DLP/audit archive hosting. Billable to site prelims.',
-      },
-      {
-        id: 'plan-enterprise',
-        code: 'ENTERPRISE',
-        name: 'Enterprise Tier',
-        priceInr: 49999,
-        billingPeriod: 'MONTHLY',
-        maxProjects: 50,
-        storageGb: 1000,
-      },
-    ];
+    // Prices and entitlements come only from activated billing configuration.
+    // Previously this endpoint fabricated plan IDs and fixed INR prices that
+    // did not necessarily exist in the database or payment provider.
+    const { rows } = await this.db.getPool().query(
+      `SELECT id, code, name, price_paise::text AS price_paise,
+              interval, limits_json
+         FROM plans WHERE status = 'ACTIVE'
+         ORDER BY price_paise ASC, code ASC`,
+    );
+    return rows.map((plan: any) => {
+      const limits = plan.limits_json || {};
+      const pricePaise = BigInt(plan.price_paise);
+      return {
+        id: plan.id,
+        code: plan.code,
+        name: plan.name,
+        pricePaise: pricePaise.toString(),
+        priceInr: Number(pricePaise) / 100,
+        billingPeriod: ['MONTH', 'MONTHLY'].includes(plan.interval) ? 'MONTHLY'
+          : ['YEAR', 'ANNUAL'].includes(plan.interval) ? 'ANNUAL' : plan.interval,
+        maxProjects: limits.maxActiveProjects ?? null,
+        storageGb: limits.maxStorageBytes != null
+          ? Number(limits.maxStorageBytes) / (1024 ** 3) : null,
+        limits,
+      };
+    });
   }
 
   /**
