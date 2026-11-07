@@ -73,7 +73,7 @@ describe('Sol Integrity & Audit Invariants Suite', () => {
 
       expect(res.versionId).toBeDefined();
       // Verify parent document was locked FOR UPDATE before MAX(version_no) query
-      const lockIndex = executedQueries.findIndex((q) => q.includes('SELECT id FROM documents WHERE org_id = $1 AND id = $2 FOR UPDATE'));
+      const lockIndex = executedQueries.findIndex((q) => q.includes('SELECT id, doc_type_key FROM documents WHERE org_id = $1 AND project_id = $2 AND id = $3 FOR UPDATE'));
       const maxIndex = executedQueries.findIndex((q) => q.includes('SELECT COALESCE(MAX(version_no), 0)'));
       expect(lockIndex).toBeGreaterThanOrEqual(0);
       expect(maxIndex).toBeGreaterThan(lockIndex);
