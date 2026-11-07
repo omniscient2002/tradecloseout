@@ -15,7 +15,6 @@ import {
   withTenantTransaction,
   TenantActorContext,
   DomainOutboxEvent,
-  ProjectApplicabilityContext,
 } from '@tradecloseout/db';
 import {
   resolveConfigurationHierarchy,
@@ -137,30 +136,16 @@ export class ChecklistsService {
         [ctx.orgId, projectId],
       );
 
-      // Query project attributes to drive deterministic rule evaluation (04 §7 R-001..R-013, Bug 5: 10.0/10)
+      // Validate the project exists inside the current tenant before resolving
+      // asset-scoped obligations. Rule evaluation occurs in template selection,
+      // not when replaying an already explicit consultant contract checklist.
       const { rows: projRows } = await client.query(
-        `SELECT project_type, settings_json FROM projects WHERE org_id = $1 AND id = $2`,
+        `SELECT id FROM projects WHERE org_id = $1 AND id = $2`,
         [ctx.orgId, projectId],
       );
-      const proj = projRows[0];
-      if (!proj) {
+      if (!projRows.length) {
         throw new NotFoundException({ code: 'PROJECT_NOT_FOUND', detail: 'Project not found.' });
       }
-      const settings = (proj.settings_json || {}) as Record<string, any>;
-      const presentAssetCategories = Array.from(new Set(projectAssets.map((a: any) => a.category_key)));
-
-      const applicabilityCtx: ProjectApplicabilityContext = {
-        projectType: proj.project_type === 'GOVT_PWD' ? 'GOVERNMENT' : proj.project_type,
-        clientType: ['PRIVATE', 'GOVERNMENT', 'CPWD', 'PSU'].includes(settings.clientType)
-          ? settings.clientType : 'PRIVATE',
-        contractHasBms: !!settings.contractHasBms,
-        contractDlpMonths: Number(settings.contractDlpMonths ?? 12),
-        maxRefrigerantChargeKg: Number(settings.maxRefrigerantChargeKg ?? 10),
-        consultantRequiresStampedDrawings: !!settings.consultantRequiresStampedDrawings,
-        presentAssetCategories,
-        hazardousVoltagePresent: !!settings.hazardousVoltagePresent,
-        hasManufacturerWarranty: settings.hasManufacturerWarranty !== false,
-      };
 
       // Requirements in an explicitly approved contract/consultant checklist
       // are already applicable. In particular, optional consultant records
