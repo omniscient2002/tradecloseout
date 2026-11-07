@@ -318,6 +318,36 @@ export class DocumentsService {
           if (!owned.rows.length) throw new NotFoundException('DOCUMENT_NOT_FOUND_IN_PROJECT');
         }
       }
+      // A linked HVAC obligation determines the evidence type. Never silently
+      // save an AHU/chiller report as DT-001 just because the caller omitted
+      // docTypeKey, and never allow an explicitly mismatched document type.
+      let linkedDocumentType: string | undefined;
+      if (requestedRequirementIds.length > 0) {
+        const { rows: matchedRequirements } = await client.query(
+          `SELECT id, doc_type_key FROM requirements
+             WHERE org_id = $1 AND project_id = $2
+               AND id = ANY($3::uuid[]) AND superseded_at IS NULL`,
+          [ctx.orgId, projectId, requestedRequirementIds],
+        );
+        if (matchedRequirements.length !== requestedRequirementIds.length) {
+          throw new NotFoundException('REQUIREMENT_NOT_FOUND_IN_PROJECT');
+        }
+        const types = new Set(matchedRequirements.map((r: any) => r.doc_type_key));
+        if (types.size !== 1) {
+          throw new BadRequestException({
+            code: 'MIXED_EVIDENCE_TYPES',
+            detail: 'Separate documents are required for obligations of different document types.',
+          });
+        }
+        linkedDocumentType = [...types][0] as string;
+        if (dto.docTypeKey && dto.docTypeKey !== linkedDocumentType) {
+          throw new BadRequestException({
+            code: 'DOCUMENT_TYPE_MISMATCH',
+            detail: 'Uploaded evidence type must match its linked requirement.',
+          });
+        }
+      }
+
       // Soft check plan storage limit without premature deduction (Bug 2 / Dimension 10)
       const { rows: quotaRows } = await client.query(
         `SELECT uc.value AS current_storage, p.limits_json
@@ -401,7 +431,7 @@ export class DocumentsService {
             ctx.orgId,
             projectId,
             dto.title || rawFileName,
-            dto.docTypeKey || 'DT-001',
+            linkedDocumentType || dto.docTypeKey || 'DT-001',
             dto.categoryKey || 'HANDOVER_DOCS',
             ctx.userId,
           ],
