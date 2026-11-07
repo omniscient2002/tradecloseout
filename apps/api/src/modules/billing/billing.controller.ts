@@ -8,6 +8,7 @@ import {
   Param,
   Body,
   Headers,
+  HttpCode,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -218,10 +219,14 @@ export class BillingController {
   }
 
   @Post('webhooks/razorpay')
+  @HttpCode(202)
   async handleRazorpayWebhook(
     @Req() req: any,
     @Headers('x-razorpay-signature') signature: string,
+    @Headers('x-razorpay-event-id') eventId: string,
   ) {
-    return this.billingService.handleRazorpayWebhook(req.rawBody, signature || '');
+    return this.billingService.handleRazorpayWebhook(
+      req.rawBody, signature || '', eventId || '',
+    );
   }
 }
