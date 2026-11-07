@@ -201,6 +201,13 @@ export class ChecklistsService {
         }
       }
 
+      if (targetInstances.length === 0) {
+        throw new UnprocessableEntityException({
+          code: 'NO_APPLICABLE_CHECKLIST_REQUIREMENTS',
+          detail: 'No requirements apply to the active project assets. Review the asset register and checklist mapping before creating a snapshot.',
+        });
+      }
+
       // Reconcile against persistent requirements table + write requirement_revisions (07 §6.3, 08 §5.4)
       for (const inst of targetInstances) {
         const { rows: existingRows } = await client.query(
