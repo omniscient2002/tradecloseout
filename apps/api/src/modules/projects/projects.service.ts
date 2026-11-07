@@ -16,6 +16,7 @@ import {
   DomainOutboxEvent,
 } from '@tradecloseout/db';
 import { hasPermission, ProjectCodeSchema } from '@tradecloseout/shared';
+import { evaluateReadinessInTransaction } from '../handover/closeout-readiness';
 
 @Injectable()
 export class ProjectsService {
@@ -359,6 +360,20 @@ export class ProjectsService {
         throw new ConflictException({
           code: 'MANDATORY_DEFECTS_UNRESOLVED',
           detail: 'Cannot close project: open mandatory defects remain unresolved. Close them or record a valid authorised waiver first.',
+        });
+      }
+
+      // Historical acceptance is not sufficient after new mandatory obligations,
+      // evidence expiry/quarantine, or a revoked waiver. Revalidate the same
+      // live qualification used by GET readiness inside this closure transaction.
+      const readiness = await evaluateReadinessInTransaction(client, ctx.orgId, projectId);
+      if (!readiness.readyWithoutOverride) {
+        throw new ConflictException({
+          code: 'PROJECT_CLOSEOUT_NOT_READY',
+          detail: 'Current mandatory closeout requirements are missing, expired or unconfigured.',
+          missingMandatoryCount: readiness.blockers.missingMandatoryCount,
+          expiredMandatoryCount: readiness.blockers.expiredMandatoryCount,
+          configurationBlocker: readiness.configurationBlocker,
         });
       }
 
