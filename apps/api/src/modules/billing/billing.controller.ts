@@ -219,9 +219,9 @@ export class BillingController {
 
   @Post('webhooks/razorpay')
   async handleRazorpayWebhook(
-    @Body() payload: any,
+    @Req() req: any,
     @Headers('x-razorpay-signature') signature: string,
   ) {
-    return this.billingService.handleRazorpayWebhook(payload, signature || '');
+    return this.billingService.handleRazorpayWebhook(req.rawBody, signature || '');
   }
 }

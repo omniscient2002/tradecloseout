@@ -9,14 +9,12 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { Pool, PoolClient } from 'pg';
+import { createHash } from 'crypto';
 import { uuidv7 } from 'uuidv7';
 import {
   withTenantTransaction,
   TenantActorContext,
   DomainOutboxEvent,
-  evaluateCatalogueApplicability,
-  ProjectApplicabilityContext,
-  DocumentTypeCatalogueEntry,
 } from '@tradecloseout/db';
 import {
   resolveConfigurationHierarchy,
@@ -31,8 +29,9 @@ export interface ResolvedRequirementSpec {
   description?: string;
   docTypeKey: string;
   mandatory: boolean;
-  scopeType: 'PROJECT' | 'ASSET_CATEGORY';
+  scopeType: 'PROJECT' | 'ASSET_CATEGORY' | 'ASSET';
   assetCategoryKey?: string;
+  assetId?: string;
   reviewerRole?: string;
   dueOffsetDays?: number;
   validityRule?: Record<string, unknown>;
@@ -41,6 +40,32 @@ export interface ResolvedRequirementSpec {
 @Injectable()
 export class ChecklistsService {
   constructor(private readonly pool: Pool) {}
+
+  private async lockEditableProject(client: PoolClient, orgId: string, projectId: string): Promise<void> {
+    // Every baseline writer shares closure's project lock. Check the lifecycle
+    // after acquiring it so a waiting import cannot change a just-closed scope.
+    const { rows } = await client.query(
+      `SELECT id, status, purged_at FROM projects WHERE org_id = $1 AND id = $2 FOR UPDATE`,
+      [orgId, projectId],
+    );
+    const project = rows[0];
+    if (!project) throw new NotFoundException('PROJECT_NOT_FOUND');
+    if (project.purged_at != null) {
+      throw new ConflictException({ code: 'PROJECT_PURGED', detail: 'Purged projects cannot change their contractual checklist.' });
+    }
+    if (project.status === 'CLOSED') {
+      throw new ConflictException({
+        code: 'CLOSED_PROJECT_REQUIRES_FORMAL_REOPEN',
+        detail: 'Formally reopen the project before changing its accepted contractual checklist.',
+      });
+    }
+    if (!['DRAFT', 'ACTIVE', 'HANDOVER'].includes(project.status)) {
+      throw new ConflictException({
+        code: 'PROJECT_CHECKLIST_NOT_EDITABLE',
+        detail: 'The project lifecycle does not permit contractual checklist changes.',
+      });
+    }
+  }
 
   /**
    * API-056: POST /api/v1/projects/:id/checklist/snapshots
@@ -53,6 +78,7 @@ export class ChecklistsService {
     layers: ConfigLayerInput[],
     changeRequestId?: string,
     changeReason = 'Initial project checklist snapshot',
+    transaction?: { client: PoolClient; emit: (ev: DomainOutboxEvent) => void },
   ) {
     const resolved = resolveConfigurationHierarchy(layers);
     if (resolved.conflicts.length > 0) {
@@ -65,8 +91,36 @@ export class ChecklistsService {
     }
 
     const reqSpecs = (resolved.payload.requirements ?? []) as ResolvedRequirementSpec[];
+    if (!Array.isArray(reqSpecs) || reqSpecs.length === 0) {
+      throw new UnprocessableEntityException({
+        code: 'CHECKLIST_REQUIREMENTS_MISSING',
+        detail: 'A checklist needs explicit contract or trade requirements. An empty snapshot cannot be applied.',
+      });
+    }
+    const seenKeys = new Set<string>();
+    for (const spec of reqSpecs) {
+      if (!spec.key?.trim() || !spec.title?.trim() || !spec.docTypeKey?.trim() ||
+          !['PROJECT', 'ASSET_CATEGORY', 'ASSET'].includes(spec.scopeType) ||
+          (spec.scopeType === 'ASSET_CATEGORY' && !spec.assetCategoryKey) ||
+          (spec.scopeType === 'ASSET' && !spec.assetId)) {
+        throw new UnprocessableEntityException({
+          code: 'INVALID_CHECKLIST_REQUIREMENT',
+          detail: 'Requirements need a key, title, document type, and an explicit valid scope.',
+        });
+      }
+      if (seenKeys.has(spec.key)) {
+        throw new UnprocessableEntityException({
+          code: 'DUPLICATE_CHECKLIST_KEY',
+          detail: `Requirement key '${spec.key}' appears more than once.`,
+        });
+      }
+      seenKeys.add(spec.key);
+    }
 
-    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+    const applySnapshot = async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      // Serialize competing snapshot writers, including the first snapshot when
+      // there is no existing checklist row to lock.
+      await this.lockEditableProject(client, ctx.orgId, projectId);
       // Supersede prior ACTIVE snapshot if one exists (06 §3.5)
       const { rows: priorSnaps } = await client.query(
         `SELECT id, version_no FROM checklist_snapshots
@@ -112,39 +166,12 @@ export class ChecklistsService {
         [ctx.orgId, projectId],
       );
 
-      // Query project attributes to drive deterministic rule evaluation (04 §7 R-001..R-013, Bug 5: 10.0/10)
-      const { rows: projRows } = await client.query(
-        `SELECT project_type, client_type, settings_json FROM projects WHERE org_id = $1 AND id = $2`,
-        [ctx.orgId, projectId],
-      );
-      const proj = projRows[0];
-      const settings = (proj?.settings_json || {}) as Record<string, any>;
-      const presentAssetCategories = Array.from(new Set(projectAssets.map((a: any) => a.category_key)));
-
-      const applicabilityCtx: ProjectApplicabilityContext = {
-        projectType: proj?.project_type || 'PRIVATE_COMMERCIAL',
-        clientType: proj?.client_type || 'PRIVATE',
-        contractHasBms: !!settings.contractHasBms,
-        contractDlpMonths: Number(settings.contractDlpMonths ?? 12),
-        maxRefrigerantChargeKg: Number(settings.maxRefrigerantChargeKg ?? 10),
-        consultantRequiresStampedDrawings: !!settings.consultantRequiresStampedDrawings,
-        presentAssetCategories,
-        hazardousVoltagePresent: !!settings.hazardousVoltagePresent,
-        hasManufacturerWarranty: settings.hasManufacturerWarranty !== false,
-      };
-
-      // Filter requirement specs: mandatory specs always pass, conditional specs evaluate against R-001..R-013
-      const filteredSpecs = reqSpecs.filter((spec) => {
-        if (spec.mandatory) return true;
-        const entry: DocumentTypeCatalogueEntry = {
-          code: spec.docTypeKey,
-          title: spec.title,
-          obligation: 'C',
-          categoryKey: spec.groupKey,
-        };
-        const kept = evaluateCatalogueApplicability([entry], applicabilityCtx);
-        return kept.length > 0;
-      });
+      // Requirements in an explicitly approved contract/consultant checklist
+      // are already applicable. In particular, optional consultant records
+      // must not vanish merely because they are not in the platform's generic
+      // conditional catalogue. Conditional rules belong in template resolution,
+      // before the resulting project checklist is approved and snapshotted.
+      const filteredSpecs = reqSpecs;
 
       // Expand requirement definitions into concrete (requirement_key, scope_key) tuples
       const targetInstances: Array<{
@@ -153,16 +180,38 @@ export class ChecklistsService {
       }> = [];
 
       for (const spec of filteredSpecs) {
-        if (spec.scopeType === 'ASSET_CATEGORY' && spec.assetCategoryKey) {
+        if (spec.scopeType === 'ASSET' && spec.assetId) {
+          const asset = projectAssets.find((a: any) => a.id === spec.assetId);
+          if (!asset) {
+            throw new UnprocessableEntityException({
+              code: 'CHECKLIST_ASSET_NOT_FOUND',
+              detail: `Requirement '${spec.key}' targets an asset not active in this project.`,
+            });
+          }
+          targetInstances.push({ spec, scopeKey: `asset:${asset.id}` });
+        } else if (spec.scopeType === 'ASSET_CATEGORY' && spec.assetCategoryKey) {
           const matchingAssets = projectAssets.filter(
             (a: any) => a.category_key === spec.assetCategoryKey,
           );
+          if (matchingAssets.length === 0 && spec.mandatory) {
+            throw new UnprocessableEntityException({
+              code: 'MANDATORY_ASSET_CATEGORY_MISSING',
+              detail: `Mandatory checklist requirement '${spec.key}' targets an equipment category absent from the project asset register.`,
+            });
+          }
           for (const asset of matchingAssets) {
             targetInstances.push({ spec, scopeKey: `asset:${asset.id}` });
           }
         } else {
           targetInstances.push({ spec, scopeKey: 'project' });
         }
+      }
+
+      if (targetInstances.length === 0) {
+        throw new UnprocessableEntityException({
+          code: 'NO_APPLICABLE_CHECKLIST_REQUIREMENTS',
+          detail: 'No requirements apply to the active project assets. Review the asset register and checklist mapping before creating a snapshot.',
+        });
       }
 
       // Reconcile against persistent requirements table + write requirement_revisions (07 §6.3, 08 §5.4)
@@ -176,6 +225,17 @@ export class ChecklistsService {
             LIMIT 1`,
           [ctx.orgId, projectId, inst.spec.key, inst.scopeKey],
         );
+
+        // The canonical DB column is NOT NULL. A consultant import does not
+        // choose review authority; preserve an existing trusted policy, otherwise
+        // use the same server-defined R-QC policy as the SQL column default.
+        const reviewerRole = inst.spec.reviewerRole ?? existingRows[0]?.reviewer_role ?? 'R-QC';
+        if (!['R-QC', 'R-PM', 'R-OWNER', 'R-ADMIN', 'R-REVIEWER', 'R-CONSULTANT'].includes(reviewerRole)) {
+          throw new UnprocessableEntityException({
+            code: 'INVALID_REVIEWER_ROLE',
+            detail: 'Checklist reviewer role must be an authorized review role.',
+          });
+        }
 
         const dueAtSql =
           typeof inst.spec.dueOffsetDays === 'number'
@@ -203,7 +263,7 @@ export class ChecklistsService {
               inst.spec.description ?? null,
               inst.spec.docTypeKey,
               inst.spec.mandatory,
-              inst.spec.reviewerRole ?? null,
+              reviewerRole,
               dueAtSql,
             ],
           );
@@ -227,6 +287,22 @@ export class ChecklistsService {
           );
         } else {
           const ex = existingRows[0];
+          const semanticChange =
+            ex.title !== inst.spec.title ||
+            ex.doc_type_key !== inst.spec.docTypeKey ||
+            ex.mandatory !== inst.spec.mandatory ||
+            ex.reviewer_role !== reviewerRole;
+          // An exception is valid for the obligation that was approved, not
+          // for a materially different document, scope, or approval policy.
+          // Keep the historical waiver record but remove its ACTIVE effect.
+          if (semanticChange) {
+            await client.query(
+              `UPDATE waivers SET status = 'SUPERSEDED'
+                 WHERE org_id = $1 AND project_id = $2 AND requirement_id = $3
+                   AND status IN ('ACTIVE', 'PENDING_SECOND_APPROVAL')`,
+              [ctx.orgId, projectId, ex.id],
+            );
+          }
           await client.query(
             `UPDATE requirements
                 SET current_snapshot_id = $4,
@@ -234,6 +310,7 @@ export class ChecklistsService {
                     doc_type_key = $6,
                     mandatory = $7,
                     reviewer_role = $8,
+                    status = CASE WHEN $9::boolean AND status IN ('WAIVED','NOT_APPLICABLE','PENDING_WAIVER') THEN 'NOT_STARTED' ELSE status END,
                     row_version = row_version + 1,
                     updated_at = now()
               WHERE org_id = $1 AND project_id = $2 AND id = $3`,
@@ -245,7 +322,8 @@ export class ChecklistsService {
               inst.spec.title,
               inst.spec.docTypeKey,
               inst.spec.mandatory,
-              inst.spec.reviewerRole ?? null,
+              reviewerRole,
+              semanticChange,
             ],
           );
 
@@ -262,8 +340,10 @@ export class ChecklistsService {
               snapshotId,
               changeRequestId ?? null,
               JSON.stringify({
-                before: { title: ex.title, mandatory: ex.mandatory },
-                after: { title: inst.spec.title, mandatory: inst.spec.mandatory },
+                before: { title: ex.title, docTypeKey: ex.doc_type_key, mandatory: ex.mandatory, reviewerRole: ex.reviewer_role },
+                after: { title: inst.spec.title, docTypeKey: inst.spec.docTypeKey, mandatory: inst.spec.mandatory, reviewerRole },
+                semanticChange,
+                waiversSuperseded: semanticChange,
               }),
               changeReason,
               ctx.userId,
@@ -271,6 +351,28 @@ export class ChecklistsService {
           );
         }
       }
+
+      // A new snapshot supersedes obligations removed from its scope. Leaving
+      // these active would make readiness evaluate requirements that no longer
+      // belong to the contract, or allow old evidence to satisfy a new version.
+      // jsonb_to_recordset keeps the (requirement_key, scope_key) comparison
+      // exact and parameterized, including asset-expanded requirements.
+      const activeKeys = targetInstances.map((inst) => ({
+        requirement_key: inst.spec.key,
+        scope_key: inst.scopeKey,
+      }));
+      await client.query(
+        `UPDATE requirements r
+            SET superseded_at = now(), row_version = row_version + 1, updated_at = now()
+          WHERE r.org_id = $1 AND r.project_id = $2 AND r.superseded_at IS NULL
+            AND NOT EXISTS (
+              SELECT 1 FROM jsonb_to_recordset($3::jsonb)
+                AS active(requirement_key text, scope_key text)
+               WHERE active.requirement_key = r.requirement_key
+                 AND active.scope_key = r.scope_key
+            )`,
+        [ctx.orgId, projectId, JSON.stringify(activeKeys)],
+      );
 
       emit({
         eventType: 'CHECKLIST_SNAPSHOT_CREATED',
@@ -290,36 +392,49 @@ export class ChecklistsService {
         checksum: resolved.checksum,
         instantiatedRequirements: targetInstances.length,
       };
+    };
+    // Import/reapply callers provide a transaction which already holds the
+    // project lock. Never commit the baseline read before this write.
+    return transaction
+      ? applySnapshot(transaction.client, transaction.emit)
+      : withTenantTransaction(this.pool, ctx, applySnapshot);
+  }
+
+  /**
+   * Reapply the existing explicit checklist configuration. We intentionally do
+   * not substitute a fake one-item handover dossier when no template exists.
+   */
+  async createSnapshot(ctx: TenantActorContext, projectId: string, dto?: { comment?: string }) {
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      // Lock BEFORE reading the baseline, so reapply cannot overwrite a
+      // concurrent consultant import with a stale snapshot.
+      await this.lockEditableProject(client, ctx.orgId, projectId);
+      const { rows } = await client.query(
+        `SELECT resolved_payload_json FROM checklist_snapshots
+           WHERE org_id = $1 AND project_id = $2 AND status = 'ACTIVE'
+           ORDER BY version_no DESC LIMIT 1`,
+        [ctx.orgId, projectId],
+      );
+      const existing = rows[0]?.resolved_payload_json;
+      const payload = typeof existing === 'string' ? JSON.parse(existing) : existing;
+      if (!Array.isArray(payload?.requirements) || payload.requirements.length === 0) {
+        throw new UnprocessableEntityException({
+          code: 'CHECKLIST_CONFIGURATION_REQUIRED',
+          detail: 'Import a consultant checklist or configure a real HVAC template before creating a snapshot.',
+        });
+      }
+      return this.createAndApplySnapshot(
+        ctx, projectId,
+        [{ level: 'PROJECT', versionId: uuidv7(), payload: { requirements: payload.requirements } }],
+        undefined, dto?.comment || 'Reapply configured checklist',
+        { client, emit },
+      );
     });
   }
 
   /**
-   * Controller wrapper for createSnapshot
-   */
-  async createSnapshot(ctx: TenantActorContext, projectId: string, dto?: { comment?: string }) {
-    const layers: ConfigLayerInput[] = [
-      {
-        level: 'PROJECT',
-        versionId: uuidv7(),
-        payload: {
-          requirements: [
-            {
-              key: 'HANDOVER_DOSSIER',
-              groupKey: 'G1',
-              title: 'Technical Closeout Dossier',
-              docTypeKey: 'DT-001',
-              mandatory: true,
-              scopeType: 'PROJECT',
-            },
-          ],
-        },
-      },
-    ];
-    return this.createAndApplySnapshot(ctx, projectId, layers, undefined, dto?.comment);
-  }
-
-  /**
-   * Ingests parsed consultant checklist requirements and applies them to the project.
+   * Imports scoped consultant requirements without overwriting the existing
+   * snapshot or inventing DT-001 for unknown document types.
    */
   async importL3Checklist(
     ctx: TenantActorContext,
@@ -330,55 +445,87 @@ export class ChecklistsService {
         key?: string;
         title: string;
         docTypeKey?: string;
+        groupKey?: string;
         mandatory?: boolean;
+        scopeType?: 'PROJECT' | 'ASSET_CATEGORY' | 'ASSET';
+        assetCategoryKey?: string;
+        assetId?: string;
       }>;
     },
   ) {
-    // TC2-020: Load existing active snapshot requirements to avoid destroying scope
-    const { rows: currentSnapshots } = await this.pool.query(
-      `SELECT snapshot_json FROM checklist_snapshots
-        WHERE org_id = $1 AND project_id = $2
-        ORDER BY version_no DESC LIMIT 1`,
-      [ctx.orgId, projectId],
-    );
-
-    let existingReqs: any[] = [];
-    if (currentSnapshots.length > 0) {
-      const snap = currentSnapshots[0].snapshot_json;
-      existingReqs = snap?.requirements || snap?.checklist?.requirements || [];
+    if (!Array.isArray(dto?.requirements) || dto.requirements.length === 0 || dto.requirements.length > 1000) {
+      throw new UnprocessableEntityException({
+        code: 'INVALID_CHECKLIST_IMPORT',
+        detail: 'Supply between 1 and 1000 mapped consultant requirements.',
+      });
     }
 
-    const newReqs = dto.requirements.map((r, idx) => ({
-      key: r.key || `REQ-${(r.docTypeKey || 'DT001').replace('-', '')}-${Date.now()}-${idx + 1}`,
-      groupKey: 'G1',
-      title: r.title,
-      docTypeKey: r.docTypeKey || 'DT-001',
-      mandatory: r.mandatory !== false,
-      scopeType: 'PROJECT',
-    }));
+    // Read AND apply in the same RLS-bound transaction, after taking the
+    // project lock. A second importer observes the first committed snapshot.
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      await this.lockEditableProject(client, ctx.orgId, projectId);
+      const { rows: activeSnapshots } = await client.query(
+        `SELECT resolved_payload_json FROM checklist_snapshots
+           WHERE org_id = $1 AND project_id = $2 AND status = 'ACTIVE'
+           ORDER BY version_no DESC LIMIT 1`,
+        [ctx.orgId, projectId],
+      );
+      const currentSnapshot = activeSnapshots[0]?.resolved_payload_json;
+    const existingPayload = typeof currentSnapshot === 'string' ? JSON.parse(currentSnapshot) : currentSnapshot;
+    const existingReqs: ResolvedRequirementSpec[] =
+      Array.isArray(existingPayload?.requirements) ? existingPayload.requirements : [];
 
-    const existingKeys = new Set(existingReqs.map((r) => r.key));
+    const newReqs: ResolvedRequirementSpec[] = dto.requirements.map((r, idx) => {
+      const title = r.title?.trim();
+      const docTypeKey = r.docTypeKey?.trim();
+      const scopeType = r.scopeType || 'PROJECT';
+      if (!title || !docTypeKey || !['PROJECT', 'ASSET_CATEGORY', 'ASSET'].includes(scopeType) ||
+          (scopeType === 'ASSET_CATEGORY' && !r.assetCategoryKey) ||
+          (scopeType === 'ASSET' && !r.assetId)) {
+        throw new UnprocessableEntityException({
+          code: 'CHECKLIST_MAPPING_REQUIRED',
+          detail: `Row ${idx + 1} needs a title, mapped document type and valid project/asset scope.`,
+        });
+      }
+      const naturalKey = [docTypeKey, title.toLowerCase(), scopeType, r.assetCategoryKey || '', r.assetId || ''].join('|');
+      const key = r.key?.trim() || `IMPORTED-${createHash('sha256').update(naturalKey).digest('hex').slice(0, 16)}`;
+      return {
+        key,
+        groupKey: r.groupKey?.trim() || 'CONSULTANT',
+        title,
+        docTypeKey,
+        mandatory: r.mandatory !== false,
+        scopeType,
+        ...(scopeType === 'ASSET_CATEGORY' ? { assetCategoryKey: r.assetCategoryKey } : {}),
+        ...(scopeType === 'ASSET' ? { assetId: r.assetId } : {}),
+      };
+    });
+
+    const newKeys = new Set<string>();
+    for (const r of newReqs) {
+      if (newKeys.has(r.key)) {
+        throw new UnprocessableEntityException({
+          code: 'DUPLICATE_CHECKLIST_KEY',
+          detail: `The import contains duplicate requirement key '${r.key}'.`,
+        });
+      }
+      newKeys.add(r.key);
+    }
+    // A repeated import replaces the matching definition instead of creating
+    // duplicate obligations. All unrelated requirements remain in the snapshot.
     const combinedReqs = [
-      ...existingReqs,
-      ...newReqs.filter((r) => !existingKeys.has(r.key)),
-    ];
-
-    const layers: ConfigLayerInput[] = [
-      {
-        level: 'PROJECT',
-        versionId: uuidv7(),
-        payload: {
-          requirements: combinedReqs.length > 0 ? combinedReqs : newReqs,
-        },
-      },
+      ...existingReqs.filter((r) => !newKeys.has(r.key)),
+      ...newReqs,
     ];
     return this.createAndApplySnapshot(
       ctx,
       projectId,
-      layers,
+      [{ level: 'PROJECT', versionId: uuidv7(), payload: { requirements: combinedReqs } }],
       undefined,
       dto.profileName || 'Consultant Checklist Import',
+      { client, emit },
     );
+    });
   }
 
   /**
@@ -674,48 +821,74 @@ export class ChecklistsService {
       dueDate?: string;
     },
   ) {
-    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
-      let snapRes = await client.query(
-        `SELECT id FROM checklist_snapshots
-         WHERE org_id = $1 AND project_id = $2
-         ORDER BY version_no DESC LIMIT 1`,
+    const requiredDocType = dto?.docTypeCode?.trim();
+    if (!dto?.key?.trim() || !dto.title?.trim() || !requiredDocType) {
+      throw new UnprocessableEntityException({
+        code: 'REQUIREMENT_MAPPING_REQUIRED',
+        detail: 'A new contractual requirement must have a key, title, and mapped document type.',
+      });
+    }
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      await this.lockEditableProject(client, ctx.orgId, projectId);
+      const { rows: snaps } = await client.query(
+        `SELECT resolved_payload_json FROM checklist_snapshots
+           WHERE org_id = $1 AND project_id = $2 AND status = 'ACTIVE'
+           ORDER BY version_no DESC LIMIT 1`,
         [ctx.orgId, projectId],
       );
-      let snapshotId: string;
-      if (!snapRes.rows.length) {
-        snapshotId = uuidv7();
-        await client.query(
-          `INSERT INTO checklist_snapshots (
-            id, org_id, project_id, version_no, status, resolved_payload_json,
-            provenance_json, source_json, checksum, created_by
-          ) VALUES ($1, $2, $3, 1, 'ACTIVE', '{}', '{}', '{}', 'initial', $4)`,
-          [snapshotId, ctx.orgId, projectId, ctx.userId],
-        );
-      } else {
-        snapshotId = snapRes.rows[0].id;
+      const raw = snaps[0]?.resolved_payload_json;
+      const snapshot = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (!Array.isArray(snapshot?.requirements) || snapshot.requirements.length === 0) {
+        throw new UnprocessableEntityException({
+          code: 'CHECKLIST_CONFIGURATION_REQUIRED',
+          detail: 'Configure the project checklist before adding requirements.',
+        });
       }
-
-      const reqId = uuidv7();
-      const insertRes = await client.query(
-        `INSERT INTO requirements (
-          id, org_id, project_id, current_snapshot_id, requirement_key, scope_key,
-          group_key, title, doc_type_key, milestone_key, mandatory, status, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, 'project', $6, $7, $8, 'HANDOVER', $9, 'NOT_STARTED', now(), now())
-        RETURNING *`,
-        [
-          reqId,
-          ctx.orgId,
-          projectId,
-          snapshotId,
-          dto.key,
-          dto.groupKey || 'G1',
-          dto.title,
-          dto.docTypeCode || 'DT-001',
-          dto.mandatory !== false,
-        ],
+      const key = dto.key.trim();
+      if (snapshot.requirements.some((r: ResolvedRequirementSpec) => r.key === key)) {
+        throw new ConflictException({
+          code: 'DUPLICATE_REQUIREMENT_KEY',
+          detail: 'Use a controlled change request to modify an existing obligation.',
+        });
+      }
+      let scopeType: ResolvedRequirementSpec['scopeType'] = 'PROJECT';
+      let assetId: string | undefined;
+      if (dto.assetTag) {
+        const { rows: assets } = await client.query(
+          `SELECT id FROM assets WHERE org_id = $1 AND project_id = $2
+             AND tag = $3 AND status = 'ACTIVE' AND deleted_at IS NULL`,
+          [ctx.orgId, projectId, dto.assetTag],
+        );
+        if (assets.length !== 1) throw new NotFoundException('PROJECT_ASSET_NOT_FOUND');
+        assetId = assets[0].id;
+        scopeType = 'ASSET';
+      }
+      const extra: ResolvedRequirementSpec = {
+        key,
+        title: dto.title.trim(),
+        groupKey: dto.groupKey?.trim() || 'CONSULTANT',
+        docTypeKey: requiredDocType,
+        mandatory: dto.mandatory !== false,
+        scopeType,
+        ...(assetId ? { assetId } : {}),
+        reviewerRole: 'R-QC',
+      };
+      const applied = await this.createAndApplySnapshot(
+        ctx, projectId,
+        [{ level: 'PROJECT', versionId: uuidv7(),
+           payload: { requirements: [...snapshot.requirements, extra] } }],
+        undefined,
+        'Manual contractual requirement addition',
+        { client, emit },
       );
-
-      return insertRes.rows[0];
+      const { rows: created } = await client.query(
+        `SELECT * FROM requirements WHERE org_id = $1 AND project_id = $2
+           AND current_snapshot_id = $3 AND requirement_key = $4
+           AND scope_key = $5 AND superseded_at IS NULL`,
+        [ctx.orgId, projectId, applied.snapshotId, key, assetId ? `asset:${assetId}` : 'project'],
+      );
+      if (!created.length) throw new ConflictException('REQUIREMENT_SNAPSHOT_APPLY_FAILED');
+      return created[0];
     });
   }
 

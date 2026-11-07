@@ -267,14 +267,34 @@ export async function inspectAndSanitisePdf(
       };
     }
     if (objectCount > 25000) {
-      return {
-        safe: false,
-        pageCount,
-        objectCount,
-        isEncrypted: false,
-        failureCode: 'PDF_BOMB_OBJECT_LIMIT_EXCEEDED',
-        failureDetail: `PDF contains ${objectCount} internal objects, exceeding the 25,000 ceiling.`,
-      };
+      // qpdf's JSON inventory may include extra object-stream bookkeeping
+      // entries. Count parsed indirect objects before reporting the limit,
+      // so the result agrees with the actual PDF object inventory (FV08).
+      // This is only done for suspicious files; normal documents avoid
+      // the additional parser cost. Failure to parse is never considered safe.
+      const size = (await fs.stat(inputPath)).size;
+      if (size > 100 * 1024 * 1024) {
+        return {
+          safe: false, pageCount, objectCount, isEncrypted: false,
+          failureCode: 'PDF_BOMB_OBJECT_LIMIT_EXCEEDED',
+          failureDetail: 'PDF is too large to safely enumerate suspicious object streams.',
+        };
+      }
+      const inspected = await PDFDocument.load(await fs.readFile(inputPath), {
+        ignoreEncryption: false,
+      });
+      if (inspected.isEncrypted) throw new Error('FILE_ENCRYPTED_REJECTED');
+      objectCount = inspected.context.enumerateIndirectObjects().length;
+      if (objectCount > 25000) {
+        return {
+          safe: false,
+          pageCount,
+          objectCount,
+          isEncrypted: false,
+          failureCode: 'PDF_BOMB_OBJECT_LIMIT_EXCEEDED',
+          failureDetail: `PDF contains ${objectCount} indirect objects, exceeding the 25,000 ceiling.`,
+        };
+      }
     }
     if (objectCount === 0 && pageCount > 0) {
       throw new Error('MALFORMED_QPDF_OUTPUT: Unable to determine object count');

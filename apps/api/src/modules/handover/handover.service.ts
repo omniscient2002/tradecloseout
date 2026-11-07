@@ -13,6 +13,7 @@ import { createHash } from 'crypto';
 import { withTenantTransaction, consumePlanQuota, TenantActorContext } from '@tradecloseout/db/tenant-tx';
 import { S3StorageService } from '../documents/s3-storage.service';
 import { canonicalJson } from '@tradecloseout/shared';
+import { evaluateReadinessInTransaction } from './closeout-readiness';
 
 @Injectable()
 export class HandoverService {
@@ -26,106 +27,8 @@ export class HandoverService {
    * Evaluates mandatory requirements, separating MISSING and EXPIRED blockers from EXPIRING warnings (FR-HND-008).
    */
   async evaluateProjectReadiness(ctx: TenantActorContext, projectId: string) {
-    return withTenantTransaction(this.pool, ctx, async (client) => {
-      const { rows: reqs } = await client.query(
-        `SELECT r.id, r.requirement_key, r.title, r.mandatory, r.status, r.due_at,
-                evidence.expiry_date, evidence.revision_code,
-                COALESCE(evidence.has_approved_evidence, false) AS has_approved_evidence,
-                COALESCE(evidence.has_expired_approved_evidence, false) AS has_expired_approved_evidence,
-                COALESCE(evidence.has_expiring_approved_evidence, false) AS has_expiring_approved_evidence,
-                a.tag AS asset_tag,
-                EXISTS (
-                  SELECT 1 FROM waivers w
-                   WHERE w.org_id = r.org_id AND w.project_id = r.project_id
-                     AND w.requirement_id = r.id AND w.status = 'ACTIVE'
-                     AND w.type IN ('WAIVE', 'NOT_APPLICABLE')
-                     AND (NOT r.mandatory OR (w.second_approved_by IS NOT NULL AND w.second_approved_by <> w.approved_by))
-                ) AS has_valid_waiver
-           FROM requirements r
-           LEFT JOIN LATERAL (
-             SELECT
-               bool_or(dv.id IS NOT NULL AND (dv.expiry_date IS NULL OR
-                       dv.expiry_date >= CURRENT_DATE)) AS has_approved_evidence,
-               bool_or(dv.id IS NOT NULL AND dv.expiry_date < CURRENT_DATE) AS has_expired_approved_evidence,
-               bool_or(dv.id IS NOT NULL AND dv.expiry_date >= CURRENT_DATE
-                       AND dv.expiry_date <= CURRENT_DATE + 30) AS has_expiring_approved_evidence,
-               (array_agg(dv.expiry_date ORDER BY dv.expiry_date DESC NULLS FIRST)
-                 FILTER (WHERE dv.id IS NOT NULL))[1] AS expiry_date,
-               (array_agg(dv.revision_code ORDER BY dv.expiry_date DESC NULLS FIRST, dv.version_no DESC)
-                 FILTER (WHERE dv.id IS NOT NULL))[1] AS revision_code
-             FROM document_requirements dr
-             JOIN documents d
-               ON d.org_id = dr.org_id AND d.project_id = dr.project_id AND d.id = dr.document_id
-              AND d.deleted_at IS NULL AND d.status = 'ACTIVE'
-             JOIN document_versions dv
-               ON dv.org_id = d.org_id AND dv.project_id = d.project_id
-              AND dv.document_id = d.id AND dv.id = d.current_approved_version_id
-              AND dv.deleted_at IS NULL AND dv.superseded_at IS NULL
-              AND dv.review_status = 'APPROVED' AND dv.file_status = 'READY'
-             JOIN storage_objects so
-               ON so.org_id = dv.org_id AND so.id = dv.object_id
-              AND so.status = 'READY' AND so.sha256 IS NOT NULL
-              AND so.observed_size_bytes = so.size_bytes
-              AND so.provider_version_id IS NOT NULL
-             WHERE dr.org_id = r.org_id AND dr.project_id = r.project_id
-               AND dr.requirement_id = r.id
-               AND NOT EXISTS (
-                 SELECT 1 FROM evidence_revalidations er
-                  WHERE er.org_id = dv.org_id AND er.project_id = dv.project_id
-                    AND er.document_version_id = dv.id
-                    AND (r.scope_key IS NULL OR r.scope_key NOT LIKE 'asset:%' OR er.asset_id::text = substring(r.scope_key from 7))
-                    AND er.status IN ('PENDING', 'MISMATCH')
-               )
-           ) evidence ON true
-           LEFT JOIN assets a
-             ON r.scope_key = ('asset:' || a.id::text) AND a.org_id = r.org_id AND a.project_id = r.project_id
-          WHERE r.org_id = $1 AND r.project_id = $2 AND r.superseded_at IS NULL`,
-        [ctx.orgId, projectId],
-      );
-
-      const missingMandatory: any[] = [];
-      const expiredMandatory: any[] = [];
-      const expiringWarnings: any[] = [];
-
-      // The lateral query returns one row per requirement and only counts evidence whose
-      // exact current approved version is scanned, immutable and backed by a verified object.
-      for (const r of reqs) {
-        r.hasApprovedEvidence = r.has_approved_evidence === true;
-        const isExpired = !r.hasApprovedEvidence &&
-          (r.status === 'EXPIRED' || r.has_expired_approved_evidence === true);
-        const isExpiringSoon = r.has_expiring_approved_evidence === true;
-
-        const isWaivedOrNA = r.has_valid_waiver === true;
-        if (isExpiringSoon && !isWaivedOrNA) expiringWarnings.push(r);
-
-        if (isExpired && r.mandatory && !isWaivedOrNA) {
-          expiredMandatory.push(r);
-        } else if (r.mandatory) {
-          if (isWaivedOrNA) {
-            // Satisfied by formal waiver or not-applicable decision
-          } else if (r.hasApprovedEvidence) {
-            // A stored status string cannot invalidate or create evidence qualification.
-            // The exact current approved version and its verified object are authoritative here.
-          } else {
-            missingMandatory.push(r);
-          }
-        }
-      }
-
-      return {
-        readyWithoutOverride: missingMandatory.length === 0 && expiredMandatory.length === 0,
-        blockers: {
-          missingMandatoryCount: missingMandatory.length,
-          expiredMandatoryCount: expiredMandatory.length,
-          missingMandatory,
-          expiredMandatory,
-        },
-        warnings: {
-          expiringSoonCount: expiringWarnings.length,
-          expiringWarnings,
-        },
-      };
-    });
+    return withTenantTransaction(this.pool, ctx, (client) =>
+      evaluateReadinessInTransaction(client, ctx.orgId, projectId));
   }
 
   /**
@@ -152,6 +55,28 @@ export class HandoverService {
     return withTenantTransaction(this.pool, ctx, async (client, emit) => {
       // Recheck in the package-creation transaction so a concurrent review or evidence
       // change cannot invalidate the readiness result calculated immediately above.
+      const { rows: configuredRows } = await client.query(
+        `SELECT s.resolved_payload_json
+           FROM checklist_snapshots s
+          WHERE s.org_id = $1 AND s.project_id = $2 AND s.status = 'ACTIVE'
+            AND EXISTS (
+              SELECT 1 FROM requirements r
+               WHERE r.org_id = s.org_id AND r.project_id = s.project_id
+                 AND r.current_snapshot_id = s.id AND r.superseded_at IS NULL
+                 AND r.mandatory = true
+            )
+          LIMIT 1`,
+        [ctx.orgId, projectId],
+      );
+      const rawSnapshot = configuredRows[0]?.resolved_payload_json;
+      const configuredSnapshot = typeof rawSnapshot === 'string' ? JSON.parse(rawSnapshot) : rawSnapshot;
+      if (!Array.isArray(configuredSnapshot?.requirements) ||
+          configuredSnapshot.requirements.length === 0) {
+        throw new UnprocessableEntityException({
+          code: 'NO_APPLICABLE_MANDATORY_CHECKLIST',
+          detail: 'The project needs an active, non-empty checklist with mandatory requirements before handover.',
+        });
+      }
       const { rows: blockerRows } = await client.query(
         `SELECT r.id
            FROM requirements r
@@ -170,6 +95,7 @@ export class HandoverService {
                 JOIN documents d
                   ON d.org_id = dr.org_id AND d.project_id = dr.project_id AND d.id = dr.document_id
                  AND d.deleted_at IS NULL AND d.status = 'ACTIVE'
+              AND d.doc_type_key = r.doc_type_key
                 JOIN document_versions dv
                   ON dv.org_id = d.org_id AND dv.project_id = d.project_id
                  AND dv.document_id = d.id AND dv.id = d.current_approved_version_id
@@ -274,6 +200,7 @@ export class HandoverService {
              JOIN documents d
                ON d.org_id = dr.org_id AND d.project_id = dr.project_id AND d.id = dr.document_id
               AND d.deleted_at IS NULL AND d.status = 'ACTIVE'
+              AND d.doc_type_key = r.doc_type_key
              JOIN document_versions dv
                ON dv.org_id = d.org_id AND dv.project_id = d.project_id
               AND dv.document_id = d.id AND dv.id = d.current_approved_version_id
@@ -485,17 +412,20 @@ export class HandoverService {
         if (existingRec.grant_status !== 'ACTIVE') {
           throw new UnauthorizedException('GUEST_GRANT_REVOKED_OR_EXPIRED');
         }
-        if (existingRec.grant_project_id && existingRec.grant_project_id !== targetProjectId) {
+        // An unscoped/malformed grant must never be interpreted as
+        // permission to act for *any* recipient or project.
+        if (!existingRec.grant_project_id || existingRec.grant_project_id !== targetProjectId) {
           throw new ForbiddenException({
             code: 'RECIPIENT_AUTHORITY_DENIED',
-            detail: 'Guest grant belongs to another project.',
+            detail: 'Guest grant does not belong to this project.',
           });
         }
         const effectivePartyId = existingRec.recipient_party_id || existingRec.party_id;
-        if (existingRec.grant_party_id && existingRec.grant_party_id !== effectivePartyId) {
+        if (!existingRec.grant_party_id || !effectivePartyId ||
+            existingRec.grant_party_id !== effectivePartyId) {
           throw new ForbiddenException({
             code: 'RECIPIENT_AUTHORITY_DENIED',
-            detail: 'Guest grant does not have authority to decide for this recipient party.',
+            detail: 'Guest grant does not identify the authorised recipient party.',
           });
         }
       }
@@ -506,12 +436,12 @@ export class HandoverService {
                 decision = $5,
                 remarks = $6,
                 decided_at = now()
-          WHERE org_id = $1 AND submission_id = $2
-            AND (recipient_party_id = $3 OR party_id = $3 OR id = $3)`,
+          WHERE org_id = $1 AND submission_id = $2 AND id = $3
+            AND decided_at IS NULL`,
         [
           ctx.orgId,
           submissionId,
-          input.recipientPartyId,
+          existingRec.id,
           nextRecipientStatus,
           input.decision,
           input.remarks ?? null,
@@ -647,6 +577,7 @@ export class HandoverService {
            JOIN documents d
              ON d.org_id = dr.org_id AND d.project_id = dr.project_id AND d.id = dr.document_id
             AND d.deleted_at IS NULL AND d.status = 'ACTIVE'
+              AND d.doc_type_key = r.doc_type_key
            JOIN document_versions dv
              ON dv.org_id = d.org_id AND dv.project_id = d.project_id
             AND dv.document_id = d.id AND dv.id = d.current_approved_version_id
@@ -887,24 +818,60 @@ export class HandoverService {
       coverNote?: string;
     },
   ) {
+    if (!Array.isArray(dto?.recipients) || dto.recipients.length === 0 ||
+        !dto.recipients.some((r) => r.isRequiredApprover !== false)) {
+      throw new UnprocessableEntityException({
+        code: 'HANDOVER_RECIPIENT_REQUIRED',
+        detail: 'A handover submission must identify at least one required approver.',
+      });
+    }
     return withTenantTransaction(this.pool, ctx, async (client, emit) => {
-      let packageId = dto.packageId;
-      if (!packageId) {
-        const { rows: latestPkg } = await client.query(
-          `SELECT id FROM handover_packages WHERE org_id = $1 AND project_id = $2 ORDER BY version_no DESC LIMIT 1`,
-          [ctx.orgId, projectId],
-        );
-        if (!latestPkg.length) {
-          throw new NotFoundException('No compiled package found for project');
+      // The legacy packages/:id/submit route supplies only a package ID.
+      // Resolve the project from that tenant-owned package, never from a
+      // missing/empty UUID or an untrusted request body.
+      let targetProjectId = projectId;
+      if (!targetProjectId) {
+        if (!dto.packageId) {
+          throw new UnprocessableEntityException({
+            code: 'PROJECT_OR_PACKAGE_REQUIRED',
+            detail: 'Provide a project or an existing handover package.',
+          });
         }
-        packageId = latestPkg[0].id;
+        const { rows: ownedPackage } = await client.query(
+          `SELECT project_id FROM handover_packages
+             WHERE org_id = $1 AND id = $2`,
+          [ctx.orgId, dto.packageId],
+        );
+        if (!ownedPackage.length) {
+          throw new NotFoundException('HANDOVER_PACKAGE_NOT_FOUND');
+        }
+        targetProjectId = ownedPackage[0].project_id;
       }
-
+      // The package must belong to this project, be the newest revision, and
+      // have completed real artifact generation. Never submit QUEUED/FAILED
+      // packages or older versions after a corrected dossier is generated.
+      const { rows: latestPkg } = await client.query(
+        `SELECT hp.id, hp.status FROM handover_packages hp
+           WHERE hp.org_id = $1 AND hp.project_id = $2
+           ORDER BY hp.version_no DESC LIMIT 1 FOR UPDATE`,
+        [ctx.orgId, targetProjectId],
+      );
+      if (latestPkg.length === 0) {
+        throw new NotFoundException('No handover package found for project');
+      }
+      const latest = latestPkg[0];
+      if ((dto.packageId && dto.packageId !== latest.id) || latest.status !== 'READY') {
+        throw new ConflictException({
+          code: 'HANDOVER_PACKAGE_NOT_READY',
+          detail: 'Only the latest successfully generated package can be submitted for acceptance.',
+        });
+      }
+      const packageId = latest.id;
       const submissionId = uuidv7();
       await client.query(
         `INSERT INTO submissions (id, org_id, project_id, package_id, status, submitted_by, submitted_at, cover_note)
          VALUES ($1, $2, $3, $4, 'SUBMITTED', $5, now(), $6)`,
-        [submissionId, ctx.orgId, projectId, packageId, ctx.userId, dto.coverNote || null],
+        [submissionId, ctx.orgId, targetProjectId, packageId, ctx.userId, dto.coverNote || null],
       );
 
       for (const rec of dto.recipients) {
@@ -915,7 +882,7 @@ export class HandoverService {
           [
             uuidv7(),
             ctx.orgId,
-            projectId,
+            targetProjectId,
             submissionId,
             rec.partyId || null,
             rec.name,
@@ -928,7 +895,7 @@ export class HandoverService {
 
       emit({
         eventType: 'SUBMISSION_DISPATCHED',
-        projectId,
+        projectId: targetProjectId,
         entityType: 'SUBMISSION',
         entityId: submissionId,
         afterJson: { packageId, recipientCount: dto.recipients.length },

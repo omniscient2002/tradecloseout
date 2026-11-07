@@ -140,8 +140,8 @@ describe('Complete Application User Journey & Real Storage/Scanner Integration (
           INSERT INTO checklist_snapshots (
             id, org_id, project_id, version_no, status, checksum,
             resolved_payload_json, provenance_json, source_json, created_by
-          ) VALUES ($1, $2, $3, 1, 'ACTIVE', $4, '[]'::jsonb, '{}'::jsonb, '{}'::jsonb, $5)
-        `, [snapshotId, orgId, projectId, snapshotChecksum, contractorUserId]);
+          ) VALUES ($1, $2, $3, 1, 'ACTIVE', $4, $6::jsonb, '{}'::jsonb, '{}'::jsonb, $5)
+        `, [snapshotId, orgId, projectId, snapshotChecksum, contractorUserId, JSON.stringify({ requirements: [{ key: 'REQ-CHILLER-OM', groupKey: 'HVAC_EQUIPMENT', title: 'Chiller Installation & O&M Manual', docTypeKey: 'OM_MANUAL', mandatory: true, scopeType: 'ASSET', assetId }] })]);
 
         // Seed Requirement
         await admin.query(`

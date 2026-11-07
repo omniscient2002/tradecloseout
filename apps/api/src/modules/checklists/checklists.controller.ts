@@ -26,7 +26,7 @@ export class ChecklistsController {
   }
 
   @Post('projects/:projectId/requirements')
-  @RequirePermission('document.upload')
+  @RequirePermission('checklist.manage')
   async createRequirement(
     @Req() req: any,
     @Param('projectId') projectId: string,
@@ -57,7 +57,11 @@ export class ChecklistsController {
         key?: string;
         title: string;
         docTypeKey?: string;
+        groupKey?: string;
         mandatory?: boolean;
+        scopeType?: 'PROJECT' | 'ASSET_CATEGORY' | 'ASSET';
+        assetCategoryKey?: string;
+        assetId?: string;
       }>;
     },
   ) {

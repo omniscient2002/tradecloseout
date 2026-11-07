@@ -16,6 +16,7 @@ import {
   DomainOutboxEvent,
 } from '@tradecloseout/db';
 import { hasPermission, ProjectCodeSchema } from '@tradecloseout/shared';
+import { evaluateReadinessInTransaction } from '../handover/closeout-readiness';
 
 @Injectable()
 export class ProjectsService {
@@ -38,6 +39,7 @@ export class ProjectsService {
       contractValuePaise?: bigint;
       siteJson?: Record<string, unknown>;
       settingsJson?: Record<string, unknown>;
+      projectType?: string;
     },
   ) {
     const parsedCode = ProjectCodeSchema.safeParse(input.code);
@@ -46,6 +48,18 @@ export class ProjectsService {
         code: 'VALIDATION_FAILED',
         title: 'Invalid project code',
         detail: parsedCode.error.issues[0]?.message ?? 'Invalid code format.',
+      });
+    }
+
+    const allowedProjectTypes = new Set([
+      'PRIVATE_COMMERCIAL', 'GOVT_PWD', 'GOVERNMENT', 'CPWD', 'PSU',
+      'INSTITUTIONAL', 'INDUSTRIAL', 'HOSPITAL', 'CLEANROOM',
+    ]);
+    const projectType = input.projectType ?? 'PRIVATE_COMMERCIAL';
+    if (!allowedProjectTypes.has(projectType)) {
+      throw new UnprocessableEntityException({
+        code: 'INVALID_PROJECT_TYPE',
+        detail: 'Select a supported project type for the contractual checklist.',
       });
     }
 
@@ -60,8 +74,8 @@ export class ProjectsService {
       await client.query(
         `INSERT INTO projects
           (id, org_id, code, name, client_party_id, mc_party_id, consultant_party_id,
-           status, site_json, start_date, target_handover_date, settings_json, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 'DRAFT', $8, $9, $10, $11, $12)`,
+           status, site_json, start_date, target_handover_date, settings_json, created_by, project_type)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'DRAFT', $8, $9, $10, $11, $12, $13)`,
         [
           projectId,
           ctx.orgId,
@@ -75,6 +89,7 @@ export class ProjectsService {
           input.targetHandoverDate ?? null,
           JSON.stringify(settingsJson),
           ctx.userId,
+          projectType,
         ],
       );
 
@@ -116,6 +131,7 @@ export class ProjectsService {
     return this.createDraftProject(ctx, {
       code: dto.code,
       name: dto.name,
+      projectType: dto.projectType,
       clientPartyId: dto.clientPartyId,
       mcPartyId: dto.mcPartyId,
       consultantPartyId: dto.consultantPartyId,
@@ -347,32 +363,70 @@ export class ProjectsService {
         });
       }
 
-      // 3. Accepted handover submission required
+      // Historical acceptance is not sufficient after new mandatory obligations,
+      // evidence expiry/quarantine, or a revoked waiver. Revalidate the same
+      // live qualification used by GET readiness inside this closure transaction.
+      const readiness = await evaluateReadinessInTransaction(client, ctx.orgId, projectId);
+      if (!readiness.readyWithoutOverride) {
+        throw new ConflictException({
+          code: 'PROJECT_CLOSEOUT_NOT_READY',
+          detail: 'Current mandatory closeout requirements are missing, expired or unconfigured.',
+          missingMandatoryCount: readiness.blockers.missingMandatoryCount,
+          expiredMandatoryCount: readiness.blockers.expiredMandatoryCount,
+          configurationBlocker: readiness.configurationBlocker,
+        });
+      }
+
+      // 3. Accept the CURRENT dossier revision, not any historic submission.
+      // A later package or updated checklist invalidates older acceptance for
+      // full-project closure. Required recipients must all have accepted.
       const { rows: acceptedSubmissions } = await client.query(
-        `SELECT id FROM submissions
-          WHERE org_id = $1 AND project_id = $2
-            AND status IN ('ACCEPTED', 'PARTIALLY_ACCEPTED')
+        `SELECT s.id
+           FROM submissions s
+           JOIN handover_packages hp
+             ON hp.org_id = s.org_id AND hp.project_id = s.project_id
+            AND hp.id = s.package_id
+           JOIN checklist_snapshots cs
+             ON cs.org_id = hp.org_id AND cs.project_id = hp.project_id
+            AND cs.id = hp.snapshot_id AND cs.status = 'ACTIVE'
+            AND cs.checksum = hp.snapshot_checksum
+          WHERE s.org_id = $1 AND s.project_id = $2
+            AND s.status = 'ACCEPTED' AND hp.status = 'ACCEPTED'
+            AND hp.version_no = (
+              SELECT MAX(p.version_no) FROM handover_packages p
+               WHERE p.org_id = $1 AND p.project_id = $2
+            )
+            AND s.id = (
+              SELECT s2.id FROM submissions s2
+               WHERE s2.org_id = s.org_id AND s2.project_id = s.project_id
+                 AND s2.package_id = hp.id
+               ORDER BY s2.submitted_at DESC, s2.id DESC LIMIT 1
+            )
+            AND EXISTS (
+              SELECT 1 FROM submission_recipients sr
+               WHERE sr.org_id = s.org_id AND sr.submission_id = s.id
+                 AND sr.is_required_approver = true AND sr.status = 'ACCEPTED'
+                 AND sr.decided_at IS NOT NULL
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM submission_recipients sr
+               WHERE sr.org_id = s.org_id AND sr.submission_id = s.id
+                 AND sr.is_required_approver = true
+                 AND (sr.status <> 'ACCEPTED' OR sr.decided_at IS NULL)
+            )
           LIMIT 1`,
         [ctx.orgId, projectId],
       );
       if (acceptedSubmissions.length === 0) {
         throw new ConflictException({
           code: 'HANDOVER_SUBMISSION_NOT_ACCEPTED',
-          detail: 'Cannot close project: no accepted handover submission found. Record recipient acceptance before closing.',
+          detail: 'Cannot close project: the latest handover package and active checklist must have valid acceptance from every required recipient.',
         });
       }
 
-      // Precedence Rule (AUD-P-08 / FR-AST-012): Only set warranty_start where NULL
-      await client.query(
-        `UPDATE assets
-            SET warranty_start = $3,
-                row_version = row_version + 1,
-                updated_at = now()
-          WHERE org_id = $1 AND project_id = $2
-            AND warranty_start IS NULL
-            AND warranty_start_basis IN ('HANDOVER', 'ACCEPTANCE')`,
-        [ctx.orgId, projectId, closureDate],
-      );
+      // Closing a project is not itself evidence of the contractual HANDOVER
+      // or ACCEPTANCE date. Leave warranty dates unchanged until the relevant
+      // independently evidenced contractual event is recorded.
 
       const { rows: updatedRows } = await client.query(
         `UPDATE projects

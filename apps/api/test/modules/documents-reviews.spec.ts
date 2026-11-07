@@ -11,6 +11,7 @@
 // @traces('FR-REV-017')
 
 import { inspectAndSanitisePdf } from '@tradecloseout/pdf-engine';
+import { PDFDocument } from 'pdf-lib';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -24,10 +25,11 @@ describe('Documents & Reviews Specification Suite', () => {
     });
 
     it('sanitises valid PDF documents and validates page/object limits (Spike 2)', async () => {
-      // Create minimal valid PDF buffer
-      const samplePdf = Buffer.from(
-        '%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\nendobj\nxref\n0 4\n0000000000 65535 f \n0000000009 00000 n \n0000000058 00000 n \n0000000115 00000 n \ntrailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n190\n%%EOF',
-      );
+      // Use a standards-compliant PDF fixture. Hard-coded xref byte offsets
+      // become invalid after tiny edits and qpdf correctly rejects such files.
+      const fixture = await PDFDocument.create();
+      fixture.addPage([612, 792]);
+      const samplePdf = Buffer.from(await fixture.save());
 
       const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pdf-test-'));
       const inPath = path.join(tempDir, 'sample.pdf');
