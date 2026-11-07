@@ -75,6 +75,31 @@ describe('HVAC checklist and readiness release gates', () => {
     expect(result.configurationBlocker).toBe('ACTIVE_CHECKLIST_WITH_MANDATORY_REQUIREMENTS_REQUIRED');
   });
 
+  it('supersedes requirements removed from a later checklist snapshot', async () => {
+    const { pool, client } = mockPool((sql) => {
+      if (sql.includes('SELECT id FROM projects') && sql.includes('FOR UPDATE')) {
+        return { rows: [{ id: projectId }] };
+      }
+      return undefined;
+    });
+    const svc = new ChecklistsService(pool);
+    const applied = await svc.createAndApplySnapshot(ctx, projectId, [{
+      level: 'PROJECT', versionId: 'new-snapshot-config',
+      payload: { requirements: [{
+        key: 'AHU-COMMISSIONING', groupKey: 'COMMISSIONING',
+        title: 'AHU test and commissioning', docTypeKey: 'DT-042',
+        mandatory: true, scopeType: 'PROJECT',
+      }] },
+    }]);
+    expect(applied.instantiatedRequirements).toBe(1);
+    const retiring = client.query.mock.calls.find(([sql]: any[]) =>
+      sql.includes('UPDATE requirements r') && sql.includes('jsonb_to_recordset'));
+    expect(retiring).toBeDefined();
+    expect(JSON.parse(retiring![1][2])).toEqual([
+      { requirement_key: 'AHU-COMMISSIONING', scope_key: 'project' },
+    ]);
+  });
+
   it('persists HOSPITAL project type used by applicable closeout rules', async () => {
     const { pool, client } = mockPool(() => undefined);
     const svc = new ProjectsService(pool);
