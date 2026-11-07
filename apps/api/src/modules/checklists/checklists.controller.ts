@@ -57,7 +57,11 @@ export class ChecklistsController {
         key?: string;
         title: string;
         docTypeKey?: string;
+        groupKey?: string;
         mandatory?: boolean;
+        scopeType?: 'PROJECT' | 'ASSET_CATEGORY' | 'ASSET';
+        assetCategoryKey?: string;
+        assetId?: string;
       }>;
     },
   ) {
