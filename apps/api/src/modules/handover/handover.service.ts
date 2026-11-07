@@ -83,6 +83,13 @@ export class HandoverService {
         [ctx.orgId, projectId],
       );
 
+      const { rows: snapshots } = await client.query(
+        `SELECT id FROM checklist_snapshots WHERE org_id = $1 AND project_id = $2
+           AND status = 'ACTIVE' LIMIT 1`,
+        [ctx.orgId, projectId],
+      );
+      const configured = snapshots.length > 0 &&
+        reqs.some((r: any) => r.mandatory === true);
       const missingMandatory: any[] = [];
       const expiredMandatory: any[] = [];
       const expiringWarnings: any[] = [];
@@ -113,7 +120,8 @@ export class HandoverService {
       }
 
       return {
-        readyWithoutOverride: missingMandatory.length === 0 && expiredMandatory.length === 0,
+        readyWithoutOverride: configured && missingMandatory.length === 0 && expiredMandatory.length === 0,
+        configurationBlocker: configured ? null : 'ACTIVE_CHECKLIST_WITH_MANDATORY_REQUIREMENTS_REQUIRED',
         blockers: {
           missingMandatoryCount: missingMandatory.length,
           expiredMandatoryCount: expiredMandatory.length,
@@ -152,6 +160,25 @@ export class HandoverService {
     return withTenantTransaction(this.pool, ctx, async (client, emit) => {
       // Recheck in the package-creation transaction so a concurrent review or evidence
       // change cannot invalidate the readiness result calculated immediately above.
+      const { rows: configuredRows } = await client.query(
+        `SELECT 1
+           FROM checklist_snapshots s
+          WHERE s.org_id = $1 AND s.project_id = $2 AND s.status = 'ACTIVE'
+            AND EXISTS (
+              SELECT 1 FROM requirements r
+               WHERE r.org_id = s.org_id AND r.project_id = s.project_id
+                 AND r.current_snapshot_id = s.id AND r.superseded_at IS NULL
+                 AND r.mandatory = true
+            )
+          LIMIT 1`,
+        [ctx.orgId, projectId],
+      );
+      if (configuredRows.length === 0) {
+        throw new UnprocessableEntityException({
+          code: 'NO_APPLICABLE_MANDATORY_CHECKLIST',
+          detail: 'The project needs an active, non-empty checklist with mandatory requirements before handover.',
+        });
+      }
       const { rows: blockerRows } = await client.query(
         `SELECT r.id
            FROM requirements r
