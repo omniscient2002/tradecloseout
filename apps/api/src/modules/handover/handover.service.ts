@@ -921,19 +921,34 @@ export class HandoverService {
       coverNote?: string;
     },
   ) {
+    if (!Array.isArray(dto?.recipients) || dto.recipients.length === 0 ||
+        !dto.recipients.some((r) => r.isRequiredApprover !== false)) {
+      throw new UnprocessableEntityException({
+        code: 'HANDOVER_RECIPIENT_REQUIRED',
+        detail: 'A handover submission must identify at least one required approver.',
+      });
+    }
     return withTenantTransaction(this.pool, ctx, async (client, emit) => {
-      let packageId = dto.packageId;
-      if (!packageId) {
-        const { rows: latestPkg } = await client.query(
-          `SELECT id FROM handover_packages WHERE org_id = $1 AND project_id = $2 ORDER BY version_no DESC LIMIT 1`,
-          [ctx.orgId, projectId],
-        );
-        if (!latestPkg.length) {
-          throw new NotFoundException('No compiled package found for project');
-        }
-        packageId = latestPkg[0].id;
+      // The package must belong to this project, be the newest revision, and
+      // have completed real artifact generation. Never submit QUEUED/FAILED
+      // packages or older versions after a corrected dossier is generated.
+      const { rows: latestPkg } = await client.query(
+        `SELECT hp.id, hp.status FROM handover_packages hp
+           WHERE hp.org_id = $1 AND hp.project_id = $2
+           ORDER BY hp.version_no DESC LIMIT 1 FOR UPDATE`,
+        [ctx.orgId, projectId],
+      );
+      if (latestPkg.length === 0) {
+        throw new NotFoundException('No handover package found for project');
       }
-
+      const latest = latestPkg[0];
+      if ((dto.packageId && dto.packageId !== latest.id) || latest.status !== 'READY') {
+        throw new ConflictException({
+          code: 'HANDOVER_PACKAGE_NOT_READY',
+          detail: 'Only the latest successfully generated package can be submitted for acceptance.',
+        });
+      }
+      const packageId = latest.id;
       const submissionId = uuidv7();
       await client.query(
         `INSERT INTO submissions (id, org_id, project_id, package_id, status, submitted_by, submitted_at, cover_note)
