@@ -50,6 +50,18 @@ export class ProjectsService {
       });
     }
 
+    const allowedProjectTypes = new Set([
+      'PRIVATE_COMMERCIAL', 'GOVT_PWD', 'GOVERNMENT', 'CPWD', 'PSU',
+      'INSTITUTIONAL', 'INDUSTRIAL', 'HOSPITAL', 'CLEANROOM',
+    ]);
+    const projectType = input.projectType ?? 'PRIVATE_COMMERCIAL';
+    if (!allowedProjectTypes.has(projectType)) {
+      throw new UnprocessableEntityException({
+        code: 'INVALID_PROJECT_TYPE',
+        detail: 'Select a supported project type for the contractual checklist.',
+      });
+    }
+
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
       const projectId = uuidv7();
 
@@ -76,7 +88,7 @@ export class ProjectsService {
           input.targetHandoverDate ?? null,
           JSON.stringify(settingsJson),
           ctx.userId,
-          input.projectType ?? 'PRIVATE_COMMERCIAL',
+          projectType,
         ],
       );
 
