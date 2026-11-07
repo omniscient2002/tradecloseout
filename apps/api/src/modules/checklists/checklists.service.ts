@@ -809,48 +809,80 @@ export class ChecklistsService {
       dueDate?: string;
     },
   ) {
-    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
-      let snapRes = await client.query(
-        `SELECT id FROM checklist_snapshots
-         WHERE org_id = $1 AND project_id = $2
-         ORDER BY version_no DESC LIMIT 1`,
+    if (!dto?.key?.trim() || !dto.title?.trim() || !dto.docTypeCode?.trim()) {
+      throw new UnprocessableEntityException({
+        code: 'REQUIREMENT_MAPPING_REQUIRED',
+        detail: 'A new contractual requirement must have a key, title, and mapped document type.',
+      });
+    }
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      const { rows: projectRows } = await client.query(
+        `SELECT id, status FROM projects WHERE org_id = $1 AND id = $2 FOR UPDATE`,
         [ctx.orgId, projectId],
       );
-      let snapshotId: string;
-      if (!snapRes.rows.length) {
-        snapshotId = uuidv7();
-        await client.query(
-          `INSERT INTO checklist_snapshots (
-            id, org_id, project_id, version_no, status, resolved_payload_json,
-            provenance_json, source_json, checksum, created_by
-          ) VALUES ($1, $2, $3, 1, 'ACTIVE', '{}', '{}', '{}', 'initial', $4)`,
-          [snapshotId, ctx.orgId, projectId, ctx.userId],
-        );
-      } else {
-        snapshotId = snapRes.rows[0].id;
+      if (!projectRows.length) throw new NotFoundException('PROJECT_NOT_FOUND');
+      if (projectRows[0].status === 'CLOSED') {
+        throw new ConflictException('CLOSED_PROJECT_REQUIRES_FORMAL_REOPEN');
       }
-
-      const reqId = uuidv7();
-      const insertRes = await client.query(
-        `INSERT INTO requirements (
-          id, org_id, project_id, current_snapshot_id, requirement_key, scope_key,
-          group_key, title, doc_type_key, milestone_key, mandatory, status, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, 'project', $6, $7, $8, 'HANDOVER', $9, 'NOT_STARTED', now(), now())
-        RETURNING *`,
-        [
-          reqId,
-          ctx.orgId,
-          projectId,
-          snapshotId,
-          dto.key,
-          dto.groupKey || 'G1',
-          dto.title,
-          dto.docTypeCode || 'DT-001',
-          dto.mandatory !== false,
-        ],
+      const { rows: snaps } = await client.query(
+        `SELECT resolved_payload_json FROM checklist_snapshots
+           WHERE org_id = $1 AND project_id = $2 AND status = 'ACTIVE'
+           ORDER BY version_no DESC LIMIT 1`,
+        [ctx.orgId, projectId],
       );
-
-      return insertRes.rows[0];
+      const raw = snaps[0]?.resolved_payload_json;
+      const snapshot = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (!Array.isArray(snapshot?.requirements) || snapshot.requirements.length === 0) {
+        throw new UnprocessableEntityException({
+          code: 'CHECKLIST_CONFIGURATION_REQUIRED',
+          detail: 'Configure the project checklist before adding requirements.',
+        });
+      }
+      const key = dto.key.trim();
+      if (snapshot.requirements.some((r: ResolvedRequirementSpec) => r.key === key)) {
+        throw new ConflictException({
+          code: 'DUPLICATE_REQUIREMENT_KEY',
+          detail: 'Use a controlled change request to modify an existing obligation.',
+        });
+      }
+      let scopeType: ResolvedRequirementSpec['scopeType'] = 'PROJECT';
+      let assetId: string | undefined;
+      if (dto.assetTag) {
+        const { rows: assets } = await client.query(
+          `SELECT id FROM assets WHERE org_id = $1 AND project_id = $2
+             AND tag = $3 AND status = 'ACTIVE' AND deleted_at IS NULL`,
+          [ctx.orgId, projectId, dto.assetTag],
+        );
+        if (assets.length !== 1) throw new NotFoundException('PROJECT_ASSET_NOT_FOUND');
+        assetId = assets[0].id;
+        scopeType = 'ASSET';
+      }
+      const extra: ResolvedRequirementSpec = {
+        key,
+        title: dto.title.trim(),
+        groupKey: dto.groupKey?.trim() || 'CONSULTANT',
+        docTypeKey: dto.docTypeCode.trim(),
+        mandatory: dto.mandatory !== false,
+        scopeType,
+        ...(assetId ? { assetId } : {}),
+        reviewerRole: 'R-QC',
+      };
+      const applied = await this.createAndApplySnapshot(
+        ctx, projectId,
+        [{ level: 'PROJECT', versionId: uuidv7(),
+           payload: { requirements: [...snapshot.requirements, extra] } }],
+        undefined,
+        'Manual contractual requirement addition',
+        { client, emit },
+      );
+      const { rows: created } = await client.query(
+        `SELECT * FROM requirements WHERE org_id = $1 AND project_id = $2
+           AND current_snapshot_id = $3 AND requirement_key = $4
+           AND scope_key = $5 AND superseded_at IS NULL`,
+        [ctx.orgId, projectId, applied.snapshotId, key, assetId ? `asset:${assetId}` : 'project'],
+      );
+      if (!created.length) throw new ConflictException('REQUIREMENT_SNAPSHOT_APPLY_FAILED');
+      return created[0];
     });
   }
 
