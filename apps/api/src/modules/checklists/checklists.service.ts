@@ -41,6 +41,32 @@ export interface ResolvedRequirementSpec {
 export class ChecklistsService {
   constructor(private readonly pool: Pool) {}
 
+  private async lockEditableProject(client: PoolClient, orgId: string, projectId: string): Promise<void> {
+    // Every baseline writer shares closure's project lock. Check the lifecycle
+    // after acquiring it so a waiting import cannot change a just-closed scope.
+    const { rows } = await client.query(
+      `SELECT id, status, purged_at FROM projects WHERE org_id = $1 AND id = $2 FOR UPDATE`,
+      [orgId, projectId],
+    );
+    const project = rows[0];
+    if (!project) throw new NotFoundException('PROJECT_NOT_FOUND');
+    if (project.purged_at != null) {
+      throw new ConflictException({ code: 'PROJECT_PURGED', detail: 'Purged projects cannot change their contractual checklist.' });
+    }
+    if (project.status === 'CLOSED') {
+      throw new ConflictException({
+        code: 'CLOSED_PROJECT_REQUIRES_FORMAL_REOPEN',
+        detail: 'Formally reopen the project before changing its accepted contractual checklist.',
+      });
+    }
+    if (!['DRAFT', 'ACTIVE', 'HANDOVER'].includes(project.status)) {
+      throw new ConflictException({
+        code: 'PROJECT_CHECKLIST_NOT_EDITABLE',
+        detail: 'The project lifecycle does not permit contractual checklist changes.',
+      });
+    }
+  }
+
   /**
    * API-056: POST /api/v1/projects/:id/checklist/snapshots
    * Resolves L0..L4 configuration, creates an immutable checklist_snapshots row,
@@ -94,13 +120,7 @@ export class ChecklistsService {
     const applySnapshot = async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
       // Serialize competing snapshot writers, including the first snapshot when
       // there is no existing checklist row to lock.
-      const { rows: projectLock } = await client.query(
-        `SELECT id FROM projects WHERE org_id = $1 AND id = $2 FOR UPDATE`,
-        [ctx.orgId, projectId],
-      );
-      if (!projectLock.length) {
-        throw new NotFoundException({ code: 'PROJECT_NOT_FOUND', detail: 'Project not found.' });
-      }
+      await this.lockEditableProject(client, ctx.orgId, projectId);
       // Supersede prior ACTIVE snapshot if one exists (06 §3.5)
       const { rows: priorSnaps } = await client.query(
         `SELECT id, version_no FROM checklist_snapshots
@@ -388,11 +408,7 @@ export class ChecklistsService {
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
       // Lock BEFORE reading the baseline, so reapply cannot overwrite a
       // concurrent consultant import with a stale snapshot.
-      const { rows: projectRows } = await client.query(
-        `SELECT id FROM projects WHERE org_id = $1 AND id = $2 FOR UPDATE`,
-        [ctx.orgId, projectId],
-      );
-      if (!projectRows.length) throw new NotFoundException('PROJECT_NOT_FOUND');
+      await this.lockEditableProject(client, ctx.orgId, projectId);
       const { rows } = await client.query(
         `SELECT resolved_payload_json FROM checklist_snapshots
            WHERE org_id = $1 AND project_id = $2 AND status = 'ACTIVE'
@@ -447,11 +463,7 @@ export class ChecklistsService {
     // Read AND apply in the same RLS-bound transaction, after taking the
     // project lock. A second importer observes the first committed snapshot.
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
-      const { rows: projectRows } = await client.query(
-        `SELECT id FROM projects WHERE org_id = $1 AND id = $2 FOR UPDATE`,
-        [ctx.orgId, projectId],
-      );
-      if (!projectRows.length) throw new NotFoundException('PROJECT_NOT_FOUND');
+      await this.lockEditableProject(client, ctx.orgId, projectId);
       const { rows: activeSnapshots } = await client.query(
         `SELECT resolved_payload_json FROM checklist_snapshots
            WHERE org_id = $1 AND project_id = $2 AND status = 'ACTIVE'
@@ -817,14 +829,7 @@ export class ChecklistsService {
       });
     }
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
-      const { rows: projectRows } = await client.query(
-        `SELECT id, status FROM projects WHERE org_id = $1 AND id = $2 FOR UPDATE`,
-        [ctx.orgId, projectId],
-      );
-      if (!projectRows.length) throw new NotFoundException('PROJECT_NOT_FOUND');
-      if (projectRows[0].status === 'CLOSED') {
-        throw new ConflictException('CLOSED_PROJECT_REQUIRES_FORMAL_REOPEN');
-      }
+      await this.lockEditableProject(client, ctx.orgId, projectId);
       const { rows: snaps } = await client.query(
         `SELECT resolved_payload_json FROM checklist_snapshots
            WHERE org_id = $1 AND project_id = $2 AND status = 'ACTIVE'

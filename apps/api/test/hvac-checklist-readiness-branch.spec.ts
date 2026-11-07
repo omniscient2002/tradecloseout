@@ -17,8 +17,8 @@ function mockPool(handler: (sql: string, params?: any[]) => any) {
       if (result !== undefined) return result;
       // These focused unit tests model an existing project. The actual
       // database-backed suite tests the project lock and missing-project case.
-      if (sql.includes('SELECT id FROM projects') && sql.includes('FOR UPDATE')) {
-        return { rows: [{ id: projectId }] };
+      if (sql.includes('SELECT id, status, purged_at FROM projects') && sql.includes('FOR UPDATE')) {
+        return { rows: [{ id: projectId, status: 'ACTIVE', purged_at: null }] };
       }
       return { rows: [] };
     }),
@@ -85,8 +85,8 @@ describe('HVAC checklist and readiness release gates', () => {
 
   it('supersedes requirements removed from a later checklist snapshot', async () => {
     const { pool, client } = mockPool((sql) => {
-      if (sql.includes('SELECT id FROM projects') && sql.includes('FOR UPDATE')) {
-        return { rows: [{ id: projectId }] };
+      if (sql.includes('SELECT id, status, purged_at FROM projects') && sql.includes('FOR UPDATE')) {
+        return { rows: [{ id: projectId, status: 'ACTIVE', purged_at: null }] };
       }
       return undefined;
     });
