@@ -281,7 +281,7 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
       try {
         const billingService = new BillingService({} as any);
         await expect(
-          billingService.handleRazorpayWebhook({ id: 'evt_123' }, 'invalid_hmac_sig'),
+          billingService.handleRazorpayWebhook(Buffer.from('{"id":"evt_123"}'), 'invalid_hmac_sig'),
         ).rejects.toThrow(/INVALID_PAYMENT_WEBHOOK_SIGNATURE/);
       } finally {
         delete process.env.RAZORPAY_WEBHOOK_SECRET;
@@ -293,8 +293,8 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
       process.env.RAZORPAY_WEBHOOK_SECRET = secret;
       try {
         const billingService = new BillingService({} as any);
-        const payload = { id: 'evt_valid_123', event: 'payment.captured' };
-        const validSig = createHmac('sha256', secret).update(JSON.stringify(payload)).digest('hex');
+        const payload = Buffer.from(JSON.stringify({ id: 'evt_valid_123', event: 'payment.captured' }));
+        const validSig = createHmac('sha256', secret).update(payload).digest('hex');
 
         await expect(
           billingService.handleRazorpayWebhook(payload, validSig),
