@@ -29,8 +29,8 @@ describe('Sol Integrity & Audit Invariants Suite', () => {
           if (sql.includes('SELECT uc.value AS current_storage')) {
             return { rows: [] };
           }
-          if (sql.includes('SELECT id FROM documents WHERE')) {
-            return { rows: [{ id: existingDocId }] };
+          if (sql.includes('SELECT id, doc_type_key FROM documents WHERE')) {
+            return { rows: [{ id: existingDocId, doc_type_key: 'DT-001' }] };
           }
           if (sql.includes('SELECT id FROM document_versions')) {
             return { rows: [] };
