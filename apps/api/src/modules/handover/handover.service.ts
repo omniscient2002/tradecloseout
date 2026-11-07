@@ -522,17 +522,20 @@ export class HandoverService {
         if (existingRec.grant_status !== 'ACTIVE') {
           throw new UnauthorizedException('GUEST_GRANT_REVOKED_OR_EXPIRED');
         }
-        if (existingRec.grant_project_id && existingRec.grant_project_id !== targetProjectId) {
+        // An unscoped/malformed grant must never be interpreted as
+        // permission to act for *any* recipient or project.
+        if (!existingRec.grant_project_id || existingRec.grant_project_id !== targetProjectId) {
           throw new ForbiddenException({
             code: 'RECIPIENT_AUTHORITY_DENIED',
-            detail: 'Guest grant belongs to another project.',
+            detail: 'Guest grant does not belong to this project.',
           });
         }
         const effectivePartyId = existingRec.recipient_party_id || existingRec.party_id;
-        if (existingRec.grant_party_id && existingRec.grant_party_id !== effectivePartyId) {
+        if (!existingRec.grant_party_id || !effectivePartyId ||
+            existingRec.grant_party_id !== effectivePartyId) {
           throw new ForbiddenException({
             code: 'RECIPIENT_AUTHORITY_DENIED',
-            detail: 'Guest grant does not have authority to decide for this recipient party.',
+            detail: 'Guest grant does not identify the authorised recipient party.',
           });
         }
       }
@@ -543,12 +546,12 @@ export class HandoverService {
                 decision = $5,
                 remarks = $6,
                 decided_at = now()
-          WHERE org_id = $1 AND submission_id = $2
-            AND (recipient_party_id = $3 OR party_id = $3 OR id = $3)`,
+          WHERE org_id = $1 AND submission_id = $2 AND id = $3
+            AND decided_at IS NULL`,
         [
           ctx.orgId,
           submissionId,
-          input.recipientPartyId,
+          existingRec.id,
           nextRecipientStatus,
           input.decision,
           input.remarks ?? null,
