@@ -14,7 +14,13 @@ function mockPool(handler: (sql: string, params?: any[]) => any) {
   const client: any = {
     query: jest.fn(async (sql: string, params?: any[]) => {
       const result = handler(sql, params);
-      return result === undefined ? { rows: [] } : result;
+      if (result !== undefined) return result;
+      // These focused unit tests model an existing project. The actual
+      // database-backed suite tests the project lock and missing-project case.
+      if (sql.includes('SELECT id FROM projects') && sql.includes('FOR UPDATE')) {
+        return { rows: [{ id: projectId }] };
+      }
+      return { rows: [] };
     }),
     release: jest.fn(),
   };
