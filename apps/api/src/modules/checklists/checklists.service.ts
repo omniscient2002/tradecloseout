@@ -9,6 +9,7 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { Pool, PoolClient } from 'pg';
+import { createHash } from 'crypto';
 import { uuidv7 } from 'uuidv7';
 import {
   withTenantTransaction,
@@ -31,8 +32,9 @@ export interface ResolvedRequirementSpec {
   description?: string;
   docTypeKey: string;
   mandatory: boolean;
-  scopeType: 'PROJECT' | 'ASSET_CATEGORY';
+  scopeType: 'PROJECT' | 'ASSET_CATEGORY' | 'ASSET';
   assetCategoryKey?: string;
+  assetId?: string;
   reviewerRole?: string;
   dueOffsetDays?: number;
   validityRule?: Record<string, unknown>;
@@ -65,6 +67,31 @@ export class ChecklistsService {
     }
 
     const reqSpecs = (resolved.payload.requirements ?? []) as ResolvedRequirementSpec[];
+    if (!Array.isArray(reqSpecs) || reqSpecs.length === 0) {
+      throw new UnprocessableEntityException({
+        code: 'CHECKLIST_REQUIREMENTS_MISSING',
+        detail: 'A checklist needs explicit contract or trade requirements. An empty snapshot cannot be applied.',
+      });
+    }
+    const seenKeys = new Set<string>();
+    for (const spec of reqSpecs) {
+      if (!spec.key?.trim() || !spec.title?.trim() || !spec.docTypeKey?.trim() ||
+          !['PROJECT', 'ASSET_CATEGORY', 'ASSET'].includes(spec.scopeType) ||
+          (spec.scopeType === 'ASSET_CATEGORY' && !spec.assetCategoryKey) ||
+          (spec.scopeType === 'ASSET' && !spec.assetId)) {
+        throw new UnprocessableEntityException({
+          code: 'INVALID_CHECKLIST_REQUIREMENT',
+          detail: 'Requirements need a key, title, document type, and an explicit valid scope.',
+        });
+      }
+      if (seenKeys.has(spec.key)) {
+        throw new UnprocessableEntityException({
+          code: 'DUPLICATE_CHECKLIST_KEY',
+          detail: `Requirement key '${spec.key}' appears more than once.`,
+        });
+      }
+      seenKeys.add(spec.key);
+    }
 
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
       // Supersede prior ACTIVE snapshot if one exists (06 §3.5)
@@ -153,7 +180,16 @@ export class ChecklistsService {
       }> = [];
 
       for (const spec of filteredSpecs) {
-        if (spec.scopeType === 'ASSET_CATEGORY' && spec.assetCategoryKey) {
+        if (spec.scopeType === 'ASSET' && spec.assetId) {
+          const asset = projectAssets.find((a: any) => a.id === spec.assetId);
+          if (!asset) {
+            throw new UnprocessableEntityException({
+              code: 'CHECKLIST_ASSET_NOT_FOUND',
+              detail: `Requirement '${spec.key}' targets an asset not active in this project.`,
+            });
+          }
+          targetInstances.push({ spec, scopeKey: `asset:${asset.id}` });
+        } else if (spec.scopeType === 'ASSET_CATEGORY' && spec.assetCategoryKey) {
           const matchingAssets = projectAssets.filter(
             (a: any) => a.category_key === spec.assetCategoryKey,
           );
@@ -294,32 +330,36 @@ export class ChecklistsService {
   }
 
   /**
-   * Controller wrapper for createSnapshot
+   * Reapply the existing explicit checklist configuration. We intentionally do
+   * not substitute a fake one-item handover dossier when no template exists.
    */
   async createSnapshot(ctx: TenantActorContext, projectId: string, dto?: { comment?: string }) {
-    const layers: ConfigLayerInput[] = [
-      {
-        level: 'PROJECT',
-        versionId: uuidv7(),
-        payload: {
-          requirements: [
-            {
-              key: 'HANDOVER_DOSSIER',
-              groupKey: 'G1',
-              title: 'Technical Closeout Dossier',
-              docTypeKey: 'DT-001',
-              mandatory: true,
-              scopeType: 'PROJECT',
-            },
-          ],
-        },
-      },
-    ];
-    return this.createAndApplySnapshot(ctx, projectId, layers, undefined, dto?.comment);
+    const existing = await withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+      const { rows } = await client.query(
+        `SELECT resolved_payload_json FROM checklist_snapshots
+           WHERE org_id = $1 AND project_id = $2 AND status = 'ACTIVE'
+           ORDER BY version_no DESC LIMIT 1`,
+        [ctx.orgId, projectId],
+      );
+      return rows[0]?.resolved_payload_json;
+    });
+    const payload = typeof existing === 'string' ? JSON.parse(existing) : existing;
+    if (!Array.isArray(payload?.requirements) || payload.requirements.length === 0) {
+      throw new UnprocessableEntityException({
+        code: 'CHECKLIST_CONFIGURATION_REQUIRED',
+        detail: 'Import a consultant checklist or configure a real HVAC template before creating a snapshot.',
+      });
+    }
+    return this.createAndApplySnapshot(
+      ctx, projectId,
+      [{ level: 'PROJECT', versionId: uuidv7(), payload: { requirements: payload.requirements } }],
+      undefined, dto?.comment || 'Reapply configured checklist',
+    );
   }
 
   /**
-   * Ingests parsed consultant checklist requirements and applies them to the project.
+   * Imports scoped consultant requirements without overwriting the existing
+   * snapshot or inventing DT-001 for unknown document types.
    */
   async importL3Checklist(
     ctx: TenantActorContext,
@@ -330,52 +370,81 @@ export class ChecklistsService {
         key?: string;
         title: string;
         docTypeKey?: string;
+        groupKey?: string;
         mandatory?: boolean;
+        scopeType?: 'PROJECT' | 'ASSET_CATEGORY' | 'ASSET';
+        assetCategoryKey?: string;
+        assetId?: string;
       }>;
     },
   ) {
-    // TC2-020: Load existing active snapshot requirements to avoid destroying scope
-    const { rows: currentSnapshots } = await this.pool.query(
-      `SELECT snapshot_json FROM checklist_snapshots
-        WHERE org_id = $1 AND project_id = $2
-        ORDER BY version_no DESC LIMIT 1`,
-      [ctx.orgId, projectId],
-    );
-
-    let existingReqs: any[] = [];
-    if (currentSnapshots.length > 0) {
-      const snap = currentSnapshots[0].snapshot_json;
-      existingReqs = snap?.requirements || snap?.checklist?.requirements || [];
+    if (!Array.isArray(dto?.requirements) || dto.requirements.length === 0 || dto.requirements.length > 1000) {
+      throw new UnprocessableEntityException({
+        code: 'INVALID_CHECKLIST_IMPORT',
+        detail: 'Supply between 1 and 1000 mapped consultant requirements.',
+      });
     }
 
-    const newReqs = dto.requirements.map((r, idx) => ({
-      key: r.key || `REQ-${(r.docTypeKey || 'DT001').replace('-', '')}-${Date.now()}-${idx + 1}`,
-      groupKey: 'G1',
-      title: r.title,
-      docTypeKey: r.docTypeKey || 'DT-001',
-      mandatory: r.mandatory !== false,
-      scopeType: 'PROJECT',
-    }));
+    // Read with the tenant/RLS context and use the actual persisted JSON field.
+    const currentSnapshot = await withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+      const { rows } = await client.query(
+        `SELECT resolved_payload_json FROM checklist_snapshots
+           WHERE org_id = $1 AND project_id = $2 AND status = 'ACTIVE'
+           ORDER BY version_no DESC LIMIT 1`,
+        [ctx.orgId, projectId],
+      );
+      return rows[0]?.resolved_payload_json;
+    });
+    const existingPayload = typeof currentSnapshot === 'string' ? JSON.parse(currentSnapshot) : currentSnapshot;
+    const existingReqs: ResolvedRequirementSpec[] =
+      Array.isArray(existingPayload?.requirements) ? existingPayload.requirements : [];
 
-    const existingKeys = new Set(existingReqs.map((r) => r.key));
+    const newReqs: ResolvedRequirementSpec[] = dto.requirements.map((r, idx) => {
+      const title = r.title?.trim();
+      const docTypeKey = r.docTypeKey?.trim();
+      const scopeType = r.scopeType || 'PROJECT';
+      if (!title || !docTypeKey || !['PROJECT', 'ASSET_CATEGORY', 'ASSET'].includes(scopeType) ||
+          (scopeType === 'ASSET_CATEGORY' && !r.assetCategoryKey) ||
+          (scopeType === 'ASSET' && !r.assetId)) {
+        throw new UnprocessableEntityException({
+          code: 'CHECKLIST_MAPPING_REQUIRED',
+          detail: `Row ${idx + 1} needs a title, mapped document type and valid project/asset scope.`,
+        });
+      }
+      const naturalKey = [docTypeKey, title.toLowerCase(), scopeType, r.assetCategoryKey || '', r.assetId || ''].join('|');
+      const key = r.key?.trim() || `IMPORTED-${createHash('sha256').update(naturalKey).digest('hex').slice(0, 16)}`;
+      return {
+        key,
+        groupKey: r.groupKey?.trim() || 'CONSULTANT',
+        title,
+        docTypeKey,
+        mandatory: r.mandatory !== false,
+        scopeType,
+        ...(scopeType === 'ASSET_CATEGORY' ? { assetCategoryKey: r.assetCategoryKey } : {}),
+        ...(scopeType === 'ASSET' ? { assetId: r.assetId } : {}),
+      };
+    });
+
+    const newKeys = new Set<string>();
+    for (const r of newReqs) {
+      if (newKeys.has(r.key)) {
+        throw new UnprocessableEntityException({
+          code: 'DUPLICATE_CHECKLIST_KEY',
+          detail: `The import contains duplicate requirement key '${r.key}'.`,
+        });
+      }
+      newKeys.add(r.key);
+    }
+    // A repeated import replaces the matching definition instead of creating
+    // duplicate obligations. All unrelated requirements remain in the snapshot.
     const combinedReqs = [
-      ...existingReqs,
-      ...newReqs.filter((r) => !existingKeys.has(r.key)),
-    ];
-
-    const layers: ConfigLayerInput[] = [
-      {
-        level: 'PROJECT',
-        versionId: uuidv7(),
-        payload: {
-          requirements: combinedReqs.length > 0 ? combinedReqs : newReqs,
-        },
-      },
+      ...existingReqs.filter((r) => !newKeys.has(r.key)),
+      ...newReqs,
     ];
     return this.createAndApplySnapshot(
       ctx,
       projectId,
-      layers,
+      [{ level: 'PROJECT', versionId: uuidv7(), payload: { requirements: combinedReqs } }],
       undefined,
       dto.profileName || 'Consultant Checklist Import',
     );
