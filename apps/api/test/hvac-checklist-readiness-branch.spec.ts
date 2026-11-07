@@ -1,5 +1,6 @@
 import { UnprocessableEntityException, ConflictException, BadRequestException } from '@nestjs/common';
 import { DocumentsService } from '../src/modules/documents/documents.service';
+import { TenantDbService } from '../src/database/tenant-db.service';
 import { ChecklistsService } from '../src/modules/checklists/checklists.service';
 import { HandoverService } from '../src/modules/handover/handover.service';
 import { ProjectsService } from '../src/modules/projects/projects.service';
@@ -103,14 +104,14 @@ describe('HVAC checklist and readiness release gates', () => {
 
   it('rejects evidence intentionally misclassified against its contractual requirement', async () => {
     const reqId = '0192e3a0-4000-7000-8000-000000000004';
-    const fakeDb: any = {
-      withTenantContext: jest.fn(async (_actor: any, fn: any) => fn({
-        query: jest.fn(async (sql: string) => sql.includes('SELECT id, doc_type_key FROM requirements')
-          ? { rows: [{ id: reqId, doc_type_key: 'DT-057' }] }
-          : { rows: [] }),
-      })),
+    const client: any = {
+      query: jest.fn(async (sql: string) => sql.includes('SELECT id, doc_type_key FROM requirements')
+        ? { rows: [{ id: reqId, doc_type_key: 'DT-057' }] }
+        : { rows: [] }),
+      release: jest.fn(),
     };
-    const svc = new DocumentsService(fakeDb, {} as any);
+    const db = new TenantDbService({ connect: jest.fn(async () => client) } as any);
+    const svc = new DocumentsService(db, {} as any);
     await expect(svc.createUploadIntent(ctx, projectId, {
       mimeType: 'application/pdf', sizeBytes: 1024,
       fileName: 'wrong-document-type.pdf',
