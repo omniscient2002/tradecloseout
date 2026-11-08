@@ -90,6 +90,15 @@ export function validateAuthenticationConfig(env: NodeJS.ProcessEnv = process.en
        env.AUTH_MFA_ENCRYPTION_KEY_PREVIOUS === env.AUTH_MFA_ENCRYPTION_KEY)) {
     throw new Error('BOOT_AUTH_MFA_PREVIOUS_ENCRYPTION_KEY_INVALID');
   }
+  if (env.AUTH_MFA_ENCRYPTION_KEY_PREVIOUS) {
+    const expires = env.AUTH_MFA_PREVIOUS_KEY_EXPIRES_AT || '';
+    const validTimestamp = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(expires);
+    const deadline = validTimestamp ? Date.parse(expires) : NaN;
+    if (!Number.isFinite(deadline) || deadline <= Date.now() ||
+        deadline > Date.now() + 30 * 24 * 60 * 60 * 1000) {
+      throw new Error('BOOT_AUTH_MFA_PREVIOUS_KEY_EXPIRED_OR_UNBOUNDED');
+    }
+  }
   const proxies = (env.AUTH_TRUSTED_PROXY_CIDRS || '').split(',').map(v => v.trim()).filter(Boolean);
   if (!proxies.length || proxies.some(x =>
       !isTrustedProxyEntry(x) || ['0.0.0.0/0', '::/0'].includes(x))) {
