@@ -64,7 +64,7 @@ describe('G01 MFA real PostgreSQL control plane', () => {
     await withDisposableDatabase(async ({ admin, app }) => {
       const { userId, sessionId, req } = await seed(admin);
       const ctrl = new MfaController(app);
-      const res:any = { cookie: jest.fn() };
+      const res:any = { cookie: jest.fn(), clearCookie: jest.fn() };
       const started = await ctrl.beginEnrollment(req);
       expect(started.manualSetupKey).toMatch(/^[A-Z2-7]{32}$/);
       const now = Date.now();
@@ -87,13 +87,25 @@ describe('G01 MFA real PostgreSQL control plane', () => {
         'SELECT count(*)::int AS n FROM mfa_recovery_codes WHERE user_id=$1 AND consumed_at IS NOT NULL',
         [userId])).rows[0].n).toBe(1);
       req.auth.mfaVerified = true;
-      const reset=await ctrl.resetEnrollment(req);
-      expect(reset).toMatchObject({ enrolled: false, mfaVerified: false });
-      expect((await app.query('SELECT mfa_verified FROM sessions WHERE id=$1',[sessionId])).rows[0].mfa_verified).toBe(false);
+      await expect(ctrl.resetEnrollment(req, {} as any, res)).rejects.toThrow();
+      await expect(ctrl.resetEnrollment(req, { recoveryCode: backup }, res)).rejects.toThrow();
+      expect((await admin.query(
+        'SELECT mfa_enabled_at FROM users WHERE id=$1', [userId])).rows[0].mfa_enabled_at).toBeTruthy();
+      const reset=await ctrl.resetEnrollment(req,
+        { recoveryCode: confirmed.recoveryCodes[1] }, res);
+      expect(reset).toMatchObject({
+        enrolled: false, mfaVerified: false, reauthenticationRequired: true,
+      });
+      expect(res.clearCookie).toHaveBeenCalledWith('tc_session',
+        expect.objectContaining({httpOnly:true}));
+      const oldSession=(await app.query(
+        'SELECT mfa_verified, revoked_at FROM sessions WHERE id=$1', [sessionId])).rows[0];
+      expect(oldSession.mfa_verified).toBe(false);
+      expect(oldSession.revoked_at).toBeTruthy();
       const { rows: events }=await admin.query(
         `SELECT event_type FROM auth_security_events WHERE actor_user_id=$1`,[userId]);
       expect(events.map(x=>x.event_type)).toEqual(expect.arrayContaining([
-        'MFA_ENROLLED','MFA_RECOVERY_USED','MFA_RESET',
+        'MFA_ENROLLED','MFA_RECOVERY_USED','MFA_RESET_ALL_SESSIONS_REVOKED',
       ]));
     });
   });
