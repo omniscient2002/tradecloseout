@@ -37,6 +37,13 @@ export class PermissionGuard implements CanActivate {
 
     const isGuest = Boolean(user.guestGrantId || user.actorType === 'GUEST');
 
+    if (isGuest && ['package.accept', 'inspection.witness'].includes(requiredPermission) &&
+        user.guestAuthorityVerified !== true) {
+      throw new ForbiddenException({
+        code: 'INDEPENDENT_PARTY_AUTHORITY_REQUIRED',
+        detail: 'An OTP delivered to an issuer-selected contact is not independent party authorization.',
+      });
+    }
     if (isGuest) {
       // FV01: Strictly deny organisation administration to ordinary project guests
       const FORBIDDEN_GUEST_PERMISSIONS = new Set([
