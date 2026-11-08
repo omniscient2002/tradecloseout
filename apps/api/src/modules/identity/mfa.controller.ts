@@ -9,7 +9,7 @@ import { uuidv7 } from 'uuidv7';
 import { SessionCsrfGuard, AuthenticatedRequest } from '../../common/guards/session-csrf.guard';
 import { consumeAuthenticationBudget, deriveSessionCsrf, isProductionEnvironment } from './auth-security';
 import {
-  decryptFactor, encryptFactor, hashRecoveryCode, newRecoveryCodes,
+  decryptFactor, encryptFactor, hashRecoveryCode, hashRecoveryCodeCandidates, newRecoveryCodes,
   newTotpSecret, verifyTotp,
 } from './mfa-crypto';
 
@@ -181,16 +181,16 @@ export class MfaController {
       if (!rows.length || !rows[0].mfa_totp_pending_secret || rows[0].mfa_enabled_at) {
         throw new ConflictException({ code: 'MFA_ENROLLMENT_NOT_PENDING' });
       }
+      const pendingSecret = decryptFactor(rows[0].mfa_totp_pending_secret);
       const step = verifyTotp(
-        decryptFactor(rows[0].mfa_totp_pending_secret), input.code!,
-        Number(rows[0].mfa_totp_last_step),
+        pendingSecret, input.code!, Number(rows[0].mfa_totp_last_step),
       );
       if (step === null) throw new UnauthorizedException({ code: 'MFA_CODE_INVALID' });
       await client.query(
-        `UPDATE users SET mfa_totp_secret=mfa_totp_pending_secret,
+        `UPDATE users SET mfa_totp_secret=$3,
          mfa_totp_pending_secret=NULL, mfa_enabled_at=now(),
          mfa_totp_last_step=$2 WHERE id=$1`,
-        [req.auth.userId, step],
+        [req.auth.userId, step,encryptFactor(pendingSecret)],
       );
       await client.query(
         `DELETE FROM mfa_recovery_codes WHERE user_id=$1`,
@@ -230,14 +230,14 @@ export class MfaController {
       if (!rows.length || !rows[0].mfa_enabled_at || !rows[0].mfa_totp_secret) {
         throw new ForbiddenException({ code: 'MFA_NOT_ENROLLED' });
       }
+      const factorSecret = decryptFactor(rows[0].mfa_totp_secret);
       const step = verifyTotp(
-        decryptFactor(rows[0].mfa_totp_secret), input.code!,
-        Number(rows[0].mfa_totp_last_step),
+        factorSecret, input.code!, Number(rows[0].mfa_totp_last_step),
       );
       if (step === null) throw new UnauthorizedException({ code: 'MFA_CODE_INVALID_OR_REPLAYED' });
       await client.query(
-        `UPDATE users SET mfa_totp_last_step=$2 WHERE id=$1`,
-        [req.auth.userId, step],
+        `UPDATE users SET mfa_totp_last_step=$2,mfa_totp_secret=$3 WHERE id=$1`,
+        [req.auth.userId, step,encryptFactor(factorSecret)],
       );
       return this.rotateVerifiedSession(client, req, 'MFA_VERIFIED');
     });
@@ -258,8 +258,8 @@ export class MfaController {
     const session = await this.transact(req.auth.userId, async client => {
       const { rows } = await client.query(
         `SELECT id FROM mfa_recovery_codes
-          WHERE user_id=$1 AND code_hash=$2 AND consumed_at IS NULL FOR UPDATE`,
-        [req.auth.userId, hashRecoveryCode(input.recoveryCode!)],
+          WHERE user_id=$1 AND code_hash=ANY($2::text[]) AND consumed_at IS NULL FOR UPDATE`,
+        [req.auth.userId, hashRecoveryCodeCandidates(input.recoveryCode!)],
       );
       if (!rows.length) throw new UnauthorizedException({ code: 'RECOVERY_CODE_INVALID' });
       await client.query(
@@ -314,8 +314,8 @@ export class MfaController {
       } else {
         const { rows: recovery } = await client.query(
           `SELECT id FROM mfa_recovery_codes
-           WHERE user_id=$1 AND code_hash=$2 AND consumed_at IS NULL FOR UPDATE`,
-          [req.auth.userId, hashRecoveryCode(backupCode!)],
+           WHERE user_id=$1 AND code_hash=ANY($2::text[]) AND consumed_at IS NULL FOR UPDATE`,
+          [req.auth.userId, hashRecoveryCodeCandidates(backupCode!)],
         );
         if (!recovery.length) throw new UnauthorizedException({ code: 'MFA_FRESH_PROOF_INVALID' });
         await client.query(
