@@ -17,6 +17,7 @@ describe('G01: authentication hardening negative controls', () => {
   const originalMode = process.env.NODE_ENV;
   const originalSecret = process.env.AUTH_MFA_ENCRYPTION_KEY;
   const originalPrevious = process.env.AUTH_MFA_ENCRYPTION_KEY_PREVIOUS;
+  const originalPreviousDeadline = process.env.AUTH_MFA_PREVIOUS_KEY_EXPIRES_AT;
   const originalCsrf = process.env.AUTH_CSRF_KEY;
 
   afterEach(() => {
@@ -25,6 +26,8 @@ describe('G01: authentication hardening negative controls', () => {
     else process.env.AUTH_MFA_ENCRYPTION_KEY = originalSecret;
     if (originalPrevious === undefined) delete process.env.AUTH_MFA_ENCRYPTION_KEY_PREVIOUS;
     else process.env.AUTH_MFA_ENCRYPTION_KEY_PREVIOUS = originalPrevious;
+    if (originalPreviousDeadline === undefined) delete process.env.AUTH_MFA_PREVIOUS_KEY_EXPIRES_AT;
+    else process.env.AUTH_MFA_PREVIOUS_KEY_EXPIRES_AT = originalPreviousDeadline;
     if (originalCsrf === undefined) delete process.env.AUTH_CSRF_KEY;
     else process.env.AUTH_CSRF_KEY = originalCsrf;
     jest.restoreAllMocks();
@@ -66,6 +69,13 @@ describe('G01: authentication hardening negative controls', () => {
     expect(() => validateAuthenticationConfig({
       ...env, AUTH_MFA_ENCRYPTION_KEY_PREVIOUS: 'bad',
     })).toThrow('BOOT_AUTH_MFA_PREVIOUS_ENCRYPTION_KEY_INVALID');
+    expect(() => validateAuthenticationConfig({
+      ...env, AUTH_MFA_ENCRYPTION_KEY_PREVIOUS:Buffer.alloc(32,7).toString('base64'),
+    })).toThrow('BOOT_AUTH_MFA_PREVIOUS_KEY_EXPIRED_OR_UNBOUNDED');
+    expect(() => validateAuthenticationConfig({
+      ...env, AUTH_MFA_ENCRYPTION_KEY_PREVIOUS:Buffer.alloc(32,7).toString('base64'),
+      AUTH_MFA_PREVIOUS_KEY_EXPIRES_AT:new Date(Date.now()+24*3600_000).toISOString(),
+    })).not.toThrow();
     expect(() => validateAuthenticationConfig({ ...env, ENABLE_DEBUG_OTP: 'true' })).toThrow('BOOT_AUTH_DEBUG_MODE_DISABLED');
     expect(() => validateAuthenticationConfig({ ...env, AUTH_TRUSTED_PROXY_CIDRS: '0.0.0.0/0' })).toThrow('BOOT_AUTH_PROXY_SCOPE_INVALID');
     expect(() => validateAuthenticationConfig({
@@ -305,6 +315,7 @@ describe('G01: authentication hardening negative controls', () => {
     const oldBackupHash=hashRecoveryCode(backup);
     process.env.AUTH_MFA_ENCRYPTION_KEY=current;
     process.env.AUTH_MFA_ENCRYPTION_KEY_PREVIOUS=previous;
+    process.env.AUTH_MFA_PREVIOUS_KEY_EXPIRES_AT=new Date(Date.now()+24*3600_000).toISOString();
     expect(decryptFactor(oldCiphertext)).toBe(secret);
     expect(hashRecoveryCodeCandidates(backup)).toContain(oldBackupHash);
     expect(hashRecoveryCodeCandidates(backup)).toContain(hashRecoveryCode(backup));
