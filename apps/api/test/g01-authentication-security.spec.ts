@@ -1,5 +1,6 @@
 import { ForbiddenException } from '@nestjs/common';
 import { SessionCsrfGuard } from '../src/common/guards/session-csrf.guard';
+import { ProblemJsonExceptionFilter } from '../src/common/filters/problem-json.filter';
 import { createHash } from 'node:crypto';
 import {
   assertAuthenticationIntent, assertAuthenticationOrigin,
@@ -205,6 +206,31 @@ describe('G01: authentication hardening negative controls', () => {
       if (previous===undefined) delete process.env.NODE_ENV;
       else process.env.NODE_ENV=previous;
     }
+  });
+
+  it('never logs raw invitation tokens, verification codes or provider stack traces', () => {
+    const filter = new ProblemJsonExceptionFilter();
+    const write = jest.spyOn((filter as any).logger, 'error').mockImplementation(() => {});
+    const output:any={setHeader:jest.fn(),status:jest.fn().mockReturnThis(),json:jest.fn()};
+    const invitation = '9'.repeat(64);
+    const host:any={switchToHttp:()=>({
+      getResponse:()=>output,
+      getRequest:()=>({
+        path:`/api/v1/guest/${invitation}/otp/verify`,
+        headers:{'x-request-id':'header-with\\nnewline'},
+      }),
+    })};
+    const secretError = new Error(`OTP 638194 at /api/v1/guest/${invitation}`);
+    filter.catch(secretError,host);
+    const logged=JSON.stringify(write.mock.calls);
+    expect(logged).not.toContain('638194');
+    expect(logged).not.toContain(invitation);
+    expect(logged).not.toContain('header-with');
+    expect(logged).toContain('req_unknown');
+    expect(output.status).toHaveBeenCalledWith(500);
+    expect(output.json.mock.calls[0][0]).toMatchObject({
+      code:'INTERNAL_ERROR',requestId:'req_unknown',
+    });
   });
 
   it('issues distinct high-entropy recovery codes and stores only keyed hashes', () => {
