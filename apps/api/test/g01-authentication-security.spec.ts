@@ -3,7 +3,7 @@ import { SessionCsrfGuard } from '../src/common/guards/session-csrf.guard';
 import { createHash } from 'node:crypto';
 import {
   assertAuthenticationIntent, assertAuthenticationOrigin,
-  deriveSessionCsrf, hashAuthIntent, setAuthenticationIntent,
+  assertRuntimeDatabasePrivileges, deriveSessionCsrf, hashAuthIntent, setAuthenticationIntent,
   validateAuthenticationConfig,
 } from '../src/modules/identity/auth-security';
 import {
@@ -64,6 +64,25 @@ describe('G01: authentication hardening negative controls', () => {
     expect(() => validateAuthenticationConfig({
       ...env, APP_DATABASE_URL: 'not-a-database-url',
     })).toThrow('BOOT_AUTH_DATABASE_URL_INVALID');
+  });
+
+  it('checks real database role privileges before serving production HTTP', async () => {
+    const make = (role:any) => ({
+      query: jest.fn().mockResolvedValue({rows:[role]}),
+    }) as any;
+    await expect(assertRuntimeDatabasePrivileges(make({
+      role_name:'tc_app',rolsuper:false,rolbypassrls:false,
+      can_assume_migrator:false,
+    }))).resolves.toBeUndefined();
+    for (const invalid of [
+      {role_name:'postgres',rolsuper:true,rolbypassrls:true,can_assume_migrator:true},
+      {role_name:'tc_app',rolsuper:false,rolbypassrls:true,can_assume_migrator:false},
+      {role_name:'tc_app',rolsuper:false,rolbypassrls:false,can_assume_migrator:true},
+      {role_name:'tc_migrator',rolsuper:false,rolbypassrls:false,can_assume_migrator:false},
+    ]) {
+      await expect(assertRuntimeDatabasePrivileges(make(invalid)))
+        .rejects.toThrow('BOOT_AUTH_RUNTIME_ROLE_PRIVILEGED');
+    }
   });
 
   it('rejects cross-site and untrusted login origins rather than trusting CORS alone', () => {
