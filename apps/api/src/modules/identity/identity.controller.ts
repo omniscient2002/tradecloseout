@@ -593,7 +593,11 @@ export class IdentityController {
       let userId: string;
       let activeOrgId: string;
       let currentRole = 'R-OWNER';
-      let fullName = body.signupProfile?.fullName?.trim() || 'Principal Contractor';
+      // Request payloads are untrusted JavaScript objects at runtime. An
+      // object/number fullName must not throw before explicit validation.
+      const proposedName = body.signupProfile?.fullName;
+      let fullName = typeof proposedName === 'string' && proposedName.trim()
+        ? proposedName.trim() : 'Principal Contractor';
 
       if (existingIdentities.length > 0) {
         userId = existingIdentities[0].user_id;
