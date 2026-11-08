@@ -488,7 +488,7 @@ export class OrganisationsService {
       }
 
       await client.query(
-        `UPDATE invitations SET status='REVOKED',updated_at=now()
+        `UPDATE invitations SET status='REVOKED'
           WHERE org_id=$1 AND lower(email)=lower($2) AND status='PENDING'`,
         [orgId,email],
       );
@@ -550,7 +550,7 @@ export class OrganisationsService {
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
       const { rows } = await client.query(
         `UPDATE invitations
-            SET status = 'REVOKED', updated_at = now()
+            SET status = 'REVOKED'
           WHERE org_id = $1 AND id = $2 AND status = 'PENDING'
           RETURNING id, status`,
         [orgId, invitationId],
