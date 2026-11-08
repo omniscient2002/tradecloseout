@@ -26,6 +26,7 @@ function LoginForm() {
   const [orgName, setOrgName] = useState("");
   const [stateCode, setStateCode] = useState("TS");
   const [otp, setOtp] = useState("");
+  const [challengeId, setChallengeId] = useState<string | null>(null);
   const [devOtpHint, setDevOtpHint] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,6 +37,7 @@ function LoginForm() {
     setError(null);
     try {
       const res = await apiFetch<{
+        challengeId: string;
         channel: string;
         expiresInSeconds: number;
         devOtpPreview?: string;
@@ -44,6 +46,10 @@ function LoginForm() {
         method: "POST",
         body: JSON.stringify({ identifier: identifier.trim() }),
       });
+      if (!res.challengeId || !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(res.challengeId)) {
+        throw new Error("OTP challenge was not issued. Request a new code.");
+      }
+      setChallengeId(res.challengeId);
       const code = res.devOtpPreview || res.debugOtp;
       if (code) {
         setDevOtpHint(code);
@@ -59,6 +65,10 @@ function LoginForm() {
 
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!challengeId) {
+      setError("Request a new verification code first.");
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -71,6 +81,7 @@ function LoginForm() {
       }>("/api/v1/auth/otp/verify", {
         method: "POST",
         body: JSON.stringify({
+          challengeId,
           identifier: identifier.trim(),
           otp: otp.trim(),
           code: otp.trim(),
@@ -262,7 +273,12 @@ function LoginForm() {
 
               <button
                 type="button"
-                onClick={() => setStep("IDENTIFIER")}
+                onClick={() => {
+                  setStep("IDENTIFIER");
+                  setChallengeId(null);
+                  setOtp("");
+                  setDevOtpHint(null);
+                }}
                 className="w-full text-center text-xs font-medium text-slate-500 hover:text-slate-800 cursor-pointer"
               >
                 ← Use a different email or phone number
