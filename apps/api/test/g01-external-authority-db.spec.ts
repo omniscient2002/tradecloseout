@@ -90,7 +90,7 @@ describe('G01 external party authority cannot be self-minted by an app role', ()
           [org],
         );
         await expect(reviewer.query(
-          `UPDATE guest_grants SET capabilities=ARRAY['package.accept']::text[]
+          `UPDATE guest_grants SET capabilities=ARRAY['inspection.witness']::text[]
             WHERE org_id=$1 AND id=$2`,[org,grant],
         )).rejects.toMatchObject({code:'42501'});
         await reviewer.query('ROLLBACK');
