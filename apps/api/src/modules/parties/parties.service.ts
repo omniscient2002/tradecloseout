@@ -418,7 +418,7 @@ export class PartiesService {
       await consumeAuthenticationBudget(this.db.getPool(), 'guest-otp:grant:hour', tokenHash, 3, 3600);
       await consumeAuthenticationBudget(this.db.getPool(), 'guest-otp:global:hour', 'all', 6000, 3600);
     }
-    return await this.db.withTokenContext(tokenHash, async (client) => {
+    const prepared = await this.db.withTokenContext(tokenHash, async (client) => {
       const grants = (
         await client.query(
         `SELECT * FROM guest_grants
@@ -492,33 +492,65 @@ export class PartiesService {
       );
 
       await client.query(
-        `INSERT INTO otp_challenges (id, channel, identifier, purpose, guest_grant_id, code_hash, expires_at)
-         VALUES ($1, $2, $3, 'GUEST_ACCESS', $4, $5, $6)`,
-        [challengeId, channel, targetIdentifier, grant.id, codeHash, expiresAt],
+        `INSERT INTO otp_challenges (id, channel, identifier, purpose, guest_grant_id, code_hash, expires_at, delivery_status)
+         VALUES ($1, $2, $3, 'GUEST_ACCESS', $4, $5, $6, $7)`,
+        [challengeId, channel, targetIdentifier, grant.id, codeHash, expiresAt,
+          process.env.ENABLE_DEBUG_OTP === 'true' && !isProductionEnvironment() ? 'SENT' : 'PENDING'],
       );
 
-      const isProductionLike = process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging';
-      const isExplicitDebug = process.env.ENABLE_DEBUG_OTP === 'true' && !isProductionLike;
-      if (!isExplicitDebug) {
-        if (channel === 'SMS') {
-          if (!this.smsGateway) throw new ServiceUnavailableException('SMS_GATEWAY_UNAVAILABLE');
-          const sent = await this.smsGateway.sendOtpSms(
-            targetIdentifier,
-            rawCode,
-            process.env.DLT_GUEST_OTP_TEMPLATE_ID || process.env.DLT_OTP_TEMPLATE_ID || '',
-          );
-          if (!sent.delivered) throw new Error('GUEST_OTP_DELIVERY_FAILED');
-        } else {
-          if (!this.mailGateway) throw new ServiceUnavailableException('MAIL_GATEWAY_UNAVAILABLE');
-          await this.mailGateway.sendOtpEmail(targetIdentifier, rawCode, 'GUEST_ACCESS');
-        }
-      }
-
+      const isExplicitDebug = process.env.ENABLE_DEBUG_OTP === 'true' && !isProductionEnvironment();
       const maskedTarget = channel === 'EMAIL'
         ? `${targetIdentifier.slice(0, 1)}***@${targetIdentifier.split('@')[1] || 'hidden'}`
-        : targetIdentifier.replace(/^(\+?\d{2,4})\d+(\d{4})$/, '$1******$2');
-      return { success: true, challengeId, maskedTarget, channel: isExplicitDebug ? 'DEBUG' : channel, debugOtp: isExplicitDebug ? rawCode : undefined };
+        : targetIdentifier.replace(/^(\\+?\\d{2,4})\\d+(\\d{4})$/, '$1******$2');
+      return { challengeId, maskedTarget, channel, targetIdentifier, rawCode, isExplicitDebug };
     });
+
+    if (!prepared.isExplicitDebug) {
+      // Never hold a database grant lock while talking to an external provider.
+      // A timeout after provider acceptance is ambiguous and the proof remains
+      // non-usable until SENT is committed in its own short transaction.
+      try {
+        if (prepared.channel === 'SMS') {
+          if (!this.smsGateway) throw new ServiceUnavailableException('SMS_GATEWAY_UNAVAILABLE');
+          const sent = await this.smsGateway.sendOtpSms(
+            prepared.targetIdentifier,
+            prepared.rawCode,
+            process.env.DLT_GUEST_OTP_TEMPLATE_ID || process.env.DLT_OTP_TEMPLATE_ID || '',
+          );
+          if (!sent.delivered) throw new ServiceUnavailableException('GUEST_OTP_DELIVERY_FAILED');
+        } else {
+          if (!this.mailGateway) throw new ServiceUnavailableException('MAIL_GATEWAY_UNAVAILABLE');
+          await this.mailGateway.sendOtpEmail(prepared.targetIdentifier, prepared.rawCode, 'GUEST_ACCESS');
+        }
+      } catch {
+        await this.db.withTokenContext(tokenHash, async (client) => {
+          await client.query(
+            `UPDATE otp_challenges SET delivery_status = 'FAILED'
+              WHERE id = $1 AND consumed_at IS NULL`,
+            [prepared.challengeId],
+          );
+        }).catch(() => {});
+        throw new ServiceUnavailableException({
+          code: 'GUEST_OTP_DELIVERY_UNVERIFIED',
+          detail: 'The verification code could not be confirmed delivered. Request a new code.',
+        });
+      }
+      await this.db.withTokenContext(tokenHash, async (client) => {
+        await client.query(
+          `UPDATE otp_challenges SET delivery_status = 'SENT'
+            WHERE id = $1 AND consumed_at IS NULL AND expires_at > now()
+              AND delivery_status = 'PENDING'`,
+          [prepared.challengeId],
+        );
+      });
+    }
+    return {
+      success: true,
+      challengeId: prepared.challengeId,
+      maskedTarget: prepared.maskedTarget,
+      channel: prepared.isExplicitDebug ? 'DEBUG' : prepared.channel,
+      debugOtp: prepared.isExplicitDebug ? prepared.rawCode : undefined,
+    };
   }
 
   /**
