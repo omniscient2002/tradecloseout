@@ -97,7 +97,7 @@ export class IdentityController {
     const otpHash = otpScheme === 'HMAC_SHA256_V1'
       ? createHmac('sha256', process.env.AUTH_OTP_HMAC_KEY!).update(`LOGIN:${challengeId}:${rawId}:${otp}`).digest('hex')
       : createHash('sha1').update(`${salt}:${otp}`).digest('hex');
-    const authIntentHash = setAuthenticationIntent(res);
+    const authIntentHash = setAuthenticationIntent(res, req);
     const challengePayload = JSON.stringify({
       id: challengeId, identifier: rawId, salt, otpHash, otpScheme, authIntentHash, attempts: 0,
     });
