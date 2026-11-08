@@ -1,6 +1,6 @@
 import { ForbiddenException } from '@nestjs/common';
-import { Request } from 'express';
-import { createHmac, createHash } from 'node:crypto';
+import { Request, Response } from 'express';
+import { createHmac, createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Pool } from 'pg';
 import { HttpException, HttpStatus } from '@nestjs/common';
 
@@ -125,4 +125,45 @@ export function deriveSessionCsrf(rawSessionToken: string, generation: string): 
   }
   return createHmac('sha256', secret || 'development-only-csrf-key-not-for-production')
     .update(`csrf:v1:${generation}:${rawSessionToken}`).digest('hex');
+}
+
+export const AUTH_INTENT_COOKIE = 'tc_auth_intent';
+
+export function hashAuthIntent(token: string): string {
+  const secret = process.env.AUTH_OTP_HMAC_KEY;
+  if (isProductionEnvironment() && (!secret || secret.length < 32)) {
+    throw new Error('AUTH_INTENT_SECRET_UNAVAILABLE');
+  }
+  return (secret ? createHmac('sha256', secret) : createHash('sha256'))
+    .update(`login-intent:v1:${token}`).digest('hex');
+}
+
+/** Issue a five-minute browser-bound nonce at OTP request, not at verification. */
+export function setAuthenticationIntent(res?: Response): string | null {
+  if (!res) {
+    if (isProductionEnvironment()) throw new Error('AUTH_INTENT_RESPONSE_UNAVAILABLE');
+    return null;
+  }
+  const nonce = randomBytes(32).toString('hex');
+  res.cookie(AUTH_INTENT_COOKIE, nonce, {
+    httpOnly: true, secure: isProductionEnvironment(), sameSite: 'strict',
+    path: '/', maxAge: 5 * 60 * 1000,
+  });
+  return hashAuthIntent(nonce);
+}
+
+export function assertAuthenticationIntent(req: any, expectedHash: string | null | undefined): void {
+  const receivedToken = req?.cookies?.[AUTH_INTENT_COOKIE];
+  if (isProductionEnvironment() && (!expectedHash || typeof receivedToken !== 'string')) {
+    throw new ForbiddenException({ code: 'LOGIN_INTENT_MISSING' });
+  }
+  if (!expectedHash) return; // older test fixtures only; never accepted in production
+  if (typeof receivedToken !== 'string' || receivedToken.length > 128) {
+    throw new ForbiddenException({ code: 'LOGIN_INTENT_MISSING' });
+  }
+  const provided = Buffer.from(hashAuthIntent(receivedToken), 'hex');
+  const expected = Buffer.from(expectedHash, 'hex');
+  if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) {
+    throw new ForbiddenException({ code: 'LOGIN_INTENT_MISMATCH' });
+  }
 }
