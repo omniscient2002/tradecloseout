@@ -51,9 +51,17 @@ export function validateAuthenticationConfig(env: NodeJS.ProcessEnv = process.en
   if (!['production', 'staging'].includes(env.NODE_ENV || '')) return;
   const missing = [
     'APP_DATABASE_URL', 'REDIS_URL', 'AUTH_OTP_HMAC_KEY', 'AUTH_CSRF_KEY', 'AUTH_MFA_ENCRYPTION_KEY', 'AUTH_TRUSTED_PROXY_CIDRS', 'FRONTEND_URL',
-    'DLT_SMS_URL', 'DLT_SMS_API_KEY', 'MAIL_GATEWAY_URL',
+    'DLT_SMS_URL', 'DLT_SMS_API_KEY', 'DLT_SENDER_ID',
+    'DLT_ENTITY_ID', 'DLT_OTP_TEMPLATE_ID',
+    'MAIL_GATEWAY_URL', 'MAIL_FROM_ADDRESS',
   ].filter(k => !env[k]);
   if (missing.length) throw new Error(`BOOT_AUTH_CONFIG_MISSING: ${missing.join(', ')}`);
+  if (!env.MAIL_API_KEY && !env.SENDGRID_API_KEY) {
+    throw new Error('BOOT_AUTH_MAIL_CREDENTIAL_MISSING');
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(env.MAIL_FROM_ADDRESS || '')) {
+    throw new Error('BOOT_AUTH_MAIL_SENDER_INVALID');
+  }
   if ((env.AUTH_OTP_HMAC_KEY || '').length < 32 || (env.AUTH_CSRF_KEY || '').length < 32) {
     throw new Error('BOOT_AUTH_KEY_TOO_SHORT');
   }
