@@ -130,6 +130,30 @@ export function deriveSessionCsrf(rawSessionToken: string, generation: string): 
     .update(`csrf:v1:${generation}:${rawSessionToken}`).digest('hex');
 }
 
+/**
+ * Durable, redacted authentication outcomes. Never retain an email, phone,
+ * proof, raw bearer/OTP, guest invitation token or request headers.
+ */
+export async function recordAuthenticationEvent(
+  pool: Pool,
+  eventType: string,
+  outcome: 'SUCCESS' | 'DENIED' | 'THROTTLED' | 'ERROR',
+  details: { subject?: string; userId?: string; orgId?: string; sessionId?: string } = {},
+): Promise<void> {
+  const key = process.env.AUTH_OTP_HMAC_KEY;
+  const subjectDigest = details.subject
+    ? (key ? createHmac('sha256', key) : createHash('sha256'))
+        .update('auth-event:v1:' + details.subject).digest('hex')
+    : null;
+  await pool.query(
+    `INSERT INTO auth_security_events
+      (id, actor_user_id, org_id, session_id, event_type, outcome, subject_digest)
+      VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6)`,
+    [details.userId || null, details.orgId || null, details.sessionId || null,
+      eventType, outcome, subjectDigest],
+  );
+}
+
 export const AUTH_INTENT_COOKIE = 'tc_auth_intent';
 
 export function hashAuthIntent(token: string): string {
