@@ -102,6 +102,43 @@ export class TradeCloseoutScheduler {
   }
 
   /**
+   * G01: Hourly bounded authentication-ephemeral cleanup. Preserve auth
+   * security events for the configured retention period and never remove
+   * unexpired OTPs or live sessions.
+   */
+  async cleanupAuthenticationEphemera(): Promise<{ budgets: number; challenges: number; sessions: number }> {
+    const [{ rowCount: budgets }, { rowCount: challenges }, { rowCount: sessions }] = await Promise.all([
+      this.pool.query(
+        `DELETE FROM auth_request_budgets
+          WHERE ctid IN (
+            SELECT ctid FROM auth_request_budgets
+            WHERE expires_at < now() - interval '1 day'
+            LIMIT 2000
+          )`,
+      ),
+      this.pool.query(
+        `DELETE FROM otp_challenges
+          WHERE ctid IN (
+            SELECT ctid FROM otp_challenges
+            WHERE expires_at < now() - interval '30 days'
+              AND (consumed_at IS NOT NULL OR expires_at < now())
+            LIMIT 2000
+          )`,
+      ),
+      this.pool.query(
+        `DELETE FROM sessions
+          WHERE ctid IN (
+            SELECT ctid FROM sessions
+            WHERE (revoked_at < now() - interval '365 days'
+               OR absolute_expires_at < now() - interval '365 days')
+            LIMIT 2000
+          )`,
+      ),
+    ]);
+    return { budgets: budgets || 0, challenges: challenges || 0, sessions: sessions || 0 };
+  }
+
+  /**
    * WF-22 (RT-009, RT-024): Daily Document & Warranty Validity Job
    * Transitions APPROVED and HANDED_OVER requirements whose approved evidence has expired
    * in Asia/Kolkata time to EXPIRED.
