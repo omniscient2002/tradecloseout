@@ -16,7 +16,7 @@ import { PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { TenantDbService, ExecutionContext } from '../../database/tenant-db.service';
 import { DltSmsGateway, TransactionalMailGateway } from '../identity/identity.controller';
-import { consumeAuthenticationBudget, isProductionEnvironment } from '../identity/auth-security';
+import { consumeAuthenticationBudget, deriveSessionCsrf, isProductionEnvironment } from '../identity/auth-security';
 
 export interface CreatePartyDto {
   name: string;
@@ -528,7 +528,7 @@ export class PartiesService {
     token: string,
     code: string,
     challengeId: string,
-  ): Promise<{ sessionToken: string; activeOrgId: string; grantId: string; csrfToken: string }> {
+  ): Promise<{ sessionToken: string; activeOrgId: string; grantId: string; csrfToken: string; authGeneration: string }> {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(challengeId) || !/^\d{6}$/.test(code)) {
       throw new BadRequestException('INVALID_CHALLENGE_OR_CODE');
     }
@@ -618,7 +618,8 @@ export class PartiesService {
 
       // Create Guest Session
       const sessionToken = crypto.randomBytes(32).toString('hex');
-      const csrfToken = crypto.randomBytes(32).toString('hex');
+      const authGeneration = uuidv7();
+      const csrfToken = deriveSessionCsrf(sessionToken, authGeneration);
       const sessionId = uuidv7();
       const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours for guest
 
@@ -640,12 +641,12 @@ export class PartiesService {
       }
 
       await client.query(
-        `INSERT INTO sessions (id, user_id, token_hash, csrf_token_hash, active_org_id, guest_grant_id, expires_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [sessionId, principalUserId, this.hashSecret(sessionToken), this.hashSecret(csrfToken), grant.org_id, grant.id, expiresAt],
+        `INSERT INTO sessions (id, user_id, token_hash, csrf_token_hash, active_org_id, guest_grant_id, expires_at, auth_generation)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [sessionId, principalUserId, this.hashSecret(sessionToken), this.hashSecret(csrfToken), grant.org_id, grant.id, expiresAt, authGeneration],
       );
 
-      return { sessionToken, activeOrgId: grant.org_id, grantId: grant.id, csrfToken };
+      return { sessionToken, activeOrgId: grant.org_id, grantId: grant.id, csrfToken, authGeneration };
     });
 
     if ('failure' in result) {
