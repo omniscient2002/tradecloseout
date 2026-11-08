@@ -19,7 +19,7 @@ import { Pool } from 'pg';
 import Redis from 'ioredis';
 import { uuidv7 } from 'uuidv7';
 import { AuthenticatedRequest, SessionCsrfGuard } from '../../common/guards/session-csrf.guard';
-import { assertAuthenticationOrigin, assertAuthenticationIntent, AUTH_INTENT_COOKIE, consumeAuthenticationBudget, deriveSessionCsrf, isProductionEnvironment, setAuthenticationIntent } from './auth-security';
+import { assertAuthenticationOrigin, assertAuthenticationIntent, AUTH_INTENT_COOKIE, consumeAuthenticationBudget, deriveSessionCsrf, recordAuthenticationEvent, isProductionEnvironment, setAuthenticationIntent } from './auth-security';
 
 export abstract class DltSmsGateway {
   abstract sendOtpSms(phoneE164: string, otp: string, templateId: string): Promise<{ delivered: boolean }>;
@@ -391,6 +391,12 @@ export class IdentityController {
       }
     }
 
+    if (isProductionEnvironment() && verifyOutcome !== 'OK') {
+      await recordAuthenticationEvent(this.pool, 'INTERNAL_OTP_VERIFICATION',
+        verifyOutcome === 'MAX' ? 'THROTTLED' : 'DENIED',
+        { subject: rawId || challengeParam });
+    }
+
     if (verifyOutcome === 'EXPIRED') {
       throw new UnauthorizedException({
         code: 'OTP_EXPIRED',
@@ -553,6 +559,12 @@ export class IdentityController {
         ],
       );
 
+      await client.query(
+        `INSERT INTO auth_security_events
+          (id,actor_user_id,org_id,session_id,event_type,outcome)
+         VALUES (gen_random_uuid(),$1,$2,$3,'INTERNAL_OTP_LOGIN','SUCCESS')`,
+        [userId,activeOrgId,sessionId],
+      );
       await client.query('COMMIT');
 
       const isProductionLike = process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging';
