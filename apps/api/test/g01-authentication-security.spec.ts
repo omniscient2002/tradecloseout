@@ -35,7 +35,12 @@ describe('G01: authentication hardening negative controls', () => {
       FRONTEND_URL: 'https://app.example.com',
       DLT_SMS_URL: 'https://sms.example.com',
       DLT_SMS_API_KEY: 'mock-secret',
+      DLT_SENDER_ID: 'TRDCLS',
+      DLT_ENTITY_ID: 'TEST-DLT-ENTITY',
+      DLT_OTP_TEMPLATE_ID: 'TEST-DLT-TEMPLATE',
       MAIL_GATEWAY_URL: 'https://mail.example.com',
+      MAIL_API_KEY: 'test-mail-api-key',
+      MAIL_FROM_ADDRESS: 'security@example.com',
       AUTH_OTP_HMAC_KEY: 'o'.repeat(48),
       AUTH_CSRF_KEY: 'c'.repeat(48),
       AUTH_MFA_ENCRYPTION_KEY: Buffer.alloc(32, 9).toString('base64'),
@@ -44,6 +49,15 @@ describe('G01: authentication hardening negative controls', () => {
     expect(() => validateAuthenticationConfig(env)).not.toThrow();
     expect(() => validateAuthenticationConfig({ ...env, NODE_ENV: undefined })).toThrow('BOOT_AUTH_ENV_INVALID');
     expect(() => validateAuthenticationConfig({ ...env, REDIS_URL: undefined })).toThrow('BOOT_AUTH_CONFIG_MISSING');
+    expect(() => validateAuthenticationConfig({
+      ...env, MAIL_API_KEY: undefined,
+    })).toThrow('BOOT_AUTH_MAIL_CREDENTIAL_MISSING');
+    expect(() => validateAuthenticationConfig({
+      ...env, MAIL_FROM_ADDRESS: 'invalid-address',
+    })).toThrow('BOOT_AUTH_MAIL_SENDER_INVALID');
+    expect(() => validateAuthenticationConfig({
+      ...env, DLT_OTP_TEMPLATE_ID: undefined,
+    })).toThrow('BOOT_AUTH_CONFIG_MISSING');
     expect(() => validateAuthenticationConfig({ ...env, FRONTEND_URL: 'http://app.example.com' })).toThrow('BOOT_AUTH_HTTPS_REQUIRED');
     expect(() => validateAuthenticationConfig({ ...env, AUTH_MFA_ENCRYPTION_KEY: 'bad' })).toThrow('BOOT_AUTH_MFA_ENCRYPTION_KEY_INVALID');
     expect(() => validateAuthenticationConfig({ ...env, ENABLE_DEBUG_OTP: 'true' })).toThrow('BOOT_AUTH_DEBUG_MODE_DISABLED');
