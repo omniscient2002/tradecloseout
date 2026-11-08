@@ -337,11 +337,6 @@ export class PartiesService {
    */
   async getGuestGrant(token: string) {
     const tokenHash = this.hashSecret(token);
-    if (isProductionEnvironment()) {
-      await consumeAuthenticationBudget(this.db.getPool(), 'guest-otp:ip:hour', sourceIp, 20, 3600);
-      await consumeAuthenticationBudget(this.db.getPool(), 'guest-otp:grant:hour', tokenHash, 3, 3600);
-      await consumeAuthenticationBudget(this.db.getPool(), 'guest-otp:global:hour', 'all', 6000, 3600);
-    }
     return await this.db.withTokenContext(tokenHash, async (client) => {
       const res = await client.query(
         `SELECT id, org_id, project_id, party_id, grant_type, role, capabilities, scope_json, otp_required, target_phone_e164, target_email, cooldown_until, expires_at
@@ -418,6 +413,11 @@ export class PartiesService {
    */
   async requestGuestOtp(token: string, sourceIp = 'unknown'): Promise<{ success: boolean; challengeId: string; maskedTarget: string; channel: string; debugOtp?: string }> {
     const tokenHash = this.hashSecret(token);
+    if (isProductionEnvironment()) {
+      await consumeAuthenticationBudget(this.db.getPool(), 'guest-otp:ip:hour', sourceIp, 20, 3600);
+      await consumeAuthenticationBudget(this.db.getPool(), 'guest-otp:grant:hour', tokenHash, 3, 3600);
+      await consumeAuthenticationBudget(this.db.getPool(), 'guest-otp:global:hour', 'all', 6000, 3600);
+    }
     return await this.db.withTokenContext(tokenHash, async (client) => {
       const grants = (
         await client.query(
