@@ -156,6 +156,19 @@ export class PartiesService {
         (providedPhone && !/^\+91[6-9][0-9]{9}$/.test(providedPhone))) {
       throw new BadRequestException({ code: 'INVALID_GUEST_CONTACT' });
     }
+    if (dto.otpRequired === false) {
+      throw new BadRequestException({ code: 'GUEST_OTP_CANNOT_BE_DISABLED' });
+    }
+    if (dto.grantType !== undefined &&
+        (typeof dto.grantType !== 'string' || dto.grantType.length > 40)) {
+      throw new BadRequestException({ code: 'INVALID_GUEST_GRANT_TYPE' });
+    }
+    if (dto.scopeJson !== undefined &&
+        (!dto.scopeJson || typeof dto.scopeJson !== 'object' ||
+         Array.isArray(dto.scopeJson) ||
+         JSON.stringify(dto.scopeJson).length > 16_384)) {
+      throw new BadRequestException({ code: 'INVALID_GUEST_SCOPE' });
+    }
     if (dto.capabilities !== undefined &&
         (!Array.isArray(dto.capabilities) || dto.capabilities.length > 50 ||
          dto.capabilities.some(cap => typeof cap !== 'string'))) {
@@ -230,6 +243,28 @@ export class PartiesService {
     }
 
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+      const { rows: scopedParty } = await client.query(
+        `SELECT p.client_party_id,p.consultant_party_id,p.status AS project_status,
+                party.status AS party_status
+           FROM projects p
+           JOIN parties party ON party.org_id=p.org_id AND party.id=$3
+          WHERE p.org_id=$1 AND p.id=$2
+          FOR SHARE OF p,party`,
+        [ctx.orgId, projectId, dto.partyId],
+      );
+      if (!scopedParty.length || scopedParty[0].party_status !== 'ACTIVE' ||
+          ['CLOSED','CANCELLED','ARCHIVED'].includes(scopedParty[0].project_status)) {
+        throw new NotFoundException({ code:'GUEST_GRANT_PROJECT_PARTY_INACTIVE' });
+      }
+      if ((profileKey === 'CLIENT_VIEW' &&
+            scopedParty[0].client_party_id !== dto.partyId) ||
+          (profileKey === 'CONSULTANT_REVIEW' &&
+            scopedParty[0].consultant_party_id !== dto.partyId)) {
+        throw new ForbiddenException({
+          code: 'GUEST_PARTY_NOT_PROJECT_COUNTERPARTY',
+          detail: 'Sensitive guest authority requires the project-designated counterparty.',
+        });
+      }
       const rawToken = crypto.randomBytes(32).toString('hex');
       const tokenHash = this.hashSecret(rawToken);
       const grantId = uuidv7();
