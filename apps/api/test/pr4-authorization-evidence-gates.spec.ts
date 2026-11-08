@@ -9,6 +9,8 @@ import { CommissioningController } from '../src/modules/commissioning/commission
 import { REQUIRE_PERMISSION_KEY, PermissionGuard } from '../src/common/guards/permission.guard';
 import { CommissioningService } from '../src/modules/commissioning/commissioning.service';
 import { HandoverService } from '../src/modules/handover/handover.service';
+import { WarrantyAndBillingService } from '../src/modules/billing/warranty-and-billing.service';
+import { BillingController } from '../src/modules/billing/billing.controller';
 
 jest.setTimeout(180_000);
 
@@ -177,6 +179,45 @@ describe('PR4: least privilege in handover and independent witness routes', () =
         [output.submissionId]);
       expect(rows).toEqual([expect.objectContaining({ status: 'PENDING_DELIVERY', decided_at: null })]);
     });
+  });
+
+  it('keeps the retired webhook from updating subscription entitlements from user-controlled notes', async () => {
+    const pool = { connect: jest.fn() };
+    await expect(new WarrantyAndBillingService(pool as any).processRazorpayWebhook(
+      JSON.stringify({ event: 'subscription.charged', payload: { subscription: { entity: {
+        notes: { orgId: uuidv7() },
+      } } } }), 'forged-signature',
+    )).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'AUTOMATED_PAYMENT_FULFILLMENT_DISABLED' }),
+    });
+    expect(pool.connect).not.toHaveBeenCalled();
+  });
+
+  it('disables unverified invoice issuance by default while preserving read-only plans', async () => {
+    const billingService = { createInvoice: jest.fn(), listPlans: jest.fn().mockResolvedValue([]) };
+    const gst = { issueRule46GstInvoice: jest.fn() };
+    const controller = new BillingController(billingService as any, gst as any, {} as any);
+    const originalFlag = process.env.ENABLE_TAX_INVOICE_ISSUANCE;
+    try {
+      delete process.env.ENABLE_TAX_INVOICE_ISSUANCE;
+      await expect(controller.createInvoice({ userContext: {} }, {
+        subtotalPaise: 10000, placeOfSupply: '29',
+      })).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'TAX_INVOICE_ISSUANCE_DISABLED' }),
+      });
+      await expect(controller.issueRule46GstInvoice({ userContext: {} }, {
+        subscriptionId: uuidv7(), description: 'Unavailable',
+        subtotalPaise: '10000', buyerStateCode: '29',
+      })).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'TAX_INVOICE_ISSUANCE_DISABLED' }),
+      });
+      expect(billingService.createInvoice).not.toHaveBeenCalled();
+      expect(gst.issueRule46GstInvoice).not.toHaveBeenCalled();
+      await expect(controller.listPlans()).resolves.toEqual([]);
+    } finally {
+      if (originalFlag === undefined) delete process.env.ENABLE_TAX_INVOICE_ISSUANCE;
+      else process.env.ENABLE_TAX_INVOICE_ISSUANCE = originalFlag;
+    }
   });
 
   it('rejects mismatched legacy DB_PORT before even connecting or inserting a fixture', async () => {
