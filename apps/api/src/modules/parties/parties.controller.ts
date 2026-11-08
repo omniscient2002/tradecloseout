@@ -1,4 +1,4 @@
-import { assertAuthenticationOrigin } from '../identity/auth-security';
+import { assertAuthenticationOrigin, AUTH_INTENT_COOKIE, hashAuthIntent, setAuthenticationIntent } from '../identity/auth-security';
 // apps/api/src/modules/parties/parties.controller.ts
 // Guest Access, Grants, Supplier Upload Links & OTP Controller (API-024..029, RT-014)
 
@@ -173,9 +173,15 @@ export class PartiesController {
    * API-028A POST /api/v1/guest/:token/otp/request
    */
   @Post('guest/:token/otp/request')
-  async requestGuestOtp(@Param('token') token: string, @Req() req?: any) {
+  async requestGuestOtp(
+    @Param('token') token: string, @Req() req?: any,
+    @Res({ passthrough: true }) res?: Response,
+  ) {
     assertAuthenticationOrigin(req);
-    return this.partiesService.requestGuestOtp(token, String(req?.ip || req?.socket?.remoteAddress || 'unknown'));
+    const intentHash = setAuthenticationIntent(res);
+    return this.partiesService.requestGuestOtp(
+      token, String(req?.ip || req?.socket?.remoteAddress || 'unknown'), intentHash,
+    );
   }
 
   /**
@@ -194,7 +200,13 @@ export class PartiesController {
       throw new BadRequestException('OTP code and challenge ID are required');
     }
 
-    const result = await this.partiesService.verifyGuestOtp(token, code, body.challengeId);
+    const rawIntent = req?.cookies?.[AUTH_INTENT_COOKIE];
+    const intentHash = typeof rawIntent === 'string' ? hashAuthIntent(rawIntent) : null;
+    const result = await this.partiesService.verifyGuestOtp(token, code, body.challengeId, intentHash);
+    res.clearCookie(AUTH_INTENT_COOKIE, {
+      httpOnly: true, secure: process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging',
+      sameSite: 'strict', path: '/',
+    });
 
     // Set HTTP-only guest session cookie
     res.cookie('tc_session', result.sessionToken, {
