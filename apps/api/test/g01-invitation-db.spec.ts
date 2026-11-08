@@ -95,9 +95,10 @@ describe('G01 production PostgreSQL OTP transaction', () => {
         req.cookies.tc_auth_intent = res.cookie.mock.calls.find(
           (args:any[]) => args[0] === 'tc_auth_intent')?.[1];
 
-        await expect(ctrl.verifyOtp({
+        const incorrect = await ctrl.verifyOtp({
           challengeId:challenge.challengeId,code:'000000',
-        },req,res)).rejects.toThrow();
+        },req,res).catch((e:any)=>e);
+        expect(incorrect?.response?.code).toBe('OTP_INVALID');
         const before = (await admin.query(
           'SELECT attempts,consumed_at,delivery_status FROM otp_challenges WHERE id=$1',
           [challenge.challengeId])).rows[0];
