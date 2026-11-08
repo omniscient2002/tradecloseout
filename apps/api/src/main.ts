@@ -1,15 +1,22 @@
 import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
+import { Pool } from 'pg';
 import { ValidationPipe } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { ProblemJsonExceptionFilter } from './common/filters/problem-json.filter';
 import { VisibilityProjectionInterceptor } from './common/interceptors/visibility-projection.interceptor';
-import { validateAuthenticationConfig } from './modules/identity/auth-security';
+import {
+  assertRuntimeDatabasePrivileges, isProductionEnvironment,
+  validateAuthenticationConfig,
+} from './modules/identity/auth-security';
 
 async function bootstrap() {
   validateAuthenticationConfig();
   const app = await NestFactory.create(AppModule, { rawBody: true });
+  if (isProductionEnvironment()) {
+    await assertRuntimeDatabasePrivileges(app.get(Pool));
+  }
 
   // Only trusted upstream CIDRs may supply client-IP forwarding headers.
   // Never accept arbitrary X-Forwarded-For from a direct internet request.
