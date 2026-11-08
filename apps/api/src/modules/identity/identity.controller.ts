@@ -19,7 +19,7 @@ import { Pool } from 'pg';
 import Redis from 'ioredis';
 import { uuidv7 } from 'uuidv7';
 import { AuthenticatedRequest, SessionCsrfGuard } from '../../common/guards/session-csrf.guard';
-import { assertAuthenticationOrigin, consumeAuthenticationBudget, deriveSessionCsrf, isProductionEnvironment } from './auth-security';
+import { assertAuthenticationOrigin, assertAuthenticationIntent, AUTH_INTENT_COOKIE, consumeAuthenticationBudget, deriveSessionCsrf, isProductionEnvironment, setAuthenticationIntent } from './auth-security';
 
 export abstract class DltSmsGateway {
   abstract sendOtpSms(phoneE164: string, otp: string, templateId: string): Promise<{ delivered: boolean }>;
@@ -48,6 +48,7 @@ export class IdentityController {
   async requestOtp(
     @Body() body: { identifier?: string; phoneOrEmail?: string },
     @Req() req: AuthenticatedRequest,
+    @Res({ passthrough: true }) res?: Response,
   ) {
     assertAuthenticationOrigin(req);
     const supplied = body?.identifier ?? body?.phoneOrEmail;
@@ -96,7 +97,10 @@ export class IdentityController {
     const otpHash = otpScheme === 'HMAC_SHA256_V1'
       ? createHmac('sha256', process.env.AUTH_OTP_HMAC_KEY!).update(`LOGIN:${challengeId}:${rawId}:${otp}`).digest('hex')
       : createHash('sha1').update(`${salt}:${otp}`).digest('hex');
-    const challengePayload = JSON.stringify({ id: challengeId, identifier: rawId, salt, otpHash, otpScheme, attempts: 0 });
+    const authIntentHash = setAuthenticationIntent(res);
+    const challengePayload = JSON.stringify({
+      id: challengeId, identifier: rawId, salt, otpHash, otpScheme, authIntentHash, attempts: 0,
+    });
 
     // Atomic issuance & supersession (V01, N02): Atomically delete old generation and register new challenge
     await this.redis.eval(
@@ -259,6 +263,18 @@ export class IdentityController {
         detail: 'Production OTP verification requires the original challenge ID.',
       });
     }
+    // Verify the originating browser's nonce before accepting an OTP. A valid
+    // code submitted in a different browser must never replace its session.
+    if (challengeParam) {
+      const preview = await this.redis.get(`otp:challenge:${challengeParam}`);
+      let expectedIntent: string | null = null;
+      try { expectedIntent = preview ? JSON.parse(preview)?.authIntentHash ?? null : null; }
+      catch { /* malformed challenge is rejected by Redis atomic validation */ }
+      assertAuthenticationIntent(req, expectedIntent);
+    } else if (isProductionEnvironment()) {
+      assertAuthenticationIntent(req, null);
+    }
+
     let candidateHmac = '';
     if (isProductionEnvironment() && challengeParam) {
       // Read only to derive the keyed comparison from the server-side canonical
@@ -538,6 +554,9 @@ export class IdentityController {
       await client.query('COMMIT');
 
       const isProductionLike = process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging';
+      res.clearCookie(AUTH_INTENT_COOKIE, {
+        httpOnly: true, secure: isProductionLike, sameSite: 'strict', path: '/',
+      });
       res.cookie('tc_session', rawSessionToken, {
         httpOnly: true,
         secure: isProductionLike,
