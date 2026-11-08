@@ -45,12 +45,12 @@ export const GUEST_GRANT_PROFILES: Record<string, GuestGrantProfile> = {
   CONSULTANT_REVIEW: {
     grantType: 'CONSULTANT_REVIEW',
     role: 'R-CONSULTANT',
-    capabilities: ['project.read', 'asset.read', 'document.read', 'document.download', 'review.read', 'review.decide', 'package.download'],
+    capabilities: ['project.read', 'asset.read', 'document.read', 'document.download', 'review.read', 'review.decide', 'package.download', 'inspection.witness'],
   },
   CLIENT_VIEW: {
     grantType: 'CLIENT_VIEW',
     role: 'R-CLIENT',
-    capabilities: ['project.read', 'document.read', 'document.download', 'package.download', 'package.accept'],
+    capabilities: ['project.read', 'document.read', 'document.download', 'package.download', 'package.accept', 'inspection.witness'],
   },
   MC_VIEW: {
     grantType: 'MC_VIEW',
