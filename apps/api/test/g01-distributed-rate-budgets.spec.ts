@@ -9,6 +9,10 @@ describe('G01 rate limiting uses one atomic shared security budget', () => {
   it('cannot be bypassed by simultaneous calls through two independent Postgres pools', async () => {
     await withDisposableDatabase(async ({ app, admin }) => {
       const secondNode = new Pool({ ...app.options });
+      // Disposable helper force-drops its database. Idle pool sockets may
+      // receive SQLSTATE 57P01 during teardown; this isn't a test assertion
+      // or an unhandled event, and must not mask the budget race result.
+      secondNode.on('error', () => {});
       try {
         const category = `g01:distributed:${uuidv7()}`;
         const key = `source-${uuidv7()}`;
