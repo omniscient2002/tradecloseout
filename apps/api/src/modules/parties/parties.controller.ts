@@ -1,3 +1,4 @@
+import { assertAuthenticationOrigin } from '../identity/auth-security';
 // apps/api/src/modules/parties/parties.controller.ts
 // Guest Access, Grants, Supplier Upload Links & OTP Controller (API-024..029, RT-014)
 
@@ -172,7 +173,8 @@ export class PartiesController {
    * API-028A POST /api/v1/guest/:token/otp/request
    */
   @Post('guest/:token/otp/request')
-  async requestGuestOtp(@Param('token') token: string) {
+  async requestGuestOtp(@Param('token') token: string, @Req() req?: any) {
+    assertAuthenticationOrigin(req);
     return this.partiesService.requestGuestOtp(token);
   }
 
@@ -184,7 +186,9 @@ export class PartiesController {
     @Param('token') token: string,
     @Body() body: VerifyGuestOtpDto,
     @Res({ passthrough: true }) res: Response,
+    @Req() req?: any,
   ) {
+    assertAuthenticationOrigin(req);
     const code = body?.code || (body as any)?.otp;
     if (!code || !body?.challengeId) {
       throw new BadRequestException('OTP code and challenge ID are required');
