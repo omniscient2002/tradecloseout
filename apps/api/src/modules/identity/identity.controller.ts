@@ -122,6 +122,31 @@ export class IdentityController {
       rawId,
     );
 
+    if (isProductionEnvironment()) {
+      // The OTP's authoritative proof is now transactional with onboarding
+      // in PostgreSQL. Redis remains only a rate-limit/legacy cache.
+      const c = await this.pool.connect();
+      try {
+        await c.query('BEGIN');
+        await c.query('SELECT pg_advisory_xact_lock(hashtext($1))', [rawId]);
+        await c.query(
+          `UPDATE otp_challenges SET consumed_at = now()
+            WHERE identifier = $1 AND purpose = 'LOGIN' AND consumed_at IS NULL`,
+          [rawId],
+        );
+        await c.query(
+          `INSERT INTO otp_challenges
+            (id,channel,identifier,purpose,code_hash,expires_at,delivery_status,auth_intent_hash)
+           VALUES($1,$2,$3,'LOGIN',$4,now()+interval '5 minutes','PENDING',$5)`,
+          [challengeId,isPhone ? 'SMS' : 'EMAIL',rawId,otpHash,authIntentHash],
+        );
+        await c.query('COMMIT');
+      } catch (err) {
+        await c.query('ROLLBACK').catch(() => {});
+        throw err;
+      } finally { c.release(); }
+    }
+
     if (isExplicitDebug) {
       return {
         challengeId,
@@ -137,6 +162,13 @@ export class IdentityController {
       try {
         const res = await this.smsGateway.sendOtpSms(rawId, otp, process.env.DLT_OTP_TEMPLATE_ID || '');
         if (!res.delivered) throw new Error('DLT_DELIVERY_FAILED');
+        if (isProductionEnvironment()) {
+          await this.pool.query(
+            `UPDATE otp_challenges SET delivery_status='SENT'
+              WHERE id=$1 AND delivery_status='PENDING' AND expires_at>now()`,
+            [challengeId],
+          );
+        }
         await this.redis.del(smsFailKey);
         return {
           challengeId,
@@ -146,6 +178,12 @@ export class IdentityController {
           debugOtp: isExplicitDebug ? otp : undefined,
         };
       } catch {
+        if (isProductionEnvironment()) {
+          await this.pool.query(
+            `UPDATE otp_challenges SET delivery_status='FAILED'
+              WHERE id=$1 AND delivery_status='PENDING'`, [challengeId],
+          ).catch(() => {});
+        }
         // Atomic generation-safe cleanup (PA10): only delete alias/raw challenge if it still points to this challengeId
         const cleanupScript = `
           if redis.call('GET', KEYS[1]) == ARGV[1] then
@@ -179,7 +217,20 @@ export class IdentityController {
     // Email OTP / Magic Link
     try {
       await this.mailGateway.sendOtpEmail(rawId, otp, 'SIGN_IN');
+      if (isProductionEnvironment()) {
+        await this.pool.query(
+          `UPDATE otp_challenges SET delivery_status='SENT'
+            WHERE id=$1 AND delivery_status='PENDING' AND expires_at>now()`,
+          [challengeId],
+        );
+      }
     } catch (err) {
+      if (isProductionEnvironment()) {
+        await this.pool.query(
+          `UPDATE otp_challenges SET delivery_status='FAILED'
+            WHERE id=$1 AND delivery_status='PENDING'`, [challengeId],
+        ).catch(() => {});
+      }
       // Atomic generation-safe cleanup (PA10): only delete alias/raw challenge if it still points to this challengeId
       const cleanupScript = `
         if redis.call('GET', KEYS[1]) == ARGV[1] then
