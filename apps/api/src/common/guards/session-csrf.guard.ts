@@ -53,6 +53,7 @@ export class SessionCsrfGuard implements CanActivate {
               s.csrf_token_hash,
               s.expires_at,
               s.guest_grant_id,
+              s.auth_generation,
               u.name AS user_name,
               u.status AS user_status,
               o.status AS org_status
@@ -80,6 +81,7 @@ export class SessionCsrfGuard implements CanActivate {
     let guestCapabilities: string[] | undefined = undefined;
     let guestScope: any = undefined;
     let guestProjectId: string | undefined = undefined;
+    let guestAuthorityVerified = false;
 
     if (session.guest_grant_id) {
       const client = await this.pool.connect();
@@ -88,7 +90,8 @@ export class SessionCsrfGuard implements CanActivate {
         await client.query('BEGIN');
         await client.query(`SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`, [session.active_org_id]);
         const result = await client.query(
-          `SELECT project_id, role, capabilities, scope_json, status, expires_at
+          `SELECT project_id, role, capabilities, scope_json, status, expires_at,
+                  principal_user_id, independent_authority_verified_at
              FROM guest_grants
             WHERE id = $1 AND org_id = $2
             LIMIT 1`,
@@ -113,6 +116,13 @@ export class SessionCsrfGuard implements CanActivate {
           detail: 'Your external guest grant is no longer active.',
         });
       }
+      if (!gRows[0].principal_user_id || gRows[0].principal_user_id !== session.user_id) {
+        throw new UnauthorizedException({
+          code: 'GUEST_PRINCIPAL_INVALID',
+          detail: 'An external guest must sign in using its own verified principal.',
+        });
+      }
+      guestAuthorityVerified = Boolean(gRows[0].independent_authority_verified_at);
       orgRole = 'GUEST';
       guestCapabilities = gRows[0].capabilities;
       guestScope = gRows[0].scope_json;
@@ -250,6 +260,7 @@ export class SessionCsrfGuard implements CanActivate {
       requestId: (req.headers['x-request-id'] as string) || 'req_unknown',
       ip: req.ip || '0.0.0.0',
       userAgent: (req.headers['user-agent'] as string) || 'unknown',
+      authGeneration: String(session.auth_generation),
     };
 
     req.auth = authData;
@@ -264,6 +275,7 @@ export class SessionCsrfGuard implements CanActivate {
       guestScope: guestScope,
       guestGrantId: session.guest_grant_id,
       guestProjectId: guestProjectId,
+      guestAuthorityVerified,
       docControllerOrgWideDownload: false,
     };
 
@@ -275,6 +287,7 @@ export class SessionCsrfGuard implements CanActivate {
       orgRole,
       projectRole,
       guestGrantId: session.guest_grant_id || undefined,
+      guestAuthorityVerified,
       guestProjectId: guestProjectId,
       guestScope,
       guestCapabilities,
