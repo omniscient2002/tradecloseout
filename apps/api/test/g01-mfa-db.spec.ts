@@ -61,9 +61,12 @@ async function seed(admin: Pool) {
 
 describe('G01 MFA real PostgreSQL control plane', () => {
   const keyBefore = process.env.AUTH_MFA_ENCRYPTION_KEY;
+  const previousKeyBefore = process.env.AUTH_MFA_ENCRYPTION_KEY_PREVIOUS;
   afterAll(() => {
     if (keyBefore === undefined) delete process.env.AUTH_MFA_ENCRYPTION_KEY;
     else process.env.AUTH_MFA_ENCRYPTION_KEY = keyBefore;
+    if (previousKeyBefore === undefined) delete process.env.AUTH_MFA_ENCRYPTION_KEY_PREVIOUS;
+    else process.env.AUTH_MFA_ENCRYPTION_KEY_PREVIOUS = previousKeyBefore;
   });
 
   it('binds enrollment, factor replay, single-use backup recovery and audited reset', async () => {
@@ -91,6 +94,12 @@ describe('G01 MFA real PostgreSQL control plane', () => {
       expect(row.mfa_enabled_at).toBeTruthy();
       expect((await app.query('SELECT mfa_verified FROM sessions WHERE id=$1',[sessionId])).rows[0].mfa_verified).toBe(true);
       await expect(ctrl.verifyFactor(req,{code:firstCode},res)).rejects.toThrow();
+      // Previously issued one-use backup hashes remain valid during a
+      // controlled key overlap window. They are not silently reissued.
+      process.env.AUTH_MFA_ENCRYPTION_KEY_PREVIOUS =
+        Buffer.alloc(32,22).toString('base64');
+      process.env.AUTH_MFA_ENCRYPTION_KEY =
+        Buffer.alloc(32,23).toString('base64');
       const backup=confirmed.recoveryCodes[0];
       await expect(ctrl.recoverFactor(originalSession,
         {recoveryCode:backup},res)).rejects.toMatchObject({
