@@ -22,6 +22,10 @@ describe('G01: guest session identity, supersession and proven provenance', () =
             VALUES($1,$2,'G01-GUEST','Guest identity','ACTIVE',$3)`,[project,org,issuer]);
         await admin.query(`INSERT INTO parties(id,org_id,name,types,status)
             VALUES($1,$2,'Client Identity',ARRAY['CLIENT']::text[],'ACTIVE')`,[party,org]);
+        await admin.query(
+          'UPDATE projects SET client_party_id=$1 WHERE id=$2 AND org_id=$3',
+          [party,project,org],
+        );
         await admin.query(`INSERT INTO guest_grants(
            id,org_id,project_id,party_id,grant_type,role,capabilities,
            token_hash,target_email,status,expires_at,created_by)
@@ -66,6 +70,10 @@ describe('G01: guest session identity, supersession and proven provenance', () =
           VALUES($1,$2,'G01-DELAY','Guest delivery race','ACTIVE',$3)`,[project,org,issuer]);
         await admin.query(`INSERT INTO parties(id,org_id,name,types,status)
           VALUES($1,$2,'Client Recipient',ARRAY['CLIENT']::text[],'ACTIVE')`,[party,org]);
+        await admin.query(
+          'UPDATE projects SET client_party_id=$1 WHERE id=$2 AND org_id=$3',
+          [party,project,org],
+        );
         await admin.query(`INSERT INTO guest_grants(
           id,org_id,project_id,party_id,grant_type,role,capabilities,
           token_hash,target_email,status,expires_at,created_by)
