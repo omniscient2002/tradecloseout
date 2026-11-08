@@ -48,7 +48,11 @@ export class IdentityController {
     @Body() body: { identifier?: string; phoneOrEmail?: string },
     @Req() req: AuthenticatedRequest,
   ) {
-    const rawId = (body.identifier || body.phoneOrEmail || '').trim().toLowerCase();
+    const supplied = body?.identifier ?? body?.phoneOrEmail;
+    if (typeof supplied !== 'string' || supplied.length > 320) {
+      throw new UnprocessableEntityException({ code: 'INVALID_IDENTIFIER', detail: 'A valid email or mobile number is required.' });
+    }
+    const rawId = supplied.trim().toLowerCase();
     const isPhone = /^\+91[6-9][0-9]{9}$/.test(rawId);
     const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawId);
 
@@ -206,9 +210,21 @@ export class IdentityController {
     @Req() req: AuthenticatedRequest,
     @Res({ passthrough: true }) res: Response,
   ) {
-    let rawId = (body.identifier || '').trim().toLowerCase();
-    const candidateCode = (body.otp || body.code || '').trim();
-    const challengeParam = (body.challengeId || '').trim();
+    if (!body || typeof body !== 'object' ||
+        (body.identifier != null && typeof body.identifier !== 'string') ||
+        (body.challengeId != null && typeof body.challengeId !== 'string') ||
+        (body.otp != null && typeof body.otp !== 'string') ||
+        (body.code != null && typeof body.code !== 'string')) {
+      throw new UnprocessableEntityException({ code: 'INVALID_OTP_INPUT', detail: 'Invalid OTP verification request.' });
+    }
+    let rawId = (body.identifier ?? '').trim().toLowerCase();
+    const candidateCode = (body.otp ?? body.code ?? '').trim();
+    const challengeParam = (body.challengeId ?? '').trim();
+    if (!/^\d{6}$/.test(candidateCode) ||
+        (challengeParam && !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(challengeParam)) ||
+        rawId.length > 320) {
+      throw new UnprocessableEntityException({ code: 'INVALID_OTP_INPUT', detail: 'Verification requires a six-digit code and valid challenge ID.' });
+    }
 
     const inputKey = challengeParam
       ? `otp:challenge:${challengeParam}`
@@ -363,6 +379,13 @@ export class IdentityController {
 
       if (existingIdentities.length > 0) {
         userId = existingIdentities[0].user_id;
+        const { rows: eligibleUsers } = await client.query(
+          `SELECT id FROM users WHERE id = $1 AND status = 'ACTIVE' FOR SHARE`,
+          [userId],
+        );
+        if (!eligibleUsers.length) {
+          throw new UnauthorizedException({ code: 'ACCOUNT_UNAVAILABLE', detail: 'This account is not eligible to sign in.' });
+        }
         await client.query(`SELECT set_config('app.current_user', $1, true)`, [userId]);
         await client.query(
           `UPDATE user_identities SET verified_at = COALESCE(verified_at, now()) WHERE type = $1 AND value = $2`,
@@ -371,7 +394,9 @@ export class IdentityController {
         await client.query(`UPDATE users SET last_login_at = now() WHERE id = $1`, [userId]);
 
         const { rows: memberships } = await client.query(
-          `SELECT org_id FROM memberships WHERE user_id = $1 AND status = 'ACTIVE' ORDER BY joined_at DESC LIMIT 1`,
+          `SELECT m.org_id FROM memberships m JOIN organisations o ON o.id = m.org_id
+            WHERE m.user_id = $1 AND m.status = 'ACTIVE' AND o.status = 'ACTIVE'
+            ORDER BY m.joined_at DESC LIMIT 1`,
           [userId],
         );
         if (memberships.length === 0) {
@@ -389,8 +414,20 @@ export class IdentityController {
         }
       } else {
         // New Org + Owner Registration (WF-01 / FR-ORG-001)
-        const orgName = body.signupProfile?.orgName?.trim() || 'Apex MEP Engineers';
-        const state = body.signupProfile?.state?.trim() || 'MH';
+        const profile = body.signupProfile;
+        if (!profile || typeof profile.fullName !== 'string' ||
+            typeof profile.orgName !== 'string' || typeof profile.state !== 'string' ||
+            profile.fullName.trim().length < 2 || profile.fullName.trim().length > 120 ||
+            profile.orgName.trim().length < 2 || profile.orgName.trim().length > 200 ||
+            !/^[A-Z]{2}$/.test(profile.state.trim().toUpperCase())) {
+          throw new UnprocessableEntityException({
+            code: 'SIGNUP_PROFILE_REQUIRED',
+            detail: 'New organisations require an explicit valid name, company name and Indian state.',
+          });
+        }
+        fullName = profile.fullName.trim();
+        const orgName = profile.orgName.trim();
+        const state = profile.state.trim().toUpperCase();
 
         userId = uuidv7();
         activeOrgId = uuidv7();
