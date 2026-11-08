@@ -131,6 +131,12 @@ export async function apiFetch<T>(
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
+    if (typeof window !== 'undefined' && res.status === 409 &&
+        data?.code === 'AUTH_CONTEXT_CHANGED') {
+      // Never retry a stale write against a newly selected tenant/session.
+      // Force explicit re-bootstrap and human reconfirmation.
+      setCsrfToken(null);
+    }
     if (
       res.status === 401 &&
       typeof window !== 'undefined' &&
@@ -142,6 +148,11 @@ export async function apiFetch<T>(
     throw new ApiProblemError(data);
   }
 
+  if (typeof window !== 'undefined' &&
+      /\/api\/v1\/auth\/switch-org$/.test(path) &&
+      data?.csrfToken && data?.authGeneration) {
+    setCsrfToken(data.csrfToken, data.authGeneration);
+  }
   return data as T;
 }
 
