@@ -85,6 +85,11 @@ export function validateAuthenticationConfig(env: NodeJS.ProcessEnv = process.en
   if (Buffer.from(env.AUTH_MFA_ENCRYPTION_KEY || '', 'base64').length !== 32) {
     throw new Error('BOOT_AUTH_MFA_ENCRYPTION_KEY_INVALID');
   }
+  if (env.AUTH_MFA_ENCRYPTION_KEY_PREVIOUS &&
+      (Buffer.from(env.AUTH_MFA_ENCRYPTION_KEY_PREVIOUS,'base64').length !== 32 ||
+       env.AUTH_MFA_ENCRYPTION_KEY_PREVIOUS === env.AUTH_MFA_ENCRYPTION_KEY)) {
+    throw new Error('BOOT_AUTH_MFA_PREVIOUS_ENCRYPTION_KEY_INVALID');
+  }
   const proxies = (env.AUTH_TRUSTED_PROXY_CIDRS || '').split(',').map(v => v.trim()).filter(Boolean);
   if (!proxies.length || proxies.some(x =>
       !isTrustedProxyEntry(x) || ['0.0.0.0/0', '::/0'].includes(x))) {
