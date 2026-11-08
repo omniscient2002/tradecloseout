@@ -562,7 +562,9 @@ export class IdentityController {
         secure: isProductionLike,
         sameSite: 'lax',
         path: '/',
-        maxAge: 30 * 24 * 60 * 60 * 1000,
+        // Browser credential may persist 90 days, but server independently
+        // enforces 30-day inactivity and a hard 90-day absolute expiry.
+        maxAge: 90 * 24 * 60 * 60 * 1000,
       });
 
       return {
@@ -744,6 +746,50 @@ export class IdentityController {
     }
   }
 
+  /** Current-device inventory never exposes bearer credentials or CSRF. */
+  @Get('sessions')
+  @UseGuards(SessionCsrfGuard)
+  async listOwnSessions(@Req() req: AuthenticatedRequest) {
+    const { rows } = await this.pool.query(
+      `SELECT id, created_at, last_activity_at, expires_at,
+              user_agent, (id = $2) AS is_current
+         FROM sessions
+        WHERE user_id = $1 AND revoked_at IS NULL
+          AND expires_at > now() AND absolute_expires_at > now()
+        ORDER BY created_at DESC LIMIT 100`,
+      [req.auth.userId, req.auth.sessionId],
+    );
+    return { sessions: rows };
+  }
+
+  /**
+   * Emergency revocation is intentionally available without a new MFA step.
+   * Revocations and redacted events commit atomically.
+   */
+  @Post('sessions/revoke-all')
+  @UseGuards(SessionCsrfGuard)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async revokeAllSessions(@Req() req: AuthenticatedRequest, @Res({ passthrough: true }) res: Response) {
+    await this.pool.query(
+      `WITH revoked AS (
+         UPDATE sessions SET revoked_at = now()
+         WHERE user_id = $1 AND revoked_at IS NULL
+         RETURNING id, user_id, active_org_id
+       )
+       INSERT INTO auth_security_events
+         (id, actor_user_id, org_id, session_id, event_type, outcome)
+       SELECT gen_random_uuid(), user_id, active_org_id, id,
+              'SESSION_REVOKED_ALL', 'SUCCESS' FROM revoked`,
+      [req.auth.userId],
+    );
+    res.clearCookie('tc_session', {
+      httpOnly: true,
+      secure: isProductionEnvironment(),
+      sameSite: 'lax',
+      path: '/',
+    });
+  }
+
   /**
    * API-004: POST /api/v1/auth/logout
    * Revokes the current session immediately and clears HttpOnly cookie.
@@ -758,7 +804,15 @@ export class IdentityController {
     if (rawSessionToken && typeof rawSessionToken === 'string') {
       const tokenHash = createHash('sha256').update(rawSessionToken).digest('hex');
       await this.pool.query(
-        `UPDATE sessions SET revoked_at = now() WHERE token_hash = $1 AND revoked_at IS NULL`,
+        `WITH revoked AS (
+           UPDATE sessions SET revoked_at = now()
+           WHERE token_hash = $1 AND revoked_at IS NULL
+           RETURNING id, user_id, active_org_id
+         )
+         INSERT INTO auth_security_events
+           (id, actor_user_id, org_id, session_id, event_type, outcome)
+         SELECT gen_random_uuid(), user_id, active_org_id, id,
+                'SESSION_REVOKED', 'SUCCESS' FROM revoked`,
         [tokenHash],
       );
     }
