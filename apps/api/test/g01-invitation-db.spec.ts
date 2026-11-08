@@ -112,6 +112,23 @@ describe('G01 production PostgreSQL OTP transaction', () => {
           'SELECT consumed_at FROM otp_challenges WHERE id=$1',
           [challenge.challengeId])).rows[0].consumed_at).toBeNull();
 
+        // Malformed JSON must yield a controlled validation response rather
+        // than calling .trim() on a non-string and returning a server 500.
+        const malformed = await ctrl.verifyOtp({
+          challengeId: challenge.challengeId, code,
+          signupProfile: {
+            fullName: { trim: 42 } as any, orgName: 'Verified MEP Ltd',
+            state: 'KA',
+          },
+        }, req, res).catch((e:any) => e);
+        expect(malformed?.getStatus?.()).toBe(422);
+        expect(malformed?.getResponse?.()).toMatchObject({
+          code: 'SIGNUP_PROFILE_REQUIRED',
+        });
+        expect((await admin.query(
+          'SELECT consumed_at FROM otp_challenges WHERE id=$1',
+          [challenge.challengeId])).rows[0].consumed_at).toBeNull();
+
         const created=await ctrl.verifyOtp({
           challengeId:challenge.challengeId,code,
           signupProfile:{fullName:'G01 Correct User',orgName:'Verified MEP Ltd',state:'KA'},
