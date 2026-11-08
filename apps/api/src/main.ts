@@ -11,6 +11,15 @@ async function bootstrap() {
   validateAuthenticationConfig();
   const app = await NestFactory.create(AppModule, { rawBody: true });
 
+  // Only trusted upstream CIDRs may supply client-IP forwarding headers.
+  // Never accept arbitrary X-Forwarded-For from a direct internet request.
+  const proxyAddresses = process.env.AUTH_TRUSTED_PROXY_CIDRS;
+  if (proxyAddresses && proxyAddresses !== 'direct') {
+    app.getHttpAdapter().getInstance().set('trust proxy',
+      proxyAddresses.split(',').map(v => v.trim()).filter(Boolean));
+  } else {
+    app.getHttpAdapter().getInstance().set('trust proxy', false);
+  }
   app.use(cookieParser());
   app.use(['/api/v1/auth', '/api/v1/guest'], (_req: any, res: any, next: any) => {
     res.setHeader('Cache-Control', 'no-store, private, max-age=0');
