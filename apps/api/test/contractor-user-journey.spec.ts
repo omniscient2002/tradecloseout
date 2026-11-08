@@ -169,8 +169,8 @@ describe('Complete Application User Journey & Real Storage/Scanner Integration (
         const clientGrantId = uuidv7();
         await admin.query(`INSERT INTO guest_grants
           (id,org_id,project_id,party_id,grant_type,role,capabilities,
-           target_email,token_hash,status,expires_at,created_by)
-          VALUES($1,$2,$3,$4,'CLIENT_VIEW','R-CLIENT',$5,$6,$7,'ACTIVE',now()+interval '1 day',$8)`,
+           target_email,token_hash,status,expires_at,created_by,independent_authority_verified_at,independent_authority_evidence_ref)
+          VALUES($1,$2,$3,$4,'CLIENT_VIEW','R-CLIENT',$5,$6,$7,'ACTIVE',now()+interval '1 day',$8,now(),'TEST_FIXTURE:INDEPENDENTLY_APPROVED')`,
           [clientGrantId,orgId,projectId,clientPartyId,['package.accept'],
            'anand@hyderabadmetro.in',uuidv7().replace(/-/g,''),contractorUserId]);
         const clientActorCtx: TenantActorContext = {
