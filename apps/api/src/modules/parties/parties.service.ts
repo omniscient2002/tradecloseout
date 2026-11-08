@@ -501,7 +501,7 @@ export class PartiesService {
       const isExplicitDebug = process.env.ENABLE_DEBUG_OTP === 'true' && !isProductionEnvironment();
       const maskedTarget = channel === 'EMAIL'
         ? `${targetIdentifier.slice(0, 1)}***@${targetIdentifier.split('@')[1] || 'hidden'}`
-        : targetIdentifier.replace(/^(\\+?\\d{2,4})\\d+(\\d{4})$/, '$1******$2');
+        : targetIdentifier.replace(/^(\+?\d{2,4})\d+(\d{4})$/, '$1******$2');
       return { challengeId, maskedTarget, channel, targetIdentifier, rawCode, isExplicitDebug };
     });
 
