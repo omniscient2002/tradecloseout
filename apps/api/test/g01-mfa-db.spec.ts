@@ -47,8 +47,15 @@ async function seed(admin: Pool) {
       VALUES($1,$2,$3,$4,$5,now()+interval '1 day')`,
     [sessionId,userId,orgId,createHash('sha256').update(rawToken).digest('hex'),'a'.repeat(64)],
   );
-  const req:any = { auth: { sessionId, userId, activeOrgId: orgId, mfaVerified: false },
-    userContext: { actorType: 'USER' } };
+  const generation=(await admin.query(
+    'SELECT auth_generation FROM sessions WHERE id=$1',[sessionId],
+  )).rows[0].auth_generation;
+  const req:any = {
+    auth: { sessionId, userId, activeOrgId: orgId,
+      authGeneration: generation, mfaVerified: false },
+    cookies: {tc_session:rawToken},
+    userContext: { actorType: 'USER' },
+  };
   return { orgId,userId,sessionId,req };
 }
 
@@ -72,6 +79,11 @@ describe('G01 MFA real PostgreSQL control plane', () => {
       const confirmed = await ctrl.confirmEnrollment(req,{code:firstCode},res);
       expect(confirmed.mfaVerified).toBe(true);
       expect(confirmed.recoveryCodes).toHaveLength(8);
+      const originalSession = {
+        ...req, auth:{...req.auth}, cookies:{...req.cookies},
+      };
+      req.auth.authGeneration = confirmed.authGeneration;
+      req.cookies.tc_session = res.cookie.mock.lastCall[1];
       expect(res.cookie).toHaveBeenCalledWith('tc_session', expect.any(String), expect.objectContaining({ httpOnly: true }));
       const row=(await admin.query('SELECT mfa_totp_secret,mfa_totp_pending_secret,mfa_enabled_at FROM users WHERE id=$1',[userId])).rows[0];
       expect(row.mfa_totp_secret).not.toContain(started.manualSetupKey);
@@ -80,7 +92,17 @@ describe('G01 MFA real PostgreSQL control plane', () => {
       expect((await app.query('SELECT mfa_verified FROM sessions WHERE id=$1',[sessionId])).rows[0].mfa_verified).toBe(true);
       await expect(ctrl.verifyFactor(req,{code:firstCode},res)).rejects.toThrow();
       const backup=confirmed.recoveryCodes[0];
+      await expect(ctrl.recoverFactor(originalSession,
+        {recoveryCode:backup},res)).rejects.toMatchObject({
+          response: expect.objectContaining({code:'SESSION_EXPIRED'}),
+        });
+      const notSpent=(await admin.query(
+        'SELECT count(*)::int AS n FROM mfa_recovery_codes WHERE user_id=$1 AND consumed_at IS NOT NULL',
+        [userId])).rows[0].n;
+      expect(notSpent).toBe(0);
       const recovered=await ctrl.recoverFactor(req,{recoveryCode:backup},res);
+      req.auth.authGeneration = recovered.authGeneration;
+      req.cookies.tc_session = res.cookie.mock.lastCall[1];
       expect(recovered.mfaVerified).toBe(true);
       await expect(ctrl.recoverFactor(req,{recoveryCode:backup},res)).rejects.toThrow();
       expect((await admin.query(
