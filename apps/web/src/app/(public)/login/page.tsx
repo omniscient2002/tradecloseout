@@ -5,12 +5,18 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ShieldCheck, ArrowRight, KeyRound, Building2, CheckCircle2, AlertCircle } from "lucide-react";
 import { apiFetch, ApiProblemError, setCsrfToken } from "../../../lib/api-client";
 
+function containsUnsafeNavigationCharacters(value: string): boolean {
+  return Array.from(value).some((character) => {
+    const code = character.charCodeAt(0);
+    return code === 92 || code < 32 || code === 127;
+  });
+}
+
 function safeReturnPath(next: string | null): string {
-  // Only routable contractor pages are valid post-authentication destinations.
-  // Reject decoded slashes, traversals, controls, scheme-relative addresses,
-  // framework internals, login recursion and ambiguous escaped paths.
+  // Whitelist actual contractor pages and reject encoded path separators,
+  // recursive login URLs, traversal and script/protocol-relative redirects.
   if (!next || !next.startsWith('/') || next.startsWith('//') ||
-      /[\\\\\\u0000-\\u001f\\u007f]/.test(next) ||
+      containsUnsafeNavigationCharacters(next) ||
       /%(?:2f|5c|00|0a|0d|09|25)/i.test(next)) {
     return '/dashboard';
   }
@@ -22,13 +28,12 @@ function safeReturnPath(next: string | null): string {
       if (decoded === previous) break;
     }
     if (!decoded.startsWith('/') || decoded.startsWith('//') ||
-        /[\\\\\\u0000-\\u001f\\u007f]/.test(decoded) ||
+        containsUnsafeNavigationCharacters(decoded) ||
         decoded.split('/').includes('..')) return '/dashboard';
     const url = new URL(next, 'https://auth-navigation.local');
+    const allowedRoutes = ['dashboard', 'projects', 'parties', 'billing', 'audit'];
     if (url.origin !== 'https://auth-navigation.local' ||
-        !/^\\/(?:dashboard|projects(?:\\/|$)|parties(?:\\/|$)|billing(?:\\/|$)|audit(?:\\/|$))/.test(url.pathname)) {
-      return '/dashboard';
-    }
+        !allowedRoutes.includes(url.pathname.split('/')[1])) return '/dashboard';
     return url.pathname + url.search;
   } catch {
     return '/dashboard';
