@@ -80,7 +80,9 @@ describe('G01 production PostgreSQL OTP transaction', () => {
       await withDisposableDatabase(async ({ admin, app }) => {
         const email = 'recoverable@g01.example';
         const mail = { sendOtpEmail: jest.fn().mockResolvedValue(undefined) };
-        const ctrl = new IdentityController(app, new InMemoryRedis() as any,
+        const redis = new InMemoryRedis();
+        const redisEval = jest.spyOn(redis, 'eval');
+        const ctrl = new IdentityController(app, redis as any,
           { sendOtpSms: jest.fn() } as any, mail as any);
         const req:any = {
           ip: '127.0.0.1', headers: {
@@ -90,6 +92,10 @@ describe('G01 production PostgreSQL OTP transaction', () => {
         };
         const res:any = {cookie:jest.fn(),clearCookie:jest.fn()};
         const challenge = await ctrl.requestOtp({identifier:email},req,res);
+        expect(await redis.get(`otp:alias:${email}`)).toBeNull();
+        expect(await redis.get(`otp:challenge:${challenge.challengeId}`)).toBeNull();
+        expect(redisEval.mock.calls.every((call:any[]) =>
+          !JSON.stringify(call).includes(email))).toBe(true);
         const code = mail.sendOtpEmail.mock.calls[0][1] as string;
         expect(code).toMatch(/^\d{6}$/);
         req.cookies.tc_auth_intent = res.cookie.mock.calls.find(
