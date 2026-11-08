@@ -19,7 +19,7 @@ import { Pool } from 'pg';
 import Redis from 'ioredis';
 import { uuidv7 } from 'uuidv7';
 import { AuthenticatedRequest, SessionCsrfGuard } from '../../common/guards/session-csrf.guard';
-import { assertAuthenticationOrigin } from './auth-security';
+import { assertAuthenticationOrigin, consumeAuthenticationBudget, isProductionEnvironment } from './auth-security';
 
 export abstract class DltSmsGateway {
   abstract sendOtpSms(phoneE164: string, otp: string, templateId: string): Promise<{ delivered: boolean }>;
@@ -64,6 +64,13 @@ export class IdentityController {
         title: 'Invalid email or Indian mobile number',
         detail: 'Provide a valid business email or +91 10-digit mobile number.',
       });
+    }
+
+    if (isProductionEnvironment()) {
+      const ip = String(req?.ip || req?.socket?.remoteAddress || 'unknown');
+      await consumeAuthenticationBudget(this.pool, 'otp:ip:hour', ip, 20, 3600);
+      await consumeAuthenticationBudget(this.pool, 'otp:contact:hour', rawId, 5, 3600);
+      await consumeAuthenticationBudget(this.pool, 'otp:global:hour', 'all', 6000, 3600);
     }
 
     // Rate limit: max 5 OTP requests / hour / identifier (10 §10), atomic Lua increment and expiry
