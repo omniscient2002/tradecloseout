@@ -14,6 +14,14 @@ function encryptionKey(): Buffer {
   return key;
 }
 
+function previousEncryptionKey(): Buffer | null {
+  const previous = process.env.AUTH_MFA_ENCRYPTION_KEY_PREVIOUS;
+  if (!previous) return null;
+  const key = Buffer.from(previous, 'base64');
+  if (key.length !== 32) throw new Error('BOOT_AUTH_MFA_PREVIOUS_ENCRYPTION_KEY_INVALID');
+  return key;
+}
+
 export function newTotpSecret(): string {
   const bytes = randomBytes(20);
   let value = 0, bits = 0, result = '';
@@ -54,9 +62,21 @@ export function encryptFactor(plaintext: string): string {
 export function decryptFactor(envelope: string): string {
   const parts = envelope.split(':');
   if (parts.length !== 4 || parts[0] !== 'v1') throw new Error('MFA_FACTOR_ENVELOPE_INVALID');
-  const decipher = createDecipheriv('aes-256-gcm', encryptionKey(), Buffer.from(parts[1], 'base64'));
-  decipher.setAuthTag(Buffer.from(parts[2], 'base64'));
-  return Buffer.concat([decipher.update(Buffer.from(parts[3], 'base64')), decipher.final()]).toString('utf8');
+  const [primary,previous]=[encryptionKey(),previousEncryptionKey()];
+  for (const key of [primary,previous]) {
+    if (!key) continue;
+    try {
+      const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(parts[1], 'base64'));
+      decipher.setAuthTag(Buffer.from(parts[2], 'base64'));
+      return Buffer.concat([
+        decipher.update(Buffer.from(parts[3], 'base64')),decipher.final(),
+      ]).toString('utf8');
+    } catch {
+      // A prior-key GCM tag failing is expected during a staged rotation.
+      // Never report the input, key, decrypted material or raw crypto error.
+    }
+  }
+  throw new Error('MFA_FACTOR_DECRYPT_FAILED');
 }
 
 export function verifyTotp(secret: string, input: string, lastUsedStep = -1): number | null {
@@ -80,6 +100,23 @@ export function newRecoveryCodes(): string[] {
   return Array.from({ length: 8 }, () => randomBytes(12).toString('hex').toUpperCase());
 }
 
+function recoveryDigest(code: string, key: Buffer): string {
+  return createHmac('sha256', key)
+    .update('mfa-recovery:v1:' + code.trim().toUpperCase()).digest('hex');
+}
+
 export function hashRecoveryCode(code: string): string {
-  return createHmac('sha256', encryptionKey()).update('mfa-recovery:v1:' + code.trim().toUpperCase()).digest('hex');
+  // New recovery codes always use the current key, never a previous one.
+  return recoveryDigest(code, encryptionKey());
+}
+
+/** A rotation may accept old *unconsumed* codes only while explicitly configured. */
+export function hashRecoveryCodeCandidates(code: string): string[] {
+  const primary = encryptionKey();
+  const previous = previousEncryptionKey();
+  const values = [recoveryDigest(code,primary)];
+  if (previous && !previous.equals(primary)) {
+    values.push(recoveryDigest(code,previous));
+  }
+  return values;
 }
