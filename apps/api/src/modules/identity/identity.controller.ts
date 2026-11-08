@@ -615,7 +615,7 @@ export class IdentityController {
         const { rows: memberships } = await client.query(
           `SELECT m.org_id, m.role FROM memberships m JOIN organisations o ON o.id = m.org_id
             WHERE m.user_id = $1 AND m.status = 'ACTIVE' AND o.status = 'ACTIVE'
-            ORDER BY m.joined_at DESC LIMIT 1`,
+            ORDER BY m.joined_at DESC LIMIT 1 FOR SHARE OF m, o`,
           [userId],
         );
         if (memberships.length === 0) {
@@ -929,7 +929,7 @@ export class IdentityController {
         `SELECT m.id FROM memberships m
           JOIN organisations o ON o.id = m.org_id AND o.status = 'ACTIVE'
           WHERE m.org_id = $1 AND m.user_id = $2 AND m.status = 'ACTIVE'
-          LIMIT 1`,
+          LIMIT 1 FOR SHARE OF m, o`,
         [body.targetOrgId, req.auth.userId],
       );
       if (!memberships.length) {
