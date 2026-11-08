@@ -317,7 +317,7 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
                 rows: [{ id: 'sr-1', status: 'SENT', recipient_party_id: 'party-consultant', decided_at: null,
                   grant_status: 'ACTIVE', grant_expires_at: new Date(Date.now() + 60_000),
                   grant_project_id: projectId, grant_party_id: 'party-consultant',
-                  grant_capabilities: ['package.accept'] }],
+                  grant_capabilities: ['package.accept'], grant_independent_authority_verified_at: new Date() }],
               };
             }
             if (sql.includes('UPDATE submission_recipients')) {
