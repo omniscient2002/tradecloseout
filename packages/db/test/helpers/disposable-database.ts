@@ -19,9 +19,12 @@ export async function migrateDatabase(url: string): Promise<void> {
 }
 
 /** Never resets an existing database. Only a random database created here is removed. */
-export async function withDisposableDatabase(work: (db: {
-  admin: Pool; app: Pool; url: string; name: string;
-}) => Promise<void>, options: { baselineThrough?: string } = {}) {
+/**
+ * Protect old test fixtures using DB_PORT/DB_HOST from writing into a different
+ * Postgres instance than the migrator and runtime URLs.
+ * Invoke this before opening a pool or inserting a fixture.
+ */
+export function assertTestDatabaseTargetConsistency(): { source: URL; runtime: URL } {
   const source = new URL(process.env.MIGRATOR_DATABASE_URL || 'postgres://postgres:postgres@127.0.0.1:5432/tradecloseout');
   const runtime = new URL(process.env.APP_DATABASE_URL || 'postgres://tc_app:tc_app_pass@127.0.0.1:5432/tradecloseout');
   const normalHost = (host: string) => ['localhost', '127.0.0.1', '::1', '[::1]'].includes(host) ? 'loopback' : host;
@@ -42,6 +45,13 @@ export async function withDisposableDatabase(work: (db: {
       (process.env.DB_NAME && '/' + process.env.DB_NAME !== source.pathname)) {
     throw new Error('TEST_DATABASE_TARGET_MISMATCH: migrator, runtime and legacy DB_HOST/DB_PORT/DB_NAME disagree');
   }
+  return { source, runtime };
+}
+
+export async function withDisposableDatabase(work: (db: {
+  admin: Pool; app: Pool; url: string; name: string;
+}) => Promise<void>, options: { baselineThrough?: string } = {}) {
+  const { source, runtime } = assertTestDatabaseTargetConsistency();
   const controlUrl = new URL(source);
   controlUrl.pathname = '/postgres';
   const control = new Pool({ connectionString: controlUrl.toString() });
