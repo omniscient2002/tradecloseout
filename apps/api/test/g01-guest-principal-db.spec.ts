@@ -4,6 +4,7 @@ import { uuidv7 } from 'uuidv7';
 import { withDisposableDatabase } from '../../../packages/db/test/helpers/disposable-database';
 import { PartiesService } from '../src/modules/parties/parties.service';
 import { TenantDbService } from '../src/database/tenant-db.service';
+import { SessionCsrfGuard } from '../src/common/guards/session-csrf.guard';
 
 jest.setTimeout(180_000);
 
@@ -48,6 +49,22 @@ describe('G01: guest session identity, supersession and proven provenance', () =
         expect(rows[0].user_id).not.toBe(issuer);
         expect(rows[0].user_id).toBe(rows[0].principal_user_id);
         expect(rows[0].created_by).toBe(issuer);
+        const guard=new SessionCsrfGuard(app);
+        const request=()=>{
+          const req:any={
+            cookies:{tc_session:login.sessionToken},headers:{},ip:'127.0.0.1',
+            method:'GET',params:{},path:'/api/v1/guest/me/context',
+          };
+          return guard.canActivate({
+            switchToHttp:()=>({getRequest:()=>req}),
+          } as any);
+        };
+        await expect(request()).resolves.toBe(true);
+        await admin.query('UPDATE projects SET client_party_id=NULL WHERE id=$1',[project]);
+        await expect(request()).rejects.toMatchObject({
+          response:expect.objectContaining({code:'GUEST_PARTY_RELATIONSHIP_INVALID'}),
+        });
+        await expect(svc.getGuestGrant(inviteToken)).rejects.toThrow();
         await expect(svc.verifyGuestOtp(inviteToken,second.debugOtp!,second.challengeId))
           .rejects.toThrow();
       });
