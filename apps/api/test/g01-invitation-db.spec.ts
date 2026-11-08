@@ -64,3 +64,74 @@ describe('G01: identity-bound invitations with real RLS', () => {
     }
   });
 });
+
+describe('G01 production PostgreSQL OTP transaction', () => {
+  it('retains valid proof after onboarding rollback and consumes it exactly once with session commit', async () => {
+    const previous = {
+      NODE_ENV: process.env.NODE_ENV, FRONTEND_URL: process.env.FRONTEND_URL,
+      AUTH_OTP_HMAC_KEY: process.env.AUTH_OTP_HMAC_KEY,
+      AUTH_CSRF_KEY: process.env.AUTH_CSRF_KEY,
+    };
+    process.env.NODE_ENV = 'production';
+    process.env.FRONTEND_URL = 'https://app.g01.test';
+    process.env.AUTH_OTP_HMAC_KEY = 'o'.repeat(48);
+    process.env.AUTH_CSRF_KEY = 'c'.repeat(48);
+    try {
+      await withDisposableDatabase(async ({ admin, app }) => {
+        const email = 'recoverable@g01.example';
+        const mail = { sendOtpEmail: jest.fn().mockResolvedValue(undefined) };
+        const ctrl = new IdentityController(app, new InMemoryRedis() as any,
+          { sendOtpSms: jest.fn() } as any, mail as any);
+        const req:any = {
+          ip: '127.0.0.1', headers: {
+            origin: 'https://app.g01.test', 'sec-fetch-site': 'same-origin',
+            'user-agent': 'g01-production-test',
+          }, cookies: {},
+        };
+        const res:any = {cookie:jest.fn(),clearCookie:jest.fn()};
+        const challenge = await ctrl.requestOtp({identifier:email},req,res);
+        const code = mail.sendOtpEmail.mock.calls[0][1] as string;
+        expect(code).toMatch(/^\d{6}$/);
+        req.cookies.tc_auth_intent = res.cookie.mock.calls.find(
+          (args:any[]) => args[0] === 'tc_auth_intent')?.[1];
+
+        await expect(ctrl.verifyOtp({
+          challengeId:challenge.challengeId,code:'000000',
+        },req,res)).rejects.toThrow();
+        const before = (await admin.query(
+          'SELECT attempts,consumed_at,delivery_status FROM otp_challenges WHERE id=$1',
+          [challenge.challengeId])).rows[0];
+        expect(before).toMatchObject({attempts:1,consumed_at:null,delivery_status:'SENT'});
+
+        // A real transaction failure must NOT burn the correct proof.
+        await expect(ctrl.verifyOtp({
+          challengeId:challenge.challengeId,code,
+        },req,res)).rejects.toThrow();
+        expect((await admin.query(
+          'SELECT consumed_at FROM otp_challenges WHERE id=$1',
+          [challenge.challengeId])).rows[0].consumed_at).toBeNull();
+
+        const created=await ctrl.verifyOtp({
+          challengeId:challenge.challengeId,code,
+          signupProfile:{fullName:'G01 Correct User',orgName:'Verified MEP Ltd',state:'KA'},
+        },req,res);
+        expect(created.userId).toBeDefined();
+        expect(created.mfaRequired).toBe(true);
+        expect((await admin.query(
+          'SELECT consumed_at FROM otp_challenges WHERE id=$1',
+          [challenge.challengeId])).rows[0].consumed_at).toBeTruthy();
+        expect((await admin.query(
+          'SELECT count(*)::int AS n FROM sessions WHERE user_id=$1',
+          [created.userId])).rows[0].n).toBe(1);
+        await expect(ctrl.verifyOtp({
+          challengeId:challenge.challengeId,code,
+        },req,res)).rejects.toThrow();
+      });
+    } finally {
+      for (const [k,v] of Object.entries(previous)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  });
+});
