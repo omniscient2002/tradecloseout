@@ -46,6 +46,24 @@ describe('G01: authentication hardening negative controls', () => {
     expect(() => validateAuthenticationConfig({ ...env, AUTH_MFA_ENCRYPTION_KEY: 'bad' })).toThrow('BOOT_AUTH_MFA_ENCRYPTION_KEY_INVALID');
     expect(() => validateAuthenticationConfig({ ...env, ENABLE_DEBUG_OTP: 'true' })).toThrow('BOOT_AUTH_DEBUG_MODE_DISABLED');
     expect(() => validateAuthenticationConfig({ ...env, AUTH_TRUSTED_PROXY_CIDRS: '0.0.0.0/0' })).toThrow('BOOT_AUTH_PROXY_SCOPE_INVALID');
+    expect(() => validateAuthenticationConfig({
+      ...env, AUTH_TRUSTED_PROXY_CIDRS: 'not-a-proxy',
+    })).toThrow('BOOT_AUTH_PROXY_SCOPE_INVALID');
+    expect(() => validateAuthenticationConfig({
+      ...env, AUTH_TRUSTED_PROXY_CIDRS: '198.51.100.4/33',
+    })).toThrow('BOOT_AUTH_PROXY_SCOPE_INVALID');
+    expect(() => validateAuthenticationConfig({
+      ...env, AUTH_TRUSTED_PROXY_CIDRS: '198.51.100.4/32',
+    })).not.toThrow();
+    expect(() => validateAuthenticationConfig({
+      ...env, FRONTEND_URL: 'https://app.example.com/unexpected/path',
+    })).toThrow('BOOT_AUTH_ORIGIN_INVALID');
+    expect(() => validateAuthenticationConfig({
+      ...env, MAIL_GATEWAY_URL: 'https://apikey:secret@mail.example.com',
+    })).toThrow('BOOT_AUTH_HTTPS_REQUIRED');
+    expect(() => validateAuthenticationConfig({
+      ...env, APP_DATABASE_URL: 'not-a-database-url',
+    })).toThrow('BOOT_AUTH_DATABASE_URL_INVALID');
   });
 
   it('rejects cross-site and untrusted login origins rather than trusting CORS alone', () => {
