@@ -88,6 +88,26 @@ export function validateAuthenticationConfig(env: NodeJS.ProcessEnv = process.en
 }
 
 /**
+ * Validate privileges on the actual connected PostgreSQL session. A safe-looking
+ * APP_DATABASE_URL is insufficient when the effective database role is superuser,
+ * BYPASSRLS, or can SET ROLE tc_migrator.
+ */
+export async function assertRuntimeDatabasePrivileges(pool: Pool): Promise<void> {
+  const { rows } = await pool.query(
+    `SELECT current_user AS role_name, r.rolsuper, r.rolbypassrls,
+      (SELECT pg_has_role(current_user, m.oid, 'MEMBER')
+         FROM pg_roles m WHERE m.rolname='tc_migrator') AS can_assume_migrator
+       FROM pg_roles r WHERE r.rolname=current_user`,
+  );
+  const role = rows[0];
+  if (!role || role.rolsuper || role.rolbypassrls ||
+      role.can_assume_migrator ||
+      ['postgres','tc_migrator'].includes(String(role.role_name))) {
+    throw new Error('BOOT_AUTH_RUNTIME_ROLE_PRIVILEGED');
+  }
+}
+
+/**
  * Origin and Fetch Metadata defense for cookie/session-creating routes.
  * CORS is not a login-CSRF defense: a browser may submit a cross-site request
  * even if it cannot read the response.
