@@ -328,9 +328,9 @@ export class IdentityController {
       try { expectedIntent = preview ? JSON.parse(preview)?.authIntentHash ?? null : null; }
       catch { /* malformed challenge is rejected by Redis atomic validation */ }
       assertAuthenticationIntent(req, expectedIntent);
-    } else if (isProductionEnvironment()) {
-      assertAuthenticationIntent(req, null);
     }
+    // Production verifies the intent against the locked PostgreSQL challenge,
+    // not the Redis preview or a missing expected hash.
 
     let verifyOutcome = 'EXPIRED';
     let authDbClient: PoolClient | null = null;
