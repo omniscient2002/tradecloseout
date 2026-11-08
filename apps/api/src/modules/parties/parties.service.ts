@@ -469,8 +469,13 @@ export class PartiesService {
       }
 
       const rawCode = crypto.randomInt(100000, 999999).toString();
-      const codeHash = this.hashSecret(rawCode);
       const challengeId = uuidv7();
+      const otpSecret = process.env.AUTH_OTP_HMAC_KEY;
+      const codeHash = isProductionEnvironment()
+        ? crypto.createHmac('sha256', otpSecret!)
+          .update(`GUEST_ACCESS:${challengeId}:${grant.id}:${grant.target_phone_e164 || grant.target_email}:${rawCode}`)
+          .digest('hex')
+        : this.hashSecret(rawCode);
       const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
       const targetIdentifier = grant.target_phone_e164 || grant.target_email;
@@ -576,7 +581,11 @@ export class PartiesService {
       }
 
       const challenge = challenges[0];
-      const incomingHash = this.hashSecret(code);
+      const incomingHash = isProductionEnvironment()
+        ? crypto.createHmac('sha256', process.env.AUTH_OTP_HMAC_KEY!)
+          .update(`GUEST_ACCESS:${challenge.id}:${grant.id}:${challenge.identifier}:${code}`)
+          .digest('hex')
+        : this.hashSecret(code);
 
       if (challenge.code_hash !== incomingHash) {
         const newAttempts = (grant.failed_otp_count || 0) + 1;
