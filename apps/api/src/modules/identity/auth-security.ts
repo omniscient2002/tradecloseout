@@ -37,7 +37,7 @@ const isTrustedProxyEntry = (entry: string): boolean => {
   const limit = family === 4 ? 32 : 128;
   if (!/^\d+$/.test(parts[1])) return false;
   const bits = Number(parts[1]);
-  return Number.isInteger(bits) && bits >= 0 && bits <= limit;
+  return Number.isInteger(bits) && bits >= 1 && bits <= limit;
 };
 
 /**
