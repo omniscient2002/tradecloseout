@@ -78,6 +78,15 @@ describe('G01: authentication hardening negative controls', () => {
     expect(() => assertAuthenticationIntent({ cookies: { tc_auth_intent: cookieValue } }, hash)).not.toThrow();
     expect(() => assertAuthenticationIntent({ cookies: { tc_auth_intent: 'forged' } }, hash)).toThrow(ForbiddenException);
     expect(() => assertAuthenticationIntent({ cookies: {} }, hash)).toThrow(ForbiddenException);
+    const secondResponse = { cookie: jest.fn() };
+    const sameBrowserHash = setAuthenticationIntent(
+      secondResponse as any, { cookies: { tc_auth_intent: cookieValue } },
+    );
+    expect(sameBrowserHash).toBe(hash);
+    expect(secondResponse.cookie).not.toHaveBeenCalled();
+    const thirdResponse = { cookie: jest.fn() };
+    const differentBrowserHash = setAuthenticationIntent(thirdResponse as any, { cookies: {} });
+    expect(differentBrowserHash).not.toBe(hash);
   });
 
   it('binds restored CSRF to the current cookie and auth generation', () => {
