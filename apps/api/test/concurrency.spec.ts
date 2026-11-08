@@ -5,6 +5,7 @@
 import { TenantDbService, ExecutionContext } from '../src/database/tenant-db.service';
 import { uuidv7 } from 'uuidv7';
 import { Pool } from 'pg';
+import { assertTestDatabaseTargetConsistency } from '../../../packages/db/test/helpers/disposable-database';
 
 describe('Concurrency Suite: FOR UPDATE Row Locking & Race Condition Prevention', () => {
   let db: TenantDbService;
@@ -13,6 +14,9 @@ describe('Concurrency Suite: FOR UPDATE Row Locking & Race Condition Prevention'
   const userId = uuidv7();
 
   beforeAll(async () => {
+    // Fail before touching a fixture if the legacy DB_PORT path and the
+    // application/migrator DATABASE_URL are not the same PostgreSQL target.
+    assertTestDatabaseTargetConsistency();
     db = new TenantDbService();
 
     migratorPool = new Pool({
