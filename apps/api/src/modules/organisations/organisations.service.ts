@@ -427,9 +427,31 @@ export class OrganisationsService {
     dto: { email: string; role: string },
   ) {
     if (orgId !== ctx.orgId) throw new NotFoundException('ORGANISATION_NOT_FOUND');
+    if (!dto || typeof dto.email !== 'string' || typeof dto.role !== 'string' ||
+        dto.email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(dto.email.trim())) {
+      throw new UnprocessableEntityException({code:'INVALID_INVITATION_INPUT'});
+    }
+    // Owner authority is transferred only through the audited transfer path.
+    const invitedRoles = new Set([
+      'R-ADMIN','R-BILLING','R-PM','R-SITE','R-DOC','R-PROC',
+      'R-QC','R-SAFETY','R-REVIEWER','R-AUDITOR',
+    ]);
+    if (!invitedRoles.has(dto.role)) {
+      throw new UnprocessableEntityException({code:'INVALID_INVITATION_ROLE'});
+    }
     const email = dto.email.trim().toLowerCase();
 
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+      const { rows: issuer } = await client.query(
+        `SELECT role FROM memberships
+         WHERE org_id=$1 AND user_id=$2 AND status='ACTIVE' FOR SHARE`,
+        [orgId,ctx.userId],
+      );
+      const issuerRole = issuer[0]?.role;
+      if (!['R-OWNER','R-ADMIN'].includes(issuerRole) ||
+          (dto.role === 'R-ADMIN' && issuerRole !== 'R-OWNER')) {
+        throw new ForbiddenException({code:'INVITATION_ROLE_EXCEEDS_ISSUER'});
+      }
       const { rows: existing } = await client.query(
         `SELECT m.id FROM memberships m
            JOIN user_identities i ON i.user_id = m.user_id
@@ -497,7 +519,38 @@ export class OrganisationsService {
   ) {
     if (orgId !== ctx.orgId) throw new NotFoundException('ORGANISATION_NOT_FOUND');
 
+    if (!dto || typeof dto.role !== 'string') {
+      throw new UnprocessableEntityException({code:'INVALID_MEMBER_ROLE'});
+    }
+    const changeableRoles = new Set([
+      'R-ADMIN','R-BILLING','R-PM','R-SITE','R-DOC','R-PROC',
+      'R-QC','R-SAFETY','R-REVIEWER','R-AUDITOR',
+    ]);
+    if (!changeableRoles.has(dto.role)) {
+      throw new UnprocessableEntityException({code:'OWNER_ROLE_REQUIRES_TRANSFER'});
+    }
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+      const { rows: actorRows } = await client.query(
+        `SELECT role FROM memberships WHERE org_id=$1 AND user_id=$2
+          AND status='ACTIVE' FOR SHARE`,
+        [orgId,ctx.userId],
+      );
+      const activeActorRole = actorRows[0]?.role;
+      if (!['R-OWNER','R-ADMIN'].includes(activeActorRole) ||
+          (dto.role === 'R-ADMIN' && activeActorRole !== 'R-OWNER')) {
+        throw new ForbiddenException({code:'MEMBER_ROLE_CHANGE_NOT_AUTHORIZED'});
+      }
+      const { rows: targetRoles } = await client.query(
+        `SELECT role FROM memberships WHERE org_id=$1 AND user_id=$2
+          AND status='ACTIVE' FOR UPDATE`,
+        [orgId,targetUserId],
+      );
+      if (!targetRoles.length) throw new NotFoundException('MEMBERSHIP_NOT_FOUND');
+      if (targetRoles[0].role === 'R-OWNER' ||
+          (activeActorRole !== 'R-OWNER' && targetRoles[0].role === 'R-ADMIN') ||
+          (ctx.userId === targetUserId && activeActorRole === 'R-ADMIN')) {
+        throw new ForbiddenException({code:'PROTECTED_MEMBER_ROLE_CHANGE'});
+      }
       if (dto.role !== 'R-OWNER') {
         const { rows: ownerRows } = await client.query(
           `SELECT user_id FROM memberships
