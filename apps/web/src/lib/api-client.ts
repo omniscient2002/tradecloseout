@@ -203,8 +203,10 @@ export const api = {
     async logout() {
       try {
         await apiFetch<void>('/api/v1/auth/logout', { method: 'POST' });
+        // Confirmed backend revocation: invalidate both the CSRF and its
+        // session-generation binding; notify other tabs and offline workers.
+        setCsrfToken(null);
         if (typeof window !== 'undefined') {
-          window.sessionStorage.removeItem('tc_csrf_token');
           window.localStorage.removeItem('tc_csrf_token');
         }
         return { data: { success: true }, error: null, status: 204 };
