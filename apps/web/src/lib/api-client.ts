@@ -25,23 +25,64 @@ export class ApiProblemError extends Error {
   }
 }
 
+const CSRF_STORAGE_KEY = 'tc_csrf_token';
+const GENERATION_STORAGE_KEY = 'tc_auth_generation';
+const AUTH_CHANGE_EVENT_KEY = 'tc_auth_epoch';
+
 export function getCsrfToken(): string | null {
-  if (typeof window !== 'undefined') {
-    return window.sessionStorage.getItem('tc_csrf_token') || localStorage.getItem('tc_csrf_token');
-  }
-  return null;
+  return typeof window === 'undefined' ? null : sessionStorage.getItem(CSRF_STORAGE_KEY);
+}
+export function getAuthGeneration(): string | null {
+  return typeof window === 'undefined' ? null : sessionStorage.getItem(GENERATION_STORAGE_KEY);
 }
 
-export function setCsrfToken(token: string | null) {
-  if (typeof window !== 'undefined') {
-    if (token) {
-      window.sessionStorage.setItem('tc_csrf_token', token);
-      localStorage.setItem('tc_csrf_token', token);
-    } else {
-      window.sessionStorage.removeItem('tc_csrf_token');
-      localStorage.removeItem('tc_csrf_token');
-    }
+/** Raw CSRF is deliberately NOT persisted to localStorage or broadcast. */
+export function setCsrfToken(token: string | null, generation?: string | null, announce = true) {
+  if (typeof window === 'undefined') return;
+  if (token) sessionStorage.setItem(CSRF_STORAGE_KEY, token);
+  else sessionStorage.removeItem(CSRF_STORAGE_KEY);
+  if (generation) sessionStorage.setItem(GENERATION_STORAGE_KEY, generation);
+  else if (!token) sessionStorage.removeItem(GENERATION_STORAGE_KEY);
+  if (announce) {
+    // Only a nonsecret random event is shared. Other tabs must re-bootstrap
+    // or pause work rather than retaining actionable stale tenant state.
+    localStorage.setItem(AUTH_CHANGE_EVENT_KEY, crypto.randomUUID());
   }
+}
+
+export function watchAuthChanges(onChange: () => void): () => void {
+  if (typeof window === 'undefined') return () => {};
+  const handler = (event: StorageEvent) => {
+    if (event.key !== AUTH_CHANGE_EVENT_KEY) return;
+    sessionStorage.removeItem(CSRF_STORAGE_KEY);
+    sessionStorage.removeItem(GENERATION_STORAGE_KEY);
+    onChange();
+  };
+  window.addEventListener('storage', handler);
+  return () => window.removeEventListener('storage', handler);
+}
+
+let bootstrapPromise: Promise<void> | null = null;
+async function restoreSessionSecurity(): Promise<void> {
+  if (typeof window === 'undefined') return;
+  if (getCsrfToken() && getAuthGeneration()) return;
+  if (!bootstrapPromise) {
+    bootstrapPromise = (async () => {
+      const response = await fetch('/api/v1/auth/session/bootstrap', {
+        credentials: 'include',
+        headers: { Accept: 'application/json' },
+        cache: 'no-store',
+      });
+      if (!response.ok) throw new ApiProblemError({
+        status: response.status, code: 'SESSION_BOOTSTRAP_FAILED',
+        detail: 'Sign in again to restore your authenticated session.',
+      });
+      const state = await response.json() as { csrfToken: string; authGeneration: string };
+      if (!state?.csrfToken || !state?.authGeneration) throw new Error('INVALID_AUTH_BOOTSTRAP');
+      setCsrfToken(state.csrfToken, state.authGeneration, false);
+    })().finally(() => { bootstrapPromise = null; });
+  }
+  await bootstrapPromise;
 }
 
 export async function apiFetch<T>(
@@ -56,10 +97,15 @@ export async function apiFetch<T>(
     headers.set('Content-Type', 'application/json');
   }
 
-  // Attach CSRF token from sessionStorage on unsafe methods (10 §2.2)
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) && typeof window !== 'undefined') {
-    const csrf = getCsrfToken();
-    if (csrf) headers.set('X-CSRF-Token', csrf);
+    const isUnauthenticatedOtp = /\/(?:auth\/otp|guest\/[^/]+\/otp)\/(?:request|verify)$/.test(path);
+    if (!isUnauthenticatedOtp) {
+      await restoreSessionSecurity();
+      const csrf = getCsrfToken();
+      const generation = getAuthGeneration();
+      if (csrf) headers.set('X-CSRF-Token', csrf);
+      if (generation) headers.set('X-Auth-Generation', generation);
+    }
   }
 
   // Attach Idempotency-Key on state-changing POSTs (10 §5)
@@ -122,12 +168,13 @@ export const api = {
           user: { id: string; email?: string; phone?: string; full_name?: string };
           activeOrgId: string;
           csrfToken: string;
+          authGeneration: string;
         }>('/api/v1/auth/otp/verify', {
           method: 'POST',
           body: JSON.stringify({ challengeId, code, identifier }),
         });
         if (res.csrfToken) {
-          setCsrfToken(res.csrfToken);
+          setCsrfToken(res.csrfToken, res.authGeneration);
         }
         return { data: res, error: null, status: 200 };
       } catch (err: any) {
