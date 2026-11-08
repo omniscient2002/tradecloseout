@@ -185,24 +185,6 @@ export class SessionCsrfGuard implements CanActivate {
       });
     }
 
-    // Update member inactivity expiry at most once per five minutes. Guest
-    // sessions deliberately retain their strict 24-hour fixed expiration.
-    if (!session.guest_grant_id &&
-        new Date(session.last_activity_at).getTime() < Date.now() - 5 * 60_000) {
-      const { rowCount } = await this.pool.query(
-        `UPDATE sessions
-            SET last_activity_at = now(),
-                expires_at = LEAST(now() + interval '30 days', absolute_expires_at)
-          WHERE id = $1 AND revoked_at IS NULL
-            AND expires_at > now() AND absolute_expires_at > now()
-            AND last_activity_at > now() - interval '30 days'`,
-        [session.session_id],
-      );
-      if (!rowCount) {
-        throw new UnauthorizedException({ code: 'SESSION_EXPIRED' });
-      }
-    }
-
     // A shared HttpOnly cookie can change in another tab. Require a generation
     // pinned to the UI's last verified auth context for every mutating request
     // in production; stale form/tenant state may NOT be silently submitted.
@@ -356,6 +338,26 @@ export class SessionCsrfGuard implements CanActivate {
       guestScope,
       guestCapabilities,
     };
+
+    // Sliding expiry is earned ONLY after authentication, CSRF, current
+    // generation, MFA and resource-scope checks have all succeeded. Previously,
+    // a failed request with a stolen cookie could keep the session alive.
+    // Optimistic token+generation predicates prevent an old-tab GET from
+    // renewing a different session after a credential rotation.
+    if (!session.guest_grant_id &&
+        new Date(session.last_activity_at).getTime() < Date.now() - 5 * 60_000) {
+      const { rowCount } = await this.pool.query(
+        `UPDATE sessions
+            SET last_activity_at = now(),
+                expires_at = LEAST(now() + interval '30 days', absolute_expires_at)
+          WHERE id = $1 AND token_hash = $2 AND auth_generation = $3
+            AND revoked_at IS NULL AND expires_at > now()
+            AND absolute_expires_at > now()
+            AND last_activity_at > now() - interval '30 days'`,
+        [session.session_id, tokenHash, String(session.auth_generation)],
+      );
+      if (!rowCount) throw new UnauthorizedException({ code: 'SESSION_EXPIRED' });
+    }
 
     return true;
   }
