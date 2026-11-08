@@ -465,6 +465,13 @@ export class OrganisationsService {
           (dto.role === 'R-ADMIN' && issuerRole !== 'R-OWNER')) {
         throw new ForbiddenException({code:'INVITATION_ROLE_EXCEEDS_ISSUER'});
       }
+      // Serialize invitation creation by target identity. There must never be
+      // two independently usable pending proofs granting potentially different
+      // roles to the same intended organisation member.
+      await client.query(
+        `SELECT pg_advisory_xact_lock(hashtext($1))`,
+        [`org-invitation:${orgId}:${email}`],
+      );
       const { rows: existing } = await client.query(
         `SELECT m.id FROM memberships m
            JOIN user_identities i ON i.user_id = m.user_id
@@ -480,6 +487,11 @@ export class OrganisationsService {
         });
       }
 
+      await client.query(
+        `UPDATE invitations SET status='REVOKED',updated_at=now()
+          WHERE org_id=$1 AND lower(email)=lower($2) AND status='PENDING'`,
+        [orgId,email],
+      );
       const rawToken = randomBytes(32).toString('hex');
       const tokenHash = createHash('sha256').update(rawToken).digest('hex');
       const invId = uuidv7();
