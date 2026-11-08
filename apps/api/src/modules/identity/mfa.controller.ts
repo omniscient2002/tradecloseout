@@ -7,7 +7,7 @@ import { Pool, PoolClient } from 'pg';
 import { Response } from 'express';
 import { uuidv7 } from 'uuidv7';
 import { SessionCsrfGuard, AuthenticatedRequest } from '../../common/guards/session-csrf.guard';
-import { deriveSessionCsrf, isProductionEnvironment } from './auth-security';
+import { consumeAuthenticationBudget, deriveSessionCsrf, isProductionEnvironment } from './auth-security';
 import {
   decryptFactor, encryptFactor, hashRecoveryCode, newRecoveryCodes,
   newTotpSecret, verifyTotp,
@@ -32,6 +32,18 @@ export class MfaController {
     if (req.userContext?.actorType === 'GUEST') {
       throw new ForbiddenException({ code: 'MFA_MEMBER_ONLY' });
     }
+  }
+
+  private async enforceMfaAttemptBudget(
+    req: AuthenticatedMfaRequest, action: 'enroll' | 'verify' | 'recovery',
+  ): Promise<void> {
+    // Budget reservations are external to the factor transaction and survive
+    // invalid codes or a rollback, across all API replicas.
+    const max = action === 'recovery' ? 5 : 10;
+    await consumeAuthenticationBudget(this.pool, `mfa:${action}:user`,
+      req.auth.userId, max, 15 * 60);
+    await consumeAuthenticationBudget(this.pool, `mfa:${action}:ip`,
+      String(req.ip || 'unknown'), 30, 15 * 60);
   }
 
   private async transact<T>(userId: string, fn: (client: PoolClient) => Promise<T>): Promise<T> {
@@ -101,6 +113,7 @@ export class MfaController {
   @Post('enroll/start')
   async beginEnrollment(@Req() req: AuthenticatedMfaRequest) {
     this.assertMember(req);
+    await this.enforceMfaAttemptBudget(req, 'enroll');
     const secret = newTotpSecret();
     await this.transact(req.auth.userId, async client => {
       const { rows } = await client.query(
@@ -132,6 +145,7 @@ export class MfaController {
     if (typeof input?.code !== 'string' || !/^\d{6}$/.test(input.code)) {
       throw new BadRequestException({ code: 'MFA_CODE_INVALID' });
     }
+    await this.enforceMfaAttemptBudget(req, 'verify');
     const result = await this.transact(req.auth.userId, async client => {
       const { rows } = await client.query(
         `SELECT mfa_totp_pending_secret, mfa_enabled_at, mfa_totp_last_step
@@ -180,6 +194,7 @@ export class MfaController {
     if (typeof input?.code !== 'string' || !/^\d{6}$/.test(input.code)) {
       throw new BadRequestException({ code: 'MFA_CODE_INVALID' });
     }
+    await this.enforceMfaAttemptBudget(req, 'verify');
     const session = await this.transact(req.auth.userId, async client => {
       const { rows } = await client.query(
         `SELECT mfa_totp_secret,mfa_totp_last_step,mfa_enabled_at
@@ -213,6 +228,7 @@ export class MfaController {
     if (typeof input?.recoveryCode !== 'string' || !/^[0-9A-Fa-f]{24}$/.test(input.recoveryCode)) {
       throw new BadRequestException({ code: 'RECOVERY_CODE_INVALID' });
     }
+    await this.enforceMfaAttemptBudget(req, 'recovery');
     const session = await this.transact(req.auth.userId, async client => {
       const { rows } = await client.query(
         `SELECT id FROM mfa_recovery_codes
