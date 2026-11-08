@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { apiFetch, setCsrfToken } from "../../lib/api-client";
+import { apiFetch, setCsrfToken } from "../../../lib/api-client";
 
 type Phase = "loading" | "enroll" | "enroll-verify" | "verify" | "recovery" | "save-codes" | "complete";
 type SessionResponse = { csrfToken: string; authGeneration: string; mfaVerified: boolean };
