@@ -65,6 +65,7 @@ function LoginForm() {
         user: any;
         activeOrgId: string;
         csrfToken: string;
+        authGeneration: string;
       }>("/api/v1/auth/otp/verify", {
         method: "POST",
         body: JSON.stringify({
@@ -76,7 +77,7 @@ function LoginForm() {
             : {}),
         }),
       });
-      setCsrfToken(res.csrfToken);
+      setCsrfToken(res.csrfToken, res.authGeneration);
       router.push(nextPath);
       router.refresh();
     } catch (err: any) {
