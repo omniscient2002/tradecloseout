@@ -6,11 +6,33 @@ import { ShieldCheck, ArrowRight, KeyRound, Building2, CheckCircle2, AlertCircle
 import { apiFetch, ApiProblemError, setCsrfToken } from "../../../lib/api-client";
 
 function safeReturnPath(next: string | null): string {
-  if (!next || !next.startsWith('/') || next.startsWith('//') || next.includes('\\') ||
-      /[\\u0000-\\u001F]/.test(next) || next.startsWith('/login')) {
+  // Only routable contractor pages are valid post-authentication destinations.
+  // Reject decoded slashes, traversals, controls, scheme-relative addresses,
+  // framework internals, login recursion and ambiguous escaped paths.
+  if (!next || !next.startsWith('/') || next.startsWith('//') ||
+      /[\\\\\\u0000-\\u001f\\u007f]/.test(next) ||
+      /%(?:2f|5c|00|0a|0d|09|25)/i.test(next)) {
     return '/dashboard';
   }
-  return next;
+  try {
+    let decoded = next;
+    for (let i = 0; i < 3; i++) {
+      const previous = decoded;
+      decoded = decodeURIComponent(decoded);
+      if (decoded === previous) break;
+    }
+    if (!decoded.startsWith('/') || decoded.startsWith('//') ||
+        /[\\\\\\u0000-\\u001f\\u007f]/.test(decoded) ||
+        decoded.split('/').includes('..')) return '/dashboard';
+    const url = new URL(next, 'https://auth-navigation.local');
+    if (url.origin !== 'https://auth-navigation.local' ||
+        !/^\\/(?:dashboard|projects(?:\\/|$)|parties(?:\\/|$)|billing(?:\\/|$)|audit(?:\\/|$))/.test(url.pathname)) {
+      return '/dashboard';
+    }
+    return url.pathname + url.search;
+  } catch {
+    return '/dashboard';
+  }
 }
 
 function LoginForm() {
