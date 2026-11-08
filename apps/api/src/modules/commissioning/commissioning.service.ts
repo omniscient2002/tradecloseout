@@ -469,6 +469,7 @@ export class CommissioningService {
               AND gg.expires_at > now()
               AND gg.capabilities @> ARRAY['inspection.witness']::text[]
               AND gg.grant_type IN ('CONSULTANT_REVIEW', 'CLIENT_VIEW')
+              AND gg.independent_authority_verified_at IS NOT NULL
               AND p.deleted_at IS NULL
             LIMIT 1`,
           [ctx.orgId, projectId, ctx.guestGrantId, signData.partyId],
