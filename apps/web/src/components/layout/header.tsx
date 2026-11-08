@@ -12,7 +12,7 @@ import {
   ChevronDown,
   LogOut,
 } from "lucide-react";
-import { apiFetch } from "../../lib/api-client";
+import { apiFetch, api } from "../../lib/api-client";
 
 interface HeaderProps {
   searchQuery?: string;
@@ -64,23 +64,19 @@ export function Header({
     }
   }, [sessionUser]);
 
+  const [logoutError, setLogoutError] = useState<string | null>(null);
   const handleLogout = async () => {
-    try {
-      await fetch("/api/v1/auth/logout", {
-        method: "POST",
-        credentials: "include",
-      });
-    } catch {
-      // ignore
+    setLogoutError(null);
+    const result = await api.auth.logout();
+    if (result.error) {
+      setLogoutError(result.error);
+      return;
     }
-    document.cookie = "tc_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;";
-    window.sessionStorage.removeItem("tc_csrf_token");
-    localStorage.removeItem("tc_csrf_token");
     window.location.href = "/login";
   };
 
-  const displayName = currentUser?.full_name || currentUser?.name || "Meera Deshmukh";
-  const displayRole = currentUser?.org_role || currentUser?.orgRole || "R-PM";
+  const displayName = currentUser?.full_name || currentUser?.name || "Unknown user";
+  const displayRole = currentUser?.org_role || currentUser?.orgRole || "UNVERIFIED";
   const initials = displayName
     .split(" ")
     .map((n) => n[0])
@@ -225,6 +221,7 @@ export function Header({
           >
             <LogOut className="h-4 w-4" />
           </button>
+        {logoutError && <div role="alert" className="text-xs text-red-700">{logoutError}</div>}
         </div>
       </div>
     </header>
