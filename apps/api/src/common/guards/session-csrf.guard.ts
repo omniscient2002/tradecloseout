@@ -251,10 +251,9 @@ export class SessionCsrfGuard implements CanActivate {
     const needsPrivilegedMfa = (process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging') &&
       !session.guest_grant_id &&
       (orgRole === 'R-OWNER' || orgRole === 'R-ADMIN') &&
-      UNSAFE_METHODS.has(req.method.toUpperCase()) &&
-      !String(req.path || '').startsWith('/api/v1/auth/mfa/') &&
-      req.path !== '/api/v1/auth/logout' &&
-      req.path !== '/api/v1/auth/sessions/revoke-all';
+      // An owner may read basic login/bootstrap information before MFA, but
+      // tenant project or billing reads are privileged as well as writes.
+      !String(req.path || '').startsWith('/api/v1/auth/');
     if (needsPrivilegedMfa &&
         (!session.mfa_verified || !session.mfa_verified_at ||
          new Date(session.mfa_verified_at).getTime() < Date.now() - 12 * 3600_000)) {
