@@ -25,3 +25,42 @@ test.describe('TradeCloseout v0.2.1 Critical User Flows (SCR-002 -> SCR-010 -> S
     await expect(page.getByText('SEC-HOSP-02')).toBeVisible();
   });
 });
+
+/**
+ * Browser/API contract regression, not a substitute for live OTP/provider E2E.
+ * Only the API responses are intercepted; the real Next login form and its
+ * outgoing HTTP request are exercised.
+ */
+test.describe('G01 browser authentication contract', () => {
+  test('E2E-G01: forwards the server-issued challenge ID with the human-entered code', async ({ page }) => {
+    const challengeId = '01999999-1234-7000-8000-999999999999';
+    await page.route('**/api/v1/auth/otp/request', async (route) => {
+      expect(route.request().postDataJSON()).toMatchObject({
+        identifier: 'test@g01.example',
+      });
+      await route.fulfill({
+        status: 201, contentType: 'application/json',
+        body: JSON.stringify({ challengeId, channel: 'EMAIL', expiresInSeconds: 300 }),
+      });
+    });
+    await page.route('**/api/v1/auth/otp/verify', async (route) => {
+      await route.fulfill({
+        status: 401, contentType: 'application/problem+json',
+        body: JSON.stringify({ status: 401, code: 'OTP_INVALID', detail: 'Invalid OTP' }),
+      });
+    });
+    await page.goto('http://localhost:3002/login');
+    await page.locator('input[type="text"]').first().fill('test@g01.example');
+    await page.locator('button[type="submit"]').click();
+    await expect(page.getByText('Enter verification code')).toBeVisible();
+    await page.locator('input[maxlength="6"]').fill('482615');
+    const verification = page.waitForRequest((request) =>
+      request.url().includes('/api/v1/auth/otp/verify') && request.method() === 'POST');
+    await page.locator('button[type="submit"]').click();
+    const sent = (await verification).postDataJSON();
+    expect(sent).toMatchObject({
+      challengeId, identifier: 'test@g01.example', code: '482615',
+    });
+    await expect(page.getByText('Invalid OTP', { exact: true })).toBeVisible();
+  });
+});
