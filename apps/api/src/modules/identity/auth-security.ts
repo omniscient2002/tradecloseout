@@ -170,10 +170,20 @@ export function hashAuthIntent(token: string): string {
 }
 
 /** Issue a five-minute browser-bound nonce at OTP request, not at verification. */
-export function setAuthenticationIntent(res?: Response): string | null {
+export function setAuthenticationIntent(
+  res?: Response,
+  req?: { cookies?: Record<string, unknown> },
+): string | null {
   if (!res) {
     if (isProductionEnvironment()) throw new Error('AUTH_INTENT_RESPONSE_UNAVAILABLE');
     return null;
+  }
+  // Parallel login tabs share the browser's pre-auth cookie. Reusing an
+  // existing 5-minute intent avoids invalidating tab A when tab B asks for a
+  // separate OTP, without making the proof transferable to another browser.
+  const existing = req?.cookies?.[AUTH_INTENT_COOKIE];
+  if (typeof existing === 'string' && /^[0-9a-f]{64}$/i.test(existing)) {
+    return hashAuthIntent(existing);
   }
   const nonce = randomBytes(32).toString('hex');
   res.cookie(AUTH_INTENT_COOKIE, nonce, {
