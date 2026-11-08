@@ -1,6 +1,7 @@
 import { ForbiddenException } from '@nestjs/common';
 import { SessionCsrfGuard } from '../src/common/guards/session-csrf.guard';
 import { ProblemJsonExceptionFilter } from '../src/common/filters/problem-json.filter';
+import { DltSmsService, TransactionalMailService } from '../src/modules/identity/identity.module';
 import { createHash } from 'node:crypto';
 import {
   assertAuthenticationIntent, assertAuthenticationOrigin,
@@ -205,6 +206,46 @@ describe('G01: authentication hardening negative controls', () => {
     } finally {
       if (previous===undefined) delete process.env.NODE_ENV;
       else process.env.NODE_ENV=previous;
+    }
+  });
+
+  it('redacts external delivery-provider exceptions from customer-visible HTTP responses', async () => {
+    const previous = {
+      DLT_SMS_URL:process.env.DLT_SMS_URL,
+      DLT_SMS_API_KEY:process.env.DLT_SMS_API_KEY,
+      MAIL_GATEWAY_URL:process.env.MAIL_GATEWAY_URL,
+      MAIL_API_KEY:process.env.MAIL_API_KEY,
+    };
+    const originalFetch=global.fetch;
+    process.env.DLT_SMS_URL='https://sms.g01.test';
+    process.env.DLT_SMS_API_KEY='g01-auth-test';
+    process.env.MAIL_GATEWAY_URL='https://mail.g01.test';
+    process.env.MAIL_API_KEY='g01-mail-test';
+    global.fetch=jest.fn().mockRejectedValue(
+      new Error('Provider denied OTP 634219 for client@g01.test'),
+    ) as any;
+    try {
+      const failures: any[] = [];
+      try { await new DltSmsService().sendOtpSms('+919999999999','634219','TEMPLATE'); }
+      catch (error) { failures.push(error); }
+      try { await new TransactionalMailService().sendOtpEmail('client@g01.test','634219','LOGIN'); }
+      catch (error) { failures.push(error); }
+      try { await new TransactionalMailService().sendMagicLinkEmail('client@g01.test','https://invite.g01.test/secret-token'); }
+      catch (error) { failures.push(error); }
+      expect(failures).toHaveLength(3);
+      for (const error of failures) {
+        const message=JSON.stringify(error?.getResponse?.());
+        expect(message).not.toContain('634219');
+        expect(message).not.toContain('client@g01.test');
+        expect(message).not.toContain('secret-token');
+        expect(error?.getStatus?.()).toBe(503);
+      }
+    } finally {
+      global.fetch=originalFetch;
+      for (const [key,value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key]=value;
+      }
     }
   });
 
