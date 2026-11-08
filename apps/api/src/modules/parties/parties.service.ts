@@ -7,6 +7,7 @@ import {
   ForbiddenException,
   UnauthorizedException,
   BadRequestException,
+  ConflictException,
   Optional,
   ServiceUnavailableException,
   UnprocessableEntityException,
@@ -561,14 +562,22 @@ export class PartiesService {
           detail: 'The verification code could not be confirmed delivered. Request a new code.',
         });
       }
-      await this.db.withTokenContext(tokenHash, async (client) => {
-        await client.query(
+      const { rowCount } = await this.db.withTokenContext(tokenHash, async (client) =>
+        client.query(
           `UPDATE otp_challenges SET delivery_status = 'SENT'
             WHERE id = $1 AND consumed_at IS NULL AND expires_at > now()
               AND delivery_status = 'PENDING'`,
           [prepared.challengeId],
-        );
-      });
+        ),
+      );
+      if (!rowCount) {
+        // A second request can supersede this proof while its provider call
+        // is still pending. Reporting success would send the user a dead code.
+        throw new ConflictException({
+          code: 'GUEST_OTP_CHALLENGE_SUPERSEDED',
+          detail: 'This code was replaced or expired. Use the newest OTP.',
+        });
+      }
     }
     return {
       success: true,
