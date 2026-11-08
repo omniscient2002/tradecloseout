@@ -138,8 +138,27 @@ export class PartiesService {
    * Issues a scoped guest grant with a raw secret token (hash stored in DB).
    */
   async createGuestGrant(ctx: ExecutionContext, projectId: string, dto: CreateGuestGrantDto) {
-    if (!dto.partyId) {
-      throw new BadRequestException('PARTY_REQUIRED: partyId is required to create a guest grant');
+    if (!dto || typeof dto.partyId !== 'string' ||
+        !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(dto.partyId)) {
+      throw new BadRequestException({ code: 'PARTY_ID_REQUIRED' });
+    }
+    if (dto.expiresInDays !== undefined &&
+        (!Number.isInteger(dto.expiresInDays) || dto.expiresInDays < 1 || dto.expiresInDays > 30)) {
+      throw new BadRequestException({ code: 'INVALID_GUEST_GRANT_EXPIRATION' });
+    }
+    const providedEmail = typeof dto.email === 'string' ? dto.email.trim().toLowerCase() : '';
+    const providedPhone = typeof dto.phone === 'string' ? dto.phone.trim() : '';
+    if ((dto.email !== undefined && !providedEmail) ||
+        (dto.phone !== undefined && !providedPhone) ||
+        Boolean(providedEmail) === Boolean(providedPhone) ||
+        (providedEmail && (providedEmail.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(providedEmail))) ||
+        (providedPhone && !/^\+91[6-9][0-9]{9}$/.test(providedPhone))) {
+      throw new BadRequestException({ code: 'INVALID_GUEST_CONTACT' });
+    }
+    if (dto.capabilities !== undefined &&
+        (!Array.isArray(dto.capabilities) || dto.capabilities.length > 50 ||
+         dto.capabilities.some(cap => typeof cap !== 'string'))) {
+      throw new BadRequestException({ code: 'INVALID_GUEST_CAPABILITIES' });
     }
 
     if (ctx.actorType === 'GUEST') {
@@ -234,8 +253,8 @@ export class PartiesService {
           capabilities,
           JSON.stringify(dto.scopeJson || {}),
           dto.otpRequired ?? true,
-          dto.phone || null,
-          dto.email || null,
+          providedPhone || null,
+          providedEmail || null,
           tokenHash,
           expiresAt,
           ctx.userId,
@@ -336,6 +355,9 @@ export class PartiesService {
    * API-028 GET /guest/:token (RT-014)
    */
   async getGuestGrant(token: string) {
+    if (typeof token !== 'string' || !/^[0-9a-f]{64}$/i.test(token)) {
+      throw new NotFoundException('GUEST_GRANT_NOT_FOUND_OR_EXPIRED');
+    }
     const tokenHash = this.hashSecret(token);
     return await this.db.withTokenContext(tokenHash, async (client) => {
       const res = await client.query(
@@ -412,6 +434,9 @@ export class PartiesService {
    * API-028A POST /guest/:token/otp/request (RT-014, CB-007, CB-011)
    */
   async requestGuestOtp(token: string, sourceIp = 'unknown', authIntentHash: string | null = null): Promise<{ success: boolean; challengeId: string; maskedTarget: string; channel: string; debugOtp?: string }> {
+    if (typeof token !== 'string' || !/^[0-9a-f]{64}$/i.test(token)) {
+      throw new NotFoundException('GUEST_GRANT_NOT_FOUND_OR_EXPIRED');
+    }
     const tokenHash = this.hashSecret(token);
     if (isProductionEnvironment()) {
       await consumeAuthenticationBudget(this.db.getPool(), 'guest-otp:ip:hour', sourceIp, 20, 3600);
@@ -563,7 +588,10 @@ export class PartiesService {
     challengeId: string,
     authIntentHash: string | null = null,
   ): Promise<{ sessionToken: string; activeOrgId: string; grantId: string; csrfToken: string; authGeneration: string }> {
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(challengeId) || !/^\d{6}$/.test(code)) {
+    if (typeof token !== 'string' || !/^[0-9a-f]{64}$/i.test(token) ||
+        typeof challengeId !== 'string' ||
+        !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(challengeId) ||
+        typeof code !== 'string' || !/^\d{6}$/.test(code)) {
       throw new BadRequestException('INVALID_CHALLENGE_OR_CODE');
     }
     const tokenHash = this.hashSecret(token);
