@@ -36,7 +36,7 @@ export class HandoverController {
    */
   @Get('projects/:projectId/packages')
   @UseGuards(SessionCsrfGuard, PermissionGuard)
-  @RequirePermission('document.read')
+  @RequirePermission('package.download')
   async listPackages(@Req() req: any, @Param('projectId') projectId: string) {
     return this.handoverService.listPackages(req.userContext, projectId);
   }
@@ -61,14 +61,14 @@ export class HandoverController {
    */
   @Get('packages/:id')
   @UseGuards(SessionCsrfGuard, PermissionGuard)
-  @RequirePermission('document.read')
+  @RequirePermission('package.download')
   async getPackage(@Req() req: any, @Param('id') id: string) {
     return this.handoverService.getPackage(req.userContext, id);
   }
 
   @Get('projects/:projectId/packages/:id')
   @UseGuards(SessionCsrfGuard, PermissionGuard)
-  @RequirePermission('document.read')
+  @RequirePermission('package.download')
   async getProjectPackage(
     @Req() req: any,
     @Param('projectId') projectId: string,
@@ -79,7 +79,7 @@ export class HandoverController {
 
   @Get('projects/:projectId/packages/:packageId/download')
   @UseGuards(SessionCsrfGuard, PermissionGuard)
-  @RequirePermission('document.read')
+  @RequirePermission('package.download')
   async getPackageDownloadUrl(
     @Req() req: any,
     @Param('projectId') projectId: string,
@@ -232,7 +232,7 @@ export class HandoverController {
    */
   @Get('projects/:projectId/dossier/pdf')
   @UseGuards(SessionCsrfGuard, PermissionGuard)
-  @RequirePermission('document.read')
+  @RequirePermission('package.download')
   async getDossierPdf(
     @Req() req: any,
     @Param('projectId') projectId: string,
