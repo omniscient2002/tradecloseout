@@ -7,7 +7,7 @@ describe('guest session boundaries', () => {
     const client = {
       query: jest.fn(async (sql: string) => {
         statements.push(sql);
-        if (sql.includes('FROM guest_grants')) return { rows: [{ role: 'R-SUPPLIER-OEM', capabilities: ['document.upload'], scope_json: {}, status: 'ACTIVE', expires_at: '2099-01-01' }] };
+        if (sql.includes('FROM guest_grants')) return { rows: [{ role: 'R-SUPPLIER-OEM', capabilities: ['document.upload'], scope_json: {}, status: 'ACTIVE', expires_at: '2099-01-01', principal_user_id: 'user-1', independent_authority_verified_at: null }] };
         return { rows: [] };
       }),
       release: jest.fn(),
