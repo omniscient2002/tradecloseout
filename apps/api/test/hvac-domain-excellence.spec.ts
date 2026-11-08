@@ -421,7 +421,7 @@ describe('HVAC Domain Excellence Suite (XP11..XP18)', () => {
       expect(itrRes.outcome).toBe('PASSED');
 
       // 2. Sign witness
-      const signRes = await commissioningService.signInspectionWitness(mockCtx, projectId, inspectionId, {
+      const signRes = await commissioningService.recordInspectionWitnessAttendance(mockCtx, projectId, inspectionId, {
         partyName: 'ABC PMC Consultants Pvt Ltd',
         representativeName: 'P. K. Sharma',
         role: 'LEAD_HVAC_CONSULTANT',
@@ -430,7 +430,8 @@ describe('HVAC Domain Excellence Suite (XP11..XP18)', () => {
 
       expect(signRes.witnesses).toHaveLength(1);
       expect(signRes.lastSigned.representativeName).toBe('P. K. Sharma');
-      expect(signRes.lastSigned.signedByUserId).toBe(userId);
+      expect(signRes.lastSigned.signedByUserId).toBeNull();
+      expect(signRes.lastSigned.isVerified).toBe(false);
     });
   });
 
@@ -753,7 +754,7 @@ describe('HVAC Domain Excellence Suite (XP11..XP18)', () => {
 
         // Witness authority: missing partyName or role throws BadRequestException
         await expect(
-          commissioningService.signInspectionWitness(ctxA, projectA0, validInspection.id, {
+          commissioningService.recordInspectionWitnessAttendance(ctxA, projectA0, validInspection.id, {
             partyName: '',
             role: 'CONSULTANT',
             representativeName: 'John Consultant',
@@ -761,7 +762,7 @@ describe('HVAC Domain Excellence Suite (XP11..XP18)', () => {
         ).rejects.toThrow(BadRequestException);
 
         // Valid witness sign-off succeeds
-        const witnessResult = await commissioningService.signInspectionWitness(ctxA, projectA0, validInspection.id, {
+        const witnessResult = await commissioningService.recordInspectionWitnessAttendance(ctxA, projectA0, validInspection.id, {
           partyName: 'Consultant Engineering Corp',
           role: 'CHIEF_INSPECTOR',
           representativeName: 'Jane Smith',
@@ -878,8 +879,25 @@ describe('HVAC Domain Excellence Suite (XP11..XP18)', () => {
             ($8, $2, $3, $4, $9, 'OBSERVER', false, 'SENT')
         `, [recipient1, orgIdA, projectA0, subId, party1, recipient2, party2, recipient3, party3]);
 
+        // Acceptance uses a separate authenticated party-bound guest grant.
+        // The project owner remains unable to impersonate a recipient.
+        const recipientCtx = async (partyId: string): Promise<TenantActorContext> => {
+          const grantId = uuidv7();
+          await admin.query(`INSERT INTO guest_grants
+            (id,org_id,project_id,party_id,grant_type,role,capabilities,
+             target_email,token_hash,status,expires_at,created_by)
+            VALUES ($1,$2,$3,$4,'CLIENT_VIEW','R-CLIENT',$5,$6,$7,'ACTIVE',now()+interval '1 day',$8)`,
+            [grantId,orgIdA,projectA0,partyId,['package.accept'],
+             `${partyId}@example.com`,uuidv7().replace(/-/g,''),seededUserId]);
+          return { ...ctxA, actorType: 'GUEST', guestGrantId: grantId,
+            guestCapabilities: ['package.accept'] };
+        };
+        const observerGuest = await recipientCtx(party3);
+        const consultantGuest = await recipientCtx(party1);
+        const clientGuest = await recipientCtx(party2);
+
         // Gap 4: Optional observer rejects -> Does NOT reject the submission
-        const rec3Decision = await handoverService.recordRecipientSubmissionDecision(ctxA, projectA0, subId, {
+        const rec3Decision = await handoverService.recordRecipientSubmissionDecision(observerGuest, projectA0, subId, {
           recipientPartyId: party3,
           decision: 'REJECT',
           remarks: 'Observer notes cosmetic remarks',
@@ -887,7 +905,7 @@ describe('HVAC Domain Excellence Suite (XP11..XP18)', () => {
         expect(rec3Decision.status).toBe('SUBMITTED'); // Still SUBMITTED! Not REJECTED!
 
         // Recipient 1 accepts
-        const rec1Decision = await handoverService.recordRecipientSubmissionDecision(ctxA, projectA0, subId, {
+        const rec1Decision = await handoverService.recordRecipientSubmissionDecision(consultantGuest, projectA0, subId, {
           recipientPartyId: party1,
           decision: 'ACCEPT',
           remarks: 'Consultant approves HVAC package',
@@ -896,7 +914,7 @@ describe('HVAC Domain Excellence Suite (XP11..XP18)', () => {
         expect(rec1Decision.status).toBe('SUBMITTED');
 
         // Recipient 2 accepts
-        const rec2Decision = await handoverService.recordRecipientSubmissionDecision(ctxA, projectA0, subId, {
+        const rec2Decision = await handoverService.recordRecipientSubmissionDecision(clientGuest, projectA0, subId, {
           recipientPartyId: party2,
           decision: 'ACCEPT',
           remarks: 'Client Rep accepts package',
