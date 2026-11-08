@@ -34,6 +34,26 @@ CREATE TABLE IF NOT EXISTS auth_request_budgets (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Privileged MFA enrollment and one-use emergency recovery codes.
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS mfa_totp_pending_secret TEXT,
+  ADD COLUMN IF NOT EXISTS mfa_totp_last_step BIGINT NOT NULL DEFAULT -1;
+
+ALTER TABLE sessions
+  ADD COLUMN IF NOT EXISTS mfa_verified_at TIMESTAMPTZ;
+
+CREATE TABLE IF NOT EXISTS mfa_recovery_codes (
+  id UUID PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  code_hash TEXT NOT NULL,
+  consumed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (user_id, code_hash)
+);
+CREATE INDEX IF NOT EXISTS mfa_recovery_codes_active_idx
+  ON mfa_recovery_codes (user_id) WHERE consumed_at IS NULL;
+GRANT SELECT, INSERT, UPDATE, DELETE ON mfa_recovery_codes TO tc_app;
+
 -- Authentication security events must not contain OTPs, plaintext session
 -- tokens, delivery credentials or raw contact/guest invitation values.
 CREATE TABLE IF NOT EXISTS auth_security_events (
