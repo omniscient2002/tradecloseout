@@ -62,11 +62,14 @@ async function seed(admin: Pool) {
 describe('G01 MFA real PostgreSQL control plane', () => {
   const keyBefore = process.env.AUTH_MFA_ENCRYPTION_KEY;
   const previousKeyBefore = process.env.AUTH_MFA_ENCRYPTION_KEY_PREVIOUS;
+  const previousDeadline = process.env.AUTH_MFA_PREVIOUS_KEY_EXPIRES_AT;
   afterAll(() => {
     if (keyBefore === undefined) delete process.env.AUTH_MFA_ENCRYPTION_KEY;
     else process.env.AUTH_MFA_ENCRYPTION_KEY = keyBefore;
     if (previousKeyBefore === undefined) delete process.env.AUTH_MFA_ENCRYPTION_KEY_PREVIOUS;
     else process.env.AUTH_MFA_ENCRYPTION_KEY_PREVIOUS = previousKeyBefore;
+    if (previousDeadline === undefined) delete process.env.AUTH_MFA_PREVIOUS_KEY_EXPIRES_AT;
+    else process.env.AUTH_MFA_PREVIOUS_KEY_EXPIRES_AT = previousDeadline;
   });
 
   it('binds enrollment, factor replay, single-use backup recovery and audited reset', async () => {
@@ -98,6 +101,8 @@ describe('G01 MFA real PostgreSQL control plane', () => {
       // controlled key overlap window. They are not silently reissued.
       process.env.AUTH_MFA_ENCRYPTION_KEY_PREVIOUS =
         Buffer.alloc(32,22).toString('base64');
+      process.env.AUTH_MFA_PREVIOUS_KEY_EXPIRES_AT =
+        new Date(Date.now()+24*3600_000).toISOString();
       process.env.AUTH_MFA_ENCRYPTION_KEY =
         Buffer.alloc(32,23).toString('base64');
       const backup=confirmed.recoveryCodes[0];
