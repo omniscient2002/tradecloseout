@@ -83,6 +83,11 @@ export default function ContractorLayout({ children }: { children: React.ReactNo
     });
     apiFetch<any>("/api/v1/auth/me")
       .then((data) => {
+        if (data.mfaRequired && !data.mfaVerified) {
+          setOfflineActorPartition(null);
+          router.push('/mfa');
+          return;
+        }
         setUser(data);
         setOfflineActorPartition(`member:${data.activeOrgId || data.active_org_id}:${data.userId || data.user_id}`);
       })
