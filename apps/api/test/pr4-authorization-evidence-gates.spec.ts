@@ -34,13 +34,17 @@ async function seed(admin: Pool) {
 }
 
 async function grant(admin: Pool, scope: Awaited<ReturnType<typeof seed>>,
-  partyId: string, capability: string) {
+  partyId: string, capability: string, independentApproval = false) {
   const grantId = uuidv7();
   await admin.query(`INSERT INTO guest_grants
     (id,org_id,project_id,party_id,grant_type,role,capabilities,
-     target_email,token_hash,status,expires_at,created_by)
-    VALUES($1,$2,$3,$4,'CLIENT_VIEW','R-CLIENT',$5,'recipient@example.com',$6,'ACTIVE',now()+interval '1 day',$7)`,
-    [grantId, scope.orgId, scope.projectId, partyId, [capability], uuidv7().replace(/-/g, ''), scope.userId]);
+     target_email,token_hash,status,expires_at,created_by,
+     independent_authority_verified_at,independent_authority_evidence_ref)
+    VALUES($1,$2,$3,$4,'CLIENT_VIEW','R-CLIENT',$5,'recipient@example.com',$6,
+       'ACTIVE',now()+interval '1 day',$7,
+       CASE WHEN $8::boolean THEN now() ELSE NULL END,
+       CASE WHEN $8::boolean THEN 'TEST_FIXTURE:INDEPENDENTLY_APPROVED' ELSE NULL END)`,
+    [grantId, scope.orgId, scope.projectId, partyId, [capability], uuidv7().replace(/-/g, ''), scope.userId, independentApproval]);
   return { ...scope.ctx, actorType: 'GUEST' as const, guestGrantId: grantId, guestCapabilities: [capability] };
 }
 
@@ -109,7 +113,12 @@ describe('PR4: least privilege in handover and independent witness routes', () =
       await expect(service.signInspectionWitness(otherGuest as any,scope.projectId,inspectionId,data))
         .rejects.toThrow(ForbiddenException);
 
-      const realGuest = await grant(admin,scope,scope.partyId,'inspection.witness');
+      // A contractor-issued invitation with only OTP control may not sign.
+      const unapproved = await grant(admin,scope,scope.partyId,'inspection.witness');
+      await expect(service.signInspectionWitness(unapproved as any,scope.projectId,inspectionId,data))
+        .rejects.toThrow(ForbiddenException);
+
+      const realGuest = await grant(admin,scope,scope.partyId,'inspection.witness',true);
       const signed = await service.signInspectionWitness(realGuest as any,scope.projectId,inspectionId,data);
       expect(signed.lastSigned).toMatchObject({
         partyId: scope.partyId, partyName: 'Client A',
@@ -151,7 +160,7 @@ describe('PR4: least privilege in handover and independent witness routes', () =
         'SELECT status,decided_at FROM submission_recipients WHERE id=$1',[recipientId]
       )).rows[0]).toMatchObject({ status: 'PENDING_DELIVERY', decided_at: null });
 
-      const realGuest = await grant(admin,scope,scope.partyId,'package.accept');
+      const realGuest = await grant(admin,scope,scope.partyId,'package.accept',true);
       const accepted = await svc.recordRecipientSubmissionDecision(realGuest as any,scope.projectId,submissionId,dto);
       expect(accepted.status).toBe('ACCEPTED');
       expect((await admin.query('SELECT status FROM handover_packages WHERE id=$1',[packageId])).rows[0].status).toBe('ACCEPTED');
