@@ -90,6 +90,34 @@ export class PartiesService {
     return crypto.createHash('sha256').update(secret).digest('hex');
   }
 
+  // Sensitive guest grants are NEVER interchangeable with an arbitrary party
+  // record in the contractor's organisation. Re-evaluate the project link
+  // even for old grants created before this invariant was introduced.
+  private async assertSensitiveGrantCounterparty(
+    client: PoolClient,
+    grant: {org_id:string;project_id:string;party_id:string;grant_type:string},
+  ): Promise<void> {
+    if (!['CLIENT_VIEW','CONSULTANT_REVIEW'].includes(grant.grant_type)) return;
+    const { rows } = await client.query(
+      `SELECT p.client_party_id,p.consultant_party_id,
+              p.status AS project_status,pt.status AS party_status
+         FROM projects p
+         JOIN parties pt ON pt.org_id=p.org_id AND pt.id=$3
+        WHERE p.org_id=$1 AND p.id=$2
+        FOR SHARE OF p,pt`,
+      [grant.org_id,grant.project_id,grant.party_id],
+    );
+    const linked = rows[0];
+    if (!linked || linked.party_status !== 'ACTIVE' ||
+        ['CANCELLED','ARCHIVED'].includes(linked.project_status) ||
+        (grant.grant_type === 'CLIENT_VIEW' &&
+          linked.client_party_id !== grant.party_id) ||
+        (grant.grant_type === 'CONSULTANT_REVIEW' &&
+          linked.consultant_party_id !== grant.party_id)) {
+      throw new NotFoundException('GUEST_GRANT_NOT_FOUND_OR_EXPIRED');
+    }
+  }
+
   /**
    * GET /api/v1/parties
    * Returns all counterparties for the tenant organisation.
@@ -407,6 +435,7 @@ export class PartiesService {
       }
       const grant = res.rows[0];
       await client.query(`SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`, [grant.org_id]);
+      await this.assertSensitiveGrantCounterparty(client,grant);
       if (grant.cooldown_until && new Date(grant.cooldown_until) > new Date()) {
         throw new ForbiddenException(`RATE_LIMIT_COOLDOWN_ACTIVE: Try again after ${grant.cooldown_until}`);
       }
@@ -500,6 +529,7 @@ export class PartiesService {
       );
       if (!locked.rows.length) throw new NotFoundException('GUEST_GRANT_NOT_FOUND_OR_EXPIRED');
       const grant = locked.rows[0];
+      await this.assertSensitiveGrantCounterparty(client,grant);
 
       // Check 15-minute cooldown
       if (grant.cooldown_until && new Date(grant.cooldown_until) > new Date()) {
@@ -660,6 +690,7 @@ export class PartiesService {
       );
       if (!locked.rows.length) throw new NotFoundException('GUEST_GRANT_NOT_FOUND_OR_EXPIRED');
       const grant = locked.rows[0];
+      await this.assertSensitiveGrantCounterparty(client,grant);
 
       // Check cooldown
       if (grant.cooldown_until && new Date(grant.cooldown_until) > new Date()) {
