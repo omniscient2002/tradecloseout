@@ -1,5 +1,6 @@
 import {
   CanActivate,
+  ConflictException,
   ExecutionContext,
   ForbiddenException,
   Injectable,
@@ -20,6 +21,7 @@ export interface AuthenticatedRequest extends Request {
     requestId: string;
     ip: string;
     userAgent: string;
+    authGeneration: string;
   };
 }
 
@@ -173,6 +175,22 @@ export class SessionCsrfGuard implements CanActivate {
         title: 'Session expired or membership suspended',
         detail: 'Your session has expired or your organisation access has changed.',
       });
+    }
+
+    // A shared HttpOnly cookie can change in another tab. Require a generation
+    // pinned to the UI's last verified auth context for every mutating request
+    // in production; stale form/tenant state may NOT be silently submitted.
+    if (UNSAFE_METHODS.has(req.method.toUpperCase())) {
+      const suppliedGeneration = req.headers['x-auth-generation'];
+      const currentGeneration = String(session.auth_generation);
+      if ((typeof suppliedGeneration === 'string' && suppliedGeneration !== currentGeneration) ||
+          ((process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging') &&
+           req.cookies?.tc_session && typeof suppliedGeneration !== 'string')) {
+        throw new ConflictException({
+          code: 'AUTH_CONTEXT_CHANGED',
+          detail: 'Authentication or organisation context changed; refresh before changing data.',
+        });
+      }
     }
 
     // Enforce CSRF token on all state-changing cookie requests (10 §2.2)
