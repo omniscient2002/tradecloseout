@@ -222,6 +222,7 @@ export class IdentityController {
       otp?: string;
       code?: string;
       signupProfile?: { fullName: string; orgName: string; state: string };
+      invitationToken?: string;
     },
     @Req() req: AuthenticatedRequest,
     @Res({ passthrough: true }) res: Response,
@@ -230,9 +231,14 @@ export class IdentityController {
     if (!body || typeof body !== 'object' ||
         (body.identifier != null && typeof body.identifier !== 'string') ||
         (body.challengeId != null && typeof body.challengeId !== 'string') ||
+        (body.invitationToken != null && typeof body.invitationToken !== 'string') ||
         (body.otp != null && typeof body.otp !== 'string') ||
         (body.code != null && typeof body.code !== 'string')) {
       throw new UnprocessableEntityException({ code: 'INVALID_OTP_INPUT', detail: 'Invalid OTP verification request.' });
+    }
+    const invitationToken = body.invitationToken || null;
+    if (invitationToken && !/^[0-9a-f]{64}$/i.test(invitationToken)) {
+      throw new UnprocessableEntityException({ code: 'INVALID_INVITATION_TOKEN' });
     }
     let rawId = (body.identifier ?? '').trim().toLowerCase();
     const candidateCode = (body.otp ?? body.code ?? '').trim();
@@ -433,6 +439,61 @@ export class IdentityController {
         [idType, rawId],
       );
 
+      // An invitation is claimed only after the server-derived OTP identity
+      // has been verified. The RLS invitation claim policy requires a matching
+      // 256-bit token hash; this query also verifies the intended destination.
+      let invitation: { id: string; org_id: string; role: string } | null = null;
+      if (invitationToken) {
+        const invitationHash = createHash('sha256').update(invitationToken).digest('hex');
+        await client.query("SELECT set_config('app.invitation_hash', $1, true)", [invitationHash]);
+        const { rows } = await client.query(
+          `SELECT i.id, i.org_id, i.role FROM invitations i
+             JOIN organisations o ON o.id = i.org_id AND o.status = 'ACTIVE'
+            WHERE i.token_hash = $1 AND i.status = 'PENDING'
+              AND i.expires_at > now()
+              AND (($3 = 'EMAIL' AND i.email = $2) OR
+                   ($3 = 'PHONE' AND i.phone_e164 = $2))
+            FOR UPDATE OF i`,
+          [invitationHash, rawId, idType],
+        );
+        if (!rows.length) {
+          throw new UnauthorizedException({ code: 'INVITATION_INVALID_OR_MISMATCHED' });
+        }
+        invitation = rows[0];
+      }
+
+      const acceptInvitation = async (subjectUserId: string) => {
+        if (!invitation) return;
+        await client.query(
+          "SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)",
+          [invitation.org_id],
+        );
+        await client.query("SELECT set_config('app.current_user', $1, true)", [subjectUserId]);
+        const { rows: existing } = await client.query(
+          `SELECT id, status FROM memberships
+            WHERE org_id = $1 AND user_id = $2 FOR UPDATE`,
+          [invitation.org_id, subjectUserId],
+        );
+        if (existing.length && existing[0].status !== 'ACTIVE') {
+          throw new UnauthorizedException({
+            code: 'INVITATION_CANNOT_REACTIVATE_SUSPENDED_MEMBER',
+          });
+        }
+        if (!existing.length) {
+          await client.query(
+            `INSERT INTO memberships(id,org_id,user_id,role,status,joined_at)
+             VALUES($1,$2,$3,$4,'ACTIVE',now())`,
+            [uuidv7(),invitation.org_id,subjectUserId,invitation.role],
+          );
+        }
+        const { rowCount } = await client.query(
+          `UPDATE invitations SET status='ACCEPTED'
+            WHERE id=$1 AND org_id=$2 AND status='PENDING' AND expires_at>now()`,
+          [invitation.id,invitation.org_id],
+        );
+        if (!rowCount) throw new UnauthorizedException({ code: 'INVITATION_ALREADY_CONSUMED' });
+      };
+
       let userId: string;
       let activeOrgId: string;
       let currentRole = 'R-OWNER';
@@ -453,6 +514,7 @@ export class IdentityController {
           [idType, rawId],
         );
         await client.query(`UPDATE users SET last_login_at = now() WHERE id = $1`, [userId]);
+        await acceptInvitation(userId);
 
         const { rows: memberships } = await client.query(
           `SELECT m.org_id, m.role FROM memberships m JOIN organisations o ON o.id = m.org_id
@@ -467,13 +529,35 @@ export class IdentityController {
             detail: 'Your account has no active organisation memberships.',
           });
         }
-        activeOrgId = memberships[0].org_id;
-        currentRole = memberships[0].role;
+        activeOrgId = invitation?.org_id || memberships[0].org_id;
+        currentRole = invitation?.role || memberships[0].role;
 
         const { rows: userRows } = await client.query(`SELECT name FROM users WHERE id = $1`, [userId]);
         if (userRows.length > 0 && userRows[0].name) {
           fullName = userRows[0].name;
         }
+      } else if (invitation) {
+        // Invited verified identity joins the intended existing organisation.
+        // An invitation must not silently create an unrelated owner company.
+        userId = uuidv7();
+        activeOrgId = invitation.org_id;
+        currentRole = invitation.role;
+        const suppliedName = body.signupProfile?.fullName;
+        fullName = typeof suppliedName === 'string' &&
+          suppliedName.trim().length >= 2 && suppliedName.trim().length <= 120
+          ? suppliedName.trim() : 'Invited team member';
+        await client.query("SELECT set_config('app.current_user',$1,true)", [userId]);
+        await client.query(
+          `INSERT INTO users(id,name,status,last_login_at)
+           VALUES($1,$2,'ACTIVE',now())`,
+          [userId,fullName],
+        );
+        await client.query(
+          `INSERT INTO user_identities(id,user_id,type,value,verified_at)
+           VALUES($1,$2,$3,$4,now())`,
+          [uuidv7(),userId,idType,rawId],
+        );
+        await acceptInvitation(userId);
       } else {
         // New Org + Owner Registration (WF-01 / FR-ORG-001)
         const profile = body.signupProfile;
