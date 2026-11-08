@@ -45,6 +45,17 @@ Additional implementation:
 
 These changes require their **own current-SHA** CI sign-off; don't rely on the previously green CI SHA. No customer authentication, independent party-authority verification, real service-provider request, two-tab browser run or staging deployment has been executed by this repository-editing pass.
 
+## Further regression and database hardening
+
+- **G01-001:** Added **additive migration 0024** with a database trigger forbidding any non-migrator runtime role from inserting or updating `guest_grants.independent_authority_verified_at` / `independent_authority_evidence_ref`. New `g01-external-authority-db.spec.ts` verifies direct SQL cannot self-approve, yet ordinary grant revocation remains permitted. This **does not** implement or independently validate a trusted real counterparty approval mechanism. G01-001 remains a release blocker.
+- **G01-005/006/014:** Added `g01-session-guard-db.spec.ts` against restricted PostgreSQL for CSRF, auth-generation mismatch, token revocation, and idle/absolute session expiry.
+- **G01-007:** The distributed-budget test now handles disposable database teardown without unhandled PostgreSQL pool errors; this does not replace actual two-node deployment testing.
+- **G01-012:** Production startup rejects malformed/embedded-secret endpoints, non-origin frontend URLs, invalid/wildcard CIDR masks and insecure database roles. A second database privilege check queries the **actual connected PostgreSQL role** and denies superuser, BYPASSRLS and migrator-role membership. Real PG acceptance is part of `g01-external-authority-db.spec.ts`.
+- **G01-013/014:** Session issuance and org switching now retain membership/organisation share locks through the state transition.
+- **G01-015:** Auth limiter writes pseudonymous, sampled throttling events without making telemetry availability a prerequisite for denial.
+
+**Important:** Production-grade G01 still requires the entire 21-finding matrix and the independent authority workflow, browser, provider, Redis multi-node and deployment evidence. New source controls alone are not sign-off.
+
 ## Engineering guardrails
 
 - PR #5 is a **draft**, not a production certification. Source changes and mocked tests cannot establish real contact authority or enforceability of external sign-off.
