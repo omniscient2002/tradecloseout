@@ -97,10 +97,15 @@ export class SessionCsrfGuard implements CanActivate {
         await client.query('BEGIN');
         await client.query(`SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`, [session.active_org_id]);
         const result = await client.query(
-          `SELECT project_id, role, capabilities, scope_json, status, expires_at,
-                  principal_user_id, independent_authority_verified_at
-             FROM guest_grants
-            WHERE id = $1 AND org_id = $2
+          `SELECT g.project_id,g.party_id,g.grant_type,g.role,g.capabilities,
+                  g.scope_json,g.status,g.expires_at,
+                  g.principal_user_id,g.independent_authority_verified_at,
+                  p.client_party_id,p.consultant_party_id,
+                  p.status AS project_status,pt.status AS party_status
+             FROM guest_grants g
+             JOIN projects p ON p.id=g.project_id AND p.org_id=g.org_id
+             JOIN parties pt ON pt.id=g.party_id AND pt.org_id=g.org_id
+            WHERE g.id = $1 AND g.org_id = $2
             LIMIT 1`,
           [session.guest_grant_id, session.active_org_id],
         );
@@ -121,6 +126,17 @@ export class SessionCsrfGuard implements CanActivate {
           code: 'GUEST_GRANT_EXPIRED',
           title: 'Guest link expired or revoked',
           detail: 'Your external guest grant is no longer active.',
+        });
+      }
+      if (gRows[0].party_status !== 'ACTIVE' ||
+          ['CANCELLED','ARCHIVED'].includes(gRows[0].project_status) ||
+          (gRows[0].grant_type === 'CLIENT_VIEW' &&
+            gRows[0].party_id !== gRows[0].client_party_id) ||
+          (gRows[0].grant_type === 'CONSULTANT_REVIEW' &&
+            gRows[0].party_id !== gRows[0].consultant_party_id)) {
+        throw new UnauthorizedException({
+          code: 'GUEST_PARTY_RELATIONSHIP_INVALID',
+          detail: 'The grant is no longer linked to the project's designated counterparty.',
         });
       }
       if (!gRows[0].principal_user_id || gRows[0].principal_user_id !== session.user_id) {
