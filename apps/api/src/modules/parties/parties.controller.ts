@@ -175,7 +175,7 @@ export class PartiesController {
   @Post('guest/:token/otp/request')
   async requestGuestOtp(@Param('token') token: string, @Req() req?: any) {
     assertAuthenticationOrigin(req);
-    return this.partiesService.requestGuestOtp(token);
+    return this.partiesService.requestGuestOtp(token, String(req?.ip || req?.socket?.remoteAddress || 'unknown'));
   }
 
   /**
