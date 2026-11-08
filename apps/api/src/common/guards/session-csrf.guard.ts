@@ -136,7 +136,7 @@ export class SessionCsrfGuard implements CanActivate {
             gRows[0].party_id !== gRows[0].consultant_party_id)) {
         throw new UnauthorizedException({
           code: 'GUEST_PARTY_RELATIONSHIP_INVALID',
-          detail: 'The grant is no longer linked to the project's designated counterparty.',
+          detail: "The grant is no longer linked to the project's designated counterparty.",
         });
       }
       if (!gRows[0].principal_user_id || gRows[0].principal_user_id !== session.user_id) {
