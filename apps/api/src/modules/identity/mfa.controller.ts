@@ -63,6 +63,11 @@ export class MfaController {
   private async rotateVerifiedSession(
     client: PoolClient, req: AuthenticatedMfaRequest, kind: string,
   ): Promise<NewSession> {
+    const previousRawToken = req.cookies?.tc_session;
+    if (typeof previousRawToken !== 'string' || !req.auth.authGeneration) {
+      throw new UnauthorizedException({ code: 'SESSION_COOKIE_REQUIRED' });
+    }
+    const previousTokenHash = createHash('sha256').update(previousRawToken).digest('hex');
     const rawSessionToken = randomBytes(32).toString('hex');
     const authGeneration = uuidv7();
     const csrfToken = deriveSessionCsrf(rawSessionToken, authGeneration);
@@ -72,12 +77,14 @@ export class MfaController {
               auth_generation = $3, mfa_verified = true, mfa_verified_at = now(),
               authenticated_at = now()
         WHERE id = $4 AND user_id = $5 AND guest_grant_id IS NULL
+          AND active_org_id = $6 AND auth_generation = $7 AND token_hash = $8
           AND revoked_at IS NULL AND expires_at > now()
           AND absolute_expires_at > now()`,
       [
         createHash('sha256').update(rawSessionToken).digest('hex'),
         createHash('sha256').update(csrfToken).digest('hex'),
         authGeneration, req.auth.sessionId, req.auth.userId,
+        req.auth.activeOrgId, req.auth.authGeneration, previousTokenHash,
       ],
     );
     if (!rowCount) throw new UnauthorizedException({ code: 'SESSION_EXPIRED' });
@@ -88,6 +95,25 @@ export class MfaController {
       [uuidv7(), req.auth.userId, req.auth.activeOrgId, req.auth.sessionId, kind],
     );
     return { rawSessionToken, authGeneration, csrfToken, mfaVerified: true };
+  }
+
+  private async assertCurrentMemberSession(
+    client: PoolClient, req: AuthenticatedMfaRequest,
+  ): Promise<void> {
+    const rawToken = req.cookies?.tc_session;
+    if (typeof rawToken !== 'string' || !req.auth.authGeneration) {
+      throw new UnauthorizedException({ code: 'SESSION_COOKIE_REQUIRED' });
+    }
+    const { rows } = await client.query(
+      `SELECT id FROM sessions WHERE id=$1 AND user_id=$2
+        AND active_org_id=$3 AND auth_generation=$4 AND token_hash=$5
+        AND guest_grant_id IS NULL AND revoked_at IS NULL
+        AND expires_at>now() AND absolute_expires_at>now()
+        FOR UPDATE`,
+      [req.auth.sessionId, req.auth.userId, req.auth.activeOrgId,
+        req.auth.authGeneration, createHash('sha256').update(rawToken).digest('hex')],
+    );
+    if (!rows.length) throw new UnauthorizedException({ code: 'SESSION_CONTEXT_CHANGED' });
   }
 
   private completeSession(res: Response, result: NewSession) {
@@ -274,6 +300,7 @@ export class MfaController {
         [req.auth.userId],
       );
       if (!rows.length || !rows[0].mfa_enabled_at) throw new ConflictException('MFA_NOT_ENROLLED');
+      await this.assertCurrentMemberSession(client, req);
       if (totpCode) {
         const step = verifyTotp(
           decryptFactor(rows[0].mfa_totp_secret), totpCode,
