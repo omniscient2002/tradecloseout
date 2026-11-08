@@ -111,7 +111,16 @@ export async function consumeAuthenticationBudget(
       RETURNING count`,
     [budgetKey, ttlSeconds],
   );
-  if (!rows.length || Number(rows[0].count) > limit) {
+  const observedCount = rows.length ? Number(rows[0].count) : Number.POSITIVE_INFINITY;
+  if (observedCount > limit) {
+    // Security-event writes are deliberately sampled under sustained abuse;
+    // missing telemetry must not disable the already enforced budget.
+    if (observedCount === limit + 1 || observedCount % 100 === 0) {
+      await recordAuthenticationEvent(
+        pool, 'AUTH_REQUEST_RATE_LIMITED', 'THROTTLED',
+        { subject: `${category}:${rawKey}` },
+      ).catch(() => {});
+    }
     throw new HttpException({
       code: 'RATE_LIMITED',
       detail: 'Too many authentication attempts. Please retry later.',
