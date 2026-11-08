@@ -9,19 +9,22 @@ import {
   validateAuthenticationConfig,
 } from '../src/modules/identity/auth-security';
 import {
-  decryptFactor, encryptFactor, hashRecoveryCode,
+  decryptFactor, encryptFactor, hashRecoveryCode, hashRecoveryCodeCandidates,
   newRecoveryCodes, newTotpSecret, verifyTotp,
 } from '../src/modules/identity/mfa-crypto';
 
 describe('G01: authentication hardening negative controls', () => {
   const originalMode = process.env.NODE_ENV;
   const originalSecret = process.env.AUTH_MFA_ENCRYPTION_KEY;
+  const originalPrevious = process.env.AUTH_MFA_ENCRYPTION_KEY_PREVIOUS;
   const originalCsrf = process.env.AUTH_CSRF_KEY;
 
   afterEach(() => {
     process.env.NODE_ENV = originalMode;
     if (originalSecret === undefined) delete process.env.AUTH_MFA_ENCRYPTION_KEY;
     else process.env.AUTH_MFA_ENCRYPTION_KEY = originalSecret;
+    if (originalPrevious === undefined) delete process.env.AUTH_MFA_ENCRYPTION_KEY_PREVIOUS;
+    else process.env.AUTH_MFA_ENCRYPTION_KEY_PREVIOUS = originalPrevious;
     if (originalCsrf === undefined) delete process.env.AUTH_CSRF_KEY;
     else process.env.AUTH_CSRF_KEY = originalCsrf;
     jest.restoreAllMocks();
@@ -60,6 +63,9 @@ describe('G01: authentication hardening negative controls', () => {
     })).toThrow('BOOT_AUTH_CONFIG_MISSING');
     expect(() => validateAuthenticationConfig({ ...env, FRONTEND_URL: 'http://app.example.com' })).toThrow('BOOT_AUTH_HTTPS_REQUIRED');
     expect(() => validateAuthenticationConfig({ ...env, AUTH_MFA_ENCRYPTION_KEY: 'bad' })).toThrow('BOOT_AUTH_MFA_ENCRYPTION_KEY_INVALID');
+    expect(() => validateAuthenticationConfig({
+      ...env, AUTH_MFA_ENCRYPTION_KEY_PREVIOUS: 'bad',
+    })).toThrow('BOOT_AUTH_MFA_PREVIOUS_ENCRYPTION_KEY_INVALID');
     expect(() => validateAuthenticationConfig({ ...env, ENABLE_DEBUG_OTP: 'true' })).toThrow('BOOT_AUTH_DEBUG_MODE_DISABLED');
     expect(() => validateAuthenticationConfig({ ...env, AUTH_TRUSTED_PROXY_CIDRS: '0.0.0.0/0' })).toThrow('BOOT_AUTH_PROXY_SCOPE_INVALID');
     expect(() => validateAuthenticationConfig({
@@ -286,6 +292,27 @@ describe('G01: authentication hardening negative controls', () => {
     expect(output.json.mock.calls[0][0]).toMatchObject({
       code:'INTERNAL_ERROR',requestId:'req_unknown',
     });
+  });
+
+  it('stages MFA encryption and recovery-code rotation without losing legacy factors', () => {
+    const previous = Buffer.alloc(32, 7).toString('base64');
+    const current = Buffer.alloc(32, 8).toString('base64');
+    process.env.AUTH_MFA_ENCRYPTION_KEY=previous;
+    delete process.env.AUTH_MFA_ENCRYPTION_KEY_PREVIOUS;
+    const secret=newTotpSecret();
+    const oldCiphertext=encryptFactor(secret);
+    const backup='A'.repeat(24);
+    const oldBackupHash=hashRecoveryCode(backup);
+    process.env.AUTH_MFA_ENCRYPTION_KEY=current;
+    process.env.AUTH_MFA_ENCRYPTION_KEY_PREVIOUS=previous;
+    expect(decryptFactor(oldCiphertext)).toBe(secret);
+    expect(hashRecoveryCodeCandidates(backup)).toContain(oldBackupHash);
+    expect(hashRecoveryCodeCandidates(backup)).toContain(hashRecoveryCode(backup));
+    const rewrapped=encryptFactor(decryptFactor(oldCiphertext));
+    delete process.env.AUTH_MFA_ENCRYPTION_KEY_PREVIOUS;
+    expect(decryptFactor(rewrapped)).toBe(secret);
+    expect(() => decryptFactor(oldCiphertext)).toThrow('MFA_FACTOR_DECRYPT_FAILED');
+    expect(hashRecoveryCodeCandidates(backup)).not.toContain(oldBackupHash);
   });
 
   it('issues distinct high-entropy recovery codes and stores only keyed hashes', () => {
