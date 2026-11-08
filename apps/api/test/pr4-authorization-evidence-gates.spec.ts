@@ -126,9 +126,9 @@ describe('PR4: least privilege in handover and independent witness routes', () =
       const scope = await seed(admin);
       const packageId = uuidv7(), submissionId = uuidv7(), recipientId = uuidv7();
       await admin.query(`INSERT INTO handover_packages
-        (id,org_id,project_id,version_no,status,package_purpose,requested_by)
-        VALUES($1,$2,$3,1,'READY','FULL_HANDOVER',$4)`,
-        [packageId,scope.orgId,scope.projectId,scope.userId]);
+        (id,org_id,project_id,version_no,status,package_purpose,snapshot_checksum,requested_by)
+        VALUES($1,$2,$3,1,'READY','FULL_HANDOVER',$5,$4)`,
+        [packageId,scope.orgId,scope.projectId,scope.userId,'a'.repeat(64)]);
       await admin.query(`INSERT INTO submissions
         (id,org_id,project_id,package_id,status,submitted_by,submitted_at)
         VALUES($1,$2,$3,$4,'SUBMITTED',$5,now())`,
@@ -161,9 +161,9 @@ describe('PR4: least privilege in handover and independent witness routes', () =
       const scope = await seed(admin);
       const pkgId = uuidv7();
       await admin.query(`INSERT INTO handover_packages
-        (id,org_id,project_id,version_no,status,package_purpose,requested_by)
-        VALUES($1,$2,$3,1,'READY','FULL_HANDOVER',$4)`,
-        [pkgId,scope.orgId,scope.projectId,scope.userId]);
+        (id,org_id,project_id,version_no,status,package_purpose,snapshot_checksum,requested_by)
+        VALUES($1,$2,$3,1,'READY','FULL_HANDOVER',$5,$4)`,
+        [pkgId,scope.orgId,scope.projectId,scope.userId,'a'.repeat(64)]);
       const output = await new HandoverService(app, {} as any).createSubmission(
         scope.ctx as any,scope.projectId,
         { packageId: pkgId, recipients: [{
