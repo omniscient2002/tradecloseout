@@ -54,6 +54,8 @@ export class SessionCsrfGuard implements CanActivate {
               s.active_org_id,
               s.csrf_token_hash,
               s.expires_at,
+              s.absolute_expires_at,
+              s.last_activity_at,
               s.guest_grant_id,
               s.auth_generation,
               u.name AS user_name,
@@ -166,6 +168,9 @@ export class SessionCsrfGuard implements CanActivate {
 
     if (
       new Date(session.expires_at).getTime() <= Date.now() ||
+      new Date(session.absolute_expires_at).getTime() <= Date.now() ||
+      (!session.guest_grant_id &&
+        new Date(session.last_activity_at).getTime() <= Date.now() - 30 * 24 * 3600 * 1000) ||
       session.user_status !== 'ACTIVE' ||
       membershipStatus !== 'ACTIVE' ||
       session.org_status !== 'ACTIVE'
@@ -175,6 +180,24 @@ export class SessionCsrfGuard implements CanActivate {
         title: 'Session expired or membership suspended',
         detail: 'Your session has expired or your organisation access has changed.',
       });
+    }
+
+    // Update member inactivity expiry at most once per five minutes. Guest
+    // sessions deliberately retain their strict 24-hour fixed expiration.
+    if (!session.guest_grant_id &&
+        new Date(session.last_activity_at).getTime() < Date.now() - 5 * 60_000) {
+      const { rowCount } = await this.pool.query(
+        `UPDATE sessions
+            SET last_activity_at = now(),
+                expires_at = LEAST(now() + interval '30 days', absolute_expires_at)
+          WHERE id = $1 AND revoked_at IS NULL
+            AND expires_at > now() AND absolute_expires_at > now()
+            AND last_activity_at > now() - interval '30 days'`,
+        [session.session_id],
+      );
+      if (!rowCount) {
+        throw new UnauthorizedException({ code: 'SESSION_EXPIRED' });
+      }
     }
 
     // A shared HttpOnly cookie can change in another tab. Require a generation
