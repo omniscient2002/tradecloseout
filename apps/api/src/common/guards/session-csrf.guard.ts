@@ -22,6 +22,7 @@ export interface AuthenticatedRequest extends Request {
     ip: string;
     userAgent: string;
     authGeneration: string;
+    mfaVerified: boolean;
   };
 }
 
@@ -58,6 +59,8 @@ export class SessionCsrfGuard implements CanActivate {
               s.last_activity_at,
               s.guest_grant_id,
               s.auth_generation,
+              s.mfa_verified,
+              s.mfa_verified_at,
               u.name AS user_name,
               u.status AS user_status,
               o.status AS org_status
@@ -242,6 +245,25 @@ export class SessionCsrfGuard implements CanActivate {
       }
     }
 
+    // Owners/Admins must complete a recent, server-verified second factor
+    // before performing privileged mutations. Enrollment, MFA verification
+    // and emergency revocation remain reachable when a factor is not yet set.
+    const needsPrivilegedMfa = (process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging') &&
+      !session.guest_grant_id &&
+      (orgRole === 'R-OWNER' || orgRole === 'R-ADMIN') &&
+      UNSAFE_METHODS.has(req.method.toUpperCase()) &&
+      !String(req.path || '').startsWith('/api/v1/auth/mfa/') &&
+      req.path !== '/api/v1/auth/logout' &&
+      req.path !== '/api/v1/auth/sessions/revoke-all';
+    if (needsPrivilegedMfa &&
+        (!session.mfa_verified || !session.mfa_verified_at ||
+         new Date(session.mfa_verified_at).getTime() < Date.now() - 12 * 3600_000)) {
+      throw new ForbiddenException({
+        code: 'MFA_STEP_UP_REQUIRED',
+        detail: 'Complete multi-factor verification before privileged changes.',
+      });
+    }
+
     // AUD-014 Invariant: Path :orgId is NEVER authoritative; mismatch returns 404 (not 403)
     // Resolve alias 'current' to the authenticated session active organisation
     if (req.params?.orgId === 'current' && session.active_org_id) {
@@ -302,6 +324,8 @@ export class SessionCsrfGuard implements CanActivate {
       ip: req.ip || '0.0.0.0',
       userAgent: (req.headers['user-agent'] as string) || 'unknown',
       authGeneration: String(session.auth_generation),
+      mfaVerified: Boolean(session.mfa_verified && session.mfa_verified_at &&
+        new Date(session.mfa_verified_at).getTime() >= Date.now() - 12 * 3600_000),
     };
 
     req.auth = authData;
