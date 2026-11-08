@@ -5,45 +5,22 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ShieldCheck, ArrowRight, KeyRound, Building2, CheckCircle2, AlertCircle } from "lucide-react";
 import { apiFetch, ApiProblemError, setCsrfToken } from "../../../lib/api-client";
 
-const REAL_COMPANY_PERSONAS = [
-  {
-    name: "Vikramaditya Reddy",
-    role: "Managing Director (Owner)",
-    identifier: "vikram@deccanmep.in",
-    phone: "+919848011101",
-    badge: "Full Org, Billing & 2nd-Approver Waiver Authority",
-  },
-  {
-    name: "Meera Deshmukh",
-    role: "Senior Project Manager",
-    identifier: "meera@deccanmep.in",
-    phone: "+919848011102",
-    badge: "Manages Projects, Checklists, Supplier Links & Packages",
-  },
-  {
-    name: "Karthikeya Sharma",
-    role: "Lead QA/QC Engineer",
-    identifier: "karthik@deccanmep.in",
-    phone: "+919848011103",
-    badge: "Reviews & Approves Hydrostatic, Duct Leakage & TAB Reports",
-  },
-  {
-    name: "Amit Verma",
-    role: "Site Execution Engineer",
-    identifier: "amit@deccanmep.in",
-    phone: "+919848011104",
-    badge: "Uploads Site Test Reports & Registers Equipment Tags",
-  },
-];
+function safeReturnPath(next: string | null): string {
+  if (!next || !next.startsWith('/') || next.startsWith('//') || next.includes('\\') ||
+      /[\\u0000-\\u001F]/.test(next) || next.startsWith('/login')) {
+    return '/dashboard';
+  }
+  return next;
+}
 
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const nextPath = searchParams.get("next") || "/dashboard";
+  const nextPath = safeReturnPath(searchParams.get("next"));
 
   const [step, setStep] = useState<"IDENTIFIER" | "OTP">("IDENTIFIER");
   const [mode, setMode] = useState<"SIGNIN" | "SIGNUP">("SIGNIN");
-  const [identifier, setIdentifier] = useState("meera@deccanmep.in");
+  const [identifier, setIdentifier] = useState("");
   const [fullName, setFullName] = useState("");
   const [orgName, setOrgName] = useState("");
   const [stateCode, setStateCode] = useState("TS");
@@ -138,44 +115,7 @@ function LoginForm() {
           </p>
         </div>
 
-        {/* Seeded Real Company Personas for Instant Role Testing */}
-        <div className="mt-8 rounded-xl border border-slate-800 bg-slate-900/90 p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-blue-400">
-              Seeded Tenant: Deccan EnviroTech MEP Pvt Ltd
-            </span>
-            <span className="font-mono text-[10px] text-slate-400">GSTIN: 36AABCD4512F1Z4</span>
-          </div>
-          <p className="text-[11px] text-slate-400">
-            Click any team member below to pre-fill their login identity and test their exact
-            role permissions:
-          </p>
-          <div className="space-y-1.5">
-            {REAL_COMPANY_PERSONAS.map((p) => (
-              <button
-                key={p.identifier}
-                type="button"
-                onClick={() => {
-                  setMode("SIGNIN");
-                  setStep("IDENTIFIER");
-                  setIdentifier(p.identifier);
-                }}
-                className={`w-full text-left rounded-lg border p-2.5 transition-all ${
-                  identifier === p.identifier
-                    ? "border-blue-500 bg-blue-500/10 shadow-sm"
-                    : "border-slate-800 bg-slate-950/60 hover:border-slate-700"
-                }`}
-              >
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-semibold text-white">{p.name}</span>
-                  <span className="font-mono text-[11px] text-blue-300">{p.identifier}</span>
-                </div>
-                <div className="text-[11px] text-slate-300 mt-0.5">{p.role}</div>
-                <div className="text-[10px] text-slate-500 mt-0.5">{p.badge}</div>
-              </button>
-            ))}
-          </div>
-        </div>
+
       </div>
 
       {/* Right Authentication Form (SCR-002 / SCR-003) */}
@@ -193,7 +133,7 @@ function LoginForm() {
               <p className="mt-0.5 text-xs text-slate-500">
                 {step === "OTP"
                   ? `We sent a 6-digit code to ${identifier}`
-                  : "Passwordless sign-in via OTP or email login link"}
+                  : "Passwordless sign-in using a one-time verification code"}
               </p>
             </div>
             <KeyRound className="h-5 w-5 text-slate-400" />
