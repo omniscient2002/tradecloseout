@@ -10,7 +10,12 @@ ALTER TABLE guest_grants
 
 ALTER TABLE sessions
   ADD COLUMN IF NOT EXISTS auth_generation UUID NOT NULL DEFAULT gen_random_uuid(),
-  ADD COLUMN IF NOT EXISTS last_activity_at TIMESTAMPTZ NOT NULL DEFAULT now();
+  ADD COLUMN IF NOT EXISTS last_activity_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  ADD COLUMN IF NOT EXISTS absolute_expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + interval '90 days'),
+  ADD COLUMN IF NOT EXISTS authenticated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+
+CREATE INDEX IF NOT EXISTS sessions_active_expiry_idx
+  ON sessions (expires_at, absolute_expires_at) WHERE revoked_at IS NULL;
 
 ALTER TABLE otp_challenges
   ADD COLUMN IF NOT EXISTS delivery_status TEXT NOT NULL DEFAULT 'SENT'
@@ -28,6 +33,22 @@ CREATE TABLE IF NOT EXISTS auth_request_budgets (
   expires_at TIMESTAMPTZ NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Authentication security events must not contain OTPs, plaintext session
+-- tokens, delivery credentials or raw contact/guest invitation values.
+CREATE TABLE IF NOT EXISTS auth_security_events (
+  id UUID PRIMARY KEY,
+  actor_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  org_id UUID REFERENCES organisations(id) ON DELETE SET NULL,
+  session_id UUID REFERENCES sessions(id) ON DELETE SET NULL,
+  event_type TEXT NOT NULL,
+  outcome TEXT NOT NULL CHECK (outcome IN ('SUCCESS','DENIED','THROTTLED','ERROR')),
+  subject_digest TEXT,
+  occurred_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS auth_security_events_actor_date_idx
+  ON auth_security_events (actor_user_id, occurred_at DESC);
+GRANT SELECT, INSERT ON auth_security_events TO tc_app;
 
 -- No privileged client/witness authorization may be automatically inherited
 -- from existing contractor-issued contact data. Independent authority must
