@@ -19,6 +19,7 @@ import { Pool } from 'pg';
 import Redis from 'ioredis';
 import { uuidv7 } from 'uuidv7';
 import { AuthenticatedRequest, SessionCsrfGuard } from '../../common/guards/session-csrf.guard';
+import { assertAuthenticationOrigin } from './auth-security';
 
 export abstract class DltSmsGateway {
   abstract sendOtpSms(phoneE164: string, otp: string, templateId: string): Promise<{ delivered: boolean }>;
@@ -48,6 +49,7 @@ export class IdentityController {
     @Body() body: { identifier?: string; phoneOrEmail?: string },
     @Req() req: AuthenticatedRequest,
   ) {
+    assertAuthenticationOrigin(req);
     const supplied = body?.identifier ?? body?.phoneOrEmail;
     if (typeof supplied !== 'string' || supplied.length > 320) {
       throw new UnprocessableEntityException({ code: 'INVALID_IDENTIFIER', detail: 'A valid email or mobile number is required.' });
@@ -210,6 +212,7 @@ export class IdentityController {
     @Req() req: AuthenticatedRequest,
     @Res({ passthrough: true }) res: Response,
   ) {
+    assertAuthenticationOrigin(req);
     if (!body || typeof body !== 'object' ||
         (body.identifier != null && typeof body.identifier !== 'string') ||
         (body.challengeId != null && typeof body.challengeId !== 'string') ||
