@@ -56,6 +56,22 @@ These changes require their **own current-SHA** CI sign-off; don't rely on the p
 
 **Important:** Production-grade G01 still requires the entire 21-finding matrix and the independent authority workflow, browser, provider, Redis multi-node and deployment evidence. New source controls alone are not sign-off.
 
+## Third source pass — newly found G01 defects and remediation
+
+This pass found source-level defects **not reliably covered by the original 21-finding list**. They are tracked here as additional regression gates, not as evidence that the 21 issues are complete.
+
+| Extra ID | Newly found behavior and impact | Fix / negative test | Remaining proof |
+|---|---|---|---|
+| G01-X01 | Malformed non-string `signupProfile.fullName` could throw `TypeError` before 422 validation during successful OTP verification | Guarded type coercion; real PG OTP test asserts 422 and the proof remains unconsumed | HTTP fuzz matrix, signup schema |
+| G01-X02 | Slow guest OTP provider response could return a **successful challenge** after another request invalidated it | `requestGuestOtp` now checks committed SENT row count and raises `GUEST_OTP_CHALLENGE_SUPERSEDED`; deferred-provider concurrency test | Actual provider timeout sandbox |
+| G01-X03 | The analogous internal email/SMS response race could return success for a consumed/replaced production OTP | Internal SENT transition requires a live proof; dedicated real PG/deferred-mail test, and uncertain delivery remains AMBIGUOUS | Actual delivery-provider and two-node race test |
+| G01-X04 | Session idle timeout could be extended by stale-generation or invalid-CSRF requests, before authorization completed | Moved sliding activity update after authentication/CSRF/MFA/project-scope checks, protected with token hash and generation; restricted-PG regression | Browser/real proxy idle-expiry acceptance |
+| G01-X05 | Production Redis stored raw OTP destinations in alias/rate/failure keys and duplicated OTP challenge contact payloads, expanding identity exposure | Production Redis retains only pseudonymous HMAC request-budget keys; PostgreSQL alone owns production OTP challenge; test checks Redis call arguments and key absence | Inspect real Redis MONITOR, logs and telemetry |
+| G01-X06 | Issued external guest grants could be repointed to another contact, project, party, role or capability without changing the grant identity | Additive migration `0025_g01_guest_grant_immutable_identity.sql` forbids mutating core assertions; revoke-and-reissue required; direct app-role SQL negative tests | Independent approved external delegation process and old-grant lifecycle |
+| G01-X07 | Unexpected auth provider errors could leak OTPs and invitation URLs through raw exception message/stack logging | The global problem filter now writes only redacted exception type and sanitized request ID on auth/guest routes; focused log-leak test | Deployed API/gateway/analytics access-log inspection |
+
+**Disposition:** All new source changes are subject to latest-SHA CI and full staging/browser/provider gates. No new finding is declared production-verified merely because a test passes.
+
 ## Engineering guardrails
 
 - PR #5 is a **draft**, not a production certification. Source changes and mocked tests cannot establish real contact authority or enforceability of external sign-off.
