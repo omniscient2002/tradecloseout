@@ -19,7 +19,7 @@ import { Pool } from 'pg';
 import Redis from 'ioredis';
 import { uuidv7 } from 'uuidv7';
 import { AuthenticatedRequest, SessionCsrfGuard } from '../../common/guards/session-csrf.guard';
-import { assertAuthenticationOrigin, consumeAuthenticationBudget, isProductionEnvironment } from './auth-security';
+import { assertAuthenticationOrigin, consumeAuthenticationBudget, deriveSessionCsrf, isProductionEnvironment } from './auth-security';
 
 export abstract class DltSmsGateway {
   abstract sendOtpSms(phoneE164: string, otp: string, templateId: string): Promise<{ delivered: boolean }>;
@@ -500,15 +500,16 @@ export class IdentityController {
 
       // Issue opaque session token + CSRF token (10 §1 & FR-IAM-003: 30-day idle timeout)
       const rawSessionToken = randomBytes(32).toString('hex');
-      const rawCsrfToken = randomBytes(24).toString('hex');
+      const authGeneration = uuidv7();
+      const rawCsrfToken = deriveSessionCsrf(rawSessionToken, authGeneration);
       const sessionTokenHash = createHash('sha256').update(rawSessionToken).digest('hex');
       const csrfTokenHash = createHash('sha256').update(rawCsrfToken).digest('hex');
       const sessionId = uuidv7();
 
       await client.query(
         `INSERT INTO sessions
-          (id, user_id, token_hash, csrf_token_hash, active_org_id, expires_at, ip, user_agent)
-         VALUES ($1, $2, $3, $4, $5, now() + interval '30 days', $6, $7)`,
+          (id, user_id, token_hash, csrf_token_hash, active_org_id, expires_at, ip, user_agent, auth_generation)
+         VALUES ($1, $2, $3, $4, $5, now() + interval '30 days', $6, $7, $8)`,
         [
           sessionId,
           userId,
@@ -517,6 +518,7 @@ export class IdentityController {
           activeOrgId,
           req?.ip || '0.0.0.0',
           req?.headers?.['user-agent'] || 'unknown',
+          authGeneration,
         ],
       );
 
@@ -548,6 +550,7 @@ export class IdentityController {
         userId,
         activeOrgId,
         csrfToken: rawCsrfToken,
+        authGeneration,
         sessionToken: isProductionLike ? undefined : rawSessionToken,
         user: {
           id: userId,
@@ -568,6 +571,33 @@ export class IdentityController {
    * API-003: GET /api/v1/auth/me
    * Returns current identity and active organisation only (10 §2.1 Step 4).
    */
+  /**
+   * Restore the generation-bound CSRF token from the HttpOnly session cookie.
+   * This is a no-store same-origin authenticated GET; it does not disclose
+   * the raw bearer token and does not mutate the server session.
+   */
+  @Get('session/bootstrap')
+  @UseGuards(SessionCsrfGuard)
+  async bootstrapSession(@Req() req: AuthenticatedRequest) {
+    const raw = (req as any).cookies?.tc_session;
+    if (typeof raw !== 'string' || raw.length < 32) {
+      throw new UnauthorizedException({ code: 'SESSION_COOKIE_REQUIRED' });
+    }
+    const csrfToken = deriveSessionCsrf(raw, req.auth.authGeneration);
+    const computedHash = createHash('sha256').update(csrfToken).digest('hex');
+    // Legacy pre-generation sessions require reauthentication rather than
+    // silently resetting an arbitrary old CSRF value.
+    const { rows } = await this.pool.query(
+      `SELECT csrf_token_hash FROM sessions
+        WHERE id = $1 AND revoked_at IS NULL AND expires_at > now()`,
+      [req.auth.sessionId],
+    );
+    if (!rows.length || rows[0].csrf_token_hash !== computedHash) {
+      throw new UnauthorizedException({ code: 'SESSION_REAUTHENTICATION_REQUIRED' });
+    }
+    return { csrfToken, authGeneration: req.auth.authGeneration };
+  }
+
   @Get('me')
   @UseGuards(SessionCsrfGuard)
   async getMe(@Req() req: AuthenticatedRequest) {
@@ -592,6 +622,7 @@ export class IdentityController {
       activeOrg: rows[0] ?? null,
       orgRole: req.auth.orgRole,
       org_role: req.auth.orgRole,
+      authGeneration: req.auth.authGeneration,
     };
   }
 
@@ -650,7 +681,10 @@ export class IdentityController {
     }
 
     const client = await this.pool.connect();
-    const csrfToken = randomBytes(32).toString('hex');
+    const authGeneration = uuidv7();
+    const rawToken = (req as any).cookies?.tc_session;
+    if (typeof rawToken !== 'string') throw new UnauthorizedException('SESSION_COOKIE_REQUIRED');
+    const csrfToken = deriveSessionCsrf(rawToken, authGeneration);
     try {
       await client.query('BEGIN');
       await client.query(
@@ -676,13 +710,13 @@ export class IdentityController {
 
       const { rowCount } = await client.query(
         `UPDATE sessions
-            SET active_org_id = $1, csrf_token_hash = $2
+            SET active_org_id = $1, csrf_token_hash = $2, auth_generation = $5
           WHERE id = $3 AND user_id = $4 AND revoked_at IS NULL AND expires_at > now()`,
-        [body.targetOrgId, createHash('sha256').update(csrfToken).digest('hex'), req.auth.sessionId, req.auth.userId],
+        [body.targetOrgId, createHash('sha256').update(csrfToken).digest('hex'), req.auth.sessionId, req.auth.userId, authGeneration],
       );
       if (!rowCount) throw new UnauthorizedException('SESSION_EXPIRED');
       await client.query('COMMIT');
-      return { activeOrgId: body.targetOrgId, csrfToken };
+      return { activeOrgId: body.targetOrgId, csrfToken, authGeneration };
     } catch (err) {
       await client.query('ROLLBACK').catch(() => {});
       throw err;
