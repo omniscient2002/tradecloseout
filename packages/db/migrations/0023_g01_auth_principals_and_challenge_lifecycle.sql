@@ -34,6 +34,23 @@ CREATE TABLE IF NOT EXISTS auth_request_budgets (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- A verified OTP identity may accept an outstanding invitation with a
+-- 256-bit bearer claim token. This does not grant arbitrary tenant access:
+-- the client sets only a hash for one matching invitation, and the API still
+-- checks the invitation's intended email/phone before membership creation.
+DROP POLICY IF EXISTS invitations_claim_select ON invitations;
+CREATE POLICY invitations_claim_select ON invitations
+  FOR SELECT TO tc_app USING (
+    status = 'PENDING' AND expires_at > now()
+    AND token_hash = NULLIF(current_setting('app.invitation_hash', true), '')
+  );
+DROP POLICY IF EXISTS invitations_claim_update ON invitations;
+CREATE POLICY invitations_claim_update ON invitations
+  FOR UPDATE TO tc_app
+  USING (status = 'PENDING' AND expires_at > now()
+    AND token_hash = NULLIF(current_setting('app.invitation_hash', true), ''))
+  WITH CHECK (token_hash = NULLIF(current_setting('app.invitation_hash', true), ''));
+
 -- Privileged MFA enrollment and one-use emergency recovery codes.
 ALTER TABLE users
   ADD COLUMN IF NOT EXISTS mfa_totp_pending_secret TEXT,
