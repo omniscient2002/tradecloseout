@@ -15,7 +15,8 @@ ALTER TABLE sessions
 ALTER TABLE otp_challenges
   ADD COLUMN IF NOT EXISTS delivery_status TEXT NOT NULL DEFAULT 'SENT'
     CHECK (delivery_status IN ('PENDING','SENT','FAILED','AMBIGUOUS')),
-  ADD COLUMN IF NOT EXISTS otp_generation UUID;
+  ADD COLUMN IF NOT EXISTS otp_generation UUID,
+  ADD COLUMN IF NOT EXISTS auth_intent_hash TEXT;
 
 CREATE INDEX IF NOT EXISTS otp_challenges_guest_current_idx
   ON otp_challenges (guest_grant_id, created_at DESC)
