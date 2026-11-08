@@ -3,16 +3,41 @@ import { Request, Response } from 'express';
 import { createHmac, createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Pool } from 'pg';
 import { HttpException, HttpStatus } from '@nestjs/common';
+import { isIP } from 'node:net';
 
 export const isProductionEnvironment = () =>
   process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging';
 
+const parseConfiguredUrl = (value: string, errorCode: string): URL => {
+  try {
+    return new URL(value);
+  } catch {
+    // Node URL errors may include the raw input, which can contain secrets.
+    throw new Error(errorCode);
+  }
+};
+
 const requiredOrigin = (value: string): string => {
-  const url = new URL(value);
-  if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) {
+  const url = parseConfiguredUrl(value, 'BOOT_AUTH_ORIGIN_INVALID');
+  if (!['https:', 'http:'].includes(url.protocol) ||
+      url.username || url.password || url.pathname !== '/' ||
+      url.search || url.hash) {
     throw new Error('BOOT_AUTH_ORIGIN_INVALID');
   }
   return url.origin;
+};
+
+const isTrustedProxyEntry = (entry: string): boolean => {
+  if (entry === 'direct') return true;
+  const parts = entry.split('/');
+  if (parts.length > 2 || !parts[0]) return false;
+  const family = isIP(parts[0]);
+  if (!family) return false;
+  if (parts.length === 1) return true;
+  const limit = family === 4 ? 32 : 128;
+  if (!/^\d+$/.test(parts[1])) return false;
+  const bits = Number(parts[1]);
+  return Number.isInteger(bits) && bits >= 0 && bits <= limit;
 };
 
 /**
@@ -32,12 +57,18 @@ export function validateAuthenticationConfig(env: NodeJS.ProcessEnv = process.en
   if ((env.AUTH_OTP_HMAC_KEY || '').length < 32 || (env.AUTH_CSRF_KEY || '').length < 32) {
     throw new Error('BOOT_AUTH_KEY_TOO_SHORT');
   }
-  for (const key of ['FRONTEND_URL', 'DLT_SMS_URL', 'MAIL_GATEWAY_URL']) {
-    if (new URL(env[key]!).protocol !== 'https:') {
+  // Reject invalid endpoints with a stable code, never logging credential URLs.
+  for (const key of ['DLT_SMS_URL', 'MAIL_GATEWAY_URL']) {
+    const endpoint = parseConfiguredUrl(env[key]!, `BOOT_AUTH_URL_INVALID: ${key}`);
+    if (endpoint.protocol !== 'https:' || endpoint.username || endpoint.password) {
       throw new Error(`BOOT_AUTH_HTTPS_REQUIRED: ${key}`);
     }
   }
-  const db = new URL(env.APP_DATABASE_URL!);
+  const origin = requiredOrigin(env.FRONTEND_URL!);
+  if (!origin.startsWith('https:')) {
+    throw new Error('BOOT_AUTH_HTTPS_REQUIRED: FRONTEND_URL');
+  }
+  const db = parseConfiguredUrl(env.APP_DATABASE_URL!, 'BOOT_AUTH_DATABASE_URL_INVALID');
   if (!['postgres:', 'postgresql:'].includes(db.protocol) || !db.hostname ||
       !db.username || ['postgres', 'tc_migrator'].includes(db.username) ||
       db.password.length < 12) {
@@ -47,10 +78,10 @@ export function validateAuthenticationConfig(env: NodeJS.ProcessEnv = process.en
     throw new Error('BOOT_AUTH_MFA_ENCRYPTION_KEY_INVALID');
   }
   const proxies = (env.AUTH_TRUSTED_PROXY_CIDRS || '').split(',').map(v => v.trim()).filter(Boolean);
-  if (!proxies.length || proxies.some(x => ['*','true','0.0.0.0/0','::/0'].includes(x))) {
+  if (!proxies.length || proxies.some(x =>
+      !isTrustedProxyEntry(x) || ['0.0.0.0/0', '::/0'].includes(x))) {
     throw new Error('BOOT_AUTH_PROXY_SCOPE_INVALID');
   }
-  requiredOrigin(env.FRONTEND_URL!);
   if (env.ENABLE_DEBUG_OTP === 'true' || env.ENABLE_OUTBOX_DELIVERY === 'true') {
     throw new Error('BOOT_AUTH_DEBUG_MODE_DISABLED');
   }
