@@ -635,11 +635,23 @@ export class PartiesService {
             `UPDATE guest_grants SET failed_otp_count = 0, cooldown_until = $1 WHERE id = $2`,
             [cooldownUntil, grant.id],
           );
+          await client.query(
+            `INSERT INTO auth_security_events(id,org_id,event_type,outcome,subject_digest)
+              VALUES(gen_random_uuid(),$1,$2,$3,$4)`,
+            [grant.org_id, 'GUEST_OTP_VERIFICATION',
+             'TOO_MANY_FAILED_ATTEMPTS' === 'TOO_MANY_FAILED_ATTEMPTS' ? 'THROTTLED' : 'DENIED', tokenHash],
+          );
           return { failure: 'TOO_MANY_FAILED_ATTEMPTS' as const };
         } else {
           await client.query(
             `UPDATE guest_grants SET failed_otp_count = $1 WHERE id = $2`,
             [newAttempts, grant.id],
+          );
+          await client.query(
+            `INSERT INTO auth_security_events(id,org_id,event_type,outcome,subject_digest)
+              VALUES(gen_random_uuid(),$1,$2,$3,$4)`,
+            [grant.org_id, 'GUEST_OTP_VERIFICATION',
+             'INVALID_OTP_CODE' === 'TOO_MANY_FAILED_ATTEMPTS' ? 'THROTTLED' : 'DENIED', tokenHash],
           );
           return { failure: 'INVALID_OTP_CODE' as const };
         }
@@ -685,6 +697,12 @@ export class PartiesService {
         [sessionId, principalUserId, this.hashSecret(sessionToken), this.hashSecret(csrfToken), grant.org_id, grant.id, expiresAt, authGeneration],
       );
 
+      await client.query(
+        `INSERT INTO auth_security_events
+           (id,actor_user_id,org_id,session_id,event_type,outcome)
+         VALUES(gen_random_uuid(),$1,$2,$3,'GUEST_OTP_LOGIN','SUCCESS')`,
+        [principalUserId,grant.org_id,sessionId],
+      );
       return { sessionToken, activeOrgId: grant.org_id, grantId: grant.id, csrfToken, authGeneration };
     });
 
