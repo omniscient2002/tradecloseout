@@ -246,33 +246,81 @@ export class MfaController {
     return this.completeSession(res, session);
   }
 
+  /**
+   * Disenrolling a privileged factor requires a NEW valid TOTP or a distinct
+   * one-use recovery code in addition to the recent-MFA session state.
+   * It revokes every device session and forces new OTP authentication.
+   */
   @Post('reset')
-  async resetEnrollment(@Req() req: AuthenticatedMfaRequest) {
+  async resetEnrollment(
+    @Req() req: AuthenticatedMfaRequest,
+    @Body() input: { code?: string; recoveryCode?: string },
+    @Res({ passthrough: true }) res: Response,
+  ) {
     this.assertMember(req);
     if (!req.auth.mfaVerified) throw new ForbiddenException({ code: 'MFA_STEP_UP_REQUIRED' });
-    return this.transact(req.auth.userId, async client => {
+    const totpCode = typeof input?.code === 'string' && /^\d{6}$/.test(input.code)
+      ? input.code : null;
+    const backupCode = typeof input?.recoveryCode === 'string' &&
+      /^[0-9A-Fa-f]{24}$/.test(input.recoveryCode) ? input.recoveryCode : null;
+    if (Boolean(totpCode) === Boolean(backupCode)) {
+      throw new BadRequestException({ code: 'MFA_FRESH_PROOF_REQUIRED' });
+    }
+    await this.enforceMfaAttemptBudget(req, backupCode ? 'recovery' : 'verify');
+    const result = await this.transact(req.auth.userId, async client => {
       const { rows } = await client.query(
-        `SELECT mfa_enabled_at FROM users WHERE id=$1 FOR UPDATE`,
+        `SELECT mfa_enabled_at, mfa_totp_secret, mfa_totp_last_step
+           FROM users WHERE id=$1 AND status='ACTIVE' FOR UPDATE`,
         [req.auth.userId],
       );
       if (!rows.length || !rows[0].mfa_enabled_at) throw new ConflictException('MFA_NOT_ENROLLED');
+      if (totpCode) {
+        const step = verifyTotp(
+          decryptFactor(rows[0].mfa_totp_secret), totpCode,
+          Number(rows[0].mfa_totp_last_step),
+        );
+        if (step === null) throw new UnauthorizedException({ code: 'MFA_FRESH_PROOF_INVALID' });
+        await client.query(
+          `UPDATE users SET mfa_totp_last_step=$2 WHERE id=$1`,
+          [req.auth.userId, step],
+        );
+      } else {
+        const { rows: recovery } = await client.query(
+          `SELECT id FROM mfa_recovery_codes
+           WHERE user_id=$1 AND code_hash=$2 AND consumed_at IS NULL FOR UPDATE`,
+          [req.auth.userId, hashRecoveryCode(backupCode!)],
+        );
+        if (!recovery.length) throw new UnauthorizedException({ code: 'MFA_FRESH_PROOF_INVALID' });
+        await client.query(
+          `UPDATE mfa_recovery_codes SET consumed_at=now() WHERE id=$1`,
+          [recovery[0].id],
+        );
+      }
       await client.query(
         `UPDATE users SET mfa_totp_secret=NULL, mfa_totp_pending_secret=NULL,
-           mfa_enabled_at=NULL, mfa_totp_last_step=-1 WHERE id=$1`,
+         mfa_enabled_at=NULL, mfa_totp_last_step=-1 WHERE id=$1`,
         [req.auth.userId],
       );
-      await client.query(`DELETE FROM mfa_recovery_codes WHERE user_id=$1`, [req.auth.userId]);
       await client.query(
-        `UPDATE sessions SET mfa_verified=false, mfa_verified_at=NULL
-          WHERE user_id=$1 AND revoked_at IS NULL`,
+        `DELETE FROM mfa_recovery_codes WHERE user_id=$1`,
+        [req.auth.userId],
+      );
+      await client.query(
+        `UPDATE sessions SET revoked_at=now(), mfa_verified=false,
+         mfa_verified_at=NULL
+         WHERE user_id=$1 AND revoked_at IS NULL`,
         [req.auth.userId],
       );
       await client.query(
         `INSERT INTO auth_security_events(id,actor_user_id,org_id,session_id,event_type,outcome)
-          VALUES($1,$2,$3,$4,'MFA_RESET','SUCCESS')`,
+          VALUES($1,$2,$3,$4,'MFA_RESET_ALL_SESSIONS_REVOKED','SUCCESS')`,
         [uuidv7(), req.auth.userId, req.auth.activeOrgId, req.auth.sessionId],
       );
-      return { enrolled: false, mfaVerified: false };
+      return { enrolled: false, mfaVerified: false, reauthenticationRequired: true };
     });
+    res.clearCookie('tc_session', {
+      httpOnly: true, secure: isProductionEnvironment(), sameSite: 'lax', path: '/',
+    });
+    return result;
   }
 }
