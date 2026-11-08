@@ -429,6 +429,7 @@ export class IdentityController {
 
       let userId: string;
       let activeOrgId: string;
+      let currentRole = 'R-OWNER';
       let fullName = body.signupProfile?.fullName?.trim() || 'Principal Contractor';
 
       if (existingIdentities.length > 0) {
@@ -448,7 +449,7 @@ export class IdentityController {
         await client.query(`UPDATE users SET last_login_at = now() WHERE id = $1`, [userId]);
 
         const { rows: memberships } = await client.query(
-          `SELECT m.org_id FROM memberships m JOIN organisations o ON o.id = m.org_id
+          `SELECT m.org_id, m.role FROM memberships m JOIN organisations o ON o.id = m.org_id
             WHERE m.user_id = $1 AND m.status = 'ACTIVE' AND o.status = 'ACTIVE'
             ORDER BY m.joined_at DESC LIMIT 1`,
           [userId],
@@ -461,6 +462,7 @@ export class IdentityController {
           });
         }
         activeOrgId = memberships[0].org_id;
+        currentRole = memberships[0].role;
 
         const { rows: userRows } = await client.query(`SELECT name FROM users WHERE id = $1`, [userId]);
         if (userRows.length > 0 && userRows[0].name) {
@@ -572,6 +574,8 @@ export class IdentityController {
         activeOrgId,
         csrfToken: rawCsrfToken,
         authGeneration,
+        mfaRequired: currentRole === 'R-OWNER' || currentRole === 'R-ADMIN',
+        mfaVerified: false,
         sessionToken: isProductionLike ? undefined : rawSessionToken,
         user: {
           id: userId,
@@ -644,6 +648,8 @@ export class IdentityController {
       orgRole: req.auth.orgRole,
       org_role: req.auth.orgRole,
       authGeneration: req.auth.authGeneration,
+      mfaRequired: req.auth.orgRole === 'R-OWNER' || req.auth.orgRole === 'R-ADMIN',
+      mfaVerified: req.auth.mfaVerified,
     };
   }
 
