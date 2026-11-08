@@ -78,7 +78,13 @@ export class IdentityController {
     // Rate limit: max 5 OTP requests / hour / identifier (10 §10), atomic Lua increment and expiry
     const isProductionLike = process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging';
     const isExplicitDebug = process.env.ENABLE_DEBUG_OTP === 'true' && !isProductionLike;
-    const rateKey = `rl:otp:req:${rawId}`;
+    // Redis is a shared operational store. Never expose identifiers
+    // through Redis keys or MONITOR traffic in staging/production.
+    const redisContactKey = isProductionEnvironment()
+      ? createHmac('sha256', process.env.AUTH_OTP_HMAC_KEY!)
+        .update(`redis-contact:v1:${rawId}`).digest('hex')
+      : rawId;
+    const rateKey = `rl:otp:req:${redisContactKey}`;
     const count = Number(await this.redis.eval(
       `local c = redis.call('INCR', KEYS[1])
        if c == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
@@ -104,7 +110,9 @@ export class IdentityController {
     });
 
     // Atomic issuance & supersession (V01, N02): Atomically delete old generation and register new challenge
-    await this.redis.eval(
+    // PostgreSQL owns production OTP verification and lifecycle; Redis
+    // caches only anonymous request budgets, not challenge contact payloads.
+    if (!isProductionEnvironment()) await this.redis.eval(
       `local oldId = redis.call('GET', KEYS[1])
        if oldId and oldId ~= '' then
          redis.call('DEL', 'otp:challenge:' .. oldId)
@@ -159,7 +167,7 @@ export class IdentityController {
     }
 
     if (isPhone) {
-      const smsFailKey = `sms:fail:${rawId}`;
+      const smsFailKey = `sms:fail:${redisContactKey}`;
       try {
         const res = await this.smsGateway.sendOtpSms(rawId, otp, process.env.DLT_OTP_TEMPLATE_ID || '');
         if (!res.delivered) throw new Error('DLT_DELIVERY_FAILED');
@@ -204,7 +212,7 @@ export class IdentityController {
           redis.call('DEL', KEYS[3])
           return 1
         `;
-        await this.redis.eval(
+        if (!isProductionEnvironment()) await this.redis.eval(
           cleanupScript,
           3,
           `otp:alias:${rawId}`,
@@ -259,7 +267,7 @@ export class IdentityController {
         redis.call('DEL', KEYS[3])
         return 1
       `;
-      await this.redis.eval(
+      if (!isProductionEnvironment()) await this.redis.eval(
         cleanupScript,
         3,
         `otp:alias:${rawId}`,
