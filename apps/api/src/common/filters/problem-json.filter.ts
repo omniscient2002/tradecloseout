@@ -28,7 +28,11 @@ export class ProblemJsonExceptionFilter implements ExceptionFilter {
     const ctx = host.switchToHttp();
     const res = ctx.getResponse<Response>();
     const req = ctx.getRequest<Request>();
-    const requestId = (req.headers['x-request-id'] as string) || 'req_unknown';
+    const suppliedRequestId = req.headers['x-request-id'];
+    const requestId = typeof suppliedRequestId === 'string' &&
+      /^[A-Za-z0-9_.:-]{1,128}$/.test(suppliedRequestId)
+      ? suppliedRequestId : 'req_unknown';
+    const sensitiveRoute = /^\/api\/v1\/(?:auth|guest)(?:\/|$)/.test(req.path || '');
 
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let code = 'INTERNAL_ERROR';
@@ -71,10 +75,20 @@ export class ProblemJsonExceptionFilter implements ExceptionFilter {
         title = 'Plan limit reached';
         detail = exception.message;
       } else {
-        this.logger.error(
-          { requestId, err: exception.message, stack: exception.stack },
-          'Unhandled internal exception',
-        );
+        // Guest invitation tokens occur in URL paths and some upstream
+        // provider failures include destination/OTP information in their
+        // message or stack. Never log those untrusted values for auth routes.
+        if (sensitiveRoute) {
+          this.logger.error(
+            { requestId, exceptionType: exception.name, area: 'AUTH' },
+            'Unhandled authentication exception (details redacted)',
+          );
+        } else {
+          this.logger.error(
+            { requestId, err: exception.message, stack: exception.stack },
+            'Unhandled internal exception',
+          );
+        }
       }
     }
 
