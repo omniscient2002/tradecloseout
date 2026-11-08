@@ -433,6 +433,7 @@ describe('Production Re-Audit Remediation Suite (PROD-001..PROD-018)', () => {
 
       const result = await partiesService.createGuestGrant(ctx, projectId, {
         partyId,
+        email: 'supplier@g01.example',
       });
 
       expect(result.grantId).toBeDefined();
@@ -476,6 +477,7 @@ describe('Production Re-Audit Remediation Suite (PROD-001..PROD-018)', () => {
       const result = await partiesService.createGuestGrant(ctx, projectId, {
         partyId,
         grantType: 'CONSULTANT',
+        email: 'consultant@g01.example',
       });
 
       expect(insertedParams[4]).toBe('CONSULTANT_REVIEW');
@@ -492,6 +494,7 @@ describe('Production Re-Audit Remediation Suite (PROD-001..PROD-018)', () => {
         partiesService.createGuestGrant(ctx, uuidv7(), {
           partyId: uuidv7(),
           grantType: 'CLIENT',
+          email: 'client@g01.example',
           role: 'R-OWNER',
         }),
       ).rejects.toThrow(BadRequestException);
@@ -506,6 +509,7 @@ describe('Production Re-Audit Remediation Suite (PROD-001..PROD-018)', () => {
         partiesService.createGuestGrant(ctx, uuidv7(), {
           partyId: uuidv7(),
           grantType: 'CLIENT',
+          email: 'client@g01.example',
           capabilities: ['org.manage'],
         }),
       ).rejects.toThrow(BadRequestException);
@@ -520,6 +524,7 @@ describe('Production Re-Audit Remediation Suite (PROD-001..PROD-018)', () => {
         partiesService.createGuestGrant(ctx, uuidv7(), {
           partyId: uuidv7(),
           grantType: 'CLIENT',
+          email: 'client@g01.example',
         }),
       ).rejects.toThrow(ForbiddenException);
     });
