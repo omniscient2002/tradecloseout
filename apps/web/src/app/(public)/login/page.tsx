@@ -17,6 +17,7 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextPath = safeReturnPath(searchParams.get("next"));
+  const invitationToken = searchParams.get('invite');
 
   const [step, setStep] = useState<"IDENTIFIER" | "OTP">("IDENTIFIER");
   const [mode, setMode] = useState<"SIGNIN" | "SIGNUP">("SIGNIN");
@@ -76,6 +77,7 @@ function LoginForm() {
           ...(mode === "SIGNUP"
             ? { signupProfile: { fullName, orgName, state: stateCode } }
             : {}),
+          ...(invitationToken ? { invitationToken } : {}),
         }),
       });
       setCsrfToken(res.csrfToken, res.authGeneration);
