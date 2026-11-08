@@ -414,7 +414,8 @@ export class HandoverService {
       // 3. Resolve and lock recipient row, verifying authority and preventing conflicting decisions (V05, F05)
       const recCheck = await client.query(
         `SELECT sr.*, gag.party_id AS grant_party_id, gag.status AS grant_status, gag.project_id AS grant_project_id,
-                  gag.expires_at AS grant_expires_at, gag.capabilities AS grant_capabilities
+                  gag.expires_at AS grant_expires_at, gag.capabilities AS grant_capabilities,
+                  gag.independent_authority_verified_at AS grant_independent_authority_verified_at
            FROM submission_recipients sr
            LEFT JOIN guest_grants gag ON gag.org_id = sr.org_id AND gag.id = $4
           WHERE sr.org_id = $1 AND sr.submission_id = $2
@@ -437,6 +438,12 @@ export class HandoverService {
       if (existingRec.grant_status !== 'ACTIVE' ||
           !existingRec.grant_expires_at || new Date(existingRec.grant_expires_at).getTime() <= Date.now()) {
         throw new UnauthorizedException('GUEST_GRANT_REVOKED_OR_EXPIRED');
+      }
+      if (!existingRec.grant_independent_authority_verified_at) {
+        throw new ForbiddenException({
+          code: 'INDEPENDENT_PARTY_AUTHORITY_REQUIRED',
+          detail: 'Recipient acceptance requires independently verified authority.',
+        });
       }
       if (!Array.isArray(existingRec.grant_capabilities) ||
           !existingRec.grant_capabilities.includes('package.accept')) {
