@@ -83,14 +83,14 @@ describe('G01 MFA real PostgreSQL control plane', () => {
       const recovered=await ctrl.recoverFactor(req,{recoveryCode:backup},res);
       expect(recovered.mfaVerified).toBe(true);
       await expect(ctrl.recoverFactor(req,{recoveryCode:backup},res)).rejects.toThrow();
-      expect((await app.query(
+      expect((await admin.query(
         'SELECT count(*)::int AS n FROM mfa_recovery_codes WHERE user_id=$1 AND consumed_at IS NOT NULL',
         [userId])).rows[0].n).toBe(1);
       req.auth.mfaVerified = true;
       const reset=await ctrl.resetEnrollment(req);
       expect(reset).toMatchObject({ enrolled: false, mfaVerified: false });
       expect((await app.query('SELECT mfa_verified FROM sessions WHERE id=$1',[sessionId])).rows[0].mfa_verified).toBe(false);
-      const { rows: events }=await app.query(
+      const { rows: events }=await admin.query(
         `SELECT event_type FROM auth_security_events WHERE actor_user_id=$1`,[userId]);
       expect(events.map(x=>x.event_type)).toEqual(expect.arrayContaining([
         'MFA_ENROLLED','MFA_RECOVERY_USED','MFA_RESET',
