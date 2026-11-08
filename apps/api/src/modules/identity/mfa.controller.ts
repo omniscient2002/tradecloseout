@@ -34,10 +34,11 @@ export class MfaController {
     }
   }
 
-  private async transact<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
+  private async transact<T>(userId: string, fn: (client: PoolClient) => Promise<T>): Promise<T> {
     const c = await this.pool.connect();
     try {
       await c.query('BEGIN');
+      await c.query("SELECT set_config('app.current_user', $1, true)", [userId]);
       const value = await fn(c);
       await c.query('COMMIT');
       return value;
@@ -101,7 +102,7 @@ export class MfaController {
   async beginEnrollment(@Req() req: AuthenticatedMfaRequest) {
     this.assertMember(req);
     const secret = newTotpSecret();
-    await this.transact(async client => {
+    await this.transact(req.auth.userId, async client => {
       const { rows } = await client.query(
         `SELECT id, mfa_enabled_at FROM users WHERE id=$1 AND status='ACTIVE' FOR UPDATE`,
         [req.auth.userId],
@@ -131,7 +132,7 @@ export class MfaController {
     if (typeof input?.code !== 'string' || !/^\d{6}$/.test(input.code)) {
       throw new BadRequestException({ code: 'MFA_CODE_INVALID' });
     }
-    const result = await this.transact(async client => {
+    const result = await this.transact(req.auth.userId, async client => {
       const { rows } = await client.query(
         `SELECT mfa_totp_pending_secret, mfa_enabled_at, mfa_totp_last_step
            FROM users WHERE id=$1 AND status='ACTIVE' FOR UPDATE`,
@@ -179,7 +180,7 @@ export class MfaController {
     if (typeof input?.code !== 'string' || !/^\d{6}$/.test(input.code)) {
       throw new BadRequestException({ code: 'MFA_CODE_INVALID' });
     }
-    const session = await this.transact(async client => {
+    const session = await this.transact(req.auth.userId, async client => {
       const { rows } = await client.query(
         `SELECT mfa_totp_secret,mfa_totp_last_step,mfa_enabled_at
            FROM users WHERE id=$1 AND status='ACTIVE' FOR UPDATE`,
@@ -212,7 +213,7 @@ export class MfaController {
     if (typeof input?.recoveryCode !== 'string' || !/^[0-9A-Fa-f]{24}$/.test(input.recoveryCode)) {
       throw new BadRequestException({ code: 'RECOVERY_CODE_INVALID' });
     }
-    const session = await this.transact(async client => {
+    const session = await this.transact(req.auth.userId, async client => {
       const { rows } = await client.query(
         `SELECT id FROM mfa_recovery_codes
           WHERE user_id=$1 AND code_hash=$2 AND consumed_at IS NULL FOR UPDATE`,
@@ -233,7 +234,7 @@ export class MfaController {
   async resetEnrollment(@Req() req: AuthenticatedMfaRequest) {
     this.assertMember(req);
     if (!req.auth.mfaVerified) throw new ForbiddenException({ code: 'MFA_STEP_UP_REQUIRED' });
-    return this.transact(async client => {
+    return this.transact(req.auth.userId, async client => {
       const { rows } = await client.query(
         `SELECT mfa_enabled_at FROM users WHERE id=$1 FOR UPDATE`,
         [req.auth.userId],
