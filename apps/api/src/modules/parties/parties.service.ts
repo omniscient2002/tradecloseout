@@ -16,6 +16,7 @@ import { PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { TenantDbService, ExecutionContext } from '../../database/tenant-db.service';
 import { DltSmsGateway, TransactionalMailGateway } from '../identity/identity.controller';
+import { consumeAuthenticationBudget, isProductionEnvironment } from '../identity/auth-security';
 
 export interface CreatePartyDto {
   name: string;
@@ -336,6 +337,11 @@ export class PartiesService {
    */
   async getGuestGrant(token: string) {
     const tokenHash = this.hashSecret(token);
+    if (isProductionEnvironment()) {
+      await consumeAuthenticationBudget(this.db.getPool(), 'guest-otp:ip:hour', sourceIp, 20, 3600);
+      await consumeAuthenticationBudget(this.db.getPool(), 'guest-otp:grant:hour', tokenHash, 3, 3600);
+      await consumeAuthenticationBudget(this.db.getPool(), 'guest-otp:global:hour', 'all', 6000, 3600);
+    }
     return await this.db.withTokenContext(tokenHash, async (client) => {
       const res = await client.query(
         `SELECT id, org_id, project_id, party_id, grant_type, role, capabilities, scope_json, otp_required, target_phone_e164, target_email, cooldown_until, expires_at
@@ -410,7 +416,7 @@ export class PartiesService {
   /**
    * API-028A POST /guest/:token/otp/request (RT-014, CB-007, CB-011)
    */
-  async requestGuestOtp(token: string): Promise<{ success: boolean; challengeId: string; maskedTarget: string; channel: string; debugOtp?: string }> {
+  async requestGuestOtp(token: string, sourceIp = 'unknown'): Promise<{ success: boolean; challengeId: string; maskedTarget: string; channel: string; debugOtp?: string }> {
     const tokenHash = this.hashSecret(token);
     return await this.db.withTokenContext(tokenHash, async (client) => {
       const grants = (
