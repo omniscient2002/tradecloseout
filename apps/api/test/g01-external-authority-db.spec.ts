@@ -1,6 +1,7 @@
 import { Pool } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { withDisposableDatabase } from '../../../packages/db/test/helpers/disposable-database';
+import { assertRuntimeDatabasePrivileges } from '../src/modules/identity/auth-security';
 
 jest.setTimeout(180_000);
 
@@ -12,6 +13,8 @@ jest.setTimeout(180_000);
 describe('G01 external party authority cannot be self-minted by an app role', () => {
   it('rejects direct app-role INSERT/UPDATE approvals while allowing ordinary grant revocation', async () => {
     await withDisposableDatabase(async ({ admin, app }) => {
+      // Execute the actual catalog-role query, not only a mocked response.
+      await expect(assertRuntimeDatabasePrivileges(app)).resolves.toBeUndefined();
       const issuer=uuidv7(), org=uuidv7(), project=uuidv7(), party=uuidv7(),grant=uuidv7();
       await admin.query(
         `INSERT INTO users(id,name,status) VALUES($1,'Internal Grant Issuer','ACTIVE')`,[issuer]);
