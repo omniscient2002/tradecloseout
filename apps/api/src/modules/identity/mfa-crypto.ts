@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHmac, createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { isProductionEnvironment } from './auth-security';
 
 const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -7,7 +7,7 @@ function encryptionKey(): Buffer {
   const raw = process.env.AUTH_MFA_ENCRYPTION_KEY;
   if (!raw && !isProductionEnvironment()) {
     // Deterministic local fixture key ONLY. Not accepted on staging/production.
-    return Buffer.from('tradecloseout-dev-mfa-encryption!', 'utf8');
+    return createHash('sha256').update('tradecloseout-development-only-mfa-key').digest();
   }
   const key = Buffer.from(raw || '', 'base64');
   if (key.length !== 32) throw new Error('BOOT_AUTH_MFA_ENCRYPTION_KEY_INVALID');
