@@ -47,6 +47,20 @@ describe('G01 membership privilege escalation and invitation validity', () => {
       const invite=await service.createInvitation(ctx(owner,'R-OWNER'),org,
         {email:'valid-admin@g01.example',role:'R-ADMIN'});
       expect(invite.invitationToken).toMatch(/^[a-f0-9]{64}$/);
+      const reissued=await service.createInvitation(ctx(owner,'R-OWNER'),org,
+        {email:'valid-admin@g01.example',role:'R-SITE'});
+      expect(reissued.invitationToken).not.toBe(invite.invitationToken);
+      expect((await admin.query(
+        'SELECT status FROM invitations WHERE id=$1',[invite.id],
+      )).rows[0].status).toBe('REVOKED');
+      expect((await admin.query(
+        'SELECT status FROM invitations WHERE id=$1',[reissued.id],
+      )).rows[0].status).toBe('PENDING');
+      expect((await admin.query(
+        `SELECT count(*)::int AS n FROM invitations
+           WHERE org_id=$1 AND email=$2 AND status='PENDING'`,
+        [org,'valid-admin@g01.example'],
+      )).rows[0].n).toBe(1);
       const assigned=await service.updateMemberRole(ctx(owner,'R-OWNER'),org,
         member,{role:'R-PM'});
       expect(assigned.role).toBe('R-PM');
