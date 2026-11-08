@@ -13,9 +13,9 @@ import {
   UnprocessableEntityException,
   UseGuards,
 } from '@nestjs/common';
-import { createHash, createHmac, randomBytes, randomInt } from 'crypto';
+import { createHash, createHmac, randomBytes, randomInt, timingSafeEqual } from 'crypto';
 import { Response } from 'express';
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import Redis from 'ioredis';
 import { uuidv7 } from 'uuidv7';
 import { AuthenticatedRequest, SessionCsrfGuard } from '../../common/guards/session-csrf.guard';
@@ -322,7 +322,7 @@ export class IdentityController {
     }
     // Verify the originating browser's nonce before accepting an OTP. A valid
     // code submitted in a different browser must never replace its session.
-    if (challengeParam) {
+    if (challengeParam && !isProductionEnvironment()) {
       const preview = await this.redis.get(`otp:challenge:${challengeParam}`);
       let expectedIntent: string | null = null;
       try { expectedIntent = preview ? JSON.parse(preview)?.authIntentHash ?? null : null; }
@@ -332,20 +332,61 @@ export class IdentityController {
       assertAuthenticationIntent(req, null);
     }
 
-    let candidateHmac = '';
-    if (isProductionEnvironment() && challengeParam) {
-      // Read only to derive the keyed comparison from the server-side canonical
-      // identifier; Lua re-checks active generation and consumes atomically.
-      const stored = await this.redis.get(`otp:challenge:${challengeParam}`);
+    let verifyOutcome = 'EXPIRED';
+    let authDbClient: PoolClient | null = null;
+    if (isProductionEnvironment()) {
+      // The PostgreSQL OTP row is authoritative in production. Lock the proof
+      // and retain its transaction across identity lookup and session INSERT.
+      // A database rollback therefore never consumes a valid OTP.
+      const candidateClient = await this.pool.connect();
       try {
-        const challenge = stored ? JSON.parse(stored) : null;
-        if (challenge?.id === challengeParam && typeof challenge.identifier === 'string') {
-          candidateHmac = createHmac('sha256', process.env.AUTH_OTP_HMAC_KEY!)
-            .update(`LOGIN:${challengeParam}:${challenge.identifier}:${candidateCode}`).digest('hex');
+        await candidateClient.query('BEGIN');
+        const { rows: challengeRows } = await candidateClient.query(
+          `SELECT id, identifier, code_hash, attempts, auth_intent_hash
+            FROM otp_challenges
+            WHERE id=$1 AND purpose='LOGIN' AND consumed_at IS NULL
+              AND delivery_status='SENT' AND expires_at>now()
+            FOR UPDATE`,
+          [challengeParam],
+        );
+        if (!challengeRows.length) {
+          verifyOutcome = 'EXPIRED';
+          await candidateClient.query('ROLLBACK');
+          candidateClient.release();
+        } else {
+          const proof = challengeRows[0];
+          assertAuthenticationIntent(req, proof.auth_intent_hash);
+          const computed = createHmac('sha256', process.env.AUTH_OTP_HMAC_KEY!)
+            .update(`LOGIN:${proof.id}:${proof.identifier}:${candidateCode}`).digest('hex');
+          const actual = Buffer.from(proof.code_hash, 'hex');
+          const expected = Buffer.from(computed, 'hex');
+          if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
+            const attempts = Math.min(5, Number(proof.attempts || 0) + 1);
+            await candidateClient.query(
+              `UPDATE otp_challenges
+                  SET attempts=$2,
+                      consumed_at=CASE WHEN $2 >= 5 THEN now() ELSE consumed_at END
+                WHERE id=$1`,
+              [challengeParam, attempts],
+            );
+            await candidateClient.query('COMMIT');
+            candidateClient.release();
+            verifyOutcome = attempts >= 5 ? 'MAX' : 'INVALID';
+          } else {
+            rawId = String(proof.identifier);
+            verifyOutcome = 'OK';
+            authDbClient = candidateClient;
+          }
         }
-      } catch { /* malformed/expired proof is rejected by the Lua transaction */ }
-    }
-
+      } catch (err) {
+        await candidateClient.query('ROLLBACK').catch(() => {});
+        candidateClient.release();
+        throw err;
+      }
+    } else {
+      // Legacy in-memory/Redis fixture path is restricted to nonproduction.
+      // It continues to exercise the historical tests without holding a DB
+      // transaction across a nonauthoritative development proof.
     const rawResult = await this.redis.eval(
       `local raw = redis.call('GET', KEYS[1])
        local realChallengeId = nil
@@ -429,11 +470,10 @@ export class IdentityController {
       inputKey || aliasKey,
       aliasKey || inputKey,
       candidateCode,
-      candidateHmac,
+      '',
       isProductionEnvironment() ? '1' : '0',
     );
 
-    let verifyOutcome = 'EXPIRED';
     if (typeof rawResult === 'string') {
       try {
         const parsed = JSON.parse(rawResult);
@@ -446,6 +486,8 @@ export class IdentityController {
       } catch {
         verifyOutcome = rawResult;
       }
+    }
+
     }
 
     if (isProductionEnvironment() && verifyOutcome !== 'OK') {
@@ -480,9 +522,9 @@ export class IdentityController {
       });
     }
 
-    const client = await this.pool.connect();
+    const client = authDbClient ?? await this.pool.connect();
     try {
-      await client.query('BEGIN');
+      if (!authDbClient) await client.query('BEGIN');
 
       const idType = rawId.startsWith('+91') ? 'PHONE' : 'EMAIL';
       const { rows: existingIdentities } = await client.query(
@@ -696,6 +738,16 @@ export class IdentityController {
           (req?.headers?.['x-request-id'] as string) || 'req_auth',
         ],
       );
+
+      if (authDbClient) {
+        const { rowCount } = await client.query(
+          `UPDATE otp_challenges SET consumed_at=now()
+            WHERE id=$1 AND purpose='LOGIN'
+              AND consumed_at IS NULL AND delivery_status='SENT' AND expires_at>now()`,
+          [challengeParam],
+        );
+        if (!rowCount) throw new UnauthorizedException({ code: 'OTP_EXPIRED' });
+      }
 
       await client.query(
         `INSERT INTO auth_security_events
