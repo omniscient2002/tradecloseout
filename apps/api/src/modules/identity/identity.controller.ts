@@ -901,6 +901,7 @@ export class IdentityController {
   async switchActiveOrg(
     @Body() body: { targetOrgId: string },
     @Req() req: AuthenticatedRequest,
+    @Res({ passthrough: true }) res?: Response,
   ) {
     if ((req as any).userContext?.actorType === 'GUEST') {
       throw new UnauthorizedException('GUEST_ORGANISATION_SWITCH_DENIED');
@@ -913,7 +914,9 @@ export class IdentityController {
     const authGeneration = uuidv7();
     const rawToken = (req as any).cookies?.tc_session;
     if (typeof rawToken !== 'string') throw new UnauthorizedException('SESSION_COOKIE_REQUIRED');
-    const csrfToken = deriveSessionCsrf(rawToken, authGeneration);
+    if (isProductionEnvironment() && !res) throw new UnauthorizedException('SESSION_ROTATION_UNAVAILABLE');
+    const rotatedToken = randomBytes(32).toString('hex');
+    const csrfToken = deriveSessionCsrf(rotatedToken, authGeneration);
     try {
       await client.query('BEGIN');
       await client.query(
@@ -939,12 +942,21 @@ export class IdentityController {
 
       const { rowCount } = await client.query(
         `UPDATE sessions
-            SET active_org_id = $1, csrf_token_hash = $2, auth_generation = $5
-          WHERE id = $3 AND user_id = $4 AND revoked_at IS NULL AND expires_at > now()`,
-        [body.targetOrgId, createHash('sha256').update(csrfToken).digest('hex'), req.auth.sessionId, req.auth.userId, authGeneration],
+            SET active_org_id = $1, csrf_token_hash = $2, auth_generation = $5,
+                token_hash = $6, mfa_verified=false, mfa_verified_at=NULL
+          WHERE id = $3 AND user_id = $4 AND revoked_at IS NULL AND expires_at > now()
+            AND token_hash=$7 AND auth_generation=$8`,
+        [body.targetOrgId, createHash('sha256').update(csrfToken).digest('hex'),
+          req.auth.sessionId, req.auth.userId, authGeneration,
+          createHash('sha256').update(rotatedToken).digest('hex'),
+          createHash('sha256').update(rawToken).digest('hex'), req.auth.authGeneration],
       );
       if (!rowCount) throw new UnauthorizedException('SESSION_EXPIRED');
       await client.query('COMMIT');
+      res?.cookie('tc_session', rotatedToken, {
+        httpOnly: true, secure: isProductionEnvironment(), sameSite: 'lax',
+        path: '/', maxAge: 90 * 24 * 3600 * 1000,
+      });
       return { activeOrgId: body.targetOrgId, csrfToken, authGeneration };
     } catch (err) {
       await client.query('ROLLBACK').catch(() => {});
