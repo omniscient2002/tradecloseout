@@ -96,6 +96,9 @@ describe('HVAC Domain Excellence Suite (XP11..XP18)', () => {
             if (sql.includes('FROM assets WHERE')) {
               return { rows: [] }; // No existing tags
             }
+            if (sql.includes('SELECT status, purged_at FROM projects')) {
+              return { rows: [{ status: 'ACTIVE', purged_at: null }] };
+            }
             if (sql.includes('INSERT INTO assets')) {
               executedInserts.push(params);
               return { rowCount: 1, rows: [{ id: params[0], tag: params[3] }] };
