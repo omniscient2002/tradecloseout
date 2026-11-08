@@ -21,7 +21,7 @@ import {
   UploadCloud,
   FileSpreadsheet,
 } from "lucide-react";
-import { apiFetch, setCsrfToken } from "../../lib/api-client";
+import { apiFetch, setCsrfToken, watchAuthChanges } from "../../lib/api-client";
 import { setOfflineActorPartition } from "../../lib/offline-upload-queue";
 
 const REAL_DECCAN_PERSONAS = [
@@ -76,14 +76,21 @@ export default function ContractorLayout({ children }: { children: React.ReactNo
   const [logoutError, setLogoutError] = useState<string | null>(null);
 
   useEffect(() => {
+    const unwatch = watchAuthChanges(() => {
+      setOfflineActorPartition(null);
+      setUser(null);
+      window.location.reload();
+    });
     apiFetch<any>("/api/v1/auth/me")
       .then((data) => {
         setUser(data);
         setOfflineActorPartition(`member:${data.activeOrgId || data.active_org_id}:${data.userId || data.user_id}`);
       })
       .catch(() => {
-        // middleware handles redirection if unauthenticated
+        setUser(null);
+        setOfflineActorPartition(null);
       });
+    return unwatch;
   }, []);
 
   const handleLogout = async () => {
@@ -99,30 +106,11 @@ export default function ContractorLayout({ children }: { children: React.ReactNo
     window.location.href = "/login";
   };
 
-  const handleQuickSwitch = async (persona: (typeof REAL_DECCAN_PERSONAS)[0]) => {
-    if (user?.name === persona.name) return;
-    setSwitching(persona.id);
-    try {
-      const otpRes = await apiFetch<{ challengeId: string; debugOtp?: string; devOtpPreview?: string }>(
-        "/api/v1/auth/otp/request",
-        {
-          method: "POST",
-          body: JSON.stringify({ identifier: persona.email }),
-        }
-      );
-      const code = otpRes.debugOtp || otpRes.devOtpPreview || "123456";
-      const verifyRes = await apiFetch<{ csrfToken?: string }>("/api/v1/auth/otp/verify", {
-        method: "POST",
-        body: JSON.stringify({ identifier: persona.email, otp: code, code }),
-      });
-      if (verifyRes.csrfToken) {
-        setCsrfToken(verifyRes.csrfToken);
-      }
-      window.location.reload();
-    } catch (err) {
-      console.error("Quick switch failed", err);
-      setSwitching(null);
-    }
+  const handleQuickSwitch = async (_persona: (typeof REAL_DECCAN_PERSONAS)[0]) => {
+    // Selecting a demo persona can never supply authentication evidence.
+    // Sign-in requires the actual OTP at the verified destination.
+    setOfflineActorPartition(null);
+    router.push("/login");
   };
 
   const currentPersona = REAL_DECCAN_PERSONAS.find(
@@ -279,7 +267,7 @@ export default function ContractorLayout({ children }: { children: React.ReactNo
         </div>
 
         {/* 1-Click Interactive Enterprise Persona Dock (Gated in production - TC2-033) */}
-        {(process.env.NEXT_PUBLIC_ENABLE_DEV_PERSONAS === 'true' || process.env.NODE_ENV === 'development') && (
+        {(process.env.NODE_ENV === 'development' && process.env.NEXT_PUBLIC_ENABLE_DEV_PERSONAS === 'true') && (
           <div className="bg-slate-900 text-white px-4 py-2 border-t border-slate-800 text-xs flex flex-wrap items-center justify-between gap-2 shadow-inner">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
