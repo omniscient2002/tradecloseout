@@ -377,13 +377,23 @@ export class HandoverService {
     return withTenantTransaction(this.pool, ctx, async (client, emit) => {
       // 1. Resolve and lock submission to guarantee correct project context (TC2-011)
       const subRes = await client.query(
-        `SELECT id, project_id, status, package_id FROM submissions WHERE org_id = $1 AND id = $2 FOR UPDATE`,
+        `SELECT s.id, s.project_id, s.status, s.package_id, hp.package_purpose
+           FROM submissions s
+           JOIN handover_packages hp
+             ON hp.org_id = s.org_id AND hp.project_id = s.project_id AND hp.id = s.package_id
+          WHERE s.org_id = $1 AND s.id = $2 FOR UPDATE OF s`,
         [ctx.orgId, submissionId],
       );
       if (!subRes.rows.length) {
         throw new NotFoundException('SUBMISSION_NOT_FOUND');
       }
       const submission = subRes.rows[0];
+      if (submission.package_purpose !== 'FULL_HANDOVER') {
+        throw new ConflictException({
+          code: 'PARTIAL_PACKAGE_CANNOT_RECEIVE_HANDOVER_ACCEPTANCE',
+          detail: 'An RA-bill annexure cannot be accepted as a full contractual handover.',
+        });
+      }
       if (projectId && submission.project_id && projectId !== submission.project_id) {
         throw new ConflictException({
           code: 'SUBMISSION_PROJECT_MISMATCH',
@@ -902,7 +912,7 @@ export class HandoverService {
         await client.query(
           `INSERT INTO submission_recipients
              (id, org_id, project_id, submission_id, party_id, recipient_party_id, name, email, role, is_required_approver, status)
-           VALUES ($1, $2, $3, $4, $5, $5, $6, $7, $8, $9, 'SENT')`,
+           VALUES ($1, $2, $3, $4, $5, $5, $6, $7, $8, $9, 'PENDING_DELIVERY')`,
           [
             uuidv7(),
             ctx.orgId,
@@ -918,11 +928,11 @@ export class HandoverService {
       }
 
       emit({
-        eventType: 'SUBMISSION_DISPATCHED',
+        eventType: 'SUBMISSION_PREPARED',
         projectId: targetProjectId,
         entityType: 'SUBMISSION',
         entityId: submissionId,
-        afterJson: { packageId, recipientCount: dto.recipients.length },
+        afterJson: { packageId, recipientCount: dto.recipients.length, deliveryVerified: false },
       });
 
       return {
