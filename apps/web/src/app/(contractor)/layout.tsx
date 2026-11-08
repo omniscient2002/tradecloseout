@@ -70,7 +70,10 @@ const REAL_DECCAN_PERSONAS = [
 export default function ContractorLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [user, setUser] = useState<{ id: string; name: string; orgRole: string; activeOrgId: string } | null>(null);
+  const [user, setUser] = useState<{
+    id?: string; name: string; orgRole: string; activeOrgId: string;
+    activeOrg?: { display_name?: string; legal_name?: string };
+  } | null>(null);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [switching, setSwitching] = useState<string | null>(null);
   const [logoutError, setLogoutError] = useState<string | null>(null);
@@ -118,13 +121,18 @@ export default function ContractorLayout({ children }: { children: React.ReactNo
     router.push("/login");
   };
 
-  const currentPersona = REAL_DECCAN_PERSONAS.find(
-    (p) => user && (user.name === p.name || user.orgRole === p.role)
-  ) || REAL_DECCAN_PERSONAS[1];
+  // Demo information may not be used to describe a real authenticated user.
+  const currentPersona = process.env.NODE_ENV === 'development' &&
+    process.env.NEXT_PUBLIC_ENABLE_DEV_PERSONAS === 'true'
+    ? REAL_DECCAN_PERSONAS.find((p) => user?.name === p.name)
+    : undefined;
+  const organisationName = user?.activeOrg?.display_name ||
+    user?.activeOrg?.legal_name || 'Your organisation';
 
   // Dynamic role-based navigation links per 05 §4
   const getNavLinks = () => {
-    const role = user?.orgRole || "R-PM";
+    const role = user?.orgRole;
+    if (!role) return [];
 
     if (role === "R-SITE") {
       return [
@@ -152,7 +160,10 @@ export default function ContractorLayout({ children }: { children: React.ReactNo
       ];
     }
 
-    // Default R-PM
+    if (role !== "R-PM") {
+      // Unknown or newly introduced roles must not inherit PM navigation.
+      return [{ label: "Projects", href: "/projects", icon: FolderKanban }];
+    }
     return [
       { label: "PM Dashboard", href: "/dashboard", icon: Building2 },
       { label: "Projects", href: "/projects", icon: FolderKanban },
@@ -181,7 +192,7 @@ export default function ContractorLayout({ children }: { children: React.ReactNo
                   TradeCloseout
                 </span>
                 <span className="text-[10px] font-semibold text-blue-700 tracking-wider">
-                  DECCAN ENVIROTECH MEP
+                  {organisationName}
                 </span>
               </div>
             </div>
@@ -209,19 +220,17 @@ export default function ContractorLayout({ children }: { children: React.ReactNo
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="hidden lg:inline-flex items-center gap-1 rounded bg-slate-100 border border-slate-300 px-2 py-0.5 font-mono text-[11px] font-semibold text-slate-700">
-              GSTIN: 36AABCD4512F1Z4
-            </span>
+            {/* Tax identifiers are displayed only when returned by the authorised organisation API. */}
 
             <button
               onClick={() => {
                 window.location.href = "/login";
               }}
               className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50/80 px-2.5 py-1 text-xs font-semibold text-blue-900 hover:bg-blue-100 transition-colors cursor-pointer"
-              title="Full login screen & credentials"
+              title="Authenticate as a different account using a fresh OTP"
             >
               <Users className="h-3.5 w-3.5 text-blue-700" />
-              <span className="hidden sm:inline">All Personas</span>
+              <span className="hidden sm:inline">Switch account</span>
             </button>
 
             {user && (
@@ -230,7 +239,7 @@ export default function ContractorLayout({ children }: { children: React.ReactNo
                   onClick={() => setUserMenuOpen(!userMenuOpen)}
                   className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs hover:bg-slate-100 transition-colors cursor-pointer"
                 >
-                  <div className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold text-white ${currentPersona.avatarBg}`}>
+                  <div className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold text-white ${currentPersona?.avatarBg || 'bg-slate-700'}`}>
                     {user.name.slice(0, 2).toUpperCase()}
                   </div>
                   <div className="text-left hidden sm:block">
@@ -244,8 +253,8 @@ export default function ContractorLayout({ children }: { children: React.ReactNo
                   <div className="absolute right-0 mt-2 w-64 rounded-xl border border-slate-200 bg-white p-2 shadow-lg z-50 text-xs">
                     <div className="px-3 py-2 border-b border-slate-100">
                       <div className="font-bold text-slate-900">{user.name}</div>
-                      <div className="font-mono text-[10px] text-slate-500">{user.orgRole} · {currentPersona.roleTitle}</div>
-                      <div className="text-[10px] text-blue-700 font-medium mt-1">Deccan EnviroTech MEP Pvt Ltd</div>
+                      <div className="font-mono text-[10px] text-slate-500">{user.orgRole} · {currentPersona?.roleTitle || 'Authenticated member'}</div>
+                      <div className="text-[10px] text-blue-700 font-medium mt-1">{organisationName}</div>
                     </div>
                     <button
                       onClick={() => {
@@ -254,7 +263,7 @@ export default function ContractorLayout({ children }: { children: React.ReactNo
                       }}
                       className="w-full text-left px-3 py-2 mt-1 rounded-md text-slate-700 hover:bg-slate-50 flex items-center justify-between cursor-pointer"
                     >
-                      <span>Open Persona Switcher</span>
+                      <span>Switch account with OTP</span>
                       <Users className="h-3.5 w-3.5 text-slate-400" />
                     </button>
                     <button
