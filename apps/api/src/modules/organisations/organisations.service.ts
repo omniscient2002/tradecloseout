@@ -7,6 +7,8 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
+  ServiceUnavailableException,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { Pool, PoolClient } from 'pg';
@@ -14,6 +16,8 @@ import { uuidv7 } from 'uuidv7';
 import { randomBytes, createHash } from 'crypto';
 import { withTenantTransaction, TenantActorContext, DomainOutboxEvent } from '@tradecloseout/db';
 import { hasPermission, isValidIndianGstin, IndianPanSchema } from '@tradecloseout/shared';
+import { TransactionalMailGateway } from '../identity/identity.controller';
+import { isProductionEnvironment } from '../identity/auth-security';
 
 export interface OffboardingGapReport {
   targetUserId: string;
@@ -34,7 +38,10 @@ export interface OffboardingGapReport {
 
 @Injectable()
 export class OrganisationsService {
-  constructor(private readonly pool: Pool) {}
+  constructor(
+    private readonly pool: Pool,
+    @Optional() private readonly mailGateway?: TransactionalMailGateway,
+  ) {}
 
   /**
    * API-010: GET /api/v1/orgs/:orgId
@@ -440,8 +447,14 @@ export class OrganisationsService {
       throw new UnprocessableEntityException({code:'INVALID_INVITATION_ROLE'});
     }
     const email = dto.email.trim().toLowerCase();
+    if (isProductionEnvironment() && !this.mailGateway) {
+      throw new ServiceUnavailableException({
+        code:'INVITATION_DELIVERY_UNAVAILABLE',
+        detail:'Invitation delivery is not configured.',
+      });
+    }
 
-    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+    const issued = await withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
       const { rows: issuer } = await client.query(
         `SELECT role FROM memberships
          WHERE org_id=$1 AND user_id=$2 AND status='ACTIVE' FOR SHARE`,
@@ -483,6 +496,37 @@ export class OrganisationsService {
         invitationToken: rawToken,
       };
     });
+    if (this.mailGateway) {
+      const appOrigin = process.env.FRONTEND_URL || process.env.PUBLIC_APP_URL;
+      if (!appOrigin || (isProductionEnvironment() && !appOrigin.startsWith('https://'))) {
+        await this.revokeInvitation(ctx,orgId,issued.id);
+        throw new ServiceUnavailableException({
+          code:'INVITATION_APP_ORIGIN_INVALID',
+        });
+      }
+      try {
+        const link = new URL('/login',appOrigin);
+        link.searchParams.set('invite',issued.invitationToken);
+        await this.mailGateway.sendMagicLinkEmail(email,link.toString());
+        return { id: issued.id, email: issued.email,
+          role: issued.role, status: issued.status,
+          expires_at: issued.expires_at, created_at:issued.created_at,
+          deliveryStatus:'SENT' };
+      } catch {
+        // Provider acceptance followed by a timeout is ambiguous: revoke
+        // the now-untrustworthy token and let the issuer explicitly retry.
+        await this.revokeInvitation(ctx,orgId,issued.id);
+        throw new ServiceUnavailableException({
+          code:'INVITATION_DELIVERY_UNVERIFIED',
+          detail:'Could not confirm the invitation email. Create a new invitation.',
+        });
+      }
+    }
+    // Nonproduction fixtures may expose a token for local test flows only.
+    if (isProductionEnvironment()) {
+      throw new ServiceUnavailableException({code:'INVITATION_DELIVERY_UNAVAILABLE'});
+    }
+    return issued;
   }
 
   /**
