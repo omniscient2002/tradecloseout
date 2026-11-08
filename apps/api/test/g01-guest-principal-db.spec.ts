@@ -37,6 +37,17 @@ describe('G01: guest session identity, supersession and proven provenance', () =
         const svc=new PartiesService(new TenantDbService(app));
         const first=await svc.requestGuestOtp(inviteToken);
         const second=await svc.requestGuestOtp(inviteToken);
+        // A later transaction can start before an earlier transaction commits
+        // and therefore have an OLDER Postgres now()/created_at timestamp.
+        // Supersession is determined by consumed_at under the grant lock,
+        // never by comparing created_at timestamps.
+        await admin.query(
+          `UPDATE otp_challenges
+             SET created_at=(SELECT created_at - interval '1 day'
+               FROM otp_challenges WHERE id=$2)
+            WHERE id=$1`,
+          [second.challengeId,first.challengeId],
+        );
         await expect(svc.verifyGuestOtp(inviteToken,first.debugOtp!,first.challengeId))
           .rejects.toThrow();
         const login=await svc.verifyGuestOtp(inviteToken,second.debugOtp!,second.challengeId);
