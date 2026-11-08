@@ -88,9 +88,20 @@ describe('G01 trusted independent external-party authority', () => {
         expect(new Set(reviews.map(x=>x.reviewer_session_user)).size).toBe(2);
         expect(reviews.every(x=>x.evidence_digest.trim()===digest)).toBe(true);
 
-        await expect(app.query(
-          `UPDATE guest_grants SET independent_authority_verified_at=NULL WHERE id=$1`,[grant],
-        )).rejects.toMatchObject({code:'42501'});
+        // A query without tenant RLS context sees zero rows. Set the correct
+        // tenant scope to prove the guard also rejects direct in-tenant writes.
+        const inTenant = await app.connect();
+        try {
+          await inTenant.query('BEGIN');
+          await inTenant.query(
+            "SELECT set_config('app.current_org',$1,true)",[org],
+          );
+          await expect(inTenant.query(
+            `UPDATE guest_grants SET independent_authority_verified_at=NULL
+               WHERE id=$1 AND org_id=$2`,[grant,org],
+          )).rejects.toMatchObject({code:'42501'});
+          await inTenant.query('ROLLBACK');
+        } finally { inTenant.release(); }
         await expect(asReviewer(reviewerNames[1])).rejects.toMatchObject({code:'23505'});
       } finally {
         for(const name of reviewersReady.reverse()){
