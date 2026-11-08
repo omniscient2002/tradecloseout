@@ -5,11 +5,19 @@ import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { ProblemJsonExceptionFilter } from './common/filters/problem-json.filter';
 import { VisibilityProjectionInterceptor } from './common/interceptors/visibility-projection.interceptor';
+import { validateAuthenticationConfig } from './modules/identity/auth-security';
 
 async function bootstrap() {
+  validateAuthenticationConfig();
   const app = await NestFactory.create(AppModule, { rawBody: true });
 
   app.use(cookieParser());
+  app.use(['/api/v1/auth', '/api/v1/guest'], (_req: any, res: any, next: any) => {
+    res.setHeader('Cache-Control', 'no-store, private, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    next();
+  });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   app.useGlobalFilters(new ProblemJsonExceptionFilter());
   app.enableCors({
