@@ -407,6 +407,12 @@ describe('Production Re-Audit Remediation Suite (PROD-001..PROD-018)', () => {
 
       const mockClient: any = {
         query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
+          if (sql.includes('SELECT p.client_party_id,p.consultant_party_id')) {
+            return { rows: [{
+              project_status:'ACTIVE',party_status:'ACTIVE',
+              client_party_id:partyId,consultant_party_id:partyId,
+            }] };
+          }
           if (sql.includes('INSERT INTO guest_grants')) {
             insertedParams = params;
             return {
@@ -450,6 +456,12 @@ describe('Production Re-Audit Remediation Suite (PROD-001..PROD-018)', () => {
 
       const mockClient: any = {
         query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
+          if (sql.includes('SELECT p.client_party_id,p.consultant_party_id')) {
+            return { rows: [{
+              project_status:'ACTIVE',party_status:'ACTIVE',
+              client_party_id:partyId,consultant_party_id:partyId,
+            }] };
+          }
           if (sql.includes('INSERT INTO guest_grants')) {
             insertedParams = params;
             return {
