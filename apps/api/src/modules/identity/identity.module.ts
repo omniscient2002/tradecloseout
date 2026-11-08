@@ -216,7 +216,7 @@ export class DltSmsService implements DltSmsGateway {
       } catch (err: any) {
         throw new ServiceUnavailableException({
           code: 'SMS_GATEWAY_ERROR',
-          detail: `Configured DLT delivery provider failed: ${err.message}`,
+          detail: 'SMS provider did not confirm delivery. Please retry with a new code.',
         });
       }
     }
@@ -266,7 +266,7 @@ export class TransactionalMailService implements TransactionalMailGateway {
       } catch (err: any) {
         throw new ServiceUnavailableException({
           code: 'MAIL_GATEWAY_ERROR',
-          detail: `Configured mail provider failed: ${err.message}`,
+          detail: 'Mail provider did not confirm delivery. Please retry with a new code.',
         });
       }
     }
@@ -310,7 +310,7 @@ export class TransactionalMailService implements TransactionalMailGateway {
       } catch (err: any) {
         throw new ServiceUnavailableException({
           code: 'MAIL_GATEWAY_ERROR',
-          detail: `Configured mail provider failed: ${err.message}`,
+          detail: 'Mail provider did not confirm delivery. Please retry with a new code.',
         });
       }
     }
