@@ -29,6 +29,12 @@ const CSRF_STORAGE_KEY = 'tc_csrf_token';
 const GENERATION_STORAGE_KEY = 'tc_auth_generation';
 const AUTH_CHANGE_EVENT_KEY = 'tc_auth_epoch';
 
+// A cookie/session change in another tab invalidates the current tab's
+// displayed actor, organisation, forms and offline work. Never re-bootstrap
+// and silently submit a stale form as a different account.
+let staleCrossTabContext = false;
+
+
 export function getCsrfToken(): string | null {
   return typeof window === 'undefined' ? null : sessionStorage.getItem(CSRF_STORAGE_KEY);
 }
@@ -44,6 +50,7 @@ export function setCsrfToken(token: string | null, generation?: string | null, a
   if (generation) sessionStorage.setItem(GENERATION_STORAGE_KEY, generation);
   else if (!token) sessionStorage.removeItem(GENERATION_STORAGE_KEY);
   if (announce) {
+    if (token && generation) staleCrossTabContext = false;
     // Only a nonsecret random event is shared. Other tabs must re-bootstrap
     // or pause work rather than retaining actionable stale tenant state.
     localStorage.setItem(AUTH_CHANGE_EVENT_KEY, crypto.randomUUID());
@@ -56,6 +63,7 @@ export function watchAuthChanges(onChange: () => void): () => void {
     if (event.key !== AUTH_CHANGE_EVENT_KEY) return;
     sessionStorage.removeItem(CSRF_STORAGE_KEY);
     sessionStorage.removeItem(GENERATION_STORAGE_KEY);
+    staleCrossTabContext = true;
     onChange();
   };
   window.addEventListener('storage', handler);
@@ -100,6 +108,12 @@ export async function apiFetch<T>(
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) && typeof window !== 'undefined') {
     const isUnauthenticatedOtp = /\/(?:auth\/otp|guest\/[^/]+\/otp)\/(?:request|verify)$/.test(path);
     if (!isUnauthenticatedOtp) {
+      if (staleCrossTabContext) {
+        throw new ApiProblemError({
+          status: 409, code: 'AUTH_CONTEXT_CHANGED',
+          detail: 'Your account or organisation changed in another tab. Reload and confirm before submitting.',
+        });
+      }
       await restoreSessionSecurity();
       const csrf = getCsrfToken();
       const generation = getAuthGeneration();
