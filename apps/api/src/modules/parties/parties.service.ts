@@ -471,6 +471,15 @@ export class PartiesService {
       if (!targetIdentifier) throw new UnprocessableEntityException('GUEST_CONTACT_REQUIRED');
       const channel = grant.target_phone_e164 ? 'SMS' : 'EMAIL';
 
+      // One active proof generation per grant: resending invalidates every
+      // prior unconsumed OTP, while preserving the historical attempt records.
+      await client.query(
+        `UPDATE otp_challenges SET consumed_at = now()
+          WHERE guest_grant_id = $1 AND purpose = 'GUEST_ACCESS'
+            AND consumed_at IS NULL`,
+        [grant.id],
+      );
+
       await client.query(
         `INSERT INTO otp_challenges (id, channel, identifier, purpose, guest_grant_id, code_hash, expires_at)
          VALUES ($1, $2, $3, 'GUEST_ACCESS', $4, $5, $6)`,
@@ -543,7 +552,14 @@ export class PartiesService {
       const challenges = (
         await client.query(
           `SELECT * FROM otp_challenges
-           WHERE guest_grant_id = $1 AND id = $2 AND purpose = 'GUEST_ACCESS' AND consumed_at IS NULL AND expires_at > now()
+           WHERE guest_grant_id = $1 AND id = $2 AND purpose = 'GUEST_ACCESS'
+             AND consumed_at IS NULL AND expires_at > now()
+             AND delivery_status = 'SENT'
+             AND NOT EXISTS (
+               SELECT 1 FROM otp_challenges newer
+                 WHERE newer.guest_grant_id = $1 AND newer.purpose = 'GUEST_ACCESS'
+                   AND newer.created_at > otp_challenges.created_at
+             )
            LIMIT 1 FOR UPDATE`,
           [grant.id, challengeId],
         )
@@ -591,10 +607,27 @@ export class PartiesService {
       const sessionId = uuidv7();
       const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours for guest
 
+      // A guest is a distinct authenticated principal, NOT the employee who
+      // issued the invitation. Keep created_by on the grant only as provenance.
+      let principalUserId: string = grant.principal_user_id;
+      if (!principalUserId) {
+        principalUserId = uuidv7();
+        await client.query(
+          `INSERT INTO users (id, name, status)
+           VALUES ($1, 'Verified external guest contact', 'ACTIVE')`,
+          [principalUserId],
+        );
+        await client.query(
+          `UPDATE guest_grants SET principal_user_id = $2
+            WHERE id = $1 AND principal_user_id IS NULL`,
+          [grant.id, principalUserId],
+        );
+      }
+
       await client.query(
         `INSERT INTO sessions (id, user_id, token_hash, csrf_token_hash, active_org_id, guest_grant_id, expires_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [sessionId, grant.created_by, this.hashSecret(sessionToken), this.hashSecret(csrfToken), grant.org_id, grant.id, expiresAt],
+        [sessionId, principalUserId, this.hashSecret(sessionToken), this.hashSecret(csrfToken), grant.org_id, grant.id, expiresAt],
       );
 
       return { sessionToken, activeOrgId: grant.org_id, grantId: grant.id, csrfToken };
