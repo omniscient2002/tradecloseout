@@ -1,11 +1,12 @@
 import { ForbiddenException } from '@nestjs/common';
 import { Pool } from 'pg';
+import { Reflector } from '@nestjs/core';
 import { uuidv7 } from 'uuidv7';
 import { hasPermission } from '@tradecloseout/shared';
 import { withDisposableDatabase } from '../../../packages/db/test/helpers/disposable-database';
 import { HandoverController } from '../src/modules/handover/handover.controller';
 import { CommissioningController } from '../src/modules/commissioning/commissioning.controller';
-import { REQUIRE_PERMISSION_KEY } from '../src/common/guards/permission.guard';
+import { REQUIRE_PERMISSION_KEY, PermissionGuard } from '../src/common/guards/permission.guard';
 import { CommissioningService } from '../src/modules/commissioning/commissioning.service';
 import { HandoverService } from '../src/modules/handover/handover.service';
 
@@ -55,6 +56,28 @@ describe('PR4: least privilege in handover and independent witness routes', () =
     expect(hasPermission(supplier, 'package.download').allowed).toBe(false);
     expect(permissions(CommissioningController.prototype.signInspectionWitness)).toBe('inspection.witness');
     expect(permissions(CommissioningController.prototype.recordInspectionWitnessAttendance)).toBe('document.upload');
+  });
+
+  it('denies HTTP dossier route authorization to a supplier-upload guest before any storage read', async () => {
+    const guard = new PermissionGuard(new Reflector(), {} as any);
+    for (const method of [
+      HandoverController.prototype.getDossierPdf,
+      HandoverController.prototype.getPackageDownloadUrl,
+      HandoverController.prototype.getProjectPackage,
+      HandoverController.prototype.listPackages,
+    ]) {
+      const req: any = {
+        user: { guestGrantId: 'grant-supplier', actorType: 'GUEST', orgId: uuidv7(),
+          userId: uuidv7(), guestProjectId: 'project-a',
+          guestCapabilities: ['document.read','document.upload'] },
+        params: { projectId: 'project-a' },
+        path: '/api/v1/projects/project-a/dossier/pdf',
+      };
+      await expect(guard.canActivate({
+        getHandler: () => method, getClass: () => HandoverController,
+        switchToHttp: () => ({ getRequest: () => req }),
+      } as any)).rejects.toMatchObject({ status: 403 });
+    }
   });
 
   it('never marks a self-reported party ID as an independently signed witness', async () => {
@@ -130,6 +153,29 @@ describe('PR4: least privilege in handover and independent witness routes', () =
       const accepted = await svc.recordRecipientSubmissionDecision(realGuest as any,scope.projectId,submissionId,dto);
       expect(accepted.status).toBe('ACCEPTED');
       expect((await admin.query('SELECT status FROM handover_packages WHERE id=$1',[packageId])).rows[0].status).toBe('ACCEPTED');
+    });
+  });
+
+  it('prepares an external submission without lying that its recipient was delivered a message', async () => {
+    await withDisposableDatabase(async ({ admin, app }) => {
+      const scope = await seed(admin);
+      const pkgId = uuidv7();
+      await admin.query(`INSERT INTO handover_packages
+        (id,org_id,project_id,version_no,status,package_purpose,requested_by)
+        VALUES($1,$2,$3,1,'READY','FULL_HANDOVER',$4)`,
+        [pkgId,scope.orgId,scope.projectId,scope.userId]);
+      const output = await new HandoverService(app, {} as any).createSubmission(
+        scope.ctx as any,scope.projectId,
+        { packageId: pkgId, recipients: [{
+          partyId: scope.partyId, name: 'Client A',
+          email: 'recipient@example.com', isRequiredApprover: true,
+        }] },
+      );
+      expect(output.status).toBe('SUBMITTED');
+      const { rows } = await admin.query(
+        'SELECT status,decided_at FROM submission_recipients WHERE submission_id=$1',
+        [output.submissionId]);
+      expect(rows).toEqual([expect.objectContaining({ status: 'PENDING_DELIVERY', decided_at: null })]);
     });
   });
 
