@@ -56,6 +56,12 @@ describe('G01: real PostgreSQL session generation and CSRF boundaries', () => {
         userContext: {userId,orgId,actorType:'USER',orgRole:'R-PM'},
       });
 
+      await admin.query(
+        `UPDATE sessions SET last_activity_at=now()-interval '10 minutes' WHERE id=$1`,
+        [sessionId],
+      );
+      const idleBefore=(await admin.query(
+        'SELECT last_activity_at FROM sessions WHERE id=$1',[sessionId])).rows[0].last_activity_at;
       await expect(evaluate(request({headers:{
         'x-auth-generation':uuidv7(),
       }}))).rejects.toThrow(ConflictException);
@@ -63,6 +69,13 @@ describe('G01: real PostgreSQL session generation and CSRF boundaries', () => {
       await expect(evaluate(request({headers:{
         'x-csrf-token':'wrong-token',
       }}))).rejects.toThrow(ForbiddenException);
+      const idleAfterDenials=(await admin.query(
+        'SELECT last_activity_at FROM sessions WHERE id=$1',[sessionId])).rows[0].last_activity_at;
+      expect(idleAfterDenials.getTime()).toBe(idleBefore.getTime());
+      await expect(evaluate(request())).resolves.toBe(true);
+      const idleAfterSuccess=(await admin.query(
+        'SELECT last_activity_at FROM sessions WHERE id=$1',[sessionId])).rows[0].last_activity_at;
+      expect(idleAfterSuccess.getTime()).toBeGreaterThan(idleBefore.getTime());
 
       await admin.query(
         `UPDATE sessions SET last_activity_at=now()-interval '31 days',
