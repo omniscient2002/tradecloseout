@@ -209,6 +209,7 @@ export class PartiesController {
       activeOrgId: result.activeOrgId,
       grantId: result.grantId,
       csrfToken: result.csrfToken,
+      authGeneration: 'authGeneration' in result ? result.authGeneration : undefined,
     };
   }
 
@@ -236,6 +237,7 @@ export class PartiesController {
       activeOrgId: result.activeOrgId,
       grantId: result.grantId,
       csrfToken: result.csrfToken,
+      authGeneration: 'authGeneration' in result ? result.authGeneration : undefined,
     };
   }
 
