@@ -609,9 +609,9 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
       const mockPool: any = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string) => {
-            if (sql.includes('FROM submissions WHERE')) {
+            if (sql.includes('FROM submissions s')) {
               return {
-                rows: [{ id: submissionId, project_id: realProjectId, status: 'SENT' }],
+                rows: [{ id: submissionId, project_id: realProjectId, status: 'SUBMITTED', package_purpose: 'FULL_HANDOVER' }],
               };
             }
             return { rows: [] };
@@ -624,10 +624,11 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
       const ctx: TenantActorContext = {
         orgId,
         userId: uuidv7(),
-        actorType: 'MEMBER',
+        actorType: 'GUEST',
         requestId: 'req-sub-1',
         ip: '127.0.0.1',
         userAgent: 'jest',
+        guestGrantId: 'test-guest-grant',
       };
 
       await expect(
