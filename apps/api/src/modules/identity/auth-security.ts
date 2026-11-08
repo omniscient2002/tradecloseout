@@ -25,7 +25,7 @@ export function validateAuthenticationConfig(env: NodeJS.ProcessEnv = process.en
   }
   if (!['production', 'staging'].includes(env.NODE_ENV || '')) return;
   const missing = [
-    'APP_DATABASE_URL', 'REDIS_URL', 'AUTH_OTP_HMAC_KEY', 'AUTH_CSRF_KEY', 'FRONTEND_URL',
+    'APP_DATABASE_URL', 'REDIS_URL', 'AUTH_OTP_HMAC_KEY', 'AUTH_CSRF_KEY', 'AUTH_MFA_ENCRYPTION_KEY', 'FRONTEND_URL',
     'DLT_SMS_URL', 'DLT_SMS_API_KEY', 'MAIL_GATEWAY_URL',
   ].filter(k => !env[k]);
   if (missing.length) throw new Error(`BOOT_AUTH_CONFIG_MISSING: ${missing.join(', ')}`);
@@ -42,6 +42,9 @@ export function validateAuthenticationConfig(env: NodeJS.ProcessEnv = process.en
       !db.username || ['postgres', 'tc_migrator'].includes(db.username) ||
       db.password.length < 12) {
     throw new Error('BOOT_AUTH_DATABASE_ROLE_INVALID');
+  }
+  if (Buffer.from(env.AUTH_MFA_ENCRYPTION_KEY || '', 'base64').length !== 32) {
+    throw new Error('BOOT_AUTH_MFA_ENCRYPTION_KEY_INVALID');
   }
   requiredOrigin(env.FRONTEND_URL!);
   if (env.ENABLE_DEBUG_OTP === 'true' || env.ENABLE_OUTBOX_DELIVERY === 'true') {
