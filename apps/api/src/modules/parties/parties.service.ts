@@ -411,7 +411,7 @@ export class PartiesService {
   /**
    * API-028A POST /guest/:token/otp/request (RT-014, CB-007, CB-011)
    */
-  async requestGuestOtp(token: string, sourceIp = 'unknown'): Promise<{ success: boolean; challengeId: string; maskedTarget: string; channel: string; debugOtp?: string }> {
+  async requestGuestOtp(token: string, sourceIp = 'unknown', authIntentHash: string | null = null): Promise<{ success: boolean; challengeId: string; maskedTarget: string; channel: string; debugOtp?: string }> {
     const tokenHash = this.hashSecret(token);
     if (isProductionEnvironment()) {
       await consumeAuthenticationBudget(this.db.getPool(), 'guest-otp:ip:hour', sourceIp, 20, 3600);
@@ -492,10 +492,11 @@ export class PartiesService {
       );
 
       await client.query(
-        `INSERT INTO otp_challenges (id, channel, identifier, purpose, guest_grant_id, code_hash, expires_at, delivery_status)
-         VALUES ($1, $2, $3, 'GUEST_ACCESS', $4, $5, $6, $7)`,
+        `INSERT INTO otp_challenges (id, channel, identifier, purpose, guest_grant_id, code_hash, expires_at, delivery_status, auth_intent_hash)
+         VALUES ($1, $2, $3, 'GUEST_ACCESS', $4, $5, $6, $7, $8)`,
         [challengeId, channel, targetIdentifier, grant.id, codeHash, expiresAt,
-          process.env.ENABLE_DEBUG_OTP === 'true' && !isProductionEnvironment() ? 'SENT' : 'PENDING'],
+          process.env.ENABLE_DEBUG_OTP === 'true' && !isProductionEnvironment() ? 'SENT' : 'PENDING',
+          authIntentHash],
       );
 
       const isExplicitDebug = process.env.ENABLE_DEBUG_OTP === 'true' && !isProductionEnvironment();
@@ -560,6 +561,7 @@ export class PartiesService {
     token: string,
     code: string,
     challengeId: string,
+    authIntentHash: string | null = null,
   ): Promise<{ sessionToken: string; activeOrgId: string; grantId: string; csrfToken: string; authGeneration: string }> {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(challengeId) || !/^\d{6}$/.test(code)) {
       throw new BadRequestException('INVALID_CHALLENGE_OR_CODE');
@@ -613,6 +615,11 @@ export class PartiesService {
       }
 
       const challenge = challenges[0];
+      if (isProductionEnvironment() &&
+          (!authIntentHash || !challenge.auth_intent_hash ||
+           authIntentHash !== challenge.auth_intent_hash)) {
+        throw new ForbiddenException({ code: 'LOGIN_INTENT_MISMATCH' });
+      }
       const incomingHash = isProductionEnvironment()
         ? crypto.createHmac('sha256', process.env.AUTH_OTP_HMAC_KEY!)
           .update(`GUEST_ACCESS:${challenge.id}:${grant.id}:${challenge.identifier}:${code}`)
