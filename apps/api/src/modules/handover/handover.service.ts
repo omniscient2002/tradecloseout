@@ -156,8 +156,8 @@ export class HandoverService {
       await client.query(
         `INSERT INTO handover_packages
           (id, org_id, project_id, version_no, status, snapshot_id, snapshot_checksum,
-           override_reason, requested_by)
-         VALUES ($1, $2, $3, $4, 'QUEUED', $5, $6, $7, $8)`,
+           override_reason, requested_by, package_purpose)
+         VALUES ($1, $2, $3, $4, 'QUEUED', $5, $6, $7, $8, 'FULL_HANDOVER')`,
         [
           packageId,
           ctx.orgId,
@@ -648,8 +648,8 @@ export class HandoverService {
       await client.query(
         `INSERT INTO handover_packages
           (id, org_id, project_id, version_no, status, snapshot_id, snapshot_checksum,
-           override_reason, requested_by)
-         VALUES ($1, $2, $3, $4, 'QUEUED', $5, $6, $7, $8)`,
+           override_reason, requested_by, package_purpose)
+         VALUES ($1, $2, $3, $4, 'QUEUED', $5, $6, $7, $8, 'RA_BILL')`,
         [
           packageId,
           ctx.orgId,
@@ -876,6 +876,7 @@ export class HandoverService {
       const { rows: latestPkg } = await client.query(
         `SELECT hp.id, hp.status FROM handover_packages hp
            WHERE hp.org_id = $1 AND hp.project_id = $2
+             AND hp.package_purpose = 'FULL_HANDOVER'
            ORDER BY hp.version_no DESC LIMIT 1 FOR UPDATE`,
         [ctx.orgId, targetProjectId],
       );
@@ -943,6 +944,7 @@ export class HandoverService {
       const { rows } = await client.query(
         `SELECT id FROM handover_packages
            WHERE org_id = $1 AND project_id = $2
+             AND package_purpose = 'FULL_HANDOVER'
            ORDER BY version_no DESC LIMIT 1`,
         [ctx.orgId, projectId],
       );
