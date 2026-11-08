@@ -17,6 +17,11 @@ function encryptionKey(): Buffer {
 function previousEncryptionKey(): Buffer | null {
   const previous = process.env.AUTH_MFA_ENCRYPTION_KEY_PREVIOUS;
   if (!previous) return null;
+  const expires = process.env.AUTH_MFA_PREVIOUS_KEY_EXPIRES_AT;
+  if (!expires || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(expires) ||
+      !Number.isFinite(Date.parse(expires)) || Date.parse(expires) <= Date.now()) {
+    throw new Error('BOOT_AUTH_MFA_PREVIOUS_KEY_EXPIRED_OR_UNBOUNDED');
+  }
   const key = Buffer.from(previous, 'base64');
   if (key.length !== 32) throw new Error('BOOT_AUTH_MFA_PREVIOUS_ENCRYPTION_KEY_INVALID');
   return key;
