@@ -1,3 +1,4 @@
+/// <reference lib="dom" />
 import {
   apiFetch, getAuthGeneration, getCsrfToken,
   setCsrfToken, watchAuthChanges,
