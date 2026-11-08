@@ -703,11 +703,6 @@ export class PartiesService {
            WHERE guest_grant_id = $1 AND id = $2 AND purpose = 'GUEST_ACCESS'
              AND consumed_at IS NULL AND expires_at > now()
              AND delivery_status = 'SENT'
-             AND NOT EXISTS (
-               SELECT 1 FROM otp_challenges newer
-                 WHERE newer.guest_grant_id = $1 AND newer.purpose = 'GUEST_ACCESS'
-                   AND newer.created_at > otp_challenges.created_at
-             )
            LIMIT 1 FOR UPDATE`,
           [grant.id, challengeId],
         )
