@@ -77,6 +77,28 @@ describe('G01 external party authority cannot be self-minted by an app role', ()
           "SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)",
           [org],
         );
+        // A contractor must not repoint a verified grant at another mailbox
+        // or upgrade its capabilities while retaining identity provenance.
+        await expect(reviewer.query(
+          `UPDATE guest_grants SET target_email='attacker@g01.example'
+            WHERE org_id=$1 AND id=$2`,[org,grant],
+        )).rejects.toMatchObject({code:'42501'});
+        await reviewer.query('ROLLBACK');
+        await reviewer.query('BEGIN');
+        await reviewer.query(
+          "SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)",
+          [org],
+        );
+        await expect(reviewer.query(
+          `UPDATE guest_grants SET capabilities=ARRAY['package.accept']::text[]
+            WHERE org_id=$1 AND id=$2`,[org,grant],
+        )).rejects.toMatchObject({code:'42501'});
+        await reviewer.query('ROLLBACK');
+        await reviewer.query('BEGIN');
+        await reviewer.query(
+          "SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)",
+          [org],
+        );
         await expect(reviewer.query(
           `UPDATE guest_grants SET status='REVOKED' WHERE org_id=$1 AND id=$2`,
           [org,grant],
