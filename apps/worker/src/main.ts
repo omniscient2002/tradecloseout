@@ -129,6 +129,18 @@ async function bootWorker() {
         },
       );
 
+      await scheduler.runWithPeriodLock(
+        `auth-ephemera:${periods.hourSlot}`,
+        `sched:done:auth-ephemera:${periods.hourSlot}`,
+        300, 2 * 60 * 60,
+        async () => {
+          const removed = await scheduler.cleanupAuthenticationEphemera();
+          if (removed.budgets || removed.challenges || removed.sessions) {
+            console.log(`[Scheduler] Purged ${removed.budgets} expired auth budgets, ${removed.challenges} old OTPs and ${removed.sessions} old sessions.`);
+          }
+        },
+      );
+
       // Notification delivery cycle honoring IST quiet hours
       const sentNotifications = await scheduler.dispatchQueuedNotifications();
       if (sentNotifications > 0) {
