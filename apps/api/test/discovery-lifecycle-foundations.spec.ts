@@ -50,6 +50,9 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
         query: jest.fn().mockImplementation(async (sql: string, params?: any[]) => {
           executedQueries.push({ sql, params: params || [] });
 
+          if (sql.includes('SELECT status, purged_at FROM projects')) {
+            return { rows: [{ status: 'ACTIVE', purged_at: null }] };
+          }
           if (sql.includes('SELECT * FROM assets WHERE')) {
             return {
               rows: [
@@ -153,6 +156,9 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
         query: jest.fn().mockImplementation(async (sql: string, params?: any[]) => {
           executedQueries.push({ sql, params: params || [] });
 
+          if (sql.includes('SELECT status, purged_at FROM projects')) {
+            return { rows: [{ status: 'ACTIVE', purged_at: null }] };
+          }
           if (sql.includes('SELECT * FROM assets WHERE')) {
             return {
               rows: [
