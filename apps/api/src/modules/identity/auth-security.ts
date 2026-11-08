@@ -1,5 +1,8 @@
 import { ForbiddenException } from '@nestjs/common';
 import { Request } from 'express';
+import { createHmac, createHash } from 'node:crypto';
+import { Pool } from 'pg';
+import { HttpException, HttpStatus } from '@nestjs/common';
 
 export const isProductionEnvironment = () =>
   process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging';
@@ -66,5 +69,44 @@ export function assertAuthenticationOrigin(req: Pick<Request, 'headers'>): void 
     }
   } else if (isProductionEnvironment()) {
     throw new ForbiddenException({ code: 'LOGIN_ORIGIN_REQUIRED', detail: 'Login requires an origin-bound browser request.' });
+  }
+}
+
+/**
+ * Shared rate budgets live in Postgres, so Redis loss or multiple API nodes
+ * cannot silently allow unbounded OTP sends. Keys are pseudonymized with
+ * an external secret in production; raw contacts/IPs are not retained.
+ */
+export async function consumeAuthenticationBudget(
+  pool: Pool, category: string, rawKey: string, limit: number, ttlSeconds: number,
+): Promise<void> {
+  const keySecret = process.env.AUTH_OTP_HMAC_KEY;
+  const digest = keySecret
+    ? createHmac('sha256', keySecret).update(`${category}:${rawKey}`).digest('hex')
+    : createHash('sha256').update(`${category}:${rawKey}`).digest('hex');
+  const budgetKey = `${category}:${digest}`;
+  const { rows } = await pool.query(
+    `INSERT INTO auth_request_budgets (budget_key, count, expires_at)
+      VALUES ($1, 1, now() + ($2::int * interval '1 second'))
+      ON CONFLICT (budget_key) DO UPDATE
+         SET count = CASE
+              WHEN auth_request_budgets.expires_at <= now() THEN 1
+              ELSE auth_request_budgets.count + 1
+            END,
+             expires_at = CASE
+              WHEN auth_request_budgets.expires_at <= now()
+                THEN now() + ($2::int * interval '1 second')
+              ELSE auth_request_budgets.expires_at
+            END,
+             updated_at = now()
+      RETURNING count`,
+    [budgetKey, ttlSeconds],
+  );
+  if (!rows.length || Number(rows[0].count) > limit) {
+    throw new HttpException({
+      code: 'RATE_LIMITED',
+      detail: 'Too many authentication attempts. Please retry later.',
+      retryAfterSeconds: ttlSeconds,
+    }, HttpStatus.TOO_MANY_REQUESTS);
   }
 }
