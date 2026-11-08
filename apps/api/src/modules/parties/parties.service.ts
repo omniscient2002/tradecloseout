@@ -150,7 +150,7 @@ export class PartiesService {
     const providedPhone = typeof dto.phone === 'string' ? dto.phone.trim() : '';
     if ((dto.email !== undefined && !providedEmail) ||
         (dto.phone !== undefined && !providedPhone) ||
-        Boolean(providedEmail) === Boolean(providedPhone) ||
+        (!providedEmail && !providedPhone) ||
         (providedEmail && (providedEmail.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(providedEmail))) ||
         (providedPhone && !/^\+91[6-9][0-9]{9}$/.test(providedPhone))) {
       throw new BadRequestException({ code: 'INVALID_GUEST_CONTACT' });
@@ -551,7 +551,7 @@ export class PartiesService {
       } catch {
         await this.db.withTokenContext(tokenHash, async (client) => {
           await client.query(
-            `UPDATE otp_challenges SET delivery_status = 'FAILED'
+            `UPDATE otp_challenges SET delivery_status = 'AMBIGUOUS'
               WHERE id = $1 AND consumed_at IS NULL`,
             [prepared.challengeId],
           );
