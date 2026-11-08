@@ -13,7 +13,7 @@ import {
   UnprocessableEntityException,
   UseGuards,
 } from '@nestjs/common';
-import { createHash, randomBytes, randomInt } from 'crypto';
+import { createHash, createHmac, randomBytes, randomInt } from 'crypto';
 import { Response } from 'express';
 import { Pool } from 'pg';
 import Redis from 'ioredis';
@@ -92,8 +92,11 @@ export class IdentityController {
     const challengeId = uuidv7();
     const otp = String(randomInt(100000, 999999));
     const salt = randomBytes(16).toString('hex');
-    const otpHash = createHash('sha1').update(`${salt}:${otp}`).digest('hex');
-    const challengePayload = JSON.stringify({ id: challengeId, identifier: rawId, salt, otpHash, attempts: 0 });
+    const otpScheme = isProductionEnvironment() ? 'HMAC_SHA256_V1' : 'SHA1_LEGACY_DEV';
+    const otpHash = otpScheme === 'HMAC_SHA256_V1'
+      ? createHmac('sha256', process.env.AUTH_OTP_HMAC_KEY!).update(`LOGIN:${challengeId}:${rawId}:${otp}`).digest('hex')
+      : createHash('sha1').update(`${salt}:${otp}`).digest('hex');
+    const challengePayload = JSON.stringify({ id: challengeId, identifier: rawId, salt, otpHash, otpScheme, attempts: 0 });
 
     // Atomic issuance & supersession (V01, N02): Atomically delete old generation and register new challenge
     await this.redis.eval(
@@ -250,7 +253,25 @@ export class IdentityController {
       });
     }
 
-    const candidateHash = rawId ? createHash('sha256').update(`${rawId}:${candidateCode}`).digest('hex') : '';
+    if (isProductionEnvironment() && !challengeParam) {
+      throw new UnprocessableEntityException({
+        code: 'CHALLENGE_ID_REQUIRED',
+        detail: 'Production OTP verification requires the original challenge ID.',
+      });
+    }
+    let candidateHmac = '';
+    if (isProductionEnvironment() && challengeParam) {
+      // Read only to derive the keyed comparison from the server-side canonical
+      // identifier; Lua re-checks active generation and consumes atomically.
+      const stored = await this.redis.get(`otp:challenge:${challengeParam}`);
+      try {
+        const challenge = stored ? JSON.parse(stored) : null;
+        if (challenge?.id === challengeParam && typeof challenge.identifier === 'string') {
+          candidateHmac = createHmac('sha256', process.env.AUTH_OTP_HMAC_KEY!)
+            .update(`LOGIN:${challengeParam}:${challenge.identifier}:${candidateCode}`).digest('hex');
+        }
+      } catch { /* malformed/expired proof is rejected by the Lua transaction */ }
+    }
 
     const rawResult = await this.redis.eval(
       `local raw = redis.call('GET', KEYS[1])
@@ -307,14 +328,19 @@ export class IdentityController {
          return 'MAX'
        end
 
-       -- Hash-only validation (V01): Compute SHA-1 over salt:candidateCode
-       if not challenge.salt or not challenge.otpHash then
-         return 'EXPIRED'
-       end
-
-       local computedHash = redis.sha1hex(challenge.salt .. ':' .. ARGV[1])
-       if challenge.otpHash ~= computedHash then
-         return 'INVALID'
+       -- Production proofs use a server-secret HMAC, never an offline-searchable
+       -- six-digit SHA-1/SHA-256 digest. Compare the server-computed keyed proof
+       -- only after checking active challenge generation in this Lua operation.
+       if ARGV[3] == '1' then
+         if challenge.otpScheme ~= 'HMAC_SHA256_V1' or
+            not challenge.otpHash or challenge.otpHash ~= ARGV[2] then
+           return 'INVALID'
+         end
+       else
+         if not challenge.salt or not challenge.otpHash then return 'EXPIRED' end
+         if challenge.otpHash ~= redis.sha1hex(challenge.salt .. ':' .. ARGV[1]) then
+           return 'INVALID'
+         end
        end
 
        -- Success: Atomically consume authoritative challenge, shared attempts, and clean alias only if current
@@ -330,6 +356,8 @@ export class IdentityController {
       inputKey || aliasKey,
       aliasKey || inputKey,
       candidateCode,
+      candidateHmac,
+      isProductionEnvironment() ? '1' : '0',
     );
 
     let verifyOutcome = 'EXPIRED';
