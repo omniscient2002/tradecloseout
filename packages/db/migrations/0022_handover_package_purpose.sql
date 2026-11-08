@@ -18,3 +18,15 @@ CREATE INDEX IF NOT EXISTS handover_packages_latest_by_purpose_idx
 
 COMMENT ON COLUMN handover_packages.package_purpose IS
   'FULL_HANDOVER includes the complete contractual manifest; RA_BILL is only a milestone-filtered payment evidence annexure.';
+
+-- Creating a submission is not proof of delivery. The prior SENT default
+-- and SUBMISSION_DISPATCHED event falsely implied an external receipt.
+ALTER TABLE submission_recipients
+  DROP CONSTRAINT IF EXISTS submission_recipients_status_check;
+
+ALTER TABLE submission_recipients
+  ADD CONSTRAINT submission_recipients_status_check
+  CHECK (status IN ('PENDING_DELIVERY','SENT','ACKNOWLEDGED','ACCEPTED','ACCEPTED_WITH_EXCEPTIONS','REJECTED'));
+
+ALTER TABLE submission_recipients
+  ALTER COLUMN status SET DEFAULT 'PENDING_DELIVERY';
