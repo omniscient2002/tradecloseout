@@ -11,6 +11,7 @@ import {
   HttpCode,
   Req,
   UseGuards,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { BillingService } from './billing.service';
 import { GstEinvoiceTdsService } from './gst-einvoice-tds.service';
@@ -25,6 +26,18 @@ export class BillingController {
     private readonly gstEinvoiceService: GstEinvoiceTdsService,
     private readonly warrantyAndBillingService: WarrantyAndBillingService,
   ) {}
+
+  private assertInvoiceIssuanceEnabled() {
+    // Live tax/invoice issuance must be explicitly enabled only after a
+    // documented GST/tax review and provider reconciliation acceptance.
+    // Webhook receipt itself NEVER means money was settled.
+    if (process.env.ENABLE_TAX_INVOICE_ISSUANCE !== 'true') {
+      throw new ServiceUnavailableException({
+        code: 'TAX_INVOICE_ISSUANCE_DISABLED',
+        detail: 'Tax invoice issuance requires independent finance/legal release approval.',
+      });
+    }
+  }
 
   @Get('billing/plans')
   async listPlans() {
@@ -58,6 +71,7 @@ export class BillingController {
       isInterState?: boolean;
     },
   ) {
+    this.assertInvoiceIssuanceEnabled();
     return this.billingService.createInvoice(req.userContext, dto);
   }
 
@@ -81,7 +95,7 @@ export class BillingController {
 
   @Post('projects/:id/warranty-events')
   @UseGuards(SessionCsrfGuard, PermissionGuard)
-  @RequirePermission('document.upload')
+  @RequirePermission('warranty.manage')
   async recordWarrantyEvent(
     @Req() req: any,
     @Param('id') projectId: string,
@@ -123,7 +137,7 @@ export class BillingController {
 
   @Post('projects/:id/defects')
   @UseGuards(SessionCsrfGuard, PermissionGuard)
-  @RequirePermission('document.upload')
+  @RequirePermission('defect.manage')
   async createDefect(
     @Req() req: any,
     @Param('id') projectId: string,
@@ -141,7 +155,7 @@ export class BillingController {
 
   @Post(['defects/:id/remedy', 'projects/:projectId/defects/:id/remedy'])
   @UseGuards(SessionCsrfGuard, PermissionGuard)
-  @RequirePermission('document.upload')
+  @RequirePermission('defect.manage')
   async submitDefectRemedy(
     @Req() req: any,
     @Param('id') defectId: string,
@@ -159,7 +173,7 @@ export class BillingController {
 
   @Post(['defects/:id/close', 'projects/:projectId/defects/:id/close'])
   @UseGuards(SessionCsrfGuard, PermissionGuard)
-  @RequirePermission('document.upload')
+  @RequirePermission('defect.manage')
   async closeDefect(
     @Req() req: any,
     @Param('id') defectId: string,
@@ -189,6 +203,7 @@ export class BillingController {
       buyerStateCode: string;
     },
   ) {
+    this.assertInvoiceIssuanceEnabled();
     return this.gstEinvoiceService.issueRule46GstInvoice(req.userContext, {
       subscriptionId: dto.subscriptionId,
       description: dto.description,
