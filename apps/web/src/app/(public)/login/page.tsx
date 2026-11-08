@@ -66,6 +66,7 @@ function LoginForm() {
         activeOrgId: string;
         csrfToken: string;
         authGeneration: string;
+        mfaRequired?: boolean;
       }>("/api/v1/auth/otp/verify", {
         method: "POST",
         body: JSON.stringify({
@@ -78,7 +79,7 @@ function LoginForm() {
         }),
       });
       setCsrfToken(res.csrfToken, res.authGeneration);
-      router.push(nextPath);
+      router.push(res.mfaRequired ? "/mfa" : nextPath);
       router.refresh();
     } catch (err: any) {
       setError(err instanceof ApiProblemError ? err.message : "Invalid verification code.");
