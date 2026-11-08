@@ -25,11 +25,13 @@ export function validateAuthenticationConfig(env: NodeJS.ProcessEnv = process.en
   }
   if (!['production', 'staging'].includes(env.NODE_ENV || '')) return;
   const missing = [
-    'APP_DATABASE_URL', 'REDIS_URL', 'AUTH_OTP_HMAC_KEY', 'FRONTEND_URL',
+    'APP_DATABASE_URL', 'REDIS_URL', 'AUTH_OTP_HMAC_KEY', 'AUTH_CSRF_KEY', 'FRONTEND_URL',
     'DLT_SMS_URL', 'DLT_SMS_API_KEY', 'MAIL_GATEWAY_URL',
   ].filter(k => !env[k]);
   if (missing.length) throw new Error(`BOOT_AUTH_CONFIG_MISSING: ${missing.join(', ')}`);
-  if ((env.AUTH_OTP_HMAC_KEY || '').length < 32) throw new Error('BOOT_AUTH_KEY_TOO_SHORT');
+  if ((env.AUTH_OTP_HMAC_KEY || '').length < 32 || (env.AUTH_CSRF_KEY || '').length < 32) {
+    throw new Error('BOOT_AUTH_KEY_TOO_SHORT');
+  }
   for (const key of ['FRONTEND_URL', 'DLT_SMS_URL', 'MAIL_GATEWAY_URL']) {
     if (new URL(env[key]!).protocol !== 'https:') {
       throw new Error(`BOOT_AUTH_HTTPS_REQUIRED: ${key}`);
@@ -109,4 +111,18 @@ export async function consumeAuthenticationBudget(
       retryAfterSeconds: ttlSeconds,
     }, HttpStatus.TOO_MANY_REQUESTS);
   }
+}
+
+/**
+ * Deterministic but secret-derived CSRF for the CURRENT opaque cookie/session
+ * generation. No raw CSRF secret is persisted in database or localStorage.
+ * Same-origin bootstrap may safely restore this token after storage loss.
+ */
+export function deriveSessionCsrf(rawSessionToken: string, generation: string): string {
+  const secret = process.env.AUTH_CSRF_KEY;
+  if (isProductionEnvironment() && (!secret || secret.length < 32)) {
+    throw new Error('AUTH_CSRF_KEY_UNAVAILABLE');
+  }
+  return createHmac('sha256', secret || 'development-only-csrf-key-not-for-production')
+    .update(`csrf:v1:${generation}:${rawSessionToken}`).digest('hex');
 }
