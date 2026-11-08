@@ -158,4 +158,61 @@ describe('G01 production PostgreSQL OTP transaction', () => {
       }
     }
   });
+  it('refuses success for a late internal OTP after another request superseded its proof', async () => {
+    const prior = {
+      NODE_ENV: process.env.NODE_ENV,
+      FRONTEND_URL: process.env.FRONTEND_URL,
+      AUTH_OTP_HMAC_KEY: process.env.AUTH_OTP_HMAC_KEY,
+      AUTH_CSRF_KEY: process.env.AUTH_CSRF_KEY,
+    };
+    process.env.NODE_ENV='production';
+    process.env.FRONTEND_URL='https://app.g01.test';
+    process.env.AUTH_OTP_HMAC_KEY='o'.repeat(48);
+    process.env.AUTH_CSRF_KEY='c'.repeat(48);
+    try {
+      await withDisposableDatabase(async ({admin,app})=>{
+        let onFirstSend!:()=>void;
+        let finishFirstSend!:()=>void;
+        const started = new Promise<void>(resolve=>{onFirstSend=resolve;});
+        const hold = new Promise<void>(resolve=>{finishFirstSend=resolve;});
+        const mail={
+          sendOtpEmail: jest.fn()
+            .mockImplementationOnce(async()=>{onFirstSend();await hold;})
+            .mockResolvedValue(undefined),
+        };
+        const ctrl = new IdentityController(app,new InMemoryRedis() as any,
+          {sendOtpSms:jest.fn()} as any,mail as any);
+        const req:any={ip:'127.0.0.1',headers:{
+          origin:'https://app.g01.test',
+          'sec-fetch-site':'same-origin',
+          'user-agent':'g01-race-test',
+        },cookies:{}};
+        const res:any={cookie:jest.fn(),clearCookie:jest.fn()};
+        const email='resend-race@g01.example';
+        const first=ctrl.requestOtp({identifier:email},req,res);
+        await started;
+        const latest=await ctrl.requestOtp({identifier:email},req,res);
+        finishFirstSend();
+        await expect(first).rejects.toMatchObject({
+          response:expect.objectContaining({code:'OTP_CHALLENGE_SUPERSEDED'}),
+        });
+        const states=(await admin.query(
+          `SELECT id,consumed_at,delivery_status
+             FROM otp_challenges WHERE identifier=$1 AND purpose='LOGIN'`,
+          [email])).rows;
+        expect(states).toHaveLength(2);
+        const earlier=states.find((x:any)=>x.id!==latest.challengeId);
+        const current=states.find((x:any)=>x.id===latest.challengeId);
+        expect(earlier.consumed_at).toBeTruthy();
+        expect(current.delivery_status).toBe('SENT');
+        expect(current.consumed_at).toBeNull();
+      });
+    } finally {
+      for(const [k,v] of Object.entries(prior)){
+        if(v===undefined) delete process.env[k];
+        else process.env[k]=v;
+      }
+    }
+  });
+
 });
