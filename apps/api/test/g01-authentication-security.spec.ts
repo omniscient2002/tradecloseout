@@ -1,4 +1,6 @@
 import { ForbiddenException } from '@nestjs/common';
+import { SessionCsrfGuard } from '../src/common/guards/session-csrf.guard';
+import { createHash } from 'node:crypto';
 import {
   assertAuthenticationIntent, assertAuthenticationOrigin,
   deriveSessionCsrf, hashAuthIntent, setAuthenticationIntent,
@@ -109,6 +111,54 @@ describe('G01: authentication hardening negative controls', () => {
     expect(verifyTotp(rfcKey, '000000')).toBeNull();
     expect(verifyTotp(rfcKey, 'not-a-code')).toBeNull();
     now.mockRestore();
+  });
+
+  it('rejects privileged read requests before second-factor verification in production', async () => {
+    const previous = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    try {
+      const session:any = {
+        session_id: 's1', user_id: 'u1', active_org_id: 'o1',
+        csrf_token_hash: 'a'.repeat(64), auth_generation: 'gen1',
+        expires_at: new Date(Date.now()+86_400_000).toISOString(),
+        absolute_expires_at: new Date(Date.now()+86_400_000).toISOString(),
+        last_activity_at: new Date().toISOString(),
+        user_status: 'ACTIVE', org_status: 'ACTIVE', user_name: 'Owner',
+        mfa_verified: false, mfa_verified_at: null, guest_grant_id: null,
+      };
+      const client = {
+        query: jest.fn(async (sql:string) => sql.includes('FROM memberships')
+          ? {rows:[{org_role:'R-OWNER',membership_status:'ACTIVE'}]}
+          : {rows:[]}),
+        release: jest.fn(),
+      };
+      const pool = {
+        query: jest.fn().mockResolvedValue({rows:[session]}),
+        connect: jest.fn().mockResolvedValue(client),
+      };
+      const guard=new SessionCsrfGuard(pool as any);
+      const make = (path:string):any => ({
+        cookies: {tc_session:'opaque-test-cookie'}, headers: {}, method:'GET',
+        params:{}, path, ip:'127.0.0.1',
+      });
+      const invoke=(path:string)=>guard.canActivate({
+        switchToHttp:()=>({getRequest:()=>make(path)}),
+      } as any);
+      await expect(invoke('/api/v1/projects')).rejects.toMatchObject({
+        response: expect.objectContaining({code:'MFA_STEP_UP_REQUIRED'}),
+      });
+      await expect(invoke('/api/v1/auth/me')).resolves.toBe(true);
+      session.mfa_verified=true;
+      session.mfa_verified_at=new Date().toISOString();
+      await expect(invoke('/api/v1/projects')).resolves.toBe(true);
+      expect(pool.query).toHaveBeenCalledWith(
+        expect.stringContaining('FROM sessions s'),
+        [createHash('sha256').update('opaque-test-cookie').digest('hex')],
+      );
+    } finally {
+      if (previous===undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV=previous;
+    }
   });
 
   it('issues distinct high-entropy recovery codes and stores only keyed hashes', () => {
