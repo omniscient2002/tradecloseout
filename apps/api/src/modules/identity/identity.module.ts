@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import Redis from 'ioredis';
 import { DatabaseModule } from '../../database/database.module';
 import { IdentityController, DltSmsGateway, TransactionalMailGateway } from './identity.controller';
+import { MfaController } from './mfa.controller';
 import { SessionCsrfGuard } from '../../common/guards/session-csrf.guard';
 
 export class InMemoryRedis {
@@ -327,7 +328,7 @@ export class TransactionalMailService implements TransactionalMailGateway {
 
 @Module({
   imports: [DatabaseModule],
-  controllers: [IdentityController],
+  controllers: [IdentityController, MfaController],
   providers: [
     SessionCsrfGuard,
     {
