@@ -35,6 +35,7 @@ describe('G01: authentication hardening negative controls', () => {
       AUTH_OTP_HMAC_KEY: 'o'.repeat(48),
       AUTH_CSRF_KEY: 'c'.repeat(48),
       AUTH_MFA_ENCRYPTION_KEY: Buffer.alloc(32, 9).toString('base64'),
+      AUTH_TRUSTED_PROXY_CIDRS: 'direct',
     };
     expect(() => validateAuthenticationConfig(env)).not.toThrow();
     expect(() => validateAuthenticationConfig({ ...env, NODE_ENV: undefined })).toThrow('BOOT_AUTH_ENV_INVALID');
@@ -42,6 +43,7 @@ describe('G01: authentication hardening negative controls', () => {
     expect(() => validateAuthenticationConfig({ ...env, FRONTEND_URL: 'http://app.example.com' })).toThrow('BOOT_AUTH_HTTPS_REQUIRED');
     expect(() => validateAuthenticationConfig({ ...env, AUTH_MFA_ENCRYPTION_KEY: 'bad' })).toThrow('BOOT_AUTH_MFA_ENCRYPTION_KEY_INVALID');
     expect(() => validateAuthenticationConfig({ ...env, ENABLE_DEBUG_OTP: 'true' })).toThrow('BOOT_AUTH_DEBUG_MODE_DISABLED');
+    expect(() => validateAuthenticationConfig({ ...env, AUTH_TRUSTED_PROXY_CIDRS: '0.0.0.0/0' })).toThrow('BOOT_AUTH_PROXY_SCOPE_INVALID');
   });
 
   it('rejects cross-site and untrusted login origins rather than trusting CORS alone', () => {
