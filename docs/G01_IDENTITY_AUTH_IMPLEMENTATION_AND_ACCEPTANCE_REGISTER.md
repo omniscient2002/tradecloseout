@@ -30,6 +30,21 @@
 | G01-020 Medium — onboarding/invitation/recovery promises | Explicit registration, verified identity-bound single-use invitation claim under RLS; login interface no longer promises magic-link authentication | Confirm current API docs; recovery via verified alternate destination, forwarded invites, organization boundary, real mail delivery | **PARTIAL — SMS fallback/magic-link docs and recovery policy** |
 | G01-021 Low — privacy controls | No-store/no-referrer for auth/guest/MFA pages and API responses, secrets excluded from security events | Actual browser/reverse proxy/access log/analytics validation, no raw invitation URL in telemetry | **PATCHED in source; deployed controls unverified** |
 
+## Additional remediation pass (continuation)
+
+This pass found and corrected a **new production browser contract defect** in the login form. The backend requires a challenge UUID for production OTP verification, but the page previously forwarded only identifier and code. The login UI now retains the original `challengeId`, sends it with verification, clears it when the identifier is changed and has a Playwright browser/API contract regression. The latter runs only in the separately provisioned application Playwright project, not the archive browser job in CI.
+
+Additional implementation:
+- **G01-003/005:** Reuse a valid same-browser preauth intent cookie for concurrent challenges, rather than tab B invalidating tab A; different browsers still have different intent digests.
+- **G01-004/005:** Shared logout client now broadcasts confirmed revocation and clears both CSRF and auth generation; stale tabs re-bootstrap.
+- **G01-005/018:** Contractor shell no longer invents a Deccan company name, GSTIN, PM persona or PM navigation for unknown users; it renders the actual authenticated organisation from `/auth/me`.
+- **G01-007:** Added real PostgreSQL concurrency test using two independent connection pools for atomic local/IP/global budget enforcement. This is database concurrency evidence, **not** a two-API-instance deployed test.
+- **G01-017:** Post-authentication redirects now accept only real contractor routes, rejecting URL encodings, traversal, control characters, backslashes and external or scheme-relative origins.
+- **G01-019:** MFA reset now needs a fresh, non-replayed authenticator code or unused recovery code, is rate limited, revokes **all** device sessions and clears the browser cookie. Existing 12-hour MFA session state alone is insufficient to disenroll.
+- Added `docs/G01_STAGING_AUTH_ACCEPTANCE_PROTOCOL.md` for independent reviewer execution, explicit 21-finding coverage and fatal release conditions.
+
+These changes require their **own current-SHA** CI sign-off; don't rely on the previously green CI SHA. No customer authentication, independent party-authority verification, real service-provider request, two-tab browser run or staging deployment has been executed by this repository-editing pass.
+
 ## Engineering guardrails
 
 - PR #5 is a **draft**, not a production certification. Source changes and mocked tests cannot establish real contact authority or enforceability of external sign-off.
