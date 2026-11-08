@@ -1,5 +1,6 @@
 import {
   Body,
+  ConflictException,
   Controller,
   Get,
   HttpCode,
@@ -163,11 +164,18 @@ export class IdentityController {
         const res = await this.smsGateway.sendOtpSms(rawId, otp, process.env.DLT_OTP_TEMPLATE_ID || '');
         if (!res.delivered) throw new Error('DLT_DELIVERY_FAILED');
         if (isProductionEnvironment()) {
-          await this.pool.query(
+          const status = await this.pool.query(
             `UPDATE otp_challenges SET delivery_status='SENT'
-              WHERE id=$1 AND delivery_status='PENDING' AND expires_at>now()`,
+              WHERE id=$1 AND delivery_status='PENDING'
+                AND consumed_at IS NULL AND expires_at>now()`,
             [challengeId],
           );
+          if (!status.rowCount) {
+            throw new ConflictException({
+              code: 'OTP_CHALLENGE_SUPERSEDED',
+              detail: 'A newer code has replaced this OTP; use the newest code.',
+            });
+          }
         }
         await this.redis.del(smsFailKey);
         return {
@@ -177,10 +185,13 @@ export class IdentityController {
           expiresInSeconds: 300,
           debugOtp: isExplicitDebug ? otp : undefined,
         };
-      } catch {
+      } catch (err) {
+        // A delayed provider response must never make a superseded code
+        // appear successfully delivered. Preserve the actual 409 contract.
+        if (err instanceof ConflictException) throw err;
         if (isProductionEnvironment()) {
           await this.pool.query(
-            `UPDATE otp_challenges SET delivery_status='FAILED'
+            `UPDATE otp_challenges SET delivery_status='AMBIGUOUS'
               WHERE id=$1 AND delivery_status='PENDING'`, [challengeId],
           ).catch(() => {});
         }
@@ -218,16 +229,24 @@ export class IdentityController {
     try {
       await this.mailGateway.sendOtpEmail(rawId, otp, 'SIGN_IN');
       if (isProductionEnvironment()) {
-        await this.pool.query(
+        const status = await this.pool.query(
           `UPDATE otp_challenges SET delivery_status='SENT'
-            WHERE id=$1 AND delivery_status='PENDING' AND expires_at>now()`,
+            WHERE id=$1 AND delivery_status='PENDING'
+              AND consumed_at IS NULL AND expires_at>now()`,
           [challengeId],
         );
+        if (!status.rowCount) {
+          throw new ConflictException({
+            code: 'OTP_CHALLENGE_SUPERSEDED',
+            detail: 'A newer code has replaced this OTP; use the newest code.',
+          });
+        }
       }
     } catch (err) {
+      if (err instanceof ConflictException) throw err;
       if (isProductionEnvironment()) {
         await this.pool.query(
-          `UPDATE otp_challenges SET delivery_status='FAILED'
+          `UPDATE otp_challenges SET delivery_status='AMBIGUOUS'
             WHERE id=$1 AND delivery_status='PENDING'`, [challengeId],
         ).catch(() => {});
       }
