@@ -470,7 +470,7 @@ export class IdentityController {
         );
         await client.query("SELECT set_config('app.current_user', $1, true)", [subjectUserId]);
         const { rows: existing } = await client.query(
-          `SELECT id, status FROM memberships
+          `SELECT id, status, role FROM memberships
             WHERE org_id = $1 AND user_id = $2 FOR UPDATE`,
           [invitation.org_id, subjectUserId],
         );
@@ -478,6 +478,9 @@ export class IdentityController {
           throw new UnauthorizedException({
             code: 'INVITATION_CANNOT_REACTIVATE_SUSPENDED_MEMBER',
           });
+        }
+        if (existing.length && existing[0].role !== invitation.role) {
+          throw new UnauthorizedException({ code: 'INVITATION_CANNOT_CHANGE_EXISTING_MEMBER_ROLE' });
         }
         if (!existing.length) {
           await client.query(
