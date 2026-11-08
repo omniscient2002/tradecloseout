@@ -59,7 +59,7 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
         expect(reqResult.challengeId).toBeDefined();
         const { challengeId, debugOtp } = reqResult;
 
-        const mockRes: any = { cookie: jest.fn() };
+        const mockRes: any = { cookie: jest.fn(), clearCookie: jest.fn() };
 
         // 1. First verification with challengeId succeeds
         const firstVerify = await identityController.verifyOtp(
@@ -99,7 +99,7 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
 
         expect(firstReq.challengeId).not.toBe(secondReq.challengeId);
 
-        const mockRes: any = { cookie: jest.fn() };
+        const mockRes: any = { cookie: jest.fn(), clearCookie: jest.fn() };
 
         // Attempting to verify the first (superseded) challenge MUST fail
         await expect(
@@ -128,7 +128,7 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
         const req1 = await identityController.requestOtp({ identifier: testIdentifier }, {} as any);
         const req2 = await identityController.requestOtp({ identifier: testIdentifier }, {} as any);
 
-        const mockRes: any = { cookie: jest.fn() };
+        const mockRes: any = { cookie: jest.fn(), clearCookie: jest.fn() };
 
         // Attempting to consume the older generation MUST return OTP_EXPIRED
         await expect(
