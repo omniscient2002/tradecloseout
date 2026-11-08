@@ -178,7 +178,7 @@ export class PartiesController {
     @Res({ passthrough: true }) res?: Response,
   ) {
     assertAuthenticationOrigin(req);
-    const intentHash = setAuthenticationIntent(res);
+    const intentHash = setAuthenticationIntent(res, req);
     return this.partiesService.requestGuestOtp(
       token, String(req?.ip || req?.socket?.remoteAddress || 'unknown'), intentHash,
     );
