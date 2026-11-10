@@ -113,3 +113,15 @@ These changes were implemented on the same draft G01 branch. **Do not infer prod
 5. Complete the independent external authority/delegation SOP, real SMS/email provider acceptance, two-node OTP/rate-limit resilience, MFA recovery and production-mode session/CSRF browser matrices. These **remain release blockers**.
 
 **Outcome: source-hardening continuation only; G01 production sign-off remains NO-GO pending all required evidence.**
+
+
+## Fifth hardening pass — independent approval project-counterparty binding (2026-11-10)
+
+**Scope:** closes a source-level authorization inconsistency; it is not independent legal signatory verification or staging acceptance.
+
+- Added additive migration `0028_g01_approved_guest_project_binding.sql`: platform reviewer approval now requires the grant to reference the project's *currently designated, active* client or consultant party, not just an active grant of a sensitive type.
+- Approval holds database locks on the relevant project and party while checking their relationship. A project update is rejected if it changes the designated counterparty while a currently active independently approved grant for the old counterparty remains. The supported path is revoke, reassign, reissue, OTP, and fresh independent evidence approval.
+- Extended `g01-independent-party-approval-db.spec.ts` with reviewer rejection of an unrelated client party, successful review after establishing the proper relationship, and refusal to reassign a project while approved authority remains active.
+- Extended `G01_EXTERNAL_PARTY_AUTHORITY_OPERATIONS.md` to require this lifecycle in operator acceptance.
+
+**Verification status:** code and regression tests committed; final-candidate CI/staging provider, browser and live counterparty-signature evidence still required. A successful prior SHA does **not** validate the new migration. PR remains **DRAFT / NO-GO**.
