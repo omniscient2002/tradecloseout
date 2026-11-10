@@ -55,6 +55,19 @@ describe('G01: real PostgreSQL session generation and CSRF boundaries', () => {
       expect(valid).toMatchObject({
         userContext: {userId,orgId,actorType:'USER',orgRole:'R-PM'},
       });
+      // G01-021: no tenant audit/event consumer receives raw user-agent or
+      // caller-chosen request ID. These fields may contain OTPs or invite URLs.
+      const secretMarker='g01-opaque-invitation-otp-658429';
+      const hostile=request({headers:{
+        'user-agent':`Mozilla/5.0 Chrome/131 (Linux) ${secretMarker}`,
+        'x-request-id':secretMarker,
+      }});
+      await expect(evaluate(hostile)).resolves.toBe(true);
+      expect(hostile.auth.userAgent).toBe('Chrome / Linux');
+      expect(hostile.auth.requestId).toMatch(/^[0-9a-f-]{36}$/);
+      expect(hostile.userContext.requestId).toBe(hostile.auth.requestId);
+      expect(JSON.stringify(hostile.auth)).not.toContain(secretMarker);
+      expect(JSON.stringify(hostile.userContext)).not.toContain(secretMarker);
 
       await admin.query(
         `UPDATE sessions SET last_activity_at=now()-interval '10 minutes' WHERE id=$1`,
