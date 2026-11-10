@@ -139,6 +139,56 @@ export class TradeCloseoutScheduler {
   }
 
   /**
+   * G01-020: stale invitation delivery records remain nonredeemable until
+   * explicitly reclaimed, and completed invitation tokens cannot survive
+   * their expiry. Bounded tenant-RLS updates are safe across worker replicas.
+   * This never promotes a delivery to a usable invitation.
+   */
+  async cleanupStaleInvitations(): Promise<{staleDelivery:number; expired:number}> {
+    const {rows:orgs}=await this.pool.query(
+      `SELECT id FROM organisations WHERE status='ACTIVE'`,
+    );
+    let staleDelivery=0,expired=0;
+    for(const org of orgs){
+      const client=await this.pool.connect();
+      try{
+        await client.query('BEGIN');
+        await client.query(
+          "SELECT set_config('app.current_org',$1,true),set_config('app.current_org_id',$1,true)",
+          [org.id],
+        );
+        const {rowCount:stale}=await client.query(
+          `UPDATE invitations SET status='REVOKED'
+             WHERE id IN (
+               SELECT id FROM invitations
+                WHERE org_id=$1 AND status='DELIVERY_PENDING'
+                  AND created_at<now()-interval '15 minutes'
+                ORDER BY created_at LIMIT 250 FOR UPDATE SKIP LOCKED
+             )`,
+          [org.id],
+        );
+        const {rowCount:outdated}=await client.query(
+          `UPDATE invitations SET status='EXPIRED'
+             WHERE id IN (
+               SELECT id FROM invitations
+                WHERE org_id=$1 AND status IN ('DELIVERY_PENDING','PENDING')
+                  AND expires_at<=now()
+                ORDER BY expires_at LIMIT 250 FOR UPDATE SKIP LOCKED
+             )`,
+          [org.id],
+        );
+        staleDelivery+=stale||0;
+        expired+=outdated||0;
+        await client.query('COMMIT');
+      }catch(error){
+        await client.query('ROLLBACK').catch(()=>{});
+        throw error;
+      }finally{client.release();}
+    }
+    return {staleDelivery,expired};
+  }
+
+  /**
    * WF-22 (RT-009, RT-024): Daily Document & Warranty Validity Job
    * Transitions APPROVED and HANDED_OVER requirements whose approved evidence has expired
    * in Asia/Kolkata time to EXPIRED.
