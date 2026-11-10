@@ -76,6 +76,12 @@ export function validateAuthenticationConfig(env: NodeJS.ProcessEnv = process.en
   if (!origin.startsWith('https:')) {
     throw new Error('BOOT_AUTH_HTTPS_REQUIRED: FRONTEND_URL');
   }
+  if (env.PUBLIC_APP_URL) {
+    const publicOrigin = requiredOrigin(env.PUBLIC_APP_URL);
+    if (!publicOrigin.startsWith('https:')) {
+      throw new Error('BOOT_AUTH_HTTPS_REQUIRED: PUBLIC_APP_URL');
+    }
+  }
   const db = parseConfiguredUrl(env.APP_DATABASE_URL!, 'BOOT_AUTH_DATABASE_URL_INVALID');
   if (!['postgres:', 'postgresql:'].includes(db.protocol) || !db.hostname ||
       !db.username || ['postgres', 'tc_migrator'].includes(db.username) ||
@@ -144,7 +150,8 @@ export function assertAuthenticationOrigin(req: Pick<Request, 'headers'>): void 
     .filter((x): x is string => typeof x === 'string' && x.length > 0)
     .map((x) => {
       try { return requiredOrigin(x); } catch { return ''; }
-    }).filter(Boolean);
+    }).filter((allowedOrigin) => Boolean(allowedOrigin) &&
+      (!isProductionEnvironment() || allowedOrigin.startsWith('https:')));
   if (typeof origin === 'string') {
     if (!allowed.includes(origin)) {
       throw new ForbiddenException({ code: 'LOGIN_ORIGIN_DENIED', detail: 'Login requires an approved application origin.' });
