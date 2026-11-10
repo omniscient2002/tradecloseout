@@ -72,11 +72,12 @@ void test('Isolated worker DB/Redis and storage HTTP contract regressions', asyn
           `INSERT INTO invitations
              (id,org_id,email,role,token_hash,status,expires_at,invited_by,created_at)
            VALUES
-             ($1,$5,'stale@g01.test','R-SITE',$1::text,'DELIVERY_PENDING',now()+interval '2 days',$7,now()-interval '30 minutes'),
-             ($2,$5,'expired@g01.test','R-SITE',$2::text,'PENDING',now()-interval '1 day',$7,now()-interval '2 days'),
-             ($3,$5,'fresh@g01.test','R-SITE',$3::text,'DELIVERY_PENDING',now()+interval '1 day',$7,now()),
-             ($4,$6,'other@g01.test','R-SITE',$4::text,'PENDING',now()+interval '1 day',$7,now())`,
-          [stale,expired,fresh,other,a.orgId,b.orgId,userId],
+             ($1,$5,'stale@g01.test','R-SITE',$8,'DELIVERY_PENDING',now()+interval '2 days',$7,now()-interval '30 minutes'),
+             ($2,$5,'expired@g01.test','R-SITE',$9,'PENDING',now()-interval '1 day',$7,now()-interval '2 days'),
+             ($3,$5,'fresh@g01.test','R-SITE',$10,'DELIVERY_PENDING',now()+interval '1 day',$7,now()),
+             ($4,$6,'other@g01.test','R-SITE',$11,'PENDING',now()+interval '1 day',$7,now())`,
+          [stale,expired,fresh,other,a.orgId,b.orgId,userId,
+            'stale_'+stale,'expired_'+expired,'fresh_'+fresh,'other_'+other],
         );
         const first=await scheduler.cleanupStaleInvitations();
         assert.equal(first.staleDelivery,1);
