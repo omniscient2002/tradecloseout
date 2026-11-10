@@ -76,7 +76,7 @@ describe('G01: real PostgreSQL session generation and CSRF boundaries', () => {
             AND session_id=$1 ORDER BY occurred_at ASC`,[sessionId],
       )).rows;
       expect(sessionDenials.map(e=>e.reason_code)).toEqual(
-        expect.arrayContaining(['AUTH_CONTEXT_CHANGED','CSRF_INVALID']),
+        expect.arrayContaining(['AUTH_CONTEXT_CHANGED','CSRF_TOKEN_INVALID']),
       );
       for(const ev of sessionDenials){
         expect(ev.actor_user_id).toBe(userId);
