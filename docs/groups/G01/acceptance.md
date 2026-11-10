@@ -3,7 +3,7 @@
 Tracking: https://github.com/omniscient2002/tradecloseout/issues/6
 Implementation: https://github.com/omniscient2002/tradecloseout/pull/5
 
-**NO-GO.** Original G01-001 through G01-021 and additional G01-R1 through G01-R5
+**NO-GO.** Original G01-001 through G01-021 and additional G01-R1 through G01-R7
 are recorded individually in findings.json. Original source controls may be
 implemented while external acceptance remains blocked. The current register makes
 no fabricated verification or production acceptance claims.
@@ -31,6 +31,21 @@ and raw evidence for what was actually checked. This does not close the original
 
 Each task starts with reproduction against the latest head. Static findings may
 be disputed with concrete evidence. The source report is preserved alongside this file.
+
+## New source tasks from independent b45f0b5 review
+
+R1–R5 scoped acceptance is preserved. [The b45f0b5 re-review](independent-review-b45f0b5.md)
+reproduced two additional defects with raw evidence in `docs/evidence/g01-recheck-b45f0b5/`:
+
+6. R6 (P2): make MFA session/user/recovery locking consistent; deterministic real-PG
+   start/confirm overlap currently aborts with `40P01`. Keep revocation fencing and atomicity.
+7. R7 (P2): use canonical safe request IDs in the exception filter as well as the
+   guard. Credential-shaped ASCII headers currently reach auth logs and error responses.
+
+The original 21-row candidate matrix also acknowledges unfinished delivery receipt/retry
+reconciliation, lost-all-factor recovery, route/event inventories and complete validation
+and resilience acceptance. These engineering tasks are distinct from missing real provider,
+legal authority, staging TLS/S3, IAM and monitoring evidence. No original row is release-closed.
 
 ## Engineering evidence
 

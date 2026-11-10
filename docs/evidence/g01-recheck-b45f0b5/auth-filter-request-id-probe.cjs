@@ -1,0 +1,14 @@
+const fs=require('node:fs');
+const {ProblemJsonExceptionFilter}=require('/candidate/apps/api/src/common/filters/problem-json.filter.ts');
+const {safeAuthenticationRequestId}=require('/candidate/apps/api/src/common/security/audit-metadata.ts');
+const raw='OTP_123456_INVITE_abcdef0123456789abcdef0123456789';
+const records=[];
+const filter=new ProblemJsonExceptionFilter();
+filter.logger={error:(...args)=>records.push(args)};
+const headers={};let status,body;
+const response={setHeader:(key,value)=>{headers[key]=value;},status:code=>{status=code;return response;},json:value=>{body=value;return response;}};
+const req={path:'/api/v1/auth/otp/verify',headers:{'x-request-id':raw},auth:{requestId:safeAuthenticationRequestId(raw)}};
+filter.catch(new Error('isolated simulated authentication database failure'),{switchToHttp:()=>({getRequest:()=>req,getResponse:()=>response})});
+const evidence={source_sha:'b45f0b5f4b7c4c1c838a2526aa6209f1a30a5c60',node:process.version,fixture_only:true,guard_context_request_id_is_sanitized:req.auth.requestId!==raw,error_filter_log_retains_raw_header:JSON.stringify(records).includes(raw),error_response_retains_raw_header:body.requestId===raw,response_header_retains_raw_header:headers['X-Request-Id']===raw,response_status:status,log_shape:records};
+fs.writeFileSync('/review/auth-filter-request-id-evidence.json',JSON.stringify(evidence,null,2)+'\n');
+console.log(JSON.stringify(evidence,null,2));

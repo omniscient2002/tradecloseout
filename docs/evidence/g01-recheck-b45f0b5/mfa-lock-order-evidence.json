@@ -1,0 +1,21 @@
+{
+  "source_sha": "b45f0b5f4b7c4c1c838a2526aa6209f1a30a5c60",
+  "node": "v22.23.2",
+  "postgres": "16.15",
+  "runtime": {
+    "current_user": "tc_app",
+    "rolsuper": false,
+    "rolbypassrls": false
+  },
+  "controlled_schedule": "start locks session; confirm locks user and attempts session rotation; start resumes user lock",
+  "begin_enrollment": {
+    "status": "rejected",
+    "sqlstate": "40P01",
+    "http_status": null,
+    "message": "deadlock detected"
+  },
+  "confirm_enrollment": {
+    "status": "fulfilled"
+  },
+  "deadlock_reproduced": true
+}

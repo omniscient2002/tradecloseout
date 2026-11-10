@@ -1,0 +1,20 @@
+{
+  "source_sha": "b45f0b5f4b7c4c1c838a2526aa6209f1a30a5c60",
+  "node": "v22.23.2",
+  "fixture_only": true,
+  "guard_context_request_id_is_sanitized": true,
+  "error_filter_log_retains_raw_header": true,
+  "error_response_retains_raw_header": true,
+  "response_header_retains_raw_header": true,
+  "response_status": 500,
+  "log_shape": [
+    [
+      {
+        "requestId": "OTP_123456_INVITE_abcdef0123456789abcdef0123456789",
+        "exceptionType": "Error",
+        "area": "AUTH"
+      },
+      "Unhandled authentication exception (details redacted)"
+    ]
+  ]
+}
