@@ -370,11 +370,13 @@ export async function drainOfflineUploadQueue(
             }
           }
         } catch (pollErr: any) {
-          if (pollErr.message?.startsWith('Upload security failure:')) throw pollErr;
+          if (pollErr.message === 'UPLOAD_ACTOR_CONTEXT_CHANGED' ||
+              pollErr.message?.startsWith('Upload security failure:')) throw pollErr;
         }
         await new Promise((r) => setTimeout(r, 1500));
       }
 
+      assertQueuedUploadContext(item);
       if (!serverVerifiedReady) {
         // Upload transmission is complete, but server-side verification has not finished.
         // Keep the local blob and receipt so reload/retry cannot misreport evidence as accepted.
