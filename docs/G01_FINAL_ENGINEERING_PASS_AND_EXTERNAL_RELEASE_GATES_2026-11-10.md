@@ -38,6 +38,10 @@ The implementation remains deliberately fail-closed in environments lacking the 
 
 The leader/period-locked hourly worker now calls `TradeCloseoutScheduler.cleanupStaleInvitations()`. With explicit per-tenant RLS scope and bounded `FOR UPDATE SKIP LOCKED` batches it revokes `DELIVERY_PENDING` invitations abandoned longer than 15 minutes and marks elapsed `PENDING` or `DELIVERY_PENDING` invitations `EXPIRED`. It never promotes an unacknowledged delivery to a redeemable credential, and it preserves pending authorisation of other tenants. Isolated PostgreSQL/Redis worker integration tests check stale, expired, fresh and foreign-tenant invitations plus idempotent reruns.
 
+## Emergency revocation of previously approved documents (migration 0034)
+
+The first implementation of independent attestation revocation prevented future recording but did not invalidate a document approval already recorded. Additive migration `0034` closes this readiness loophole: a named platform reviewer invoking `revoke_external_document_approval` writes immutable revocation evidence and, in the same tenant-scoped transaction, clears `documents.current_approved_version_id` and moves an affected current approved `document_versions.review_status` to `CHANGES_REQUESTED` with updated row versions. This prevents future handover readiness from trusting a disputed current approval. The SQL integration test exercises a previously approved revision and verifies it is invalidated after trusted reviewer revocation. Original previously distributed archives, signatures and customer notices remain incident-response obligations; they cannot be retroactively changed in an immutable archive without a separately authorised process.
+
 ## 21-finding disposition: source status is NOT release acceptance
 
 | Finding | Source status | Still required |
