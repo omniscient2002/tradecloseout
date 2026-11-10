@@ -234,20 +234,53 @@ export async function recordAuthenticationEvent(
   pool: Pool,
   eventType: string,
   outcome: 'SUCCESS' | 'DENIED' | 'THROTTLED' | 'ERROR',
-  details: { subject?: string; userId?: string; orgId?: string; sessionId?: string } = {},
+  details: {
+    subject?: string; userId?: string; orgId?: string; sessionId?: string;
+    reasonCode?: string; sourceIp?: string;
+  } = {},
 ): Promise<void> {
   const key = process.env.AUTH_OTP_HMAC_KEY;
-  const subjectDigest = details.subject
-    ? (key ? createHmac('sha256', key) : createHash('sha256'))
-        .update('auth-event:v1:' + details.subject).digest('hex')
-    : null;
+  if (isProductionEnvironment() && (!key || key.length < 32)) {
+    throw new Error('AUTH_EVENT_HMAC_KEY_UNAVAILABLE');
+  }
+  const digest = (purpose: string, raw: string) =>
+    (key ? createHmac('sha256', key) : createHash('sha256'))
+      .update(`auth-event:${purpose}:v1:${raw}`).digest('hex');
+  const subjectDigest = details.subject ? digest('subject',details.subject) : null;
+  const sourceDigest = details.sourceIp ? digest('source',details.sourceIp) : null;
+  // Only known application-generated reason codes reach the ledger; opaque
+  // exception messages and incoming HTTP fields can never become reason text.
+  const reasonCode = details.reasonCode && /^[A-Z][A-Z0-9_]{0,63}$/.test(details.reasonCode)
+    ? details.reasonCode : null;
+  if (!/^[A-Z][A-Z0-9_]{0,63}$/.test(eventType)) {
+    throw new Error('AUTH_EVENT_TYPE_INVALID');
+  }
   await pool.query(
     `INSERT INTO auth_security_events
-      (id, actor_user_id, org_id, session_id, event_type, outcome, subject_digest)
-      VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6)`,
+      (id, actor_user_id, org_id, session_id, event_type, outcome,
+       subject_digest, reason_code, source_digest)
+      VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8)`,
     [details.userId || null, details.orgId || null, details.sessionId || null,
-      eventType, outcome, subjectDigest],
+      eventType, outcome, subjectDigest, reasonCode, sourceDigest],
   );
+}
+
+/**
+ * Persist a denied decision independently of a transaction that was rolled
+ * back. The underlying denial is NEVER transformed into success on telemetry
+ * failure. In production alert on this fixed non-sensitive diagnostic.
+ */
+export async function recordDeniedAuthenticationEvent(
+  pool: Pool, eventType: string,
+  details: {userId?: string;orgId?: string;sessionId?: string;
+    reasonCode: string;sourceIp?: string;subject?: string},
+): Promise<void> {
+  try {
+    await recordAuthenticationEvent(pool,eventType,'DENIED',details);
+  } catch {
+    // No raw driver errors, inputs, OTP values, headers or stack traces.
+    console.error('AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE');
+  }
 }
 
 export const AUTH_INTENT_COOKIE = 'tc_auth_intent';
