@@ -1,5 +1,6 @@
 import { ForbiddenException } from '@nestjs/common';
 import { SessionCsrfGuard } from '../src/common/guards/session-csrf.guard';
+import { executeReviewDecision } from '../src/modules/reviews/review-decision.service';
 import { PermissionGuard } from '../src/common/guards/permission.guard';
 import { ProblemJsonExceptionFilter } from '../src/common/filters/problem-json.filter';
 import { DltSmsService, TransactionalMailService } from '../src/modules/identity/identity.module';
@@ -321,6 +322,29 @@ describe('G01: authentication hardening negative controls', () => {
         if (value === undefined) delete process.env[key];
         else process.env[key]=value;
       }
+    }
+  });
+
+  it('rejects the legacy unaudited external-decision helper in production',async()=>{
+    const saved=process.env.NODE_ENV;
+    process.env.NODE_ENV='production';
+    try{
+      const db:any={query:jest.fn()};
+      await expect(executeReviewDecision(db,{
+        userId:'actor-1',activeOrgId:'org-1',orgRole:'R-OWNER',
+        projectRoles:[],ip:'127.0.0.1',userAgent:'g01',requestId:'g01',
+      },{
+        projectId:'project-1',documentVersionId:'version-1',
+        expectedRowVersion:1,method:'EXTERNAL',decision:'APPROVE',
+      })).rejects.toMatchObject({
+        response:expect.objectContaining({
+          code:'EXTERNAL_REVIEW_REQUIRES_INDEPENDENT_EVIDENCE_WORKFLOW',
+        }),
+      });
+      expect(db.query).not.toHaveBeenCalled();
+    }finally{
+      if(saved===undefined)delete process.env.NODE_ENV;
+      else process.env.NODE_ENV=saved;
     }
   });
 
