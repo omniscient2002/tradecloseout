@@ -41,6 +41,10 @@ export function getCsrfToken(): string | null {
 export function getAuthGeneration(): string | null {
   return typeof window === 'undefined' ? null : sessionStorage.getItem(GENERATION_STORAGE_KEY);
 }
+/** Non-secret global browser event fencing asynchronous queue work across tabs. */
+export function getAuthEpoch(): string | null {
+  return typeof window === 'undefined' ? null : window.localStorage.getItem(AUTH_CHANGE_EVENT_KEY);
+}
 
 /** Raw CSRF is deliberately NOT persisted to localStorage or broadcast. */
 export function setCsrfToken(token: string | null, generation?: string | null, announce = true) {
