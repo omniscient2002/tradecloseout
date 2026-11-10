@@ -61,8 +61,44 @@ describe('G01 membership privilege escalation and invitation validity', () => {
            WHERE org_id=$1 AND email=$2 AND status='PENDING'`,
         [org,'valid-admin@g01.example'],
       )).rows[0].n).toBe(1);
+      const sessionIds=new Map<string,string>();
+      for(const uid of [owner,administrator,member]){
+        const id=uuidv7();
+        sessionIds.set(uid,id);
+        await admin.query(
+          `INSERT INTO sessions(id,user_id,active_org_id,token_hash,csrf_token_hash,
+            expires_at,mfa_verified,mfa_verified_at)
+           VALUES($1,$2,$3,$4,$5,now()+interval '1 day',true,now())`,
+          [id,uid,org,uid.replace(/-/g,''), 'c'.repeat(64)],
+        );
+      }
+      await expect(service.transferOwnership(ctx(owner,'R-OWNER'),owner))
+        .rejects.toMatchObject({
+          response:expect.objectContaining({code:'OWNER_TRANSFER_REQUIRES_DIFFERENT_MEMBER'}),
+        });
+      await expect(service.transferOwnership(ctx(owner,'R-OWNER'),'not-a-uuid'))
+        .rejects.toMatchObject({
+          response:expect.objectContaining({code:'INVALID_TARGET_OWNER'}),
+        });
+
       const assigned=await service.updateMemberRole(ctx(owner,'R-OWNER'),org,
         member,{role:'R-PM'});
+      expect((await admin.query(
+        'SELECT revoked_at,mfa_verified FROM sessions WHERE id=$1',
+        [sessionIds.get(member)],
+      )).rows[0]).toMatchObject({
+        revoked_at:expect.any(Date),mfa_verified:false,
+      });
+      const unaffected=await admin.query(
+        'SELECT revoked_at FROM sessions WHERE id=ANY($1::uuid[])',
+        [[sessionIds.get(owner),sessionIds.get(administrator)]],
+      );
+      expect(unaffected.rows.every(row=>row.revoked_at===null)).toBe(true);
+      expect((await admin.query(
+        `SELECT COUNT(*)::int AS count FROM auth_security_events
+         WHERE actor_user_id=$1 AND event_type='MEMBER_ROLE_CHANGED_SESSION_REVOKED'`,
+        [member],
+      )).rows[0].count).toBe(1);
       expect(assigned.role).toBe('R-PM');
       const roles=(await admin.query(
         `SELECT user_id,role FROM memberships WHERE org_id=$1`,[org])).rows;
@@ -72,6 +108,27 @@ describe('G01 membership privilege escalation and invitation validity', () => {
       expect((await admin.query(
         `SELECT count(*)::int AS n FROM memberships WHERE org_id=$1 AND role='R-OWNER'`,
         [org])).rows[0].n).toBe(1);
+      const transferred=await service.transferOwnership(ctx(owner,'R-OWNER'),administrator);
+      expect(transferred).toMatchObject({
+        previousOwnerUserId:owner,newOwnerUserId:administrator,
+      });
+      const afterTransfer=(await admin.query(
+        'SELECT user_id,role FROM memberships WHERE org_id=$1',[org],
+      )).rows;
+      expect(afterTransfer.find(row=>row.user_id===owner).role).toBe('R-ADMIN');
+      expect(afterTransfer.find(row=>row.user_id===administrator).role).toBe('R-OWNER');
+      expect((await admin.query(
+        'SELECT user_id,revoked_at,mfa_verified FROM sessions WHERE id=ANY($1::uuid[])',
+        [[sessionIds.get(owner),sessionIds.get(administrator)]],
+      )).rows).toEqual(expect.arrayContaining([
+        expect.objectContaining({user_id:owner,revoked_at:expect.any(Date),mfa_verified:false}),
+        expect.objectContaining({user_id:administrator,revoked_at:expect.any(Date),mfa_verified:false}),
+      ]));
+      expect((await admin.query(
+        `SELECT COUNT(*)::int AS count FROM auth_security_events
+         WHERE event_type='OWNERSHIP_TRANSFER_SESSION_REVOKED' AND org_id=$1`,
+        [org],
+      )).rows[0].count).toBe(2);
     });
   });
   it('sends identity-bound link to target email, hides raw token and revokes uncertain delivery',async()=>{
