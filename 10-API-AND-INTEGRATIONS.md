@@ -189,8 +189,10 @@ GET /api/v1/projects/{projectId}/requirements
 | API-026 | DELETE `/guest-grants/{grantId}` | Revoke | `project.manage` |
 | API-027 | POST `/projects/{projectId}/supplier-links` | Create scoped upload link | `party.manage` |
 | API-028 | POST `/guest/{token}/session` | Exchange guest token | Public token |
-| API-028A | POST `/guest/{token}/otp/request` | Send guest OTP (max 3/hr, 10/day per grant; email fallback) | Public token, rate-limited (`RT-010`, `RT-014`) |
+| API-028A | POST `/guest/{token}/otp/request` | Send guest OTP to the grant's currently verified designated contact (max 3/hour, 10/day per grant); no automatic channel switching or guest email fallback | Public token, rate-limited (`RT-010`, `RT-014`) |
 | API-028B | POST `/guest/{token}/otp/verify` | Verify guest OTP (5 attempts then 15-min cooldown) | Public token (`RT-010`, `RT-014`) |
+
+**Current guest OTP delivery:** `POST /guest/{token}/otp/request` uses the already-designated email **or** phone for that verified grant; it does not switch to another channel after provider rejection, timeout or an ambiguous response. An email-only grant is not a fallback from SMS. Any contact change needs independently verified reissuance of the guest grant; never guess a recipient or silently redirect authentication. Provider submission acknowledgement is not final recipient delivery evidence.
 
 ### 7.4 Projects and contracts
 
@@ -452,7 +454,7 @@ Why not proxy through API: memory, timeouts, mobile networks, and horizontal sca
 | Package generation | 5 concurrent/org, 50/day/org |
 | Search | 120/min/user |
 | Public guest endpoints | 60/min/token, 20/hour/IP |
-| Guest OTP request | 3/hour, 10/day per `grant_id` (5 failed attempts trigger 15-min cooldown; email fallback; `RT-014`) |
+| Guest OTP request | 3/hour, 10/day per `grant_id` (5 failed attempts trigger 15-min cooldown; **no automatic email fallback or alternate recipient**; `RT-014`) |
 | API tokens | 600/min/token |
 | Webhooks (inbound) | Provider-specific + signature |
 
