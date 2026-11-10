@@ -67,6 +67,11 @@ describe('G01-R3: bounded, independently committed denial telemetry',()=>{
       const user=uuidv7(),org=uuidv7(),session=uuidv7();
       await admin.query("INSERT INTO users(id,name,status,mfa_enabled_at) VALUES($1,'MFA User','ACTIVE',now())",[user]);
       await admin.query("INSERT INTO organisations(id,legal_name,display_name,state,status) VALUES($1,'MFA Org','MFA Org','KA','ACTIVE')",[org]);
+      await admin.query(
+        `INSERT INTO sessions(id,user_id,active_org_id,token_hash,csrf_token_hash,expires_at)
+         VALUES($1,$2,$3,$4,$5,now()+interval '1 day')`,
+        [session,user,org,'a'.repeat(64),'b'.repeat(64)],
+      );
       const request:any={
         auth:{userId:user,activeOrgId:org,sessionId:session},
         userContext:{actorType:'USER'},ip:'192.0.2.42',
@@ -104,7 +109,8 @@ describe('G01-R3: bounded, independently committed denial telemetry',()=>{
 
   it('throttles failure diagnostics per replica and never authorizes denied requests',async()=>{
     const rawConsole=jest.spyOn(console,'error').mockImplementation(()=>{});
-    const now=jest.spyOn(Date,'now').mockReturnValue(1_000_000_000_000);
+    const base=Date.now()+120_000;
+    const now=jest.spyOn(Date,'now').mockReturnValue(base);
     try{
       const badPool:any={
         query:jest.fn().mockRejectedValue(new Error('leaked otp bearer-secret-sensitive')),
@@ -117,7 +123,7 @@ describe('G01-R3: bounded, independently committed denial telemetry',()=>{
       expect(rawConsole).toHaveBeenCalledTimes(1);
       expect(rawConsole.mock.calls[0]).toEqual(['AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE']);
       expect(badPool.query.mock.calls[0][0]).toMatchObject({query_timeout:750});
-      now.mockReturnValue(1_000_000_060_001);
+      now.mockReturnValue(base+60_001);
       await recordDeniedAuthenticationEvent(badPool,'AUTH_SESSION_DENIED',{
         reasonCode:'UNAUTHENTICATED',
       });
