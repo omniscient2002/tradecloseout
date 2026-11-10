@@ -1,5 +1,6 @@
 import { uuidv7 } from 'uuidv7';
 import { withTenantTransaction } from '@tradecloseout/db/tenant-tx';
+import { TenantDbService } from '../src/database/tenant-db.service';
 import { withDisposableDatabase } from '../../../packages/db/test/helpers/disposable-database';
 
 jest.setTimeout(180_000);
@@ -35,6 +36,14 @@ describe('G01 authenticated transaction generation fencing',()=>{
         return found.length;
       });
       expect(first).toBe(1);
+      const guestTenantDB=new TenantDbService(app);
+      const guestCtx={...ctx,actorType:'USER'};
+      await expect(guestTenantDB.withTenantContext(guestCtx,async client=>{
+        const {rows:memberships}=await client.query(
+          'SELECT id FROM memberships WHERE org_id=$1 AND user_id=$2',[org,user],
+        );
+        return memberships.length;
+      })).resolves.toBe(1);
       // An in-flight authorised write holds the session lock until COMMIT.
       // Concurrent offboarding/revocation must serialize with that write,
       // rather than permitting a stale-context commit after revocation.
@@ -67,6 +76,8 @@ describe('G01 authenticated transaction generation fencing',()=>{
       expect(callbackEntered).toBe(false);
 
       await admin.query('UPDATE sessions SET revoked_at=now() WHERE id=$1',[session]);
+      await expect(guestTenantDB.withTenantContext(guestCtx,async()=>1))
+        .rejects.toThrow('AUTH_SESSION_CONTEXT_CHANGED');
       await expect(withTenantTransaction(app,ctx,async()=>{
         callbackEntered=true;
       })).rejects.toThrow('AUTH_SESSION_CONTEXT_CHANGED');
