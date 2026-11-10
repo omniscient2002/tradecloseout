@@ -32,7 +32,7 @@ export function validateWorkerStartupConfig(env:NodeJS.ProcessEnv=process.env):v
     throw new Error('BOOT_WORKER_DATABASE_URL_UNSAFE');
   }
   if(!['redis:','rediss:'].includes(redis.protocol)||!redis.hostname||
-     redis.hash||redis.pathname!=='/'||
+     redis.hash||!['','/','/0'].includes(redis.pathname)||
      (redis.protocol==='redis:'&&!LOOPBACK.has(redis.hostname))){
     throw new Error('BOOT_WORKER_REDIS_URL_UNSAFE');
   }
