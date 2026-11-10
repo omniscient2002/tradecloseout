@@ -281,23 +281,27 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
       try {
         const billingService = new BillingService({} as any);
         await expect(
-          billingService.handleRazorpayWebhook(Buffer.from('{"id":"evt_123"}'), 'invalid_hmac_sig'),
+          billingService.handleRazorpayWebhook(Buffer.from('{"id":"evt_123"}'), '0'.repeat(64)),
         ).rejects.toThrow(/INVALID_PAYMENT_WEBHOOK_SIGNATURE/);
       } finally {
         delete process.env.RAZORPAY_WEBHOOK_SECRET;
       }
     });
 
-    it('V03: throws ServiceUnavailableException even with valid signature until durable inbox exists', async () => {
+    it('V03: refuses to acknowledge a signed event when durable inbox persistence fails', async () => {
       const secret = 'test_webhook_secret_123';
       process.env.RAZORPAY_WEBHOOK_SECRET = secret;
       try {
-        const billingService = new BillingService({} as any);
-        const payload = Buffer.from(JSON.stringify({ id: 'evt_valid_123', event: 'payment.captured' }));
+        const billingService = new BillingService({
+          getPool: () => ({ query: async () => { throw new Error('INBOX_OFFLINE'); } }),
+        } as any);
+        const payload = Buffer.from(JSON.stringify({
+          entity: 'event', event: 'payment.captured', payload: { payment: { entity: { id: 'pay_test' } } },
+        }));
         const validSig = createHmac('sha256', secret).update(payload).digest('hex');
 
         await expect(
-          billingService.handleRazorpayWebhook(payload, validSig),
+          billingService.handleRazorpayWebhook(payload, validSig, 'evt_valid_123'),
         ).rejects.toThrow(ServiceUnavailableException);
       } finally {
         delete process.env.RAZORPAY_WEBHOOK_SECRET;

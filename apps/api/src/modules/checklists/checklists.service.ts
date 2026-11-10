@@ -401,6 +401,79 @@ export class ChecklistsService {
   }
 
   /**
+   * Lists only explicitly published HVAC template packs. This does not create
+   * a fake default HVAC checklist or infer undocumented client obligations.
+   */
+  async listApprovedHvacTemplates(ctx: TenantActorContext, projectId: string) {
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+      const { rows: owned } = await client.query(
+        `SELECT 1 FROM projects WHERE org_id = $1 AND id = $2`,
+        [ctx.orgId, projectId],
+      );
+      if (!owned.length) throw new NotFoundException('PROJECT_NOT_FOUND');
+      const { rows } = await client.query(
+        `SELECT id, code, name, version, schema_version,
+                CASE WHEN jsonb_typeof(payload_json->'requirements') = 'array'
+                     THEN jsonb_array_length(payload_json->'requirements') ELSE 0 END
+                AS requirement_count
+           FROM template_packs
+          WHERE trade = 'HVAC' AND status = 'ACTIVE'
+          ORDER BY code, version DESC`,
+      );
+      return rows;
+    });
+  }
+
+  /** Applies a specific published HVAC template version under the project lock. */
+  async applyApprovedHvacTemplate(
+    ctx: TenantActorContext,
+    projectId: string,
+    templatePackId: string,
+  ) {
+    if (!/^[a-f0-9-]{36}$/i.test(templatePackId)) {
+      throw new UnprocessableEntityException({
+        code: 'INVALID_TEMPLATE_ID',
+        detail: 'Select a valid published HVAC template pack.',
+      });
+    }
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      await this.lockEditableProject(client, ctx.orgId, projectId);
+      const { rows } = await client.query(
+        `SELECT id, code, name, version, schema_version, payload_json
+           FROM template_packs
+          WHERE id = $1 AND trade = 'HVAC' AND status = 'ACTIVE'
+          FOR SHARE`,
+        [templatePackId],
+      );
+      if (!rows.length) {
+        throw new NotFoundException('APPROVED_HVAC_TEMPLATE_NOT_FOUND');
+      }
+      const pack = rows[0];
+      const payload = typeof pack.payload_json === 'string'
+        ? JSON.parse(pack.payload_json) : pack.payload_json;
+      if (pack.schema_version !== 1 ||
+          !Array.isArray(payload?.requirements) || payload.requirements.length === 0) {
+        throw new UnprocessableEntityException({
+          code: 'HVAC_TEMPLATE_NOT_CONFIGURED',
+          detail: 'The selected published template has no valid scoped contractual requirements.',
+        });
+      }
+      const result = await this.createAndApplySnapshot(
+        ctx,
+        projectId,
+        [{ level: 'PROJECT', versionId: pack.id, payload }],
+        undefined,
+        `Published HVAC template ${pack.code} v${pack.version}`,
+        { client, emit },
+      );
+      return {
+        ...result,
+        template: { id: pack.id, code: pack.code, version: pack.version },
+      };
+    });
+  }
+
+  /**
    * Reapply the existing explicit checklist configuration. We intentionally do
    * not substitute a fake one-item handover dossier when no template exists.
    */

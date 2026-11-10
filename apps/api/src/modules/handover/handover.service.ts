@@ -777,7 +777,8 @@ export class HandoverService {
       );
       if (!rows.length) throw new NotFoundException({ code: 'PACKAGE_NOT_FOUND', detail: 'Handover package not found.' });
       const row = rows[0];
-      if (row.status !== 'READY' || row.object_status !== 'READY' ||
+      if (!['READY', 'SUBMITTED', 'PARTIALLY_ACCEPTED', 'ACCEPTED'].includes(row.status) ||
+          row.object_status !== 'READY' || row.mime !== 'application/pdf' ||
           !row.provider_version_id || !row.sha256 || row.sha256 !== row.checksum ||
           Number(row.observed_size_bytes) !== Number(row.size_bytes)) {
         throw new UnprocessableEntityException({
@@ -908,6 +909,27 @@ export class HandoverService {
         recipientsCount: dto.recipients.length,
       };
     });
+  }
+
+  /**
+   * Legacy 'dossier/pdf' download uses the latest verified worker-generated
+   * artifact. Never synthesize a front-matter-only PDF as a completed dossier.
+   * An incomplete newer revision blocks fallback to a stale accepted version.
+   */
+  async getLatestDossierDownloadUrl(ctx: TenantActorContext, projectId: string) {
+    const latestId = await withTenantTransaction(this.pool, ctx, async (client) => {
+      const { rows } = await client.query(
+        `SELECT id FROM handover_packages
+           WHERE org_id = $1 AND project_id = $2
+           ORDER BY version_no DESC LIMIT 1`,
+        [ctx.orgId, projectId],
+      );
+      if (!rows.length) {
+        throw new NotFoundException('NO_HANDOVER_DOSSIER_AVAILABLE');
+      }
+      return rows[0].id as string;
+    });
+    return this.getPackageDownloadUrl(ctx, projectId, latestId);
   }
 
   async generateDossierPdf(ctx: TenantActorContext, projectId: string): Promise<Uint8Array> {

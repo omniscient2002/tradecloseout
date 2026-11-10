@@ -227,7 +227,8 @@ export class HandoverController {
   }
 
   /**
-   * Pure-Node front matter and TOC PDF for Handover Dossier
+   * Downloads the latest verified full dossier produced by the worker.
+   * Presigned storage URL expires in 15 minutes; no synthetic PDF is returned.
    */
   @Get('projects/:projectId/dossier/pdf')
   @UseGuards(SessionCsrfGuard, PermissionGuard)
@@ -237,10 +238,11 @@ export class HandoverController {
     @Param('projectId') projectId: string,
     @Res() res: Response,
   ) {
-    const pdfBytes = await this.handoverService.generateDossierPdf(req.userContext, projectId);
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename=Handover-Dossier-${projectId}.pdf`);
-    res.send(Buffer.from(pdfBytes));
+    const artifact = await this.handoverService.getLatestDossierDownloadUrl(
+      req.userContext, projectId,
+    );
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.redirect(302, artifact.downloadUrl);
   }
 
   /**
