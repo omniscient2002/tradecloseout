@@ -36,11 +36,30 @@ describe('G01: identity-bound invitations with real RLS', () => {
         expect(issued.debugOtp).toMatch(/^\d{6}$/);
         const authIntent=res.cookie.mock.calls.find((a:any[])=>a[0]==='tc_auth_intent')?.[1];
         if(authIntent)req.cookies.tc_auth_intent=authIntent;
+        // G01-021: hostile browser-supplied UA/request-id metadata can
+        // contain raw invitation links or OTPs. Only a fixed device label
+        // and server-generated opaque request ID are retained on login.
+        req.headers['user-agent'] = 'Mozilla/5.0 Chrome/131.0 (Linux) invite='+input.token;
+        req.headers['x-request-id'] = 'otp='+issued.debugOtp+'&invite='+input.token;
         const accepted=await controller.verifyOtp({
           challengeId:issued.challengeId,code:issued.debugOtp,
           invitationToken:input.token,
         },req,res);
         expect(accepted.activeOrgId).toBe(input.orgId);
+        const {rows:auditFields}=await admin.query(
+          `SELECT s.user_agent,e.user_agent AS event_agent,e.request_id
+            FROM sessions s
+            JOIN security_events e ON e.actor_user_id=s.user_id
+              AND e.event_type='USER_SESSION_CREATED'
+           WHERE s.user_id=$1 ORDER BY e.created_at DESC LIMIT 1`,
+          [accepted.userId],
+        );
+        expect(auditFields[0]).toMatchObject({
+          user_agent:'Chrome / Linux',event_agent:'Chrome / Linux',
+          request_id:expect.stringMatching(/^[0-9a-f-]{36}$/),
+        });
+        expect(JSON.stringify(auditFields)).not.toContain(input.token);
+        expect(JSON.stringify(auditFields)).not.toContain(issued.debugOtp);
         expect(accepted.mfaRequired).toBe(false);
         const membership=(await admin.query(
           'SELECT role,status FROM memberships WHERE org_id=$1 AND user_id=$2',
