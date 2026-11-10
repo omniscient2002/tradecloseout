@@ -548,7 +548,16 @@ describe('Perfect 10 Remediation & Hardening Test Suite', () => {
   // --------------------------------------------------------------------------
   describe('Business Risk 5: Single-Project Closeout Pass Pricing', () => {
     it('listPlans returns Single-Project Closeout Pass with interval ONE_TIME_PROJECT', async () => {
-      const billingService = new BillingService({} as any);
+      const billingService = new BillingService({
+        getPool: () => ({
+          query: async () => ({ rows: [{
+            id: '0192e3a0-3000-7000-8000-000000000004',
+            code: 'PROJECT_PASS', name: 'Configured single-project pass',
+            price_paise: '2499900', interval: 'ONE_TIME_PROJECT',
+            limits_json: { maxActiveProjects: 1 },
+          }] }),
+        }),
+      } as any);
       const plans = await billingService.listPlans();
 
       const projectPass = plans.find((p) => p.code === 'PROJECT_PASS');

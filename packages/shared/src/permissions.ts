@@ -225,6 +225,7 @@ export type Permission =
   | 'package.download'
   | 'package.submit'
   | 'package.accept'
+  | 'inspection.witness'
   | 'submission.recipients_manage'
   | 'warranty.manage'
   | 'defect.manage'

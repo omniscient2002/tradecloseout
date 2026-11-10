@@ -19,10 +19,39 @@ export async function migrateDatabase(url: string): Promise<void> {
 }
 
 /** Never resets an existing database. Only a random database created here is removed. */
+/**
+ * Protect old test fixtures using DB_PORT/DB_HOST from writing into a different
+ * Postgres instance than the migrator and runtime URLs.
+ * Invoke this before opening a pool or inserting a fixture.
+ */
+export function assertTestDatabaseTargetConsistency(): { source: URL; runtime: URL } {
+  const source = new URL(process.env.MIGRATOR_DATABASE_URL || 'postgres://postgres:postgres@127.0.0.1:5432/tradecloseout');
+  const runtime = new URL(process.env.APP_DATABASE_URL || 'postgres://tc_app:tc_app_pass@127.0.0.1:5432/tradecloseout');
+  const normalHost = (host: string) => ['localhost', '127.0.0.1', '::1', '[::1]'].includes(host) ? 'loopback' : host;
+  const port = (url: URL) => url.port || '5432';
+  // Check both URLs and any legacy test fixture coordinates BEFORE creating
+  // databases or writing fixtures. Silently mixing DB_PORT with the URL can
+  // direct fixtures to a completely different PostgreSQL instance.
+  if (source.protocol !== 'postgres:' && source.protocol !== 'postgresql:') {
+    throw new Error('TEST_DATABASE_TARGET_MISMATCH: migrator must use PostgreSQL');
+  }
+  if (runtime.protocol !== 'postgres:' && runtime.protocol !== 'postgresql:') {
+    throw new Error('TEST_DATABASE_TARGET_MISMATCH: runtime must use PostgreSQL');
+  }
+  if (normalHost(source.hostname) !== normalHost(runtime.hostname) ||
+      port(source) !== port(runtime) || source.pathname !== runtime.pathname ||
+      (process.env.DB_PORT && process.env.DB_PORT !== port(source)) ||
+      (process.env.DB_HOST && normalHost(process.env.DB_HOST) !== normalHost(source.hostname)) ||
+      (process.env.DB_NAME && '/' + process.env.DB_NAME !== source.pathname)) {
+    throw new Error('TEST_DATABASE_TARGET_MISMATCH: migrator, runtime and legacy DB_HOST/DB_PORT/DB_NAME disagree');
+  }
+  return { source, runtime };
+}
+
 export async function withDisposableDatabase(work: (db: {
   admin: Pool; app: Pool; url: string; name: string;
 }) => Promise<void>, options: { baselineThrough?: string } = {}) {
-  const source = new URL(process.env.MIGRATOR_DATABASE_URL || 'postgres://postgres:postgres@127.0.0.1:5432/tradecloseout');
+  const { source, runtime } = assertTestDatabaseTargetConsistency();
   const controlUrl = new URL(source);
   controlUrl.pathname = '/postgres';
   const control = new Pool({ connectionString: controlUrl.toString() });
@@ -57,7 +86,6 @@ export async function withDisposableDatabase(work: (db: {
     await migrateDatabase(url);
     admin = new Pool({ connectionString: url });
     admin.on('error', () => {});
-    const runtime = new URL(process.env.APP_DATABASE_URL || 'postgres://tc_app:tc_app_pass@127.0.0.1:5432/tradecloseout');
     runtime.pathname = `/${name}`;
     app = new Pool({ connectionString: runtime.toString() });
     app.on('error', () => {});

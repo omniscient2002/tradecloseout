@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   UnprocessableEntityException,
@@ -380,7 +381,9 @@ export class CommissioningService {
   }
 
   /**
-   * XP16: Witness sign-off for inspection test request
+   * Legally attributable inspection witness attestation. Only an OTP-authenticated
+   * party-bound guest grant with a dedicated capability may attest. An employee
+   * uploading a photo or entering a party ID is NOT the external signatory.
    */
   async signInspectionWitness(
     ctx: TenantActorContext,
@@ -388,57 +391,143 @@ export class CommissioningService {
     inspectionId: string,
     signData: { partyName: string; representativeName: string; role: string; notes?: string; partyId?: string },
   ) {
-    if (!signData.partyName?.trim() || !signData.representativeName?.trim() || !signData.role?.trim()) {
+    if (ctx.actorType !== 'GUEST' || !ctx.guestGrantId ||
+        !ctx.guestCapabilities?.includes('inspection.witness')) {
+      throw new ForbiddenException({
+        code: 'WITNESS_AUTHORITY_REQUIRED',
+        detail: 'Witness sign-off requires an authenticated, party-bound external grant.',
+      });
+    }
+    return this.recordInspectionWitness(ctx, projectId, inspectionId, signData, true);
+  }
+
+  /**
+   * Contractor recording of attendance is never a verified witness signature.
+   * Keep this separate from the externally authenticated sign-off endpoint.
+   */
+  async recordInspectionWitnessAttendance(
+    ctx: TenantActorContext,
+    projectId: string,
+    inspectionId: string,
+    signData: { partyName: string; representativeName: string; role: string; notes?: string; partyId?: string },
+  ) {
+    if (ctx.actorType === 'GUEST') {
+      throw new ForbiddenException('WITNESS_ATTENDANCE_RECORDING_REQUIRES_MEMBER');
+    }
+    return this.recordInspectionWitness(ctx, projectId, inspectionId, signData, false);
+  }
+
+  private async recordInspectionWitness(
+    ctx: TenantActorContext,
+    projectId: string,
+    inspectionId: string,
+    signData: { partyName: string; representativeName: string; role: string; notes?: string; partyId?: string },
+    attest: boolean,
+  ) {
+    if (!signData?.partyName?.trim() || !signData?.representativeName?.trim() || !signData?.role?.trim()) {
       throw new BadRequestException({
         code: 'WITNESS_DATA_REQUIRED',
         detail: 'Witness partyName, representativeName, and role are mandatory.',
       });
     }
+    if (attest && !signData.partyId) {
+      throw new BadRequestException({
+        code: 'WITNESS_PARTY_REQUIRED',
+        detail: 'A verified witness must identify the assigned party by ID.',
+      });
+    }
 
     return withTenantTransaction(this.pool, ctx, async (client, emit) => {
-      // Validate party existence if partyId is provided (NP01)
-      let isVerified = false;
-      let attestationType = 'RECORDED_ATTENDANCE';
-      let requiresConfirmation = true;
-
-      if (signData.partyId) {
-        const partyRes = await client.query(
-          `SELECT id, name FROM parties WHERE org_id = $1 AND id = $2 AND deleted_at IS NULL`,
-          [ctx.orgId, signData.partyId],
-        );
-        if (!partyRes.rows.length) {
-          throw new NotFoundException({ code: 'PARTY_NOT_FOUND', detail: 'Witness party not found.' });
-        }
-        isVerified = true;
-        attestationType = 'AUTHENTICATED_ATTESTATION';
-        requiresConfirmation = false;
-      }
-
       const { rows } = await client.query(
         `SELECT * FROM quality_inspections
           WHERE org_id = $1 AND project_id = $2 AND id = $3
           FOR UPDATE`,
         [ctx.orgId, projectId, inspectionId],
       );
-
       if (!rows.length) {
         throw new NotFoundException({ code: 'INSPECTION_NOT_FOUND', detail: 'Quality inspection not found.' });
       }
+      const witnessList: any[] = Array.isArray(rows[0].witness_parties_json)
+        ? rows[0].witness_parties_json : [];
 
-      const existing = rows[0];
-      const witnessList: any[] = existing.witness_parties_json || [];
+      let canonicalPartyName = signData.partyName.trim();
+      let representativeName = signData.representativeName.trim();
+      let grantId: string | null = null;
+      let assignedRole = signData.role.trim();
 
+      if (attest) {
+        // OTP/session verification is performed by SessionCsrfGuard. Recheck
+        // revocation, expiry, party identity and scoped capability in this very
+        // transaction to prevent a revoked or cross-party attestation.
+        const { rows: grants } = await client.query(
+          `SELECT gg.id, gg.party_id, gg.target_email, gg.target_phone_e164,
+                  p.name AS party_name
+             FROM guest_grants gg
+             JOIN parties p ON p.org_id = gg.org_id AND p.id = gg.party_id
+            WHERE gg.org_id = $1 AND gg.project_id = $2 AND gg.id = $3
+              AND gg.party_id = $4 AND gg.status = 'ACTIVE'
+              AND gg.expires_at > now()
+              AND gg.capabilities @> ARRAY['inspection.witness']::text[]
+              AND gg.grant_type IN ('CONSULTANT_REVIEW', 'CLIENT_VIEW')
+              AND p.deleted_at IS NULL
+            LIMIT 1`,
+          [ctx.orgId, projectId, ctx.guestGrantId, signData.partyId],
+        );
+        if (!grants.length) {
+          throw new ForbiddenException({
+            code: 'WITNESS_AUTHORITY_DENIED',
+            detail: 'No active independent witness authority for this party and project.',
+          });
+        }
+        const grant = grants[0];
+        // The inspection creator must name the intended party in the inspection
+        // witness list. A grant for one party cannot sign for another.
+        const assigned = witnessList.find((w: any) =>
+          (w.partyId && w.partyId === grant.party_id) ||
+          (typeof w.partyName === 'string' &&
+            w.partyName.trim().toLocaleLowerCase() === String(grant.party_name).trim().toLocaleLowerCase()));
+        if (!assigned) {
+          throw new ForbiddenException({
+            code: 'WITNESS_NOT_ASSIGNED',
+            detail: 'This party is not listed as a witness for this inspection.',
+          });
+        }
+        if (witnessList.some((w: any) => w.isVerified === true && w.partyId === grant.party_id)) {
+          throw new ConflictException({ code: 'WITNESS_ALREADY_SIGNED', detail: 'This party has already attested.' });
+        }
+        canonicalPartyName = grant.party_name;
+        representativeName = grant.target_email || grant.target_phone_e164;
+        assignedRole = assigned.role || assignedRole;
+        grantId = grant.id;
+      } else if (signData.partyId) {
+        const { rows: parties } = await client.query(
+          `SELECT name FROM parties WHERE org_id = $1 AND id = $2 AND deleted_at IS NULL`,
+          [ctx.orgId, signData.partyId],
+        );
+        if (!parties.length) throw new NotFoundException('WITNESS_PARTY_NOT_FOUND');
+        canonicalPartyName = parties[0].name;
+      }
+
+      const recordedAt = new Date().toISOString();
       const newWitness = {
-        ...signData,
-        attestationType,
-        isVerified,
-        requiresConfirmation,
+        partyId: signData.partyId || null,
+        partyName: canonicalPartyName,
+        // The verified identity is the OTP destination bound to the grant,
+        // not the arbitrary person name supplied by the caller.
+        representativeName,
+        claimedRepresentativeName: signData.representativeName.trim(),
+        role: assignedRole,
+        notes: signData.notes || null,
+        attestationType: attest ? 'AUTHENTICATED_ATTESTATION' : 'RECORDED_ATTENDANCE',
+        isVerified: attest,
+        requiresConfirmation: !attest,
         recordedByUserId: ctx.userId,
-        signedByUserId: ctx.userId,
-        signedAt: new Date().toISOString(),
+        signedByUserId: attest ? ctx.userId : null,
+        authenticatedGrantId: grantId,
+        signedAt: attest ? recordedAt : null,
+        recordedAt,
       };
       witnessList.push(newWitness);
-
       await client.query(
         `UPDATE quality_inspections
             SET witness_parties_json = $4
@@ -447,18 +536,13 @@ export class CommissioningService {
       );
 
       emit({
-        eventType: 'INSPECTION_WITNESS_SIGNED',
+        eventType: attest ? 'INSPECTION_WITNESS_SIGNED' : 'INSPECTION_WITNESS_ATTENDANCE_RECORDED',
         projectId,
         entityType: 'QUALITY_INSPECTION',
         entityId: inspectionId,
         afterJson: { witness: newWitness },
       });
-
-      return {
-        inspectionId,
-        witnesses: witnessList,
-        lastSigned: newWitness,
-      };
+      return { inspectionId, witnesses: witnessList, lastSigned: newWitness };
     });
   }
 

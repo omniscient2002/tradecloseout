@@ -156,8 +156,8 @@ export class HandoverService {
       await client.query(
         `INSERT INTO handover_packages
           (id, org_id, project_id, version_no, status, snapshot_id, snapshot_checksum,
-           override_reason, requested_by)
-         VALUES ($1, $2, $3, $4, 'QUEUED', $5, $6, $7, $8)`,
+           override_reason, requested_by, package_purpose)
+         VALUES ($1, $2, $3, $4, 'QUEUED', $5, $6, $7, $8, 'FULL_HANDOVER')`,
         [
           packageId,
           ctx.orgId,
@@ -352,6 +352,21 @@ export class HandoverService {
       exceptionItems?: Array<{ title: string; docTypeKey: string; reason: string }>;
     },
   ) {
+    if (!input || !input.recipientPartyId ||
+        !['ACCEPT', 'ACCEPT_WITH_EXCEPTIONS', 'REJECT'].includes(input.decision)) {
+      throw new UnprocessableEntityException({
+        code: 'INVALID_RECIPIENT_DECISION',
+        detail: 'A valid recipient party and decision are required.',
+      });
+    }
+    // Internal project managers may submit a package, but cannot impersonate
+    // the legally independent external recipient who accepts it.
+    if (ctx.actorType !== 'GUEST' || !ctx.guestGrantId) {
+      throw new ForbiddenException({
+        code: 'EXTERNAL_RECIPIENT_AUTHORITY_REQUIRED',
+        detail: 'Recipient acceptance requires the authenticated recipient party grant.',
+      });
+    }
     if (input.decision !== 'ACCEPT' && (!input.remarks || input.remarks.trim().length < 5)) {
       throw new UnprocessableEntityException({
         code: 'REMARKS_REQUIRED',
@@ -362,13 +377,23 @@ export class HandoverService {
     return withTenantTransaction(this.pool, ctx, async (client, emit) => {
       // 1. Resolve and lock submission to guarantee correct project context (TC2-011)
       const subRes = await client.query(
-        `SELECT id, project_id, status, package_id FROM submissions WHERE org_id = $1 AND id = $2 FOR UPDATE`,
+        `SELECT s.id, s.project_id, s.status, s.package_id, hp.package_purpose
+           FROM submissions s
+           JOIN handover_packages hp
+             ON hp.org_id = s.org_id AND hp.project_id = s.project_id AND hp.id = s.package_id
+          WHERE s.org_id = $1 AND s.id = $2 FOR UPDATE OF s`,
         [ctx.orgId, submissionId],
       );
       if (!subRes.rows.length) {
         throw new NotFoundException('SUBMISSION_NOT_FOUND');
       }
       const submission = subRes.rows[0];
+      if (submission.package_purpose !== 'FULL_HANDOVER') {
+        throw new ConflictException({
+          code: 'PARTIAL_PACKAGE_CANNOT_RECEIVE_HANDOVER_ACCEPTANCE',
+          detail: 'An RA-bill annexure cannot be accepted as a full contractual handover.',
+        });
+      }
       if (projectId && submission.project_id && projectId !== submission.project_id) {
         throw new ConflictException({
           code: 'SUBMISSION_PROJECT_MISMATCH',
@@ -384,11 +409,12 @@ export class HandoverService {
         ACCEPT_WITH_EXCEPTIONS: 'ACCEPTED_WITH_EXCEPTIONS',
         REJECT: 'REJECTED',
       };
-      const nextRecipientStatus = recipientStatusMap[input.decision] || 'ACCEPTED';
+      const nextRecipientStatus = recipientStatusMap[input.decision];
 
       // 3. Resolve and lock recipient row, verifying authority and preventing conflicting decisions (V05, F05)
       const recCheck = await client.query(
-        `SELECT sr.*, gag.party_id AS grant_party_id, gag.status AS grant_status, gag.project_id AS grant_project_id
+        `SELECT sr.*, gag.party_id AS grant_party_id, gag.status AS grant_status, gag.project_id AS grant_project_id,
+                  gag.expires_at AS grant_expires_at, gag.capabilities AS grant_capabilities
            FROM submission_recipients sr
            LEFT JOIN guest_grants gag ON gag.org_id = sr.org_id AND gag.id = $4
           WHERE sr.org_id = $1 AND sr.submission_id = $2
@@ -408,26 +434,32 @@ export class HandoverService {
         });
       }
 
-      if (ctx.actorType === 'GUEST') {
-        if (existingRec.grant_status !== 'ACTIVE') {
-          throw new UnauthorizedException('GUEST_GRANT_REVOKED_OR_EXPIRED');
-        }
-        // An unscoped/malformed grant must never be interpreted as
-        // permission to act for *any* recipient or project.
-        if (!existingRec.grant_project_id || existingRec.grant_project_id !== targetProjectId) {
-          throw new ForbiddenException({
-            code: 'RECIPIENT_AUTHORITY_DENIED',
-            detail: 'Guest grant does not belong to this project.',
-          });
-        }
-        const effectivePartyId = existingRec.recipient_party_id || existingRec.party_id;
-        if (!existingRec.grant_party_id || !effectivePartyId ||
-            existingRec.grant_party_id !== effectivePartyId) {
-          throw new ForbiddenException({
-            code: 'RECIPIENT_AUTHORITY_DENIED',
-            detail: 'Guest grant does not identify the authorised recipient party.',
-          });
-        }
+      if (existingRec.grant_status !== 'ACTIVE' ||
+          !existingRec.grant_expires_at || new Date(existingRec.grant_expires_at).getTime() <= Date.now()) {
+        throw new UnauthorizedException('GUEST_GRANT_REVOKED_OR_EXPIRED');
+      }
+      if (!Array.isArray(existingRec.grant_capabilities) ||
+          !existingRec.grant_capabilities.includes('package.accept')) {
+        throw new ForbiddenException({
+          code: 'RECIPIENT_AUTHORITY_DENIED',
+          detail: 'The active grant does not permit handover acceptance.',
+        });
+      }
+      if (!existingRec.grant_project_id || existingRec.grant_project_id !== targetProjectId) {
+        throw new ForbiddenException({
+          code: 'RECIPIENT_AUTHORITY_DENIED',
+          detail: 'Guest grant does not belong to this project.',
+        });
+      }
+      // Never permit an unlinked recipient row to be silently accepted by a
+      // general organisation member or by a guest bound to another party.
+      const effectivePartyId = existingRec.recipient_party_id || existingRec.party_id;
+      if (!existingRec.grant_party_id || !effectivePartyId ||
+          existingRec.grant_party_id !== effectivePartyId) {
+        throw new ForbiddenException({
+          code: 'RECIPIENT_AUTHORITY_DENIED',
+          detail: 'Guest grant does not identify this submitted recipient party.',
+        });
       }
 
       const updateRecRes = await client.query(
@@ -626,8 +658,8 @@ export class HandoverService {
       await client.query(
         `INSERT INTO handover_packages
           (id, org_id, project_id, version_no, status, snapshot_id, snapshot_checksum,
-           override_reason, requested_by)
-         VALUES ($1, $2, $3, $4, 'QUEUED', $5, $6, $7, $8)`,
+           override_reason, requested_by, package_purpose)
+         VALUES ($1, $2, $3, $4, 'QUEUED', $5, $6, $7, $8, 'RA_BILL')`,
         [
           packageId,
           ctx.orgId,
@@ -777,7 +809,8 @@ export class HandoverService {
       );
       if (!rows.length) throw new NotFoundException({ code: 'PACKAGE_NOT_FOUND', detail: 'Handover package not found.' });
       const row = rows[0];
-      if (row.status !== 'READY' || row.object_status !== 'READY' ||
+      if (!['READY', 'SUBMITTED', 'PARTIALLY_ACCEPTED', 'ACCEPTED'].includes(row.status) ||
+          row.object_status !== 'READY' || row.mime !== 'application/pdf' ||
           !row.provider_version_id || !row.sha256 || row.sha256 !== row.checksum ||
           Number(row.observed_size_bytes) !== Number(row.size_bytes)) {
         throw new UnprocessableEntityException({
@@ -853,6 +886,7 @@ export class HandoverService {
       const { rows: latestPkg } = await client.query(
         `SELECT hp.id, hp.status FROM handover_packages hp
            WHERE hp.org_id = $1 AND hp.project_id = $2
+             AND hp.package_purpose = 'FULL_HANDOVER'
            ORDER BY hp.version_no DESC LIMIT 1 FOR UPDATE`,
         [ctx.orgId, targetProjectId],
       );
@@ -878,7 +912,7 @@ export class HandoverService {
         await client.query(
           `INSERT INTO submission_recipients
              (id, org_id, project_id, submission_id, party_id, recipient_party_id, name, email, role, is_required_approver, status)
-           VALUES ($1, $2, $3, $4, $5, $5, $6, $7, $8, $9, 'SENT')`,
+           VALUES ($1, $2, $3, $4, $5, $5, $6, $7, $8, $9, 'PENDING_DELIVERY')`,
           [
             uuidv7(),
             ctx.orgId,
@@ -894,11 +928,11 @@ export class HandoverService {
       }
 
       emit({
-        eventType: 'SUBMISSION_DISPATCHED',
+        eventType: 'SUBMISSION_PREPARED',
         projectId: targetProjectId,
         entityType: 'SUBMISSION',
         entityId: submissionId,
-        afterJson: { packageId, recipientCount: dto.recipients.length },
+        afterJson: { packageId, recipientCount: dto.recipients.length, deliveryVerified: false },
       });
 
       return {
@@ -908,6 +942,28 @@ export class HandoverService {
         recipientsCount: dto.recipients.length,
       };
     });
+  }
+
+  /**
+   * Legacy 'dossier/pdf' download uses the latest verified worker-generated
+   * artifact. Never synthesize a front-matter-only PDF as a completed dossier.
+   * An incomplete newer revision blocks fallback to a stale accepted version.
+   */
+  async getLatestDossierDownloadUrl(ctx: TenantActorContext, projectId: string) {
+    const latestId = await withTenantTransaction(this.pool, ctx, async (client) => {
+      const { rows } = await client.query(
+        `SELECT id FROM handover_packages
+           WHERE org_id = $1 AND project_id = $2
+             AND package_purpose = 'FULL_HANDOVER'
+           ORDER BY version_no DESC LIMIT 1`,
+        [ctx.orgId, projectId],
+      );
+      if (!rows.length) {
+        throw new NotFoundException('NO_HANDOVER_DOSSIER_AVAILABLE');
+      }
+      return rows[0].id as string;
+    });
+    return this.getPackageDownloadUrl(ctx, projectId, latestId);
   }
 
   async generateDossierPdf(ctx: TenantActorContext, projectId: string): Promise<Uint8Array> {
