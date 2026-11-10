@@ -1,4 +1,6 @@
 import { ForbiddenException } from '@nestjs/common';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { SessionCsrfGuard } from '../src/common/guards/session-csrf.guard';
 import { executeReviewDecision } from '../src/modules/reviews/review-decision.service';
 import { PermissionGuard } from '../src/common/guards/permission.guard';
@@ -33,6 +35,14 @@ describe('G01: authentication hardening negative controls', () => {
     if (originalCsrf === undefined) delete process.env.AUTH_CSRF_KEY;
     else process.env.AUTH_CSRF_KEY = originalCsrf;
     jest.restoreAllMocks();
+  });
+
+  it('G01-R5: documents only supported OTP login and explicitly withdraws magic-link fallback',()=>{
+    const contract=readFileSync(resolve(__dirname,'../../../10-API-AND-INTEGRATIONS.md'),'utf8');
+    expect(contract).toContain('Member-login magic-link request is **not implemented**');
+    expect(contract).toContain('No automatic SMS-to-email fallback');
+    expect(contract).toContain('original `challengeId`');
+    expect(contract).not.toContain('fallback to email magic link after 2 failures');
   });
 
   it('requires explicit production keys and HTTPS before starting the API', () => {
