@@ -191,7 +191,7 @@ export class InMemoryRedis {
 async function requireGatewaySubmissionAccepted(response: Response): Promise<void> {
   if (!response.ok) throw new Error('PROVIDER_SUBMISSION_REJECTED');
   const contentType=response.headers.get('content-type') || '';
-  if (!/^application\\/json(?:;|$)/i.test(contentType.trim())) {
+  if (contentType.split(';',1)[0].trim().toLowerCase() !== 'application/json') {
     throw new Error('PROVIDER_SUBMISSION_ACK_REQUIRED');
   }
   const raw=await response.text();
