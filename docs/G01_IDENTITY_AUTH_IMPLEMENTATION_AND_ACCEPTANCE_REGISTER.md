@@ -90,3 +90,26 @@ This pass found source-level defects **not reliably covered by the original 21-f
 5. **Independent security review:** replay, forged contact/grant, session/tenant races, backup-factor and privileged MFA bypass across every supported route.
 
 **G01 sign-off = NO-GO until the above are demonstrated and every 21-row closure is independently reviewed.**
+
+
+## Fourth hardening pass — membership, device, browser and offline boundaries (2026-11-10)
+
+These changes were implemented on the same draft G01 branch. **Do not infer production approval from their presence or a green test run.** A deployment SHA is acceptable only after the actual PR head passes its full CI and the operational gates below are independently accepted.
+
+| Area / cross-group interface | Source change | Negative / positive evidence expected | Operational gate |
+|---|---|---|---|
+| G01-014 privilege changes (G03) | Membership role edits revoke active sessions in the affected org and clear their MFA state in the same transaction. Ownership transfer verifies an active current owner, rejects malformed/self-transfer, and revokes both former/new-owner sessions. | `g01-member-invitation-authority-db.spec.ts`: owner role cannot be minted through invitation/patch; revoked old member and owner credentials; clean transfer to active target; no unrelated session revocation. | Real multi-device role elevation/demotion, simultaneous membership removal/switch and owner handover using HTTP cookies |
+| G01-015 audit trail | Each member-role change emits a durable `ORG_MEMBER_ROLE_CHANGED` domain audit/outbox record even where there are no active sessions; revoked sessions produce redacted `auth_security_events`. | SQL event count and role provenance in restricted PostgreSQL fixtures; failure injection must prove audit failure rolls back the role change. | Operations can reconstruct the permission change and login revocations with protected, access-controlled immutable history |
+| G01-014 device controls | Added `POST /api/v1/auth/sessions/:sessionId/revoke` with authenticated owner-only session lookup, atomic revoke and append-only security event. Revoking current session clears the HttpOnly cookie. Restricted ledger has no unnecessary SELECT grant. | `g01-device-session-revocation-db.spec.ts`: foreign/invalid/already-revoked session denied, other devices survive, current device clears cookie, exactly two audit records. | Browser device inventory / remote revocation flows, stolen credential replay, concurrent revoke/refresh tests |
+| G01-005/023 browser | Contractor layout renders no protected child workspace content until `/auth/me` succeeds and required MFA is complete; failed session verification redirects to sign-in. | `E2E-G01` Playwright: expired session cookie cannot reveal contractor navigation/content while API identity check is pending, then redirects. | Production HTTPS browser with real cookie/CSRF, MFA and two-tab login/logout/tenant switch |
+| G01-005/006 × G22 offline queue | Persist queue actor, auth generation and cross-tab epoch; validate before S3 multipart PUT, upload completion and each scanner-result poll. Abort to `BLOCKED_SCOPE` on identity mismatch; never silently rebind old actor drafts to a new user. Valid cookie-only browser sessions may bootstrap securely before queue creation/drain. | `E2E-G01` queue-context matrix (actor, session generation, epoch, legacy missing fields). Integration test must change account during a multipart upload and prove no second part or completion commits under the changed credentials. | Real IndexedDB, multi-tab browser, 4G/network failure, changed account during in-flight PUT, S3 presigned URL lifetime and human reconfirmation of legacy blocked drafts |
+
+### Required independent post-merge/pre-release verification
+
+1. Attempt a live owner transfer with two already-authenticated devices and prove both old sessions fail; verify the resulting role and domain/security audit references.
+2. Exercise `/auth/sessions`, single-device revoke, current-device revoke and logout-all against real HTTP, CSRF, MFA and restricted PostgreSQL. Reuse old bearer/cookies in a separate client and require denial.
+3. Start the production-built web app and intercept a delayed `/auth/me` failure; the protected contractor children must never appear. Repeat with actual expired/suspended accounts through the production proxy.
+4. Enqueue a verified guest or contractor upload with IndexedDB; switch account/organisation in another tab while S3 upload is delayed. Verify all later PUT, complete, and document status transitions use only the original authenticated principal; old drafts remain accessible for intentional recovery but cannot auto-upload to a different account.
+5. Complete the independent external authority/delegation SOP, real SMS/email provider acceptance, two-node OTP/rate-limit resilience, MFA recovery and production-mode session/CSRF browser matrices. These **remain release blockers**.
+
+**Outcome: source-hardening continuation only; G01 production sign-off remains NO-GO pending all required evidence.**
