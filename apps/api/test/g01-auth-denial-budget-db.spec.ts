@@ -107,6 +107,39 @@ describe('G01-R3: bounded, independently committed denial telemetry',()=>{
     });
   });
 
+  it('caps repeated actually throttled MFA requests without suppressing the denial',async()=>{
+    await withDisposableDatabase(async({admin,app})=>{
+      const user=uuidv7(),org=uuidv7(),session=uuidv7();
+      await admin.query("INSERT INTO users(id,name,status) VALUES($1,'Rate Limited User','ACTIVE')",[user]);
+      await admin.query("INSERT INTO organisations(id,legal_name,display_name,state,status) VALUES($1,'Rate Org','Rate Org','KA','ACTIVE')",[org]);
+      await admin.query(
+        `INSERT INTO sessions(id,user_id,active_org_id,token_hash,csrf_token_hash,expires_at)
+         VALUES($1,$2,$3,$4,$5,now()+interval '1 day')`,
+        [session,user,org,'c'.repeat(64),'d'.repeat(64)],
+      );
+      const ctrl=new MfaController(app);
+      const req:any={
+        auth:{userId:user,activeOrgId:org,sessionId:session},
+        userContext:{actorType:'USER'},ip:'198.51.100.91',
+      };
+      for(let n=0;n<35;n++){
+        await expect(ctrl.verifyFactor(req,{code:'123456'},{} as any))
+          .rejects.toThrow();
+      }
+      const {rows:throttled}=await admin.query(
+        `SELECT COUNT(*)::int AS n FROM auth_security_events
+          WHERE actor_user_id=$1 AND event_type='MFA_VERIFY_DENIED'
+            AND outcome='DENIED' AND reason_code='RATE_LIMITED'`,[user],
+      );
+      expect(throttled[0].n).toBe(1);
+      const {rows:budget}=await admin.query(
+        `SELECT COUNT(*)::int AS n FROM auth_request_budgets
+          WHERE budget_key LIKE 'mfa:verify:user:%' AND count>10`,
+      );
+      expect(budget[0].n).toBe(1);
+    });
+  });
+
   it('throttles failure diagnostics per replica and never authorizes denied requests',async()=>{
     const rawConsole=jest.spyOn(console,'error').mockImplementation(()=>{});
     const base=Date.now()+120_000;
@@ -135,6 +168,15 @@ describe('G01-R3: bounded, independently committed denial telemetry',()=>{
       } as any)).rejects.toMatchObject({
         response:expect.objectContaining({code:'MFA_MEMBER_ONLY'}),
       });
+      expect(rawConsole).toHaveBeenCalledTimes(2);
+      // A completely stalled pool checkout must not block the original
+      // protected denial indefinitely; the backup wall timeout is 1000 ms.
+      const never:any={query:jest.fn(()=>new Promise(()=>{}))};
+      const before=performance.now();
+      await recordDeniedAuthenticationEvent(never,'AUTH_SESSION_DENIED',{
+        reasonCode:'UNAUTHENTICATED',
+      });
+      expect(performance.now()-before).toBeLessThan(2_500);
       expect(rawConsole).toHaveBeenCalledTimes(2);
     }finally{
       now.mockRestore();
