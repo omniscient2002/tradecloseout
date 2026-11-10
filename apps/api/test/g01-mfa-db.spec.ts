@@ -96,7 +96,20 @@ describe('G01 MFA real PostgreSQL control plane', () => {
       expect(row.mfa_totp_pending_secret).toBeNull();
       expect(row.mfa_enabled_at).toBeTruthy();
       expect((await app.query('SELECT mfa_verified FROM sessions WHERE id=$1',[sessionId])).rows[0].mfa_verified).toBe(true);
+      req.ip='198.51.100.22';
       await expect(ctrl.verifyFactor(req,{code:firstCode},res)).rejects.toThrow();
+      const replay=(await admin.query(
+        `SELECT event_type,outcome,reason_code,source_digest
+           FROM auth_security_events WHERE actor_user_id=$1
+             AND event_type='MFA_VERIFY_DENIED' ORDER BY occurred_at DESC LIMIT 1`,
+        [userId],
+      )).rows[0];
+      expect(replay).toMatchObject({
+        event_type:'MFA_VERIFY_DENIED',outcome:'DENIED',
+        reason_code:'MFA_CODE_INVALID_OR_REPLAYED',
+        source_digest:expect.stringMatching(/^[0-9a-f]{64}$/),
+      });
+      expect(replay.source_digest).not.toContain('198.51.100.22');
       // Previously issued one-use backup hashes remain valid during a
       // controlled key overlap window. They are not silently reissued.
       process.env.AUTH_MFA_ENCRYPTION_KEY_PREVIOUS =
@@ -119,12 +132,24 @@ describe('G01 MFA real PostgreSQL control plane', () => {
       req.cookies.tc_session = res.cookie.mock.lastCall[1];
       expect(recovered.mfaVerified).toBe(true);
       await expect(ctrl.recoverFactor(req,{recoveryCode:backup},res)).rejects.toThrow();
+      const recoveryDenied=(await admin.query(
+        `SELECT reason_code FROM auth_security_events
+          WHERE actor_user_id=$1 AND event_type='MFA_RECOVERY_DENIED'
+          ORDER BY occurred_at DESC LIMIT 1`,[userId],
+      )).rows[0];
+      expect(recoveryDenied.reason_code).toBe('RECOVERY_CODE_INVALID');
       expect((await admin.query(
         'SELECT count(*)::int AS n FROM mfa_recovery_codes WHERE user_id=$1 AND consumed_at IS NOT NULL',
         [userId])).rows[0].n).toBe(1);
       req.auth.mfaVerified = true;
       await expect(ctrl.resetEnrollment(req, {} as any, res)).rejects.toThrow();
       await expect(ctrl.resetEnrollment(req, { recoveryCode: backup }, res)).rejects.toThrow();
+      expect((await admin.query(
+        `SELECT count(*)::int AS n FROM auth_security_events
+         WHERE actor_user_id=$1 AND event_type='MFA_RESET_DENIED'
+           AND outcome='DENIED' AND reason_code='MFA_FRESH_PROOF_INVALID'`,
+         [userId],
+      )).rows[0].n).toBeGreaterThan(0);
       expect((await admin.query(
         'SELECT mfa_enabled_at FROM users WHERE id=$1', [userId])).rows[0].mfa_enabled_at).toBeTruthy();
       const reset=await ctrl.resetEnrollment(req,
