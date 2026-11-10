@@ -322,6 +322,20 @@ describe('G01: authentication hardening negative controls', () => {
     }
   });
 
+  it('returns a safe 409 when a session changes before a transaction can commit',()=>{
+    const filter = new ProblemJsonExceptionFilter();
+    const output:any={setHeader:jest.fn(),status:jest.fn().mockReturnThis(),json:jest.fn()};
+    const host:any={switchToHttp:()=>({
+      getResponse:()=>output,
+      getRequest:()=>({path:'/api/v1/projects',headers:{'x-request-id':'session-test'}}),
+    })};
+    filter.catch(new Error('AUTH_SESSION_CONTEXT_CHANGED'),host);
+    expect(output.status).toHaveBeenCalledWith(409);
+    expect(output.json.mock.calls[0][0]).toMatchObject({
+      code:'AUTH_CONTEXT_CHANGED',status:409,requestId:'session-test',
+    });
+  });
+
   it('never logs raw invitation tokens, verification codes or provider stack traces', () => {
     const filter = new ProblemJsonExceptionFilter();
     const write = jest.spyOn((filter as any).logger, 'error').mockImplementation(() => {});
