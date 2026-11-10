@@ -32,6 +32,27 @@ test.describe('TradeCloseout v0.2.1 Critical User Flows (SCR-002 -> SCR-010 -> S
  * outgoing HTTP request are exercised.
  */
 test.describe('G01 browser authentication contract', () => {
+  test('E2E-G01: blocks contractor content until session identity is verified', async ({ page }) => {
+    await page.context().addCookies([{
+      name:'tc_session', value:'expired-opaque-cookie',
+      domain:'localhost',path:'/',httpOnly:true,sameSite:'Lax',
+    }]);
+    let releaseVerification!: () => void;
+    const verificationWait=new Promise<void>(resolve => {releaseVerification=resolve;});
+    await page.route('**/api/v1/auth/me',async route=>{
+      await verificationWait;
+      await route.fulfill({
+        status:401,contentType:'application/problem+json',
+        body:JSON.stringify({status:401,code:'SESSION_EXPIRED',detail:'Session expired'}),
+      });
+    });
+    await page.goto('http://localhost:3002/dashboard');
+    await expect(page.getByRole('status')).toContainText('Verifying your workspace session');
+    await expect(page.getByRole('navigation')).toHaveCount(0);
+    releaseVerification();
+    await expect(page).toHaveURL(/\\/login(?:\\?|$)/);
+  });
+
   test('E2E-G01: forwards the server-issued challenge ID with the human-entered code', async ({ page }) => {
     const challengeId = '01999999-1234-7000-8000-999999999999';
     await page.route('**/api/v1/auth/otp/request', async (route) => {
