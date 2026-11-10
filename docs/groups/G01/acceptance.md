@@ -10,6 +10,12 @@ no fabricated verification or production acceptance claims.
 
 ## Immediate source tasks
 
+The five supplemental tasks below now have **independent scoped source acceptance**
+at `4f8a7bb183e892ee4626d9116c00a34dc097f76c`. They are retained as the original
+task/verification record. See [the independent acceptance](independent-review-4f8a7bb.md)
+and raw evidence for what was actually checked. This does not close the original
+21 findings, certify production behavior or authorize merging the application PR.
+
 1. R1: Reject missing session cookie before acquiring the org-switch PG client;
    guarantee release on every post-acquisition failure. Prove repeated valid
    bearer-only requests cannot exhaust the pool and normal switching still rotates.

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "group": "G01",
   "original_finding_count": 21,
-  "reviewed_sha": "0b1523e4deee1abe66e861fe6bbe8e060e0a192a",
+  "reviewed_sha": "4f8a7bb183e892ee4626d9116c00a34dc097f76c",
   "tracking_issue": "https://github.com/omniscient2002/tradecloseout/issues/6",
   "release_decision": "NO_GO",
   "findings": [
@@ -199,46 +199,80 @@
       "id": "G01-R1",
       "requirement": "Org-switch database client cleanup",
       "acceptance": "Validate cookies before pool.connect and release every acquired client even on failure. Repeated valid bearer-only rejections must not exhaust the pool.",
-      "status": "OPEN",
-      "evidence_level": "Static source finding; runtime reproduction/regression required",
-      "evidence": [],
-      "review_reference": "docs/groups/G01/independent-review-0b1523e.md"
+      "status": "REVIEW_VERIFIED",
+      "evidence_level": "Independent targeted source inspection and exact-head CI evidence; scoped source acceptance only, not production acceptance",
+      "evidence": [
+        "https://github.com/omniscient2002/tradecloseout/pull/5#pullrequestreview-5846558186",
+        "https://github.com/omniscient2002/tradecloseout/actions/runs/42828939414"
+      ],
+      "review_reference": "docs/groups/G01/independent-review-4f8a7bb.md",
+      "verified_sha": "4f8a7bb183e892ee4626d9116c00a34dc097f76c",
+      "reviewer": "Independent architecture/review chat (/root)",
+      "implementation_actor": "Regular ChatGPT implementation chat (PR #5)"
     },
     {
       "id": "G01-R2",
       "requirement": "Org-switch targetOrgId runtime type",
       "acceptance": "Reject singleton UUID arrays, objects and numbers with stable 4xx before any database query; preserve valid UUID switching.",
-      "status": "OPEN",
-      "evidence_level": "Static source finding; runtime reproduction/regression required",
-      "evidence": [],
-      "review_reference": "docs/groups/G01/independent-review-0b1523e.md"
+      "status": "REVIEW_VERIFIED",
+      "evidence_level": "Independent targeted source inspection and exact-head CI evidence; scoped source acceptance only, not production acceptance",
+      "evidence": [
+        "https://github.com/omniscient2002/tradecloseout/pull/5#pullrequestreview-5846558186",
+        "https://github.com/omniscient2002/tradecloseout/actions/runs/42828939414"
+      ],
+      "review_reference": "docs/groups/G01/independent-review-4f8a7bb.md",
+      "verified_sha": "4f8a7bb183e892ee4626d9116c00a34dc097f76c",
+      "reviewer": "Independent architecture/review chat (/root)",
+      "implementation_actor": "Regular ChatGPT implementation chat (PR #5)"
     },
     {
       "id": "G01-R3",
       "requirement": "MFA/recovery/session denial event gaps",
       "acceptance": "Persist redacted bounded denial/replay/recovery events with trusted metadata and reason despite authentication transaction rollback.",
-      "status": "OPEN",
-      "evidence_level": "Static source finding; runtime reproduction/regression required",
-      "evidence": [],
-      "review_reference": "docs/groups/G01/independent-review-0b1523e.md"
+      "status": "REVIEW_VERIFIED",
+      "evidence_level": "Independent actual-candidate Node22/PG16 restricted-role held-checkout, held-lock and shared-cap probes, plus exact-head CI; not production/network-partition acceptance",
+      "evidence": [
+        "https://github.com/omniscient2002/tradecloseout/pull/5#pullrequestreview-5846558186",
+        "https://github.com/omniscient2002/tradecloseout/actions/runs/42828939414"
+      ],
+      "review_reference": "docs/groups/G01/independent-review-4f8a7bb.md",
+      "verified_sha": "4f8a7bb183e892ee4626d9116c00a34dc097f76c",
+      "reviewer": "Independent architecture/review chat (/root)",
+      "implementation_actor": "Regular ChatGPT implementation chat (PR #5)",
+      "local_evidence": "docs/evidence/g01-recheck-4f8a7bb/evidence.json"
     },
     {
       "id": "G01-R4",
       "requirement": "Worker startup security parity",
       "acceptance": "Reject unknown/missing worker mode, unsafe actual database roles and missing/unsafe production dependencies before scheduled work; use restricted tc_app.",
-      "status": "OPEN",
-      "evidence_level": "Static source finding; runtime reproduction/regression required",
-      "evidence": [],
-      "review_reference": "docs/groups/G01/independent-review-0b1523e.md"
+      "status": "REVIEW_VERIFIED",
+      "evidence_level": "Independent targeted source inspection and exact-head CI evidence; scoped source acceptance only, not production acceptance",
+      "evidence": [
+        "https://github.com/omniscient2002/tradecloseout/pull/5#pullrequestreview-5846558186",
+        "https://github.com/omniscient2002/tradecloseout/actions/runs/42828939414"
+      ],
+      "review_reference": "docs/groups/G01/independent-review-4f8a7bb.md",
+      "verified_sha": "4f8a7bb183e892ee4626d9116c00a34dc097f76c",
+      "reviewer": "Independent architecture/review chat (/root)",
+      "implementation_actor": "Regular ChatGPT implementation chat (PR #5)"
     },
     {
       "id": "G01-R5",
       "requirement": "Unsupported magic-link and fallback promises",
       "acceptance": "Implement a verified supported recovery contract or explicitly withdraw undocumented implementation claims in API/security documentation. Never choose an unverified alternate contact.",
-      "status": "OPEN",
-      "evidence_level": "Static source finding; runtime reproduction/regression required",
-      "evidence": [],
-      "review_reference": "docs/groups/G01/independent-review-0b1523e.md"
+      "status": "REVIEW_VERIFIED",
+      "evidence_level": "Independent targeted source inspection and exact-head CI evidence; scoped source acceptance only, not production acceptance",
+      "evidence": [
+        "https://github.com/omniscient2002/tradecloseout/pull/5#pullrequestreview-5846558186",
+        "https://github.com/omniscient2002/tradecloseout/actions/runs/42828939414"
+      ],
+      "review_reference": "docs/groups/G01/independent-review-4f8a7bb.md",
+      "verified_sha": "4f8a7bb183e892ee4626d9116c00a34dc097f76c",
+      "reviewer": "Independent architecture/review chat (/root)",
+      "implementation_actor": "Regular ChatGPT implementation chat (PR #5)"
     }
-  ]
+  ],
+  "previous_reviewed_sha": "0b1523e4deee1abe66e861fe6bbe8e060e0a192a",
+  "review_scope": "Supplemental G01-R1 through G01-R5 source corrections only. Original 21 findings retain their existing statuses and are not recertified; production and any remaining engineering/operational acceptance remain open.",
+  "source_review_url": "https://github.com/omniscient2002/tradecloseout/pull/5#pullrequestreview-5846558186"
 }

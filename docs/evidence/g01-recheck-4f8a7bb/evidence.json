@@ -1,0 +1,33 @@
+{
+  "source_sha": "4f8a7bb183e892ee4626d9116c00a34dc097f76c",
+  "node": "v22.23.2",
+  "pg": "8.23.1",
+  "postgres": "16.15",
+  "runtime": {
+    "current_user": "tc_app",
+    "rolsuper": false,
+    "rolbypassrls": false
+  },
+  "sequential_shared_global_cap": {
+    "attempts": 40,
+    "events": 30,
+    "expected": 30
+  },
+  "warmed_parallel_test": {
+    "attempts": 120,
+    "events": 2,
+    "configured_global_cap": 30
+  },
+  "queued_deadline": {
+    "helper_return_ms": 251,
+    "waiting_after_deadline": 1,
+    "events_at_deadline": 0,
+    "events_after_connection_release": 0
+  },
+  "locked_backend_deadline": {
+    "helper_return_ms": 362,
+    "backend_at_return": [],
+    "backend_one_second_later": [],
+    "events_after_unlock": 0
+  }
+}
