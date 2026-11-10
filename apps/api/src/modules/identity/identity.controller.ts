@@ -938,18 +938,30 @@ export class IdentityController {
     if ((req as any).userContext?.actorType === 'GUEST') {
       throw new UnauthorizedException('GUEST_ORGANISATION_SWITCH_DENIED');
     }
-    if (!body?.targetOrgId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.targetOrgId)) {
+    // G01-R2: JSON/DTO types are not runtime validation. RegExp.test()
+    // coerces a singleton array to text; pg encodes that array as a different
+    // type, turning a malformed request into an internal database error.
+    if (typeof body?.targetOrgId !== 'string' ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.targetOrgId)) {
       throw new UnprocessableEntityException({ code: 'INVALID_TARGET_ORGANISATION' });
     }
 
-    const client = await this.pool.connect();
-    const authGeneration = uuidv7();
+    // G01-R1: a valid bearer-only session can pass SessionCsrfGuard, but an
+    // organisation switch must rotate an HttpOnly cookie. Reject before pool
+    // acquisition. All work after connect, including token generation, stays
+    // in the protected try/finally so no failing branch can strand a client.
     const rawToken = (req as any).cookies?.tc_session;
-    if (typeof rawToken !== 'string') throw new UnauthorizedException('SESSION_COOKIE_REQUIRED');
-    if (isProductionEnvironment() && !res) throw new UnauthorizedException('SESSION_ROTATION_UNAVAILABLE');
-    const rotatedToken = randomBytes(32).toString('hex');
-    const csrfToken = deriveSessionCsrf(rotatedToken, authGeneration);
+    if (typeof rawToken !== 'string' || rawToken.length < 32) {
+      throw new UnauthorizedException({ code: 'SESSION_COOKIE_REQUIRED' });
+    }
+    if (isProductionEnvironment() && !res) {
+      throw new UnauthorizedException({ code: 'SESSION_ROTATION_UNAVAILABLE' });
+    }
+    const client = await this.pool.connect();
     try {
+      const authGeneration = uuidv7();
+      const rotatedToken = randomBytes(32).toString('hex');
+      const csrfToken = deriveSessionCsrf(rotatedToken, authGeneration);
       await client.query('BEGIN');
       await client.query(
         `SELECT set_config('app.current_org', $1, true),
