@@ -282,7 +282,11 @@ describe('G01: authentication hardening negative controls', () => {
       });
       await expect(invoke('/api/v1/auth/me')).resolves.toBe(true);
       await expect(invoke('/api/v1/auth/mfa/status')).resolves.toBe(true);
-      await expect(invoke('/api/v1/auth/sessions')).resolves.toBe(true);
+      // G01-019: unlike emergency revoke-all, device-session inventory is a
+      // privileged read and must require current second-factor proof.
+      await expect(invoke('/api/v1/auth/sessions')).rejects.toMatchObject({
+        response:expect.objectContaining({code:'MFA_STEP_UP_REQUIRED'}),
+      });
       // New auth-prefixed endpoints do not automatically inherit the
       // pre-MFA escape hatch: protect their privileged reads by default.
       await expect(invoke('/api/v1/auth/internal-admin')).rejects.toMatchObject({
@@ -294,6 +298,7 @@ describe('G01: authentication hardening negative controls', () => {
       session.mfa_verified=true;
       session.mfa_verified_at=new Date().toISOString();
       await expect(invoke('/api/v1/projects')).resolves.toBe(true);
+      await expect(invoke('/api/v1/auth/sessions')).resolves.toBe(true);
       expect(pool.query).toHaveBeenCalledWith(
         expect.stringContaining('FROM sessions s'),
         [createHash('sha256').update('opaque-test-cookie').digest('hex')],
