@@ -1,4 +1,6 @@
-import { apiFetch, getAuthEpoch, getAuthGeneration } from './api-client';
+import {
+  apiFetch, getAuthEpoch, getAuthGeneration, requireAuthenticatedBrowserContext,
+} from './api-client';
 
 export interface OfflineQueuedUpload {
   queueId: string;
@@ -176,11 +178,7 @@ export async function enqueueFieldUpload(params: {
   if (!actorPartition) {
     throw new Error('UPLOAD_ACTOR_CONTEXT_REQUIRED: Sign in or establish the guest grant before queueing evidence.');
   }
-  const authGeneration = getAuthGeneration();
-  const authEpoch = getAuthEpoch();
-  if (!authGeneration || !authEpoch) {
-    throw new Error('UPLOAD_AUTHENTICATION_REQUIRED: Restore your verified session before queueing evidence.');
-  }
+  const {authGeneration,authEpoch}=await requireAuthenticatedBrowserContext();
   const originalFile = params.file;
   const checksumSha256 = await computeBrowserFileSha256(originalFile);
   const item: OfflineQueuedUpload = {
