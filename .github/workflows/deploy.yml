@@ -75,6 +75,57 @@ jobs:
           MIGRATOR_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/tradecloseout
         run: pnpm test:security
 
+      - name: Strict production-mode API authentication smoke (fixture-only; no provider calls)
+        env:
+          NODE_ENV: production
+          API_PORT: '3011'
+          APP_DATABASE_URL: postgres://tc_app:app_local_pw@127.0.0.1:5432/tradecloseout
+          REDIS_URL: redis://127.0.0.1:6379
+          FRONTEND_URL: https://localhost:3002
+          PUBLIC_APP_URL: https://localhost:3002
+          AUTH_TRUSTED_PROXY_CIDRS: direct
+          AUTH_OTP_HMAC_KEY: ci-only-not-for-production-otp-hmac-key-000001
+          AUTH_CSRF_KEY: ci-only-not-for-production-csrf-key-000001
+          DLT_SMS_URL: https://invalid.example.test/otp
+          DLT_SMS_API_KEY: 'ci-only-no-real-provider'
+          DLT_SENDER_ID: 'TESTG01'
+          DLT_ENTITY_ID: 'CI-TEST-ENTITY'
+          DLT_OTP_TEMPLATE_ID: 'CI-TEST-TEMPLATE'
+          MAIL_GATEWAY_URL: https://invalid.example.test/send
+          MAIL_FROM_ADDRESS: ci-auth@example.test
+          MAIL_API_KEY: 'ci-only-no-real-provider'
+        run: |
+          set -euo pipefail
+          export AUTH_MFA_ENCRYPTION_KEY="$(node -e 'process.stdout.write(Buffer.alloc(32,7).toString("base64"))')"
+          pnpm --filter @tradecloseout/api start >/tmp/tradecloseout-prod-mode-smoke.log 2>&1 &
+          API_SMOKE_PID=$!
+          trap 'kill "$API_SMOKE_PID" 2>/dev/null || true' EXIT
+          READY=0
+          for i in $(seq 1 45); do
+            STATUS="$(curl -sS --max-time 2 -o /dev/null -w '%{http_code}' http://127.0.0.1:3011/api/v1/auth/me 2>/dev/null || true)"
+            if [ "$STATUS" = "401" ]; then READY=1; break; fi
+            sleep 1
+          done
+          if [ "$READY" -ne 1 ]; then
+            echo 'G01_PRODUCTION_MODE_STARTUP_FAILURE'
+            sed -E 's/(postgres:\/\/)[^@]+@/\1[REDACTED]@/g' /tmp/tradecloseout-prod-mode-smoke.log | tail -n 45
+            exit 1
+          fi
+          EXPECTED=403
+          STATUS="$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' \
+            -H 'Origin: https://attacker.example.test' -H 'Content-Type: application/json' \
+            --data '{"identifier":"invalid-id"}' \
+            http://127.0.0.1:3011/api/v1/auth/otp/request)"
+          test "$STATUS" = "$EXPECTED"
+          STATUS="$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' \
+            -H 'Origin: https://localhost:3002' -H 'Content-Type: application/json' \
+            --data '{"identifier":"invalid-id"}' \
+            http://127.0.0.1:3011/api/v1/auth/otp/request)"
+          test "$STATUS" = '422'
+          # A production-mode process genuinely booted with restricted tc_app,
+          # with no debug OTP, no real delivery and no customer credentials.
+          # This is NOT proof of HTTPS at the client/proxy or provider acceptance.
+
       - name: Run production-built Next + real API browser auth journey (test-only OTP)
         env:
           E2E_BASE_URL: http://localhost:3002
