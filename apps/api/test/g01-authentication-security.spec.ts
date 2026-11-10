@@ -65,6 +65,9 @@ describe('G01: authentication hardening negative controls', () => {
       ...env, DLT_OTP_TEMPLATE_ID: undefined,
     })).toThrow('BOOT_AUTH_CONFIG_MISSING');
     expect(() => validateAuthenticationConfig({ ...env, FRONTEND_URL: 'http://app.example.com' })).toThrow('BOOT_AUTH_HTTPS_REQUIRED');
+    expect(() => validateAuthenticationConfig({ ...env, PUBLIC_APP_URL: 'http://public.example.com' })).toThrow('BOOT_AUTH_HTTPS_REQUIRED');
+    expect(() => validateAuthenticationConfig({ ...env, PUBLIC_APP_URL: 'https://public.example.com/path' })).toThrow('BOOT_AUTH_ORIGIN_INVALID');
+    expect(() => validateAuthenticationConfig({ ...env, PUBLIC_APP_URL: 'https://public.example.com' })).not.toThrow();
     expect(() => validateAuthenticationConfig({ ...env, AUTH_MFA_ENCRYPTION_KEY: 'bad' })).toThrow('BOOT_AUTH_MFA_ENCRYPTION_KEY_INVALID');
     expect(() => validateAuthenticationConfig({
       ...env, AUTH_MFA_ENCRYPTION_KEY_PREVIOUS: 'bad',
@@ -120,7 +123,9 @@ describe('G01: authentication hardening negative controls', () => {
   it('rejects cross-site and untrusted login origins rather than trusting CORS alone', () => {
     process.env.NODE_ENV = 'production';
     const oldFrontend = process.env.FRONTEND_URL;
+    const oldPublicApp = process.env.PUBLIC_APP_URL;
     process.env.FRONTEND_URL = 'https://app.example.com';
+    process.env.PUBLIC_APP_URL = 'http://insecure.example.com';
     try {
       expect(() => assertAuthenticationOrigin({ headers: {
         origin: 'https://app.example.com',
@@ -130,12 +135,15 @@ describe('G01: authentication hardening negative controls', () => {
         { origin: 'https://attacker.example', 'sec-fetch-site': 'cross-site' },
         { origin: 'https://attacker.example', 'sec-fetch-site': 'same-site' },
         { origin: 'https://app.example.com', 'sec-fetch-site': 'cross-site' },
+        { origin: 'http://insecure.example.com', 'sec-fetch-site': 'same-origin' },
         { 'sec-fetch-site': 'cross-site' },
         {},
       ]) expect(() => assertAuthenticationOrigin({ headers } as any)).toThrow(ForbiddenException);
     } finally {
       if (oldFrontend === undefined) delete process.env.FRONTEND_URL;
       else process.env.FRONTEND_URL = oldFrontend;
+      if (oldPublicApp === undefined) delete process.env.PUBLIC_APP_URL;
+      else process.env.PUBLIC_APP_URL = oldPublicApp;
     }
   });
 
