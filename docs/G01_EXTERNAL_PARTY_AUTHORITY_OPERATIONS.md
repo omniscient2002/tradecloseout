@@ -52,6 +52,22 @@ The first legitimate reviewer receives `review_count=1, independently_verified=f
 
 Duplicate approvals from one reviewer, disjoint evidence, expired/revoked grant, unrelated party or invalid grant type must fail; do not override database errors. No automated background process should self-approve a grant.
 
+## Offline external document decision attestation (migration 0032)
+
+The contractor-facing `recordExternalApproval` API cannot treat a contractor-uploaded stamped PDF, claimed counterparty name, portal screenshot or email attachment as independently authorised acceptance. In production, `has_verified_external_document_approval` must return true for the **exact target document revision, separately stored READY proof revision, designated project counterparty, and SHA-256 of the immutable proof bytes**. Migration `0032` creates an append-only tenant-scoped reviewer ledger; only named individual platform reviewers can record decisions. Ordinary `tc_app` gets a boolean-only checker with no direct ledger access.
+
+After independently verifying source authenticity, the actual client/consultant/MC's decision and the precise document revision against independently obtained contract/delegation evidence, each reviewer uses the dedicated restricted command. The evidence SHA-256 **must equal the stored proof object's SHA-256**, not a hash of a contractor-provided text description. Reviewers must read the actual evidence with a verified, non-contractor-controlled chain of custody; merely observing a READY malware-scanned file is not sufficient.
+
+```bash
+pnpm --filter @tradecloseout/api review:external-document -- \
+  --org "$VERIFIED_ORG_UUID" --version "$TARGET_VERSION_UUID" \
+  --proof "$SIGNED_PROOF_VERSION_UUID" --party "$COUNTERPARTY_UUID" \
+  --sha256 "$STORED_PROOF_SHA256" --case "$OPAQUE_CASE_REFERENCE" \
+  --attest-independent-source --attest-document-decision --attest-counterparty
+```
+
+Two different named reviewer accounts must approve the same values. Before the second review commits, the ordinary API must return `INDEPENDENT_EXTERNAL_PROOF_REQUIRED` and leave the document unchanged. After two matches, authorised internal recording can proceed only if the target is still the latest eligible document revision, proof remains READY and storage-verifiable, and the designated counterparty has not changed. Any changed proof, revision, party or evidence reference requires a fresh independent review, not relabelling an earlier decision. The reviewer cannot approve from the normal API; this is a platform operations pathway only.
+
 ## Revocation, changes and incident response
 
 - Reviewer decisions are append-only under migration `0030`; privileged SQL mutation is rejected. An active, independently approved grant must be revoked before its counterparty party record is archived, so restoring the party cannot silently revive old approval.
