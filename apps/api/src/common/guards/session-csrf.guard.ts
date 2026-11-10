@@ -10,6 +10,7 @@ import {
 import { createHash, timingSafeEqual } from 'crypto';
 import { Pool } from 'pg';
 import { Request } from 'express';
+import { recordDeniedAuthenticationEvent } from '../../modules/identity/auth-security';
 
 export interface AuthenticatedRequest extends Request {
   auth: {
@@ -65,6 +66,37 @@ export class SessionCsrfGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest<AuthenticatedRequest>();
+    try {
+      return await this.authorizeSession(req);
+    } catch (error) {
+      // G01-R3: independent append-only event survives an aborted session
+      // validation or tenant transaction. Never log credential/header bodies.
+      if (error instanceof UnauthorizedException ||
+          error instanceof ForbiddenException || error instanceof ConflictException) {
+        const details = (req as any).__authAuditPrincipal || {};
+        const response = error.getResponse();
+        const code = typeof response === 'object' && response !== null
+          ? (response as {code?:unknown}).code : null;
+        const allowed = new Set([
+          'UNAUTHENTICATED','SESSION_EXPIRED','GUEST_GRANT_EXPIRED',
+          'GUEST_PRINCIPAL_INVALID','GUEST_PARTY_RELATIONSHIP_INVALID',
+          'AUTH_CONTEXT_CHANGED','CSRF_TOKEN_MISSING','CSRF_INVALID',
+          'MFA_STEP_UP_REQUIRED','PROJECT_AUTHORITY_LOOKUP_FAILED',
+          'SESSION_REAUTHENTICATION_REQUIRED',
+        ]);
+        const reasonCode = typeof code === 'string' && allowed.has(code)
+          ? code : 'AUTH_SESSION_REJECTED';
+        await recordDeniedAuthenticationEvent(this.pool,'AUTH_SESSION_DENIED',{
+          userId:details.userId,orgId:details.orgId,sessionId:details.sessionId,
+          sourceIp:typeof req.ip === 'string' ? req.ip : undefined,
+          reasonCode,
+        });
+      }
+      throw error;
+    }
+  }
+
+  private async authorizeSession(req: AuthenticatedRequest): Promise<boolean> {
     const rawSessionToken =
       req.cookies?.['tc_session'] ||
       req.headers['authorization']?.replace(/^Bearer\s+/i, '');
@@ -113,6 +145,10 @@ export class SessionCsrfGuard implements CanActivate {
     }
 
     const session = sessionRows[0];
+    // Internal, trusted values from the authenticated database row only.
+    (req as any).__authAuditPrincipal = {
+      userId:session.user_id,orgId:session.active_org_id,sessionId:session.session_id,
+    };
 
     let orgRole = 'R-OWNER';
     let membershipStatus = 'ACTIVE';
