@@ -36,7 +36,8 @@ const PRE_MFA_AUTH_ROUTES = new Set([
   'GET /api/v1/auth/me',
   'GET /api/v1/auth/orgs',
   'GET /api/v1/auth/session/bootstrap',
-  'GET /api/v1/auth/sessions',
+  // Session inventory reveals device history; only emergency revocation may
+  // proceed without MFA. Do not exempt the inventory read.
   'POST /api/v1/auth/switch-org',
   'POST /api/v1/auth/logout',
   'POST /api/v1/auth/sessions/revoke-all',
