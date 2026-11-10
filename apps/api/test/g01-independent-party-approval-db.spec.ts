@@ -122,7 +122,7 @@ describe('G01 trusted independent external-party authority', () => {
         // The active approved signatory must be revoked before deactivating
         // its party; reactivation cannot silently reinstate older authority.
         await expect(admin.query(
-          'UPDATE parties SET status=$1 WHERE id=$2',['INACTIVE',party],
+          'UPDATE parties SET status=$1 WHERE id=$2',['ARCHIVED',party],
         )).rejects.toMatchObject({code:'42501'});
 
         // An already-approved grant prevents a contractor or DBA from silently
@@ -140,7 +140,7 @@ describe('G01 trusted independent external-party authority', () => {
         // Once the approval has been explicitly revoked, the project and
         // counterparty can be retired without resurrecting that approval.
         await admin.query('UPDATE parties SET status=$1 WHERE id=$2',
-          ['INACTIVE',party]);
+          ['ARCHIVED',party]);
         await expect(asReviewer(reviewerNames[0])).rejects.toMatchObject({code:'42501'});
       } finally {
         for(const name of reviewersReady.reverse()){
