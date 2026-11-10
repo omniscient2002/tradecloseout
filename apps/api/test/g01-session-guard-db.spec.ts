@@ -58,7 +58,7 @@ describe('G01: real PostgreSQL session generation and CSRF boundaries', () => {
       // G01-021: no tenant audit/event consumer receives raw user-agent or
       // caller-chosen request ID. These fields may contain OTPs or invite URLs.
       const secretMarker='g01-opaque-invitation-otp-658429';
-      const hostile=request({headers:{
+      const hostile:any=request({headers:{
         'user-agent':`Mozilla/5.0 Chrome/131 (Linux) ${secretMarker}`,
         'x-request-id':secretMarker,
       }});
