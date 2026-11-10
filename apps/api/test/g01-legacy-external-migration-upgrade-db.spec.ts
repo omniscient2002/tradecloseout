@@ -74,9 +74,9 @@ describe('G01-001 forward migration: real pre-0036 legacy external approvals',()
             `INSERT INTO storage_objects
               (id,org_id,bucket,object_key,mime,size_bytes,sha256,status,
                provider_version_id,observed_size_bytes)
-             VALUES($1,$2,'test','legacy-proof.pdf','application/pdf',100,$3,
+             VALUES($1,$2,'test',$4,'application/pdf',100,$3,
                 'READY','historical-s3-version',100)`,
-            [storage,org,'f'.repeat(64)],
+            [storage,org,'f'.repeat(64),`legacy-tenant-${i}-proof.pdf`],
           );
           await admin.query(
             `INSERT INTO documents
