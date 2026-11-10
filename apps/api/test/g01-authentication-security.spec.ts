@@ -141,8 +141,9 @@ describe('G01: authentication hardening negative controls', () => {
       query: jest.fn().mockResolvedValue({rows:[role]}),
     }) as any;
     await expect(assertRuntimeDatabasePrivileges(make({
-      role_name:'tc_app',rolsuper:false,rolbypassrls:false,
-      can_assume_migrator:false,
+      login_role:'tc_app',role_name:'tc_app',rolsuper:false,rolbypassrls:false,
+      rolcreatedb:false,rolcreaterole:false,can_assume_migrator:false,
+      can_approve_external_authority:false,
     }))).resolves.toBeUndefined();
     for (const invalid of [
       {role_name:'postgres',rolsuper:true,rolbypassrls:true,can_assume_migrator:true},
