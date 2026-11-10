@@ -631,6 +631,23 @@ export class OrganisationsService {
       );
 
       if (rows.length === 0) throw new NotFoundException('MEMBERSHIP_NOT_FOUND');
+
+      // Role changes cross an authentication-strength boundary. Invalidate
+      // any browser sessions selected into this organisation so their tokens,
+      // CSRF material and MFA state cannot survive privilege transitions.
+      await client.query(
+        `WITH revoked AS (
+           UPDATE sessions SET revoked_at=now(),mfa_verified=false,
+                 mfa_verified_at=NULL
+            WHERE user_id=$1 AND active_org_id=$2 AND revoked_at IS NULL
+            RETURNING id,user_id,active_org_id
+         )
+         INSERT INTO auth_security_events
+           (id,actor_user_id,org_id,session_id,event_type,outcome)
+         SELECT gen_random_uuid(),user_id,active_org_id,id,
+           'MEMBER_ROLE_CHANGED_SESSION_REVOKED','SUCCESS' FROM revoked`,
+        [targetUserId,orgId],
+      );
       return rows[0];
     });
   }
@@ -798,12 +815,20 @@ export class OrganisationsService {
    * Atomically transfers R-OWNER to another active member (FR-IAM-004, FR-ORG-014).
    */
   async transferOwnership(ctx: TenantActorContext, newOwnerUserId: string) {
+    if (typeof newOwnerUserId !== 'string' ||
+        !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(newOwnerUserId)) {
+      throw new UnprocessableEntityException({code:'INVALID_TARGET_OWNER'});
+    }
+    if (newOwnerUserId === ctx.userId) {
+      throw new UnprocessableEntityException({code:'OWNER_TRANSFER_REQUIRES_DIFFERENT_MEMBER'});
+    }
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
       const { rows: currentOwnerRows } = await client.query(
-        `SELECT id, role FROM memberships WHERE org_id = $1 AND user_id = $2 FOR UPDATE`,
+        `SELECT id, role, status FROM memberships WHERE org_id = $1 AND user_id = $2 FOR UPDATE`,
         [ctx.orgId, ctx.userId],
       );
-      if (currentOwnerRows[0]?.role !== 'R-OWNER') {
+      if (currentOwnerRows[0]?.role !== 'R-OWNER' ||
+          currentOwnerRows[0]?.status !== 'ACTIVE') {
         throw new ForbiddenException({
           code: 'FORBIDDEN',
           detail: 'Only the current Organisation Owner can transfer ownership.',
@@ -830,6 +855,24 @@ export class OrganisationsService {
         `UPDATE memberships SET role = 'R-OWNER', row_version = row_version + 1, updated_at = now()
           WHERE org_id = $1 AND user_id = $2`,
         [ctx.orgId, newOwnerUserId],
+      );
+
+      // A privilege transfer changes assurance requirements for BOTH parties.
+      // The old and new owners must reauthenticate; stale MFA and CSRF cannot
+      // authorise any action after ownership has changed.
+      await client.query(
+        `WITH revoked AS (
+           UPDATE sessions SET revoked_at=now(),mfa_verified=false,
+                 mfa_verified_at=NULL
+            WHERE active_org_id=$1 AND user_id=ANY($2::uuid[])
+              AND revoked_at IS NULL
+            RETURNING id,user_id,active_org_id
+         )
+         INSERT INTO auth_security_events
+           (id,actor_user_id,org_id,session_id,event_type,outcome)
+         SELECT gen_random_uuid(),user_id,active_org_id,id,
+           'OWNERSHIP_TRANSFER_SESSION_REVOKED','SUCCESS' FROM revoked`,
+        [ctx.orgId,[ctx.userId,newOwnerUserId]],
       );
 
       emit({
