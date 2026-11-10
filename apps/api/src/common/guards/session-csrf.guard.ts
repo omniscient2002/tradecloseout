@@ -49,10 +49,14 @@ const PRE_MFA_AUTH_ROUTES = new Set([
 
 function isPreMfaAuthRoute(method: string, path: string): boolean {
   if (PRE_MFA_AUTH_ROUTES.has(`${method.toUpperCase()} ${path}`)) return true;
-  // Session inventory/revocation is an emergency account-security function;
-  // allow only the precise device-revocation UUID route without MFA.
-  return method.toUpperCase() === 'POST' &&
-    /^\\/api\\/v1\\/auth\\/sessions\\/[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\\/revoke$/i.test(path);
+  // The explicit device-revocation route is an emergency security function.
+  // Parse segments rather than using a permissive /auth prefix exemption.
+  const parts = path.split('/');
+  return method.toUpperCase() === 'POST' && parts.length === 7 &&
+    parts[0] === '' && parts[1] === 'api' && parts[2] === 'v1' &&
+    parts[3] === 'auth' && parts[4] === 'sessions' &&
+    /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(parts[5]) &&
+    parts[6] === 'revoke';
 }
 
 @Injectable()
@@ -278,7 +282,7 @@ export class SessionCsrfGuard implements CanActivate {
       (orgRole === 'R-OWNER' || orgRole === 'R-ADMIN') &&
       // An owner may read basic login/bootstrap information before MFA, but
       // tenant project or billing reads are privileged as well as writes.
-      !isPreMfaAuthRoute(req.method, String(req.path || '').split('?')[0].replace(/\\/$/, ''));
+      !isPreMfaAuthRoute(req.method, String(req.path || '').split('?')[0]);
     if (needsPrivilegedMfa &&
         (!session.mfa_verified || !session.mfa_verified_at ||
          new Date(session.mfa_verified_at).getTime() < Date.now() - 12 * 3600_000)) {
