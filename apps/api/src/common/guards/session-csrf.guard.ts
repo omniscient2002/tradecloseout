@@ -11,6 +11,7 @@ import { createHash, timingSafeEqual } from 'crypto';
 import { Pool } from 'pg';
 import { Request } from 'express';
 import { recordDeniedAuthenticationEvent } from '../../modules/identity/auth-security';
+import { safeAuthenticationDeviceLabel, safeAuthenticationRequestId } from '../security/audit-metadata';
 
 export interface AuthenticatedRequest extends Request {
   auth: {
@@ -385,9 +386,9 @@ export class SessionCsrfGuard implements CanActivate {
       activeOrgId: session.active_org_id,
       orgRole: orgRole,
       projectRole: projectRole,
-      requestId: (req.headers['x-request-id'] as string) || 'req_unknown',
+      requestId: safeAuthenticationRequestId(req.headers['x-request-id']),
       ip: req.ip || '0.0.0.0',
-      userAgent: (req.headers['user-agent'] as string) || 'unknown',
+      userAgent: safeAuthenticationDeviceLabel(req.headers['user-agent']),
       authGeneration: String(session.auth_generation),
       mfaVerified: Boolean(session.mfa_verified && session.mfa_verified_at &&
         new Date(session.mfa_verified_at).getTime() >= Date.now() - 12 * 3600_000),
