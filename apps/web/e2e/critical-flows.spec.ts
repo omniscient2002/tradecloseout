@@ -95,9 +95,16 @@ test.describe('G01 browser authentication contract', () => {
     await page.getByRole('button',{name:'I have saved the codes securely'}).click();
     await expect(page).toHaveURL(/\/dashboard(?:\?|$)/);
     await expect(page.getByRole('button',{name:/G01 Live Owner/})).toBeVisible();
+    // Two real browser tabs share the HttpOnly session cookie but have
+    // separate JS state. Confirm logout in tab A invalidates tab B as well.
+    const otherTab=await page.context().newPage();
+    await otherTab.goto('http://localhost:3002/dashboard');
+    await expect(otherTab.getByRole('button',{name:/G01 Live Owner/})).toBeVisible();
     await page.getByRole('button',{name:/G01 Live Owner/}).click();
     await page.getByRole('button',{name:'Sign Out Session'}).click();
     await expect(page).toHaveURL(/\/login(?:\?|$)/);
+    await expect(otherTab).toHaveURL(/\/login(?:\?|$)/);
+    await otherTab.close();
 
     const loggedOut=await request.get('http://localhost:3002/api/v1/auth/me',{
       headers:{Cookie:'tc_session='+afterFactor!.value},
