@@ -42,3 +42,17 @@ Use only environment-local disposable services and test credentials for automate
 - Do not infer warranty events from administrative closure or claim disabled payment/signing integrations work.
 
 Report exact commands, results, source SHA and limitations. Distinguish source changes, passing fixture tests, real integration acceptance and production deployment.
+
+## Agent collaboration and review rules
+
+- Follow `docs/engineering/agent-collaboration.md` for PR handoffs and group acceptance.
+  Keep original finding IDs; distinguish static findings, reproduced defects, CI
+  evidence, independent review and external release acceptance.
+- Review authentication/tenant transitions for connection cleanup, current authority
+  under the transaction lock and runtime input validation. Reject malformed data
+  before database use; preserve restricted roles and immutable evidence.
+- Require tests to exercise the claimed control. Debug authentication, mocked
+  providers and queue predicates cannot certify production MFA, delivery or real
+  interrupted-upload behavior. Missing external evidence remains blocked.
+- The coding agent proposes fixes and evidence; it cannot approve itself, change
+  review policy to pass, auto-merge or declare production acceptance.

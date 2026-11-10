@@ -1,0 +1,25 @@
+name: Group review protocol verification
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  group-register:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate group inventory and evidence claim structure
+        run: python3 .github/scripts/agent_review.py validate
+      - name: Test authorization, stale-head and dispatch boundaries
+        run: python3 -m unittest discover -s .github/scripts/tests -v
+      - name: Explain the check boundary
+        run: echo 'This check validates the review protocol. It does not accept a group for production.'

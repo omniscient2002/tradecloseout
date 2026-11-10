@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "repository": "omniscient2002/tradecloseout",
+  "ci_workflow": "TradeCloseout CI/CD Pipeline (15 §4)",
+  "ci_workflow_id": 404777124,
+  "max_implementation_requests": 1,
+  "groups": {
+    "G01": {
+      "pull_request": 5,
+      "tracking_issue": 6,
+      "implementation_request_url": "https://github.com/omniscient2002/tradecloseout/pull/5#issuecomment-6765209060",
+      "register": "docs/groups/G01/findings.json"
+    }
+  }
+}

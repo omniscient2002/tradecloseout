@@ -1,0 +1,50 @@
+name: Agent PR coordination
+
+on:
+  issue_comment:
+    types: [created]
+  workflow_run:
+    workflows: ['TradeCloseout CI/CD Pipeline (15 §4)']
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      group:
+        type: choice
+        options: [G01]
+        default: G01
+      action:
+        type: choice
+        options: [status, review, implement]
+        default: status
+
+permissions:
+  contents: read
+
+# Serialize all event types for this repository, including user commands and CI.
+concurrency:
+  group: agent-pr-coordination
+  cancel-in-progress: false
+
+jobs:
+  coordinate:
+    if: (github.event_name != 'issue_comment' || github.event.issue.pull_request) && (github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Execute only the trusted workflow revision, NEVER candidate head code.
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Validate trusted policy and registers
+        run: python3 .github/scripts/agent_review.py validate
+      - name: Coordinate the exact current candidate
+        run: python3 .github/scripts/agent_review.py event
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          AGENT_NATIVE_TRANSPORT_VERIFIED: ${{ vars.AGENT_NATIVE_TRANSPORT_VERIFIED }}

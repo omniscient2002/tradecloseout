@@ -1,0 +1,244 @@
+{
+  "schema_version": 1,
+  "group": "G01",
+  "original_finding_count": 21,
+  "reviewed_sha": "0b1523e4deee1abe66e861fe6bbe8e060e0a192a",
+  "tracking_issue": "https://github.com/omniscient2002/tradecloseout/issues/6",
+  "release_decision": "NO_GO",
+  "findings": [
+    {
+      "id": "G01-001",
+      "requirement": "Independent external party authority",
+      "acceptance": "Two independent named reviewers verify issuer-independent contact, legal delegation and designated project party; legitimate approval succeeds and issuer self-approval fails.",
+      "status": "BLOCKED_EXTERNAL",
+      "evidence_level": "Independent targeted source/CI-log review; external acceptance unperformed",
+      "evidence": [],
+      "review_reference": "docs/groups/G01/independent-review-0b1523e.md"
+    },
+    {
+      "id": "G01-002",
+      "requirement": "Distinct guest principal and issuer provenance",
+      "acceptance": "Guest session and downstream audit identify the verified external principal separately from the issuing contractor.",
+      "status": "IMPLEMENTED",
+      "evidence_level": "Independent targeted source/CI-log review; external acceptance unperformed",
+      "evidence": [],
+      "review_reference": "docs/groups/G01/independent-review-0b1523e.md"
+    },
+    {
+      "id": "G01-003",
+      "requirement": "Login CSRF and browser intent",
+      "acceptance": "Strict production proxy/browser cross-site requests fail while legitimate internal and guest logins preserve the originating browser intent.",
+      "status": "IMPLEMENTED",
+      "evidence_level": "Independent targeted source/CI-log review; external acceptance unperformed",
+      "evidence": [],
+      "review_reference": "docs/groups/G01/independent-review-0b1523e.md"
+    },
+    {
+      "id": "G01-004",
+      "requirement": "Confirmed server-side logout",
+      "acceptance": "Every reachable logout control handles timeout/revocation failure honestly and old credentials fail after success.",
+      "status": "IMPLEMENTED",
+      "evidence_level": "Independent targeted source/CI-log review; external acceptance unperformed",
+      "evidence": [],
+      "review_reference": "docs/groups/G01/independent-review-0b1523e.md"
+    },
+    {
+      "id": "G01-005",
+      "requirement": "Cross-tab actor and tenant fencing",
+      "acceptance": "Account/tenant/guest transitions invalidate stale tabs, in-flight commands and IndexedDB multipart uploads with no silent rebind.",
+      "status": "IMPLEMENTED",
+      "evidence_level": "Independent targeted source/CI-log review; external acceptance unperformed",
+      "evidence": [],
+      "review_reference": "docs/groups/G01/independent-review-0b1523e.md"
+    },
+    {
+      "id": "G01-006",
+      "requirement": "Safe CSRF restoration after storage loss",
+      "acceptance": "Valid cookie-only sessions recover security material on the same origin; untrusted origins cannot read or reset usable credentials.",
+      "status": "IMPLEMENTED",
+      "evidence_level": "Independent targeted source/CI-log review; external acceptance unperformed",
+      "evidence": [],
+      "review_reference": "docs/groups/G01/independent-review-0b1523e.md"
+    },
+    {
+      "id": "G01-007",
+      "requirement": "Distributed OTP abuse and proxy budgets",
+      "acceptance": "Real multiple API nodes enforce contact, IP, grant and global budgets; forwarded-source spoofing and dependency failures do not disable limits.",
+      "status": "IMPLEMENTED",
+      "evidence_level": "Independent targeted source/CI-log review; external acceptance unperformed",
+      "evidence": [],
+      "review_reference": "docs/groups/G01/independent-review-0b1523e.md"
+    },
+    {
+      "id": "G01-008",
+      "requirement": "Secret-protected OTP digests and key lifecycle",
+      "acceptance": "Store disclosure cannot validate OTP guesses; challenge/purpose substitution fails and key rotation has tested outstanding-proof behavior.",
+      "status": "IMPLEMENTED",
+      "evidence_level": "Independent targeted source/CI-log review; external acceptance unperformed",
+      "evidence": [],
+      "review_reference": "docs/groups/G01/independent-review-0b1523e.md"
+    },
+    {
+      "id": "G01-009",
+      "requirement": "Atomic OTP consumption and durable session outcome",
+      "acceptance": "Boundary failures, commit abort, dropped responses and replay yield one documented recoverable outcome across API nodes.",
+      "status": "IMPLEMENTED",
+      "evidence_level": "Independent targeted source/CI-log review; external acceptance unperformed",
+      "evidence": [],
+      "review_reference": "docs/groups/G01/independent-review-0b1523e.md"
+    },
+    {
+      "id": "G01-010",
+      "requirement": "Superseding guest resend",
+      "acceptance": "Previous codes fail after resend; concurrent request/verify and delayed provider outcomes have one documented winner.",
+      "status": "IMPLEMENTED",
+      "evidence_level": "Independent targeted source/CI-log review; external acceptance unperformed",
+      "evidence": [],
+      "review_reference": "docs/groups/G01/independent-review-0b1523e.md"
+    },
+    {
+      "id": "G01-011",
+      "requirement": "Delivery outside database locks with reconciliation",
+      "acceptance": "Slow/failing/ambiguous provider calls retain budgets, do not hold grant locks and have tested receipt/retry/reconciliation outcomes.",
+      "status": "IMPLEMENTED",
+      "evidence_level": "Independent targeted source/CI-log review; external acceptance unperformed",
+      "evidence": [],
+      "review_reference": "docs/groups/G01/independent-review-0b1523e.md"
+    },
+    {
+      "id": "G01-012",
+      "requirement": "Validated runtime configuration for every process",
+      "acceptance": "API and worker reject unknown mode, fallback credentials, unsafe role/transport and missing secrets before doing work.",
+      "status": "OPEN",
+      "evidence_level": "Independent targeted source/CI-log review; external acceptance unperformed",
+      "evidence": [],
+      "review_reference": "docs/groups/G01/independent-review-0b1523e.md"
+    },
+    {
+      "id": "G01-013",
+      "requirement": "Account and membership eligibility at issuance",
+      "acceptance": "Suspended/deleted user, inactive org or membership receives no usable session; concurrent suspension has tested outcomes.",
+      "status": "IMPLEMENTED",
+      "evidence_level": "Independent targeted source/CI-log review; external acceptance unperformed",
+      "evidence": [],
+      "review_reference": "docs/groups/G01/independent-review-0b1523e.md"
+    },
+    {
+      "id": "G01-014",
+      "requirement": "Session expiry, rotation and compromise recovery",
+      "acceptance": "Idle/absolute expiry, role changes, device revoke/all and lost-destination recovery are verified; rejected org switches release DB clients.",
+      "status": "IMPLEMENTED",
+      "evidence_level": "Independent targeted source/CI-log review; external acceptance unperformed",
+      "evidence": [],
+      "review_reference": "docs/groups/G01/independent-review-0b1523e.md"
+    },
+    {
+      "id": "G01-015",
+      "requirement": "Complete redacted durable authentication history",
+      "acceptance": "Success, failure, replay, cooldown, session denial, revocation and recovery can be reconstructed with trusted metadata and bounded safe logging.",
+      "status": "OPEN",
+      "evidence_level": "Independent targeted source/CI-log review; external acceptance unperformed",
+      "evidence": [],
+      "review_reference": "docs/groups/G01/independent-review-0b1523e.md"
+    },
+    {
+      "id": "G01-016",
+      "requirement": "Runtime DTO and canonical identity validation",
+      "acceptance": "Malformed body/header/path objects, arrays and numbers get stable 4xx; canonical identities and bounded guest expiry remain consistent.",
+      "status": "OPEN",
+      "evidence_level": "Independent targeted source/CI-log review; external acceptance unperformed",
+      "evidence": [],
+      "review_reference": "docs/groups/G01/independent-review-0b1523e.md"
+    },
+    {
+      "id": "G01-017",
+      "requirement": "Safe application return destinations",
+      "acceptance": "Encoded/scheme-relative/external/script/traversal destinations cannot escape the same-origin route allowlist; legitimate deep links work.",
+      "status": "IMPLEMENTED",
+      "evidence_level": "Independent targeted source/CI-log review; external acceptance unperformed",
+      "evidence": [],
+      "review_reference": "docs/groups/G01/independent-review-0b1523e.md"
+    },
+    {
+      "id": "G01-018",
+      "requirement": "Credible implementation and failure-path tests",
+      "acceptance": "Tests fail when real controls are removed; strict production API/browser, actual upload fencing and multi-node chaos evidence are present.",
+      "status": "OPEN",
+      "evidence_level": "Independent targeted source/CI-log review; external acceptance unperformed",
+      "evidence": [],
+      "review_reference": "docs/groups/G01/independent-review-0b1523e.md"
+    },
+    {
+      "id": "G01-019",
+      "requirement": "Privileged MFA, step-up and factor recovery",
+      "acceptance": "Owner/admin reads and writes cannot bypass production policy; replay, enrollment, recovery/reset and privileged endpoint inventory are independently verified.",
+      "status": "IMPLEMENTED",
+      "evidence_level": "Independent targeted source/CI-log review; external acceptance unperformed",
+      "evidence": [],
+      "review_reference": "docs/groups/G01/independent-review-0b1523e.md"
+    },
+    {
+      "id": "G01-020",
+      "requirement": "Explicit onboarding, invitation and fallback contract",
+      "acceptance": "Intended verified identity accepts once into correct org; unsupported magic-link/fallback promises are implemented securely or withdrawn explicitly.",
+      "status": "OPEN",
+      "evidence_level": "Independent targeted source/CI-log review; external acceptance unperformed",
+      "evidence": [],
+      "review_reference": "docs/groups/G01/independent-review-0b1523e.md"
+    },
+    {
+      "id": "G01-021",
+      "requirement": "Deployed authentication privacy and caching",
+      "acceptance": "HTTPS browser/proxy/cache/analytics/error/access logs do not retain OTPs/raw tokens or cache identity across actors.",
+      "status": "BLOCKED_EXTERNAL",
+      "evidence_level": "Independent targeted source/CI-log review; external acceptance unperformed",
+      "evidence": [],
+      "review_reference": "docs/groups/G01/independent-review-0b1523e.md"
+    },
+    {
+      "id": "G01-R1",
+      "requirement": "Org-switch database client cleanup",
+      "acceptance": "Validate cookies before pool.connect and release every acquired client even on failure. Repeated valid bearer-only rejections must not exhaust the pool.",
+      "status": "OPEN",
+      "evidence_level": "Static source finding; runtime reproduction/regression required",
+      "evidence": [],
+      "review_reference": "docs/groups/G01/independent-review-0b1523e.md"
+    },
+    {
+      "id": "G01-R2",
+      "requirement": "Org-switch targetOrgId runtime type",
+      "acceptance": "Reject singleton UUID arrays, objects and numbers with stable 4xx before any database query; preserve valid UUID switching.",
+      "status": "OPEN",
+      "evidence_level": "Static source finding; runtime reproduction/regression required",
+      "evidence": [],
+      "review_reference": "docs/groups/G01/independent-review-0b1523e.md"
+    },
+    {
+      "id": "G01-R3",
+      "requirement": "MFA/recovery/session denial event gaps",
+      "acceptance": "Persist redacted bounded denial/replay/recovery events with trusted metadata and reason despite authentication transaction rollback.",
+      "status": "OPEN",
+      "evidence_level": "Static source finding; runtime reproduction/regression required",
+      "evidence": [],
+      "review_reference": "docs/groups/G01/independent-review-0b1523e.md"
+    },
+    {
+      "id": "G01-R4",
+      "requirement": "Worker startup security parity",
+      "acceptance": "Reject unknown/missing worker mode, unsafe actual database roles and missing/unsafe production dependencies before scheduled work; use restricted tc_app.",
+      "status": "OPEN",
+      "evidence_level": "Static source finding; runtime reproduction/regression required",
+      "evidence": [],
+      "review_reference": "docs/groups/G01/independent-review-0b1523e.md"
+    },
+    {
+      "id": "G01-R5",
+      "requirement": "Unsupported magic-link and fallback promises",
+      "acceptance": "Implement a verified supported recovery contract or explicitly withdraw undocumented implementation claims in API/security documentation. Never choose an unverified alternate contact.",
+      "status": "OPEN",
+      "evidence_level": "Static source finding; runtime reproduction/regression required",
+      "evidence": [],
+      "review_reference": "docs/groups/G01/independent-review-0b1523e.md"
+    }
+  ]
+}
