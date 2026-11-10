@@ -4,7 +4,7 @@
 
 The ordinary contractor API can issue a client/consultant guest invitation but **cannot declare that recipient independently authorised to sign**, even after a valid SMS/email OTP. An issuer-selected OTP destination proves possession of that inbox/number only, not a legal right to bind a client or consultant.
 
-Sensitive `inspection.witness` and `package.accept` remain fail-closed until the guest grant has been independently reviewed. Database migration `0024` prevents app-role self-approval; `0025` prevents reassigning identity, party, capabilities, contact, issuer or project after issuance; `0026` provides two distinct reviewer attestations; `0027` forces ledger RLS; `0028` binds each independent approval to the project's currently designated active counterparty and blocks party reassignment while an independently approved live grant exists. These controls must all exist together on the deployed candidate SHA.
+Sensitive `inspection.witness`, `package.accept`, and consultant `review.decide` remain fail-closed until the guest grant has been independently reviewed. Database migration `0024` prevents app-role self-approval; `0025` prevents reassigning identity, party, capabilities, contact, issuer or project after issuance; `0026` provides two distinct reviewer attestations; `0027` forces ledger RLS; `0028` binds each independent approval to the project's currently designated active counterparty and blocks party reassignment while an independently approved live grant exists. These controls must all exist together on the deployed candidate SHA.
 
 ## Separation of duties
 
@@ -41,7 +41,7 @@ Duplicate approvals from one reviewer, disjoint evidence, expired/revoked grant,
 
 ## Revocation, changes and incident response
 
-- On contact, delegation, issuer, party, role, project or scope change, **revoke the grant and its sessions**, issue a new grant, perform a fresh independent review and require new OTP. Do not UPDATE an approved grant in place. Database migration `0028` rejects changing the designated project client/consultant while an active independently approved grant for that party remains; revoke that grant before reassignment. Reassignment cannot revive an old approval.
+- Reviewer decisions are append-only under migration `0030`; privileged SQL mutation is rejected. An active, independently approved grant must be revoked before its counterparty party record is archived, so restoring the party cannot silently revive old approval.\n- On contact, delegation, issuer, party, role, project or scope change, **revoke the grant and its sessions**, issue a new grant, perform a fresh independent review and require new OTP. Do not UPDATE an approved grant in place. Database migration `0028` rejects changing the designated project client/consultant while an active independently approved grant for that party remains; revoke that grant before reassignment. Reassignment cannot revive an old approval.
 - Expired or revoked grants must not re-enter authorised state. Preserve the reviewer ledger for legal/audit retention under a separately approved policy.
 - In suspected email compromise, incorrect delegation, leaked reviewer credentials or client dispute, revoke affected grants/sessions immediately, preserve audit evidence and escalate through the platform incident procedure. A contractor cannot restore approval.
 - Review and rotate individual reviewer credentials and membership regularly; disable dormant accounts. Audit DBA and platform administrator access to approval grants and SECURITY DEFINER function DDL.
@@ -52,7 +52,7 @@ Duplicate approvals from one reviewer, disjoint evidence, expired/revoked grant,
 - [ ] Two independent reviewers verify a **real** delegation case end to end; both agree on the correct evidence digest; first approval alone cannot sign.
 - [ ] Forged contractor-controlled contact, unrelated or inactive project party, changed designated client/consultant, reviewer reuse, evidence mismatch, expiration and revocation are denied at HTTP and DB level. Validate SQL 0028 in the exact staging migration history.
 - [ ] Actual review audit trail, WORM evidence pointer, operator identity and sign-off are independently inspected.
-- [ ] Legitimately approved client and consultant can complete supported witness/acceptance journeys through browser and real evidence revision binding.
+- [ ] Legitimately approved client and consultant can complete supported witness, consultant review-decision and acceptance journeys through browser and real evidence revision binding.
 - [ ] Reviewer approval role is excluded from web/API/worker credentials and deployment secrets.
 
 **Without completed independent evidence and operator sign-off, G01-001 remains blocked even if all automated SQL tests pass.**
