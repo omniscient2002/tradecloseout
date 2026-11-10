@@ -74,6 +74,7 @@ export default function ContractorLayout({ children }: { children: React.ReactNo
     id?: string; name: string; orgRole: string; activeOrgId: string;
     activeOrg?: { display_name?: string; legal_name?: string };
   } | null>(null);
+  const [sessionConfirmed, setSessionConfirmed] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [switching, setSwitching] = useState<string | null>(null);
   const [logoutError, setLogoutError] = useState<string | null>(null);
@@ -82,6 +83,7 @@ export default function ContractorLayout({ children }: { children: React.ReactNo
     const unwatch = watchAuthChanges(() => {
       setOfflineActorPartition(null);
       setUser(null);
+      setSessionConfirmed(false);
       window.location.reload();
     });
     apiFetch<any>("/api/v1/auth/me")
@@ -91,12 +93,22 @@ export default function ContractorLayout({ children }: { children: React.ReactNo
           router.push('/mfa');
           return;
         }
+        if (!data.userId && !data.user_id) {
+          setUser(null);
+          setSessionConfirmed(false);
+          setOfflineActorPartition(null);
+          router.replace('/login');
+          return;
+        }
         setUser(data);
         setOfflineActorPartition(`member:${data.activeOrgId || data.active_org_id}:${data.userId || data.user_id}`);
+        setSessionConfirmed(true);
       })
       .catch(() => {
         setUser(null);
+        setSessionConfirmed(false);
         setOfflineActorPartition(null);
+        router.replace('/login');
       });
     return unwatch;
   }, []);
@@ -173,6 +185,15 @@ export default function ContractorLayout({ children }: { children: React.ReactNo
   };
 
   const navLinks = getNavLinks();
+
+  if (!sessionConfirmed || !user) {
+    return (
+      <div role="status" aria-live="polite"
+        className="min-h-screen bg-[#F8FAFC] text-slate-700 flex items-center justify-center text-sm">
+        Verifying your workspace session…
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900 flex flex-col font-sans">
