@@ -116,6 +116,26 @@ describe('G01 independent real external-document decision evidence',()=>{
         expect(await attest(reviewers[1])).toMatchObject({review_count:2,independently_verified:true});
         expect(await check()).toBe(true);
 
+        // Emergency revocation is an independent, immutable platform action
+        // and immediately changes the normal API's boolean decision.
+        const emergency=await admin.connect();
+        try {
+          await emergency.query(`SET SESSION AUTHORIZATION "${reviewers[0]}"`);
+          const {rows}=await emergency.query(
+            'SELECT revoke_external_document_approval($1,$2,$3,$4,$5) AS revoked',
+            [org,targetVersion,proofVersion,party,'INCIDENT-EXT-DOC-2026'],
+          );
+          expect(rows[0].revoked).toBe(true);
+        } finally {
+          await emergency.query('RESET SESSION AUTHORIZATION').catch(()=>{});
+          emergency.release();
+        }
+        expect(await check()).toBe(false);
+        await expect(admin.query(
+          `UPDATE external_document_approval_revocations SET reason_ref='TAMPERED'
+             WHERE document_version_id=$1`,[targetVersion],
+        )).rejects.toMatchObject({code:'42501'});
+
         await expect(admin.query(
           `UPDATE external_document_approval_attestations
             SET evidence_ref='TAMPERED' WHERE document_version_id=$1`,[targetVersion],
