@@ -4,7 +4,7 @@
 
 The ordinary contractor API can issue a client/consultant guest invitation but **cannot declare that recipient independently authorised to sign**, even after a valid SMS/email OTP. An issuer-selected OTP destination proves possession of that inbox/number only, not a legal right to bind a client or consultant.
 
-Sensitive `inspection.witness`, `package.accept`, and consultant `review.decide` remain fail-closed until the guest grant has been independently reviewed. Database migration `0024` prevents app-role self-approval; `0025` prevents reassigning identity, party, capabilities, contact, issuer or project after issuance; `0026` provides two distinct reviewer attestations; `0027` forces ledger RLS; `0028` binds each independent approval to the project's currently designated active counterparty and blocks party reassignment while an independently approved live grant exists. These controls must all exist together on the deployed candidate SHA.
+Sensitive `inspection.witness`, `package.accept`, and consultant `review.decide` remain fail-closed until the guest grant has been independently reviewed. Database migration `0024` prevents app-role self-approval; `0025` prevents reassigning identity, party, capabilities, contact, issuer or project after issuance; `0026` provides two distinct reviewer attestations; `0027` forces ledger RLS; `0028` binds independent approval to the project's currently designated active counterparty; `0029` makes project reassignment enforcement tenant-RLS safe; `0030` protects review immutability and party-deactivation lifecycle. These controls must all exist together on the deployed candidate SHA.
 
 ## Separation of duties
 
