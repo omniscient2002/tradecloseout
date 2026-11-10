@@ -155,7 +155,7 @@ export const authSecurityEvents = pgTable('auth_security_events', {
   eventType: text('event_type').notNull(),
   outcome: text('outcome').notNull(),
   subjectDigest: text('subject_digest'),
-  reasonCode: varchar('reason_code', { length: 64 }),
+  reasonCode: text('reason_code'),
   sourceDigest: text('source_digest'),
   occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
 });
