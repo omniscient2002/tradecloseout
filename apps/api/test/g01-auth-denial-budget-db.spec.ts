@@ -1,4 +1,5 @@
 import { Pool } from 'pg';
+import { createHash } from 'node:crypto';
 import { withDisposableDatabase } from '../../../packages/db/test/helpers/disposable-database';
 import { recordDeniedAuthenticationEvent } from '../src/modules/identity/auth-security';
 import { MfaController } from '../src/modules/identity/mfa.controller';
@@ -170,13 +171,18 @@ describe('G01-R3: bounded, independently committed denial telemetry',()=>{
       const user=uuidv7(),org=uuidv7(),session=uuidv7();
       await admin.query("INSERT INTO users(id,name,status,mfa_enabled_at) VALUES($1,'MFA User','ACTIVE',now())",[user]);
       await admin.query("INSERT INTO organisations(id,legal_name,display_name,state,status) VALUES($1,'MFA Org','MFA Org','KA','ACTIVE')",[org]);
+      const sessionToken='g01-enrollment-audit-cookie';
       await admin.query(
         `INSERT INTO sessions(id,user_id,active_org_id,token_hash,csrf_token_hash,expires_at)
          VALUES($1,$2,$3,$4,$5,now()+interval '1 day')`,
-        [session,user,org,'a'.repeat(64),'b'.repeat(64)],
+        [session,user,org,createHash('sha256').update(sessionToken).digest('hex'),'b'.repeat(64)],
       );
+      const generation=(await admin.query(
+        'SELECT auth_generation FROM sessions WHERE id=$1',[session],
+      )).rows[0].auth_generation;
       const request:any={
-        auth:{userId:user,activeOrgId:org,sessionId:session},
+        auth:{userId:user,activeOrgId:org,sessionId:session,authGeneration:generation},
+        cookies:{tc_session:sessionToken},
         userContext:{actorType:'USER'},ip:'192.0.2.42',
       };
       const controller=new MfaController(app);
