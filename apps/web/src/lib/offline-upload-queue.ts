@@ -173,10 +173,13 @@ export async function enqueueFieldUpload(params: {
   title: string;
   externalComment?: string;
 }): Promise<OfflineQueuedUpload> {
-  const actorPartition = params.actorPartition ||
-    (typeof window !== 'undefined' ? window.localStorage.getItem(ACTOR_PARTITION_KEY) : null);
+  const actorPartition = typeof window !== 'undefined'
+    ? window.localStorage.getItem(ACTOR_PARTITION_KEY) : null;
   if (!actorPartition) {
     throw new Error('UPLOAD_ACTOR_CONTEXT_REQUIRED: Sign in or establish the guest grant before queueing evidence.');
+  }
+  if (params.actorPartition && params.actorPartition !== actorPartition) {
+    throw new Error('UPLOAD_ACTOR_PARTITION_MISMATCH: The selected guest or member has changed.');
   }
   const {authGeneration,authEpoch}=await requireAuthenticatedBrowserContext();
   const originalFile = params.file;
