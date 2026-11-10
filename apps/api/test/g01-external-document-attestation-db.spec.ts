@@ -93,6 +93,57 @@ describe('G01 independent real external-document decision evidence',()=>{
           }finally{client.release();}
         };
         expect(await check()).toBe(false);
+        // Upgrade from pre-0032 approval: an internal actor could already
+        // have stamped a contractor-supplied proof as external ACCEPTED.
+        // Add an honest legacy review fixture and prove quarantine retracts
+        // current readiness while preserving the historical review/proof.
+        const historicalReview=uuidv7();
+        await admin.query(
+          `INSERT INTO reviews
+            (id,org_id,project_id,document_version_id,stage_key,
+             reviewer_subject_type,reviewer_subject_id,reviewer_party_id,
+             method,external_method,external_approver_name,external_reference,
+             evidence_object_id,external_proof_version_id,status,decision)
+           VALUES($1,$2,$3,$4,'EXTERNAL_APPROVAL','PARTY',$5,$5,
+             'EXTERNAL','STAMPED_PDF','Legacy signer','LEGACY-2026',
+             $6,$7,'APPROVED','APPROVE')`,
+          [historicalReview,org,project,targetVersion,party,proofStorage,proofVersion],
+        );
+        await admin.query(
+          "UPDATE document_versions SET review_status='APPROVED' WHERE id=$1",
+          [targetVersion],
+        );
+        await admin.query(
+          'UPDATE documents SET current_approved_version_id=$1 WHERE id=$2',
+          [targetVersion,targetDoc],
+        );
+        await expect(app.query(
+          'SELECT g01_quarantine_unverified_current_external_approvals()',
+        )).rejects.toMatchObject({code:'42501'});
+        const legacy=(await admin.query(
+          'SELECT g01_quarantine_unverified_current_external_approvals() AS n',
+        )).rows[0].n;
+        expect(legacy).toBe(1);
+        expect((await admin.query(
+          'SELECT current_approved_version_id FROM documents WHERE id=$1',
+          [targetDoc],
+        )).rows[0].current_approved_version_id).toBeNull();
+        expect((await admin.query(
+          'SELECT review_status FROM document_versions WHERE id=$1',
+          [targetVersion],
+        )).rows[0].review_status).toBe('CHANGES_REQUESTED');
+        expect((await admin.query(
+          'SELECT count(*)::int AS n FROM g01_legacy_external_approval_quarantine WHERE document_version_id=$1',
+          [targetVersion],
+        )).rows[0].n).toBe(1);
+        expect((await admin.query(
+          'SELECT count(*)::int AS n FROM reviews WHERE id=$1',
+          [historicalReview],
+        )).rows[0].n).toBe(1);
+        expect((await admin.query(
+          'SELECT g01_quarantine_unverified_current_external_approvals() AS n',
+        )).rows[0].n).toBe(0);
+
         const attest=async(login:string,sha=evidenceDigest,ref=caseRef)=>{
           const client=await admin.connect();
           try{
@@ -115,6 +166,23 @@ describe('G01 independent real external-document decision evidence',()=>{
           .rejects.toMatchObject({code:'22023'});
         expect(await attest(reviewers[1])).toMatchObject({review_count:2,independently_verified:true});
         expect(await check()).toBe(true);
+        // Once two independent reviews exist, the SAME historical external
+        // proof can no longer be automatically invalidated during a rerun.
+        await admin.query(
+          "UPDATE document_versions SET review_status='APPROVED' WHERE id=$1",
+          [targetVersion],
+        );
+        await admin.query(
+          'UPDATE documents SET current_approved_version_id=$1 WHERE id=$2',
+          [targetVersion,targetDoc],
+        );
+        expect((await admin.query(
+          'SELECT g01_quarantine_unverified_current_external_approvals() AS n',
+        )).rows[0].n).toBe(0);
+        expect((await admin.query(
+          'SELECT current_approved_version_id FROM documents WHERE id=$1',
+          [targetDoc],
+        )).rows[0].current_approved_version_id).toBe(targetVersion);
         // Simulate a previously committed externally approved document so a
         // later independent revocation cannot leave readiness trusting it.
         await admin.query(
