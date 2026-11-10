@@ -21,6 +21,19 @@ Two **different** reviewer login identities are required; the database records t
 5. Preserve the evidence in access-controlled tamper-evident storage outside the customer-editable grant table. Generate a SHA-256 digest of the canonical approved evidence bundle; assign an opaque, non-personal `evidence_ref` (8–128 allowed characters). Do not put invitations, raw phone/email, document titles, URLs or OTPs into `evidence_ref`.
 6. Each reviewer independently checks the source bundle, confirms the same SHA-256 digest and opaque reference, and documents sign-off in a separate privileged ticketing/IAM system. Never approve based only on the first reviewer's assertion.
 
+## Restricted human reviewer command (implemented)
+
+The repository includes `apps/api/scripts/approve-external-authority.ts`, accessible as `pnpm --filter @tradecloseout/api review:external`. Run **only** from a dedicated reviewer workstation or secure platform access gateway, not the application deployment, contractor machine, web server, production worker or CI service. Authenticate to PostgreSQL as an individually attributable reviewer login that inherits only `tc_external_authority_reviewer`. Set `G01_REVIEWER_DATABASE_URL` via the platform's approved secret injection facility and `G01_REVIEWER_CA_PATH` to the verified PostgreSQL CA certificate. Never use `APP_DATABASE_URL` or `MIGRATOR_DATABASE_URL`, put passwords on the command line, commit credentials, or paste real evidence in tickets or logs.
+
+```bash
+pnpm --filter @tradecloseout/api review:external -- \
+  --org "$VERIFIED_ORG_UUID" --grant "$VERIFIED_GRANT_UUID" \
+  --sha256 "$INDEPENDENT_EVIDENCE_SHA256" --case "$OPAQUE_CASE_REFERENCE" \
+  --attest-independent-source --attest-legal-delegation --attest-destination
+```
+
+The CLI validates all fields and attestations before connecting, requires certificate-verified TLS and a separate named reviewer database identity, opens one short transaction, and uses the audited `approve_external_guest_authority` function. It does not expose the connection URL, reviewer credentials, raw evidence digest, contact, legal evidence, or case reference in output or error messages. In a negative/failed run, inspect the restricted server-side reviewer audit rather than retrying with privileged credentials. A first reviewer can record exactly one decision; a separate authenticated login must independently verify the same source evidence and record the second decision. **The CLI cannot substitute for genuine human independent verification.**
+
 ## Executing an approval
 
 Connect through the independently controlled DB access gateway as the first **named reviewer login**. The reviewer role must be inherited through approved DBA policy (never via the contractor API). Execute a parameterised statement against the dedicated database:
@@ -41,7 +54,8 @@ Duplicate approvals from one reviewer, disjoint evidence, expired/revoked grant,
 
 ## Revocation, changes and incident response
 
-- Reviewer decisions are append-only under migration `0030`; privileged SQL mutation is rejected. An active, independently approved grant must be revoked before its counterparty party record is archived, so restoring the party cannot silently revive old approval.\n- On contact, delegation, issuer, party, role, project or scope change, **revoke the grant and its sessions**, issue a new grant, perform a fresh independent review and require new OTP. Do not UPDATE an approved grant in place. Database migration `0028` rejects changing the designated project client/consultant while an active independently approved grant for that party remains; revoke that grant before reassignment. Reassignment cannot revive an old approval.
+- Reviewer decisions are append-only under migration `0030`; privileged SQL mutation is rejected. An active, independently approved grant must be revoked before its counterparty party record is archived, so restoring the party cannot silently revive old approval.
+- On contact, delegation, issuer, party, role, project or scope change, **revoke the grant and its sessions**, issue a new grant, perform a fresh independent review and require new OTP. Do not UPDATE an approved grant in place. Database migration `0028` rejects changing the designated project client/consultant while an active independently approved grant for that party remains; revoke that grant before reassignment. Reassignment cannot revive an old approval.
 - Expired or revoked grants must not re-enter authorised state. Preserve the reviewer ledger for legal/audit retention under a separately approved policy.
 - In suspected email compromise, incorrect delegation, leaked reviewer credentials or client dispute, revoke affected grants/sessions immediately, preserve audit evidence and escalate through the platform incident procedure. A contractor cannot restore approval.
 - Review and rotate individual reviewer credentials and membership regularly; disable dormant accounts. Audit DBA and platform administrator access to approval grants and SECURITY DEFINER function DDL.
