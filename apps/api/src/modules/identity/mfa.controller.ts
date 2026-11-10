@@ -7,7 +7,7 @@ import { Pool, PoolClient } from 'pg';
 import { Response } from 'express';
 import { uuidv7 } from 'uuidv7';
 import { SessionCsrfGuard, AuthenticatedRequest } from '../../common/guards/session-csrf.guard';
-import { consumeAuthenticationBudget, deriveSessionCsrf, isProductionEnvironment } from './auth-security';
+import { consumeAuthenticationBudget, deriveSessionCsrf, isProductionEnvironment, recordDeniedAuthenticationEvent } from './auth-security';
 import {
   decryptFactor, encryptFactor, hashRecoveryCode, hashRecoveryCodeCandidates, newRecoveryCodes,
   newTotpSecret, verifyTotp,
@@ -27,6 +27,39 @@ type NewSession = {
 @UseGuards(SessionCsrfGuard)
 export class MfaController {
   constructor(private readonly pool: Pool) {}
+
+  private async auditMfaDenial<T>(
+    req: AuthenticatedMfaRequest, eventType: string, action: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await action();
+    } catch (error) {
+      // Never log the submitted authenticator, backup code or exception text.
+      const response = error && typeof error === 'object' && 'getResponse' in error
+        && typeof (error as {getResponse?:unknown}).getResponse === 'function'
+        ? (error as {getResponse:()=>unknown}).getResponse() : null;
+      const code = response && typeof response === 'object'
+        ? (response as {code?:unknown}).code : null;
+      const known = new Set([
+        'MFA_CODE_INVALID','MFA_CODE_INVALID_OR_REPLAYED',
+        'MFA_NOT_ENROLLED','MFA_ENROLLMENT_NOT_PENDING','MFA_ALREADY_ENROLLED',
+        'RECOVERY_CODE_INVALID','MFA_FRESH_PROOF_INVALID',
+        'MFA_FRESH_PROOF_REQUIRED','MFA_STEP_UP_REQUIRED',
+        'MFA_MEMBER_ONLY','SESSION_COOKIE_REQUIRED',
+        'SESSION_EXPIRED','SESSION_CONTEXT_CHANGED','RATE_LIMITED',
+        'ACCOUNT_UNAVAILABLE',
+      ]);
+      const reasonCode = typeof code === 'string' && known.has(code)
+        ? code : 'MFA_OPERATION_REJECTED';
+      await recordDeniedAuthenticationEvent(this.pool,eventType,{
+        userId:req?.auth?.userId,orgId:req?.auth?.activeOrgId,
+        sessionId:req?.auth?.sessionId,
+        sourceIp:typeof req?.ip === 'string' ? req.ip : undefined,
+        reasonCode,
+      });
+      throw error;
+    }
+  }
 
   private assertMember(req: AuthenticatedMfaRequest): void {
     if (req.userContext?.actorType === 'GUEST') {
@@ -167,6 +200,7 @@ export class MfaController {
     @Body() input: { code?: string },
     @Res({ passthrough: true }) res: Response,
   ) {
+    return this.auditMfaDenial(req, 'MFA_ENROLLMENT_DENIED', async () => {
     this.assertMember(req);
     if (typeof input?.code !== 'string' || !/^\d{6}$/.test(input.code)) {
       throw new BadRequestException({ code: 'MFA_CODE_INVALID' });
@@ -208,6 +242,7 @@ export class MfaController {
       return { session, recoveryCodes };
     });
     return { ...this.completeSession(res, result.session), recoveryCodes: result.recoveryCodes };
+    });
   }
 
   @Post('verify')
@@ -216,6 +251,7 @@ export class MfaController {
     @Body() input: { code?: string },
     @Res({ passthrough: true }) res: Response,
   ) {
+    return this.auditMfaDenial(req, 'MFA_VERIFY_DENIED', async () => {
     this.assertMember(req);
     if (typeof input?.code !== 'string' || !/^\d{6}$/.test(input.code)) {
       throw new BadRequestException({ code: 'MFA_CODE_INVALID' });
@@ -242,6 +278,7 @@ export class MfaController {
       return this.rotateVerifiedSession(client, req, 'MFA_VERIFIED');
     });
     return this.completeSession(res, session);
+    });
   }
 
   @Post('recovery')
@@ -250,6 +287,7 @@ export class MfaController {
     @Body() input: { recoveryCode?: string },
     @Res({ passthrough: true }) res: Response,
   ) {
+    return this.auditMfaDenial(req, 'MFA_RECOVERY_DENIED', async () => {
     this.assertMember(req);
     if (typeof input?.recoveryCode !== 'string' || !/^[0-9A-Fa-f]{24}$/.test(input.recoveryCode)) {
       throw new BadRequestException({ code: 'RECOVERY_CODE_INVALID' });
@@ -270,6 +308,7 @@ export class MfaController {
       return this.rotateVerifiedSession(client, req, 'MFA_RECOVERY_USED');
     });
     return this.completeSession(res, session);
+    });
   }
 
   /**
@@ -283,6 +322,7 @@ export class MfaController {
     @Body() input: { code?: string; recoveryCode?: string },
     @Res({ passthrough: true }) res: Response,
   ) {
+    return this.auditMfaDenial(req, 'MFA_RESET_DENIED', async () => {
     this.assertMember(req);
     if (!req.auth.mfaVerified) throw new ForbiddenException({ code: 'MFA_STEP_UP_REQUIRED' });
     const totpCode = typeof input?.code === 'string' && /^\d{6}$/.test(input.code)
@@ -349,5 +389,6 @@ export class MfaController {
       httpOnly: true, secure: isProductionEnvironment(), sameSite: 'lax', path: '/',
     });
     return result;
+    });
   }
 }
