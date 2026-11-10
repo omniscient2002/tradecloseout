@@ -34,6 +34,10 @@ For releases upgrading from older migrations, confirm that existing pending invi
 
 The implementation remains deliberately fail-closed in environments lacking the dedicated platform reviewer service and provider contracts. These source changes are not a substitute for actual independent legal authority verification and production multi-instance acceptance.
 
+## Worker invitation reconciliation (G01-020)
+
+The leader/period-locked hourly worker now calls `TradeCloseoutScheduler.cleanupStaleInvitations()`. With explicit per-tenant RLS scope and bounded `FOR UPDATE SKIP LOCKED` batches it revokes `DELIVERY_PENDING` invitations abandoned longer than 15 minutes and marks elapsed `PENDING` or `DELIVERY_PENDING` invitations `EXPIRED`. It never promotes an unacknowledged delivery to a redeemable credential, and it preserves pending authorisation of other tenants. Isolated PostgreSQL/Redis worker integration tests check stale, expired, fresh and foreign-tenant invitations plus idempotent reruns.
+
 ## 21-finding disposition: source status is NOT release acceptance
 
 | Finding | Source status | Still required |
