@@ -131,9 +131,27 @@ describe('G01 trusted independent external-party authority', () => {
         await expect(admin.query(
           'UPDATE projects SET client_party_id=$1 WHERE id=$2',[otherParty,project],
         )).rejects.toMatchObject({code:'42501'});
-        await admin.query(
-          `UPDATE guest_grants SET status='REVOKED' WHERE id=$1`,[grant],
-        );
+        // Trusted human reviewer can fail closed immediately without asking
+        // the contractor issuer to cooperate after a discovered compromise.
+        const emergency=await admin.connect();
+        try {
+          await emergency.query(`SET SESSION AUTHORIZATION "${reviewerNames[0]}"`);
+          const {rows:revoked}=await emergency.query(
+            'SELECT revoke_independent_external_guest_grant($1,$2,$3) AS revoked',
+            [org,grant,'CASE-REVOKE-G01-2026'],
+          );
+          expect(revoked[0].revoked).toBe(true);
+        } finally {
+          await emergency.query('RESET SESSION AUTHORIZATION').catch(()=>{});
+          emergency.release();
+        }
+        expect((await admin.query(
+          'SELECT status FROM guest_grants WHERE id=$1',[grant],
+        )).rows[0].status).toBe('REVOKED');
+        await expect(admin.query(
+          `UPDATE external_authority_revocations SET reason_ref='TAMPERED'
+            WHERE grant_id=$1`,[grant],
+        )).rejects.toMatchObject({code:'42501'});
         await admin.query(
           'UPDATE projects SET client_party_id=$1 WHERE id=$2',[otherParty,project],
         );
