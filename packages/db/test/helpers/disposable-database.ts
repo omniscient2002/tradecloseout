@@ -50,7 +50,11 @@ export function assertTestDatabaseTargetConsistency(): { source: URL; runtime: U
 
 export async function withDisposableDatabase(work: (db: {
   admin: Pool; app: Pool; url: string; name: string;
-}) => Promise<void>, options: { baselineThrough?: string } = {}) {
+}) => Promise<void>, options: {
+  baselineThrough?: string;
+  /** Seed a disposable historical schema before applying later migrations. */
+  beforeUpgrade?: (admin: Pool) => Promise<void>;
+} = {}) {
   const { source, runtime } = assertTestDatabaseTargetConsistency();
   const controlUrl = new URL(source);
   controlUrl.pathname = '/postgres';
@@ -82,6 +86,14 @@ export async function withDisposableDatabase(work: (db: {
           await client.query('COMMIT');
         }
       } finally { client.release(); await baseline.end(); }
+    }
+    if (options.beforeUpgrade) {
+      if (!options.baselineThrough) {
+        throw new Error('DISPOSABLE_UPGRADE_BASELINE_REQUIRED');
+      }
+      const fixture = new Pool({connectionString: url});
+      try { await options.beforeUpgrade(fixture); }
+      finally { await fixture.end(); }
     }
     await migrateDatabase(url);
     admin = new Pool({ connectionString: url });
