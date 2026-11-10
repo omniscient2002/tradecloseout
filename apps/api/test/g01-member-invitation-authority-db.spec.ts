@@ -194,6 +194,48 @@ describe('G01 membership privilege escalation and invitation validity', () => {
           'SELECT status FROM invitations WHERE id=$1',[invite.id],
         )).rows[0].status).toBe('PENDING');
 
+        // The link cannot be used while email submission is in flight.
+        // A second issuance supersedes it atomically, even if the earlier
+        // gateway eventually acknowledges its stale message.
+        let startDelivery!: () => void;
+        let completeDelivery!: () => void;
+        const started = new Promise<void>(resolve => {startDelivery=resolve;});
+        const delayed = new Promise<void>(resolve => {completeDelivery=resolve;});
+        gateway.sendMagicLinkEmail.mockImplementationOnce(async()=>{
+          startDelivery();
+          await delayed;
+        });
+        const slow=service.createInvitation(issuer,org,{
+          email:'parallel@g01.example',role:'R-SITE',
+        });
+        await started;
+        const pending=(await admin.query(
+          'SELECT id,status,token_hash FROM invitations WHERE org_id=$1 AND email=$2',
+          [org,'parallel@g01.example'],
+        )).rows[0];
+        expect(pending.status).toBe('DELIVERY_PENDING');
+        expect((await admin.query(
+          `SELECT count(*)::int AS n FROM invitations
+           WHERE org_id=$1 AND email=$2 AND status='PENDING'`,
+          [org,'parallel@g01.example'],
+        )).rows[0].n).toBe(0);
+
+        const newer=await service.createInvitation(issuer,org,{
+          email:'parallel@g01.example',role:'R-SITE',
+        });
+        expect(newer.status).toBe('PENDING');
+        completeDelivery();
+        await expect(slow).rejects.toMatchObject({
+          response:expect.objectContaining({code:'INVITATION_SUPERSEDED_DURING_DELIVERY'}),
+        });
+        expect((await admin.query('SELECT status FROM invitations WHERE id=$1',
+          [pending.id])).rows[0].status).toBe('REVOKED');
+        expect((await admin.query(
+          `SELECT count(*)::int AS n FROM invitations
+             WHERE org_id=$1 AND email=$2 AND status='PENDING'`,
+          [org,'parallel@g01.example'],
+        )).rows[0].n).toBe(1);
+
         gateway.sendMagicLinkEmail.mockRejectedValueOnce(
           new Error('accepted delivery then timeout'),
         );
