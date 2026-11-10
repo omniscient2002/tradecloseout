@@ -8,6 +8,7 @@ import {
   HttpStatus,
   NotFoundException,
   Post,
+  Param,
   Req,
   Res,
   UnauthorizedException,
@@ -1011,6 +1012,49 @@ export class IdentityController {
       [req.auth.userId, req.auth.sessionId],
     );
     return { sessions: rows };
+  }
+
+  /**
+   * Revoke one of the authenticated user's device sessions. Session IDs are
+   * never credentials: the account identity comes exclusively from the
+   * authenticated cookie, and a foreign/unknown device receives the same 404.
+   * The decision and redacted security event commit in one SQL statement.
+   */
+  @Post('sessions/:sessionId/revoke')
+  @UseGuards(SessionCsrfGuard)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async revokeDeviceSession(
+    @Param('sessionId') sessionId: string,
+    @Req() req: AuthenticatedRequest,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    if (typeof sessionId !== 'string' ||
+        !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(sessionId)) {
+      throw new NotFoundException({code:'SESSION_NOT_FOUND'});
+    }
+    const { rows } = await this.pool.query(
+      `WITH revoked AS (
+         UPDATE sessions SET revoked_at=now(),mfa_verified=false,
+           mfa_verified_at=NULL
+          WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL
+          RETURNING id,user_id,active_org_id
+       ), audited AS (
+         INSERT INTO auth_security_events
+          (id,actor_user_id,org_id,session_id,event_type,outcome)
+         SELECT gen_random_uuid(),user_id,active_org_id,id,
+           'DEVICE_SESSION_REVOKED','SUCCESS' FROM revoked
+         RETURNING session_id
+       )
+       SELECT session_id FROM audited`,
+      [sessionId,req.auth.userId],
+    );
+    if (!rows.length) throw new NotFoundException({code:'SESSION_NOT_FOUND'});
+    if (sessionId === req.auth.sessionId) {
+      res.clearCookie('tc_session',{
+        httpOnly:true,secure:isProductionEnvironment(),sameSite:'lax',path:'/',
+      });
+    }
+    return undefined;
   }
 
   /**
