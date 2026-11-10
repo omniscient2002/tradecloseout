@@ -89,7 +89,7 @@ pnpm --filter @tradecloseout/api review:revoke-external -- \
   --reason "$INCIDENT_CASE_REF" --attest-incident-verified
 ```
 
-**Important:** revoking a document attestation prevents *new* uses of that approval proof. It does not itself rewind previously committed `APPROVED` document states or legally annul certificates previously distributed. Run the separately authorised document-review dispute/withdrawal/notification workflow and review already-delivered packages; record incident response and communicate with the external party. This follow-up remains a release acceptance gate.
+**Important:** migration `0034` also invalidates the *current approved document revision* when its independently attested proof is revoked: it marks the revision `CHANGES_REQUESTED` and clears `documents.current_approved_version_id` in the same transaction, so readiness no longer treats it as approved. Historical review rows remain intact. This does not legally annul or recall previously distributed certificates, immutable handover packages or exports. Use the separately authorised incident, notice, dispute/withdrawal and recipient-communication workflow to handle those artifacts. Such deployed incident response remains an operational release gate.
 
 ## Revocation, changes and incident response
 
