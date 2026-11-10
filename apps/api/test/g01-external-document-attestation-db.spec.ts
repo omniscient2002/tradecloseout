@@ -118,10 +118,10 @@ describe('G01 independent real external-document decision evidence',()=>{
           [targetVersion,targetDoc],
         );
         await expect(app.query(
-          'SELECT g01_quarantine_unverified_current_external_approvals()',
+          'SELECT g01_quarantine_all_unverified_external_approvals()',
         )).rejects.toMatchObject({code:'42501'});
         const legacy=(await admin.query(
-          'SELECT g01_quarantine_unverified_current_external_approvals() AS n',
+          'SELECT g01_quarantine_all_unverified_external_approvals() AS n',
         )).rows[0].n;
         expect(legacy).toBe(1);
         expect((await admin.query(
@@ -141,7 +141,7 @@ describe('G01 independent real external-document decision evidence',()=>{
           [historicalReview],
         )).rows[0].n).toBe(1);
         expect((await admin.query(
-          'SELECT g01_quarantine_unverified_current_external_approvals() AS n',
+          'SELECT g01_quarantine_all_unverified_external_approvals() AS n',
         )).rows[0].n).toBe(0);
 
         const attest=async(login:string,sha=evidenceDigest,ref=caseRef)=>{
@@ -177,7 +177,7 @@ describe('G01 independent real external-document decision evidence',()=>{
           [targetVersion,targetDoc],
         );
         expect((await admin.query(
-          'SELECT g01_quarantine_unverified_current_external_approvals() AS n',
+          'SELECT g01_quarantine_all_unverified_external_approvals() AS n',
         )).rows[0].n).toBe(0);
         expect((await admin.query(
           'SELECT current_approved_version_id FROM documents WHERE id=$1',
