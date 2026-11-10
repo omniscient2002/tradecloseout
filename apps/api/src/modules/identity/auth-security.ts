@@ -341,9 +341,17 @@ export async function recordDeniedAuthenticationEvent(
     await pool.query({
       text: `WITH tick AS (
         SELECT statement_timestamp() AS at
+      ), global_saturated AS (
+        -- Avoid creating source reservations once the global event budget
+        -- has reached its cap (including an attacker rotating IP addresses).
+        -- Final admission still uses atomic UPSERT under a row lock.
+        SELECT 1 FROM auth_request_budgets
+         WHERE budget_key=$3 AND count >= $4
+           AND expires_at>statement_timestamp()
       ), source_slot AS (
         INSERT INTO auth_request_budgets (budget_key,count,expires_at)
-        SELECT $1,1, date_trunc('minute',at)+interval '1 minute' FROM tick
+        SELECT $1,1, date_trunc('minute',at)+interval '1 minute'
+          FROM tick WHERE NOT EXISTS (SELECT 1 FROM global_saturated)
         ON CONFLICT (budget_key) DO UPDATE
           SET count=CASE WHEN auth_request_budgets.expires_at<=statement_timestamp()
                          THEN 1 ELSE auth_request_budgets.count+1 END,
