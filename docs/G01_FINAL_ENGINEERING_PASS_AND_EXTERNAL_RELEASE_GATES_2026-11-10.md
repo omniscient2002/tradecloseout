@@ -14,6 +14,17 @@
 
 **Note on migration history:** do not edit or rewrite a migration already applied in staging; use additive migrations 0029 and 0030. Run the full migration ledger from scratch *and* exercise upgrades from the preceding schema; keep checksums and rollback/restore evidence.
 
+## Implementation continuation — reviewer operations, delivery commit and concurrent session revocation
+
+- **Reviewer gateway:** `apps/api/src/modules/identity/external-review-operations.ts`, `apps/api/scripts/approve-external-authority.ts`, `pnpm --filter @tradecloseout/api review:external`. Requires three independent evidence attestations, specifically verified CA TLS, distinct named PostgreSQL reviewer credentials and restricted privileges. Performs one short, audited database approval transaction. No application API credentials or reviewer secrets are shared. This is an operator tool, not automated legal validation.
+- **Invitation delivery:** additive migration `0031_g01_invitation_delivery_pending.sql` adds `DELIVERY_PENDING`. Provider-submitted invitation links cannot be redeemed until the send call succeeds and a conditional database promotion to `PENDING` commits. A crashed sender or uncertain timeout leaves a token non-usable; a newer invitation supersedes previous pending/active attempts. Role changes, offboarding and ownership transfer revoke delivery-pending invitations too. Promotion rechecks issuer membership/role. **Migration deliberately revokes pre-existing unexpired `PENDING` invitations** whose delivery cannot be attested under the new protocol; reissue affected invites after rollout.
+- **Concurrent privilege revocation:** `SessionCsrfGuard` passes authenticated session ID and auth generation into `userContext`. `withTenantTransaction` takes a `FOR SHARE` lock on the current nonrevoked, unexpired session generation for the whole mutation, serializing member demotion, owner transfer, MFA rotation, logout, device revocation and org switches with API writes. Stale generation gets deterministic `AUTH_CONTEXT_CHANGED` (HTTP 409), not a misleading 500. Controlled internal contexts without HTTP sessions retain existing behavior; this does not replace auditing every write path for authenticated-context use.
+- **Negative proof:** Added `g01-reviewer-operations.spec.ts`, `g01-auth-session-transaction-fence-db.spec.ts`, negative filter mapping, and simulated slow/superseded invitation delivery plus mid-flight issuer demotion. Exact final SHA CI verification remains mandatory.
+
+### Deployment-specific verification of the new delivery state
+
+For releases upgrading from older migrations, confirm that existing pending invitations are revoked intentionally; reissue them only after verified provider submission. Confirm no UI, job, or API treats `DELIVERY_PENDING` as redeemable. Test state transitions under application crash between INSERT and provider submission, provider acceptance followed by HTTP timeout, provider acceptance followed by database outage, email replay, two concurrent reissues, and issuer offboarding while the network request is in flight. Ensure operator monitoring alerts on long-lived `DELIVERY_PENDING` rows and that a scheduled cleanup expires them.
+
 ## 21-finding disposition: source status is NOT release acceptance
 
 | Finding | Source status | Still required |
