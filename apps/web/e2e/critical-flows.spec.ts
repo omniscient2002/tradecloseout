@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { createHmac, randomUUID } from 'node:crypto';
 import { isQueuedUploadContextCurrent } from '../src/lib/offline-upload-queue';
+import { safeReturnPath } from '../src/lib/safe-return-path';
 
 test.describe('TradeCloseout v0.2.1 Critical User Flows (SCR-002 -> SCR-010 -> SCR-013 -> SCR-025)', () => {
   test('E2E-01: Unauthenticated visitor to / is redirected to /login by middleware', async ({ page }) => {
@@ -81,6 +82,22 @@ test.describe('G01 browser authentication contract', () => {
     await page.locator('#mfa-code').fill(currentTotp(secret));
     await page.getByRole('button',{name:'Verify'}).click();
     await expect(page.getByText('Save these eight recovery codes offline. Each works once.')).toBeVisible();
+    // G01-006: a valid HttpOnly cookie can recover CSRF/generation after
+    // storage loss without reintroducing raw secrets into localStorage.
+    const restored=await page.evaluate(async()=>{
+      sessionStorage.clear();
+      const res=await fetch('/api/v1/auth/session/bootstrap',{
+        credentials:'include',cache:'no-store',
+      });
+      return {status:res.status,headers:res.headers.get('cache-control'),
+        body:await res.json()};
+    });
+    expect(restored.status).toBe(200);
+    expect(restored.headers).toContain('no-store');
+    expect(restored.body).toMatchObject({
+      csrfToken:expect.stringMatching(/^[a-f0-9]{64}$/),
+      authGeneration:expect.stringMatching(/^[a-f0-9-]{36}$/),
+    });
     const afterFactor=(await page.context().cookies()).find(c=>c.name==='tc_session');
     expect(afterFactor).toBeDefined();
     expect(afterFactor!.value).not.toBe(beforeFactor!.value);
@@ -110,6 +127,41 @@ test.describe('G01 browser authentication contract', () => {
       headers:{Cookie:'tc_session='+afterFactor!.value},
     });
     expect(loggedOut.status()).toBe(401);
+  });
+
+  test('E2E-G01: live API denies login CSRF from arbitrary origin/fetch metadata',async({request})=>{
+    test.skip(process.env.E2E_LIVE_AUTH !== 'true',
+      'Requires the real disposable API, not mocked delivery');
+    const url='http://127.0.0.1:3001/api/v1/auth/otp/request';
+    // Invalid contact ensures no OTP is delivered or generated; CSRF
+    // must reject BEFORE identity validation for hostile origin/source.
+    const foreign=await request.post(url,{
+      headers:{Origin:'https://attacker.example','sec-fetch-site':'cross-site'},
+      data:{identifier:'invalid-g01-input'},
+    });
+    expect(foreign.status()).toBe(403);
+    const {code:foreignCode}=await foreign.json();
+    expect(foreignCode).toMatch(/LOGIN_(CSRF|ORIGIN)_DENIED/);
+    const trusted=await request.post(url,{
+      headers:{Origin:'http://localhost:3002','sec-fetch-site':'same-origin'},
+      data:{identifier:'invalid-g01-input'},
+    });
+    expect(trusted.status()).toBe(422);
+  });
+
+  test('E2E-G01: redirect allowlist rejects external and doubly encoded navigation',async()=>{
+    const unsafe=[
+      '//evil.example/path','https://evil.example','javascript:alert(1)',
+      '/login?next=/dashboard','/guest/abc','/admin',
+      '/projects/../billing','/projects/%2e%2e/billing',
+      '/%2fevil.example','/%252fevil.example',
+      '/projects/%5c%5cevil','/projects/%0dSet-Cookie:foo',
+      '/dashboard\\evil','/dashboard\u000aevil',
+    ];
+    for(const candidate of unsafe)expect(safeReturnPath(candidate)).toBe('/dashboard');
+    expect(safeReturnPath('/dashboard')).toBe('/dashboard');
+    expect(safeReturnPath('/projects/g01-test?tab=files')).toBe('/projects/g01-test?tab=files');
+    expect(safeReturnPath('/parties?sort=name')).toBe('/parties?sort=name');
   });
 
   test('E2E-G01: queued uploads reject changed account, generation, tab epoch and legacy drafts', async () => {
