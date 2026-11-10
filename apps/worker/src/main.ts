@@ -141,6 +141,20 @@ async function bootWorker() {
         },
       );
 
+      await scheduler.runWithPeriodLock(
+        `g01-invitation-reconciliation:${periods.hourSlot}`,
+        `sched:done:g01-invitation-reconciliation:${periods.hourSlot}`,
+        300,2*60*60,
+        async()=>{
+          const outcome=await scheduler.cleanupStaleInvitations();
+          if(outcome.staleDelivery||outcome.expired){
+            console.log(
+              `[Scheduler] G01 invalidated ${outcome.staleDelivery} stale unconfirmed invitations and ${outcome.expired} expired invitation links.`,
+            );
+          }
+        },
+      );
+
       // Notification delivery cycle honoring IST quiet hours
       const sentNotifications = await scheduler.dispatchQueuedNotifications();
       if (sentNotifications > 0) {
