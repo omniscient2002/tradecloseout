@@ -50,7 +50,8 @@ export class MfaController {
         'ACCOUNT_UNAVAILABLE',
       ]);
       const reasonCode = typeof code === 'string' && known.has(code)
-        ? code : 'MFA_OPERATION_REJECTED';
+        ? code : typeof response === 'string' && known.has(response)
+          ? response : 'MFA_OPERATION_REJECTED';
       await recordDeniedAuthenticationEvent(this.pool,eventType,{
         userId:req?.auth?.userId,orgId:req?.auth?.activeOrgId,
         sessionId:req?.auth?.sessionId,
@@ -171,6 +172,9 @@ export class MfaController {
 
   @Post('enroll/start')
   async beginEnrollment(@Req() req: AuthenticatedMfaRequest) {
+    // Enrollment-start rejection is as security-sensitive as confirm/verify:
+    // log its bounded denial outside the rolled-back enrollment transaction.
+    return this.auditMfaDenial(req, 'MFA_ENROLLMENT_START_DENIED', async () => {
     this.assertMember(req);
     await this.enforceMfaAttemptBudget(req, 'enroll');
     const secret = newTotpSecret();
@@ -192,6 +196,7 @@ export class MfaController {
     // The secret is returned once over HTTPS. It must never be placed in logs
     // or an untrusted QR generator URL.
     return { manualSetupKey: secret, algorithm: 'SHA1', digits: 6, periodSeconds: 30 };
+    });
   }
 
   @Post('enroll/confirm')
