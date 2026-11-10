@@ -11,7 +11,10 @@ describe('G01-R3: bounded, independently committed denial telemetry',()=>{
     await withDisposableDatabase(async({admin,app,name})=>{
       const runtime=new URL(process.env.APP_DATABASE_URL!);
       runtime.pathname='/'+name;
-      const replica=new Pool({connectionString:runtime.toString()});
+      // Four connections in the second replica make the optional audit pool
+      // pressure explicit; unlike auth controls, dropped samples are safe.
+      const replica=new Pool({connectionString:runtime.toString(),max:4});
+      replica.on('error',()=>{}); // match the disposable helper's pool policy
       try{
         expect((await replica.query('SELECT current_user AS role')).rows[0].role).toBe('tc_app');
         // 200 attempts against the same anonymous source: 10 initial
@@ -58,6 +61,10 @@ describe('G01-R3: bounded, independently committed denial telemetry',()=>{
            WHERE source_digest LIKE '%198.51.100.77%'`,
         );
         expect(leaks[0].n).toBe(0);
+        // Replicas and their shared DB remain usable after the burst.
+        await expect(replica.query('SELECT 1 AS ok')).resolves.toMatchObject({
+          rows:[{ok:1}],
+        });
       }finally{await replica.end();}
     });
   });
