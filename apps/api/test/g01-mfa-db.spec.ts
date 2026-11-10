@@ -72,6 +72,42 @@ describe('G01 MFA real PostgreSQL control plane', () => {
     else process.env.AUTH_MFA_PREVIOUS_KEY_EXPIRES_AT = previousDeadline;
   });
 
+  it('G01-014/019: stale session cannot write pending MFA enrollment after logout or role revocation', async () => {
+    process.env.AUTH_MFA_ENCRYPTION_KEY = Buffer.alloc(32,22).toString('base64');
+    await withDisposableDatabase(async ({admin,app}) => {
+      const {userId,sessionId,req}=await seed(admin);
+      const ctrl=new MfaController(app);
+      // Simulate an HTTP request that passed its session guard just before
+      // a separate transaction revoked the session. The MFA transaction must
+      // lock/recheck the exact generation and token before writing secrets.
+      const other=await admin.connect();
+      try {
+        await other.query('BEGIN');
+        await other.query('UPDATE sessions SET revoked_at=now() WHERE id=$1',[sessionId]);
+        const inFlight=ctrl.beginEnrollment(req);
+        await new Promise(resolve=>setTimeout(resolve,75));
+        await other.query('COMMIT');
+        await expect(inFlight).rejects.toMatchObject({
+          response:expect.objectContaining({code:'SESSION_CONTEXT_CHANGED'}),
+        });
+      } finally {
+        await other.query('ROLLBACK').catch(()=>{});
+        other.release();
+      }
+      const {rows}=await admin.query(
+        'SELECT mfa_totp_pending_secret FROM users WHERE id=$1',[userId],
+      );
+      expect(rows[0].mfa_totp_pending_secret).toBeNull();
+      const logged=(await admin.query(
+        `SELECT count(*)::int AS n FROM auth_security_events
+          WHERE actor_user_id=$1 AND event_type='MFA_ENROLLMENT_START_DENIED'
+            AND reason_code='SESSION_CONTEXT_CHANGED' AND outcome='DENIED'`,
+        [userId],
+      )).rows[0].n;
+      expect(logged).toBe(1);
+    });
+  });
+
   it('binds enrollment, factor replay, single-use backup recovery and audited reset', async () => {
     process.env.AUTH_MFA_ENCRYPTION_KEY = Buffer.alloc(32,22).toString('base64');
     await withDisposableDatabase(async ({ admin, app }) => {
