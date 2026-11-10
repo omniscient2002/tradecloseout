@@ -41,7 +41,7 @@
 5. `POST /auth/switch-org` (authenticated) sets `sessions.active_org_id` server-side and returns `204`. Requires an active membership in the target org.
 6. `POST /auth/logout` revokes the session.
 
-Magic links use a single-use token, 15-minute expiry, bound to the identifier. OTP is 6 digits, 5-minute expiry, max 5 attempts, rate-limited.
+**Implemented authentication contract (G01-R5):** Browser/member login uses `POST /api/v1/auth/otp/request` followed by `POST /api/v1/auth/otp/verify` with the original `challengeId`, identifier and six-digit code. The OTP expires after 5 minutes and is rate-limited. An authenticated browser session uses an opaque HttpOnly cookie plus session-bound CSRF and authentication generation; owner/admin use TOTP or single-use recovery codes. **Member-login magic-link request/consume and automatic SMS-to-email fallback are not implemented and MUST NOT be advertised or called.** Organisation invitation links are a different, single-use claim flow: a recipient authenticates independently as the intended verified identity before accepting membership. Users may independently request an email OTP only if that destination is already a verified identity; no unverified alternate is selected on their behalf.
 
 ### 2.2 CSRF
 
@@ -154,8 +154,8 @@ GET /api/v1/projects/{projectId}/requirements
 | API-002 | POST `/auth/otp/verify` | Create session | Public |
 | API-003 | GET `/auth/me` | Current user + orgs | Authenticated |
 | API-004 | POST `/auth/logout` | Revoke session | Authenticated |
-| API-005 | POST `/auth/magic-link/request` | Email login link | Public |
-| API-006 | POST `/auth/magic-link/consume` | Exchange link | Public |
+| API-005 (withdrawn) | — | Member-login magic-link request is **not implemented**; use API-001 email OTP | — |
+| API-006 (withdrawn) | — | Member-login magic-link consumption is **not implemented**; use API-002 OTP verification | — |
 | API-007 | GET `/users/me` | Profile | Self |
 | API-008 | PATCH `/users/me` | Update name/locale | Self |
 | API-009A | GET `/auth/orgs` | List user's active org memberships and guest grants | Authenticated (`RT-002`) |
@@ -485,8 +485,8 @@ Rules: 5-second timeout, retries with exponential backoff for 24 hours, idempote
 
 | Integration | MVP | V1 | Notes |
 |---|---|---|---|
-| Email (SES/Postmark) | Yes | Yes | Magic links, reminders, invoices; bounce/complaint handling |
-| **SMS (OTP + transactional)** | **Yes** | Yes | DLT-registered sender ID and template; delivery receipts; per-identifier rate limits; fallback to email magic link after 2 failures (`AUD-001`) |
+| Email (SES/Postmark) | Yes | Yes | Implemented email OTP and organisation invitations; reminders/invoices are separate provider workflows. **No member-login magic-link endpoint.** Provider acceptance does not prove recipient delivery; bounce/complaint reconciliation requires separate operational verification. |
+| **SMS (OTP + transactional)** | **Yes** | Yes | DLT-registered sender ID and template; submission acknowledgment and shared rate limits. **No automatic SMS-to-email fallback or email magic-link recovery.** Real delivery receipts and retry/reconciliation remain a release gate. |
 | WhatsApp deep link (`wa.me`) | Yes | Yes | Pre-filled message; manual send; no delivery proof |
 | WhatsApp Business API | No | Yes | Template approval, opt-in, delivery status, cost per message |
 | Razorpay | Yes | Yes | Subscriptions, UPI/cards, webhooks, invoices |
