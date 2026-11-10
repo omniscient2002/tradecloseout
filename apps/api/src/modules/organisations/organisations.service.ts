@@ -585,7 +585,9 @@ export class OrganisationsService {
     if (!changeableRoles.has(dto.role)) {
       throw new UnprocessableEntityException({code:'OWNER_ROLE_REQUIRES_TRANSFER'});
     }
-    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+    return withTenantTransaction(this.pool, ctx, async (
+      client: PoolClient, emit: (ev: DomainOutboxEvent) => void,
+    ) => {
       const { rows: actorRows } = await client.query(
         `SELECT role FROM memberships WHERE org_id=$1 AND user_id=$2
           AND status='ACTIVE' FOR SHARE`,
@@ -648,6 +650,13 @@ export class OrganisationsService {
            'MEMBER_ROLE_CHANGED_SESSION_REVOKED','SUCCESS' FROM revoked`,
         [targetUserId,orgId],
       );
+      emit({
+        eventType:'ORG_MEMBER_ROLE_CHANGED',
+        entityType:'MEMBERSHIP',
+        entityId:rows[0].id,
+        beforeJson:{role:targetRoles[0].role,userId:targetUserId},
+        afterJson:{role:dto.role,userId:targetUserId,sessionsRevoked:true},
+      });
       return rows[0];
     });
   }
