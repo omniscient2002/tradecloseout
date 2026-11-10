@@ -2,7 +2,7 @@
   "schema_version": 1,
   "group": "G01",
   "original_finding_count": 21,
-  "reviewed_sha": "0b1523e4deee1abe66e861fe6bbe8e060e0a192a",
+  "reviewed_sha": "b45f0b5f4b7c4c1c838a2526aa6209f1a30a5c60",
   "tracking_issue": "https://github.com/omniscient2002/tradecloseout/issues/6",
   "release_decision": "NO_GO",
   "findings": [
@@ -199,46 +199,127 @@
       "id": "G01-R1",
       "requirement": "Org-switch database client cleanup",
       "acceptance": "Validate cookies before pool.connect and release every acquired client even on failure. Repeated valid bearer-only rejections must not exhaust the pool.",
-      "status": "OPEN",
-      "evidence_level": "Static source finding; runtime reproduction/regression required",
-      "evidence": [],
-      "review_reference": "docs/groups/G01/independent-review-0b1523e.md"
+      "status": "REVIEW_VERIFIED",
+      "evidence_level": "Independent targeted source inspection and exact-head CI evidence; scoped source acceptance only, not production acceptance Acceptance carried forward to b45f0b5 by independent source-delta review and current CI; original focused timeout probes remain evidence at 4f8a7bb, not a new full probe rerun.",
+      "evidence": [
+        "https://github.com/omniscient2002/tradecloseout/pull/5#pullrequestreview-5846558186",
+        "https://github.com/omniscient2002/tradecloseout/actions/runs/42828939414",
+        "https://github.com/omniscient2002/tradecloseout/pull/5#pullrequestreview-5847793285"
+      ],
+      "review_reference": "docs/groups/G01/independent-review-4f8a7bb.md",
+      "verified_sha": "b45f0b5f4b7c4c1c838a2526aa6209f1a30a5c60",
+      "reviewer": "Independent architecture/review chat (/root)",
+      "implementation_actor": "Regular ChatGPT implementation chat (PR #5)",
+      "previous_verified_sha": "4f8a7bb183e892ee4626d9116c00a34dc097f76c"
     },
     {
       "id": "G01-R2",
       "requirement": "Org-switch targetOrgId runtime type",
       "acceptance": "Reject singleton UUID arrays, objects and numbers with stable 4xx before any database query; preserve valid UUID switching.",
-      "status": "OPEN",
-      "evidence_level": "Static source finding; runtime reproduction/regression required",
-      "evidence": [],
-      "review_reference": "docs/groups/G01/independent-review-0b1523e.md"
+      "status": "REVIEW_VERIFIED",
+      "evidence_level": "Independent targeted source inspection and exact-head CI evidence; scoped source acceptance only, not production acceptance Acceptance carried forward to b45f0b5 by independent source-delta review and current CI; original focused timeout probes remain evidence at 4f8a7bb, not a new full probe rerun.",
+      "evidence": [
+        "https://github.com/omniscient2002/tradecloseout/pull/5#pullrequestreview-5846558186",
+        "https://github.com/omniscient2002/tradecloseout/actions/runs/42828939414",
+        "https://github.com/omniscient2002/tradecloseout/pull/5#pullrequestreview-5847793285"
+      ],
+      "review_reference": "docs/groups/G01/independent-review-4f8a7bb.md",
+      "verified_sha": "b45f0b5f4b7c4c1c838a2526aa6209f1a30a5c60",
+      "reviewer": "Independent architecture/review chat (/root)",
+      "implementation_actor": "Regular ChatGPT implementation chat (PR #5)",
+      "previous_verified_sha": "4f8a7bb183e892ee4626d9116c00a34dc097f76c"
     },
     {
       "id": "G01-R3",
       "requirement": "MFA/recovery/session denial event gaps",
       "acceptance": "Persist redacted bounded denial/replay/recovery events with trusted metadata and reason despite authentication transaction rollback.",
-      "status": "OPEN",
-      "evidence_level": "Static source finding; runtime reproduction/regression required",
-      "evidence": [],
-      "review_reference": "docs/groups/G01/independent-review-0b1523e.md"
+      "status": "REVIEW_VERIFIED",
+      "evidence_level": "Independent actual-candidate Node22/PG16 restricted-role held-checkout, held-lock and shared-cap probes, plus exact-head CI; not production/network-partition acceptance Acceptance carried forward to b45f0b5 by independent source-delta review and current CI; original focused timeout probes remain evidence at 4f8a7bb, not a new full probe rerun.",
+      "evidence": [
+        "https://github.com/omniscient2002/tradecloseout/pull/5#pullrequestreview-5846558186",
+        "https://github.com/omniscient2002/tradecloseout/actions/runs/42828939414",
+        "https://github.com/omniscient2002/tradecloseout/pull/5#pullrequestreview-5847793285"
+      ],
+      "review_reference": "docs/groups/G01/independent-review-4f8a7bb.md",
+      "verified_sha": "b45f0b5f4b7c4c1c838a2526aa6209f1a30a5c60",
+      "reviewer": "Independent architecture/review chat (/root)",
+      "implementation_actor": "Regular ChatGPT implementation chat (PR #5)",
+      "local_evidence": "docs/evidence/g01-recheck-4f8a7bb/evidence.json",
+      "previous_verified_sha": "4f8a7bb183e892ee4626d9116c00a34dc097f76c"
     },
     {
       "id": "G01-R4",
       "requirement": "Worker startup security parity",
       "acceptance": "Reject unknown/missing worker mode, unsafe actual database roles and missing/unsafe production dependencies before scheduled work; use restricted tc_app.",
-      "status": "OPEN",
-      "evidence_level": "Static source finding; runtime reproduction/regression required",
-      "evidence": [],
-      "review_reference": "docs/groups/G01/independent-review-0b1523e.md"
+      "status": "REVIEW_VERIFIED",
+      "evidence_level": "Independent targeted source inspection and exact-head CI evidence; scoped source acceptance only, not production acceptance Acceptance carried forward to b45f0b5 by independent source-delta review and current CI; original focused timeout probes remain evidence at 4f8a7bb, not a new full probe rerun.",
+      "evidence": [
+        "https://github.com/omniscient2002/tradecloseout/pull/5#pullrequestreview-5846558186",
+        "https://github.com/omniscient2002/tradecloseout/actions/runs/42828939414",
+        "https://github.com/omniscient2002/tradecloseout/pull/5#pullrequestreview-5847793285"
+      ],
+      "review_reference": "docs/groups/G01/independent-review-4f8a7bb.md",
+      "verified_sha": "b45f0b5f4b7c4c1c838a2526aa6209f1a30a5c60",
+      "reviewer": "Independent architecture/review chat (/root)",
+      "implementation_actor": "Regular ChatGPT implementation chat (PR #5)",
+      "previous_verified_sha": "4f8a7bb183e892ee4626d9116c00a34dc097f76c"
     },
     {
       "id": "G01-R5",
       "requirement": "Unsupported magic-link and fallback promises",
       "acceptance": "Implement a verified supported recovery contract or explicitly withdraw undocumented implementation claims in API/security documentation. Never choose an unverified alternate contact.",
+      "status": "REVIEW_VERIFIED",
+      "evidence_level": "Independent targeted source inspection and exact-head CI evidence; scoped source acceptance only, not production acceptance Acceptance carried forward to b45f0b5 by independent source-delta review and current CI; original focused timeout probes remain evidence at 4f8a7bb, not a new full probe rerun.",
+      "evidence": [
+        "https://github.com/omniscient2002/tradecloseout/pull/5#pullrequestreview-5846558186",
+        "https://github.com/omniscient2002/tradecloseout/actions/runs/42828939414",
+        "https://github.com/omniscient2002/tradecloseout/pull/5#pullrequestreview-5847793285"
+      ],
+      "review_reference": "docs/groups/G01/independent-review-4f8a7bb.md",
+      "verified_sha": "b45f0b5f4b7c4c1c838a2526aa6209f1a30a5c60",
+      "reviewer": "Independent architecture/review chat (/root)",
+      "implementation_actor": "Regular ChatGPT implementation chat (PR #5)",
+      "previous_verified_sha": "4f8a7bb183e892ee4626d9116c00a34dc097f76c"
+    },
+    {
+      "id": "G01-R6",
+      "requirement": "Consistent MFA session/user/recovery lock ordering",
+      "acceptance": "Deterministic real restricted-PG enrollment start/confirm and relevant reset/recovery/revocation overlaps avoid SQLSTATE 40P01/500 while preserving current-session fencing, atomic factor writes and pool cleanup.",
       "status": "OPEN",
-      "evidence_level": "Static source finding; runtime reproduction/regression required",
-      "evidence": [],
-      "review_reference": "docs/groups/G01/independent-review-0b1523e.md"
+      "severity": "P2",
+      "related_original_findings": [
+        "G01-014",
+        "G01-019"
+      ],
+      "evidence_level": "Independent actual candidate controller reproduction on Node 22.23.2 / PostgreSQL 16.15; start aborted with SQLSTATE 40P01.",
+      "evidence": [
+        "https://github.com/omniscient2002/tradecloseout/pull/5#pullrequestreview-5847793285"
+      ],
+      "review_reference": "docs/groups/G01/independent-review-b45f0b5.md",
+      "local_evidence": "docs/evidence/g01-recheck-b45f0b5/mfa-lock-order-evidence.json",
+      "reproduced_sha": "b45f0b5f4b7c4c1c838a2526aa6209f1a30a5c60"
+    },
+    {
+      "id": "G01-R7",
+      "requirement": "Canonical safe request ID in authentication error logs and responses",
+      "acceptance": "Actual filter tests reject credential-shaped ASCII and malformed request IDs without retaining submitted secrets in logger arguments, problem bodies or response headers; preserve safe UUID correlation, redaction and controlled errors.",
+      "status": "OPEN",
+      "severity": "P2",
+      "related_original_findings": [
+        "G01-015",
+        "G01-016",
+        "G01-021"
+      ],
+      "evidence_level": "Independent execution of actual candidate exception filter and shared normalizer with captured logger/response; raw fixture secret persisted in all three outputs.",
+      "evidence": [
+        "https://github.com/omniscient2002/tradecloseout/pull/5#pullrequestreview-5847793285"
+      ],
+      "review_reference": "docs/groups/G01/independent-review-b45f0b5.md",
+      "local_evidence": "docs/evidence/g01-recheck-b45f0b5/auth-filter-request-id-evidence.json",
+      "reproduced_sha": "b45f0b5f4b7c4c1c838a2526aa6209f1a30a5c60"
     }
-  ]
+  ],
+  "previous_reviewed_sha": "4f8a7bb183e892ee4626d9116c00a34dc097f76c",
+  "review_scope": "Supplemental R1–R5 scoped source acceptance at 4f8a7bb is preserved; independent b45f0b5 re-review reproduces new R6 and R7, both OPEN. Original 21 rows retain historical statuses verbatim and are not recertified. Engineering plus external release acceptance remains open.",
+  "source_review_url": "https://github.com/omniscient2002/tradecloseout/pull/5#pullrequestreview-5847793285"
 }

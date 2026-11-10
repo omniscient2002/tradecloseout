@@ -70,9 +70,13 @@ class RegisterTests(unittest.TestCase):
     def setUp(self):
         self.data = copy.deepcopy(REGISTERS["G01"])
 
-    def test_actual_21_original_and_five_extra_findings(self):
+    def test_actual_21_original_and_seven_extra_findings(self):
         module.validate_register(self.data)
-        self.assertEqual(26, len(self.data["findings"]))
+        self.assertEqual(28, len(self.data["findings"]))
+        supplemental = {r["id"]: r for r in self.data["findings"] if r["id"].startswith("G01-R")}
+        self.assertEqual({f"G01-R{i}" for i in range(1, 8)}, set(supplemental))
+        self.assertEqual("OPEN", supplemental["G01-R6"]["status"])
+        self.assertEqual("OPEN", supplemental["G01-R7"]["status"])
         self.assertFalse(any(r["status"] == "RELEASE_ACCEPTED" for r in self.data["findings"]))
 
     def test_missing_original_id_rejected(self):
