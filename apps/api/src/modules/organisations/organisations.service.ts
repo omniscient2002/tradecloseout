@@ -634,6 +634,16 @@ export class OrganisationsService {
 
       if (rows.length === 0) throw new NotFoundException('MEMBERSHIP_NOT_FOUND');
 
+      // Invalidate grants of *future membership authority* created by this
+      // person whenever the new role would not be permitted to issue them.
+      // This shares a transaction with the role edit; concurrent invitation
+      // redemption serializes on the invitation row.
+      const revokedInvitations = await client.query(
+        `UPDATE invitations SET status='REVOKED'
+          WHERE org_id=$1 AND invited_by=$2 AND status='PENDING'
+            AND ($3 <> 'R-ADMIN' OR role='R-ADMIN')`,
+        [orgId,targetUserId,dto.role],
+      );
       // Role changes cross an authentication-strength boundary. Invalidate
       // any browser sessions selected into this organisation so their tokens,
       // CSRF material and MFA state cannot survive privilege transitions.
@@ -655,7 +665,10 @@ export class OrganisationsService {
         entityType:'MEMBERSHIP',
         entityId:rows[0].id,
         beforeJson:{role:targetRoles[0].role,userId:targetUserId},
-        afterJson:{role:dto.role,userId:targetUserId,sessionsRevoked:true},
+        afterJson:{
+          role:dto.role,userId:targetUserId,sessionsRevoked:true,
+          invitationsRevoked:revokedInvitations.rowCount || 0,
+        },
       });
       return rows[0];
     });
@@ -693,6 +706,16 @@ export class OrganisationsService {
           title: 'Cannot remove organisation owner',
           detail: 'Transfer ownership to another active member before suspending or removing the owner (FR-IAM-004).',
         });
+      }
+
+      if (input.action === 'SUSPEND' || input.action === 'REMOVE') {
+        // An offboarded identity must not leave live invitation credentials
+        // delegating its former organisation authority to others.
+        await client.query(
+          `UPDATE invitations SET status='REVOKED'
+             WHERE org_id=$1 AND invited_by=$2 AND status='PENDING'`,
+          [ctx.orgId,input.targetUserId],
+        );
       }
 
       // 1. Revoke all active sessions for the departing user in this org immediately (FR-IAM-007)
@@ -864,6 +887,15 @@ export class OrganisationsService {
         `UPDATE memberships SET role = 'R-OWNER', row_version = row_version + 1, updated_at = now()
           WHERE org_id = $1 AND user_id = $2`,
         [ctx.orgId, newOwnerUserId],
+      );
+
+      // The former owner is now an administrator. Any outstanding R-ADMIN
+      // invitations that relied on owner-only issuance authority are void.
+      await client.query(
+        `UPDATE invitations SET status='REVOKED'
+          WHERE org_id=$1 AND invited_by=$2 AND status='PENDING'
+            AND role='R-ADMIN'`,
+        [ctx.orgId,ctx.userId],
       );
 
       // A privilege transfer changes assurance requirements for BOTH parties.
