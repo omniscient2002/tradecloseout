@@ -124,9 +124,18 @@ describe('G01 independent real external-document decision evidence',()=>{
           'DELETE FROM external_document_approval_attestations WHERE document_version_id=$1',
           [targetVersion],
         )).rejects.toMatchObject({code:'42501'});
-        // The checker revalidates bytes and scope after attestation.
-        await admin.query('UPDATE storage_objects SET sha256=$1 WHERE id=$2',
-          ['e'.repeat(64),proofStorage]);
+        // A later project-party reassignment must not silently reuse
+        // historical attestations as authority for another counterparty.
+        const replacementParty=uuidv7();
+        await admin.query(
+          `INSERT INTO parties(id,org_id,name,types,status)
+            VALUES($1,$2,'Replacement Client',ARRAY['CLIENT']::text[],'ACTIVE')`,
+          [replacementParty,org],
+        );
+        await admin.query(
+          'UPDATE projects SET client_party_id=$1 WHERE id=$2',
+          [replacementParty,project],
+        );
         expect(await check()).toBe(false);
       }finally{
         for(const name of reviewerRoles.reverse()){
