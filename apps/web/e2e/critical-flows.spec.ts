@@ -94,7 +94,7 @@ test.describe('G01 browser authentication contract', () => {
 
     await page.getByRole('button',{name:'I have saved the codes securely'}).click();
     await expect(page).toHaveURL(/\/dashboard(?:\?|$)/);
-    await expect(page.getByText('G01 Live Owner')).toBeVisible();
+    await expect(page.getByRole('button',{name:/G01 Live Owner/})).toBeVisible();
     await page.getByRole('button',{name:/G01 Live Owner/}).click();
     await page.getByRole('button',{name:'Sign Out Session'}).click();
     await expect(page).toHaveURL(/\/login(?:\?|$)/);
