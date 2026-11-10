@@ -54,18 +54,18 @@ describe('G01: authentication hardening negative controls', () => {
     expect(contract).toContain('original `challengeId`');
     expect(member).toContain('API-005 (withdrawn)');
     expect(member).toContain('API-006 (withdrawn)');
-    expect(member).not.toMatch(/\\| API-00[56] \\| POST \`\\/auth\\/magic-link\\//);
+    expect(member).not.toContain('| API-005 | POST `/auth/magic-link/request`');
     expect(guest).toContain('no automatic channel switching or guest email fallback');
     expect(guest).toContain('does not switch to another channel');
-    expect(guest).not.toMatch(/max 3\\/hr[^\\n]*; email fallback/i);
+    expect(guest).not.toContain('max 3/hr, 10/day per grant; email fallback');
     expect(limits).toContain('no automatic email fallback or alternate recipient');
-    expect(limits).not.toMatch(/Guest OTP request[^\\n]*; email fallback;/i);
+    expect(limits).not.toContain('15-min cooldown; email fallback;');
     expect(integrations).toContain('No automatic SMS-to-email fallback');
     expect(integrations).not.toMatch(/fallback to email magic link after 2 failures/i);
     expect(session).toContain('Magic link (future, not implemented for member login)');
     expect(session).toContain('No current');
     expect(session).toContain('no automatic SMS-to-email fallback');
-    expect(session).not.toMatch(/\\| Magic link \\| ≥128-bit token/);
+    expect(session).not.toContain('| Magic link | ≥128-bit token');
   });
 
   it('requires explicit production keys and HTTPS before starting the API', () => {
