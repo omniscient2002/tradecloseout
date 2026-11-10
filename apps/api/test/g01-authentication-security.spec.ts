@@ -226,6 +226,16 @@ describe('G01: authentication hardening negative controls', () => {
         response: expect.objectContaining({code:'MFA_STEP_UP_REQUIRED'}),
       });
       await expect(invoke('/api/v1/auth/me')).resolves.toBe(true);
+      await expect(invoke('/api/v1/auth/mfa/status')).resolves.toBe(true);
+      await expect(invoke('/api/v1/auth/sessions')).resolves.toBe(true);
+      // New auth-prefixed endpoints do not automatically inherit the
+      // pre-MFA escape hatch: protect their privileged reads by default.
+      await expect(invoke('/api/v1/auth/internal-admin')).rejects.toMatchObject({
+        response: expect.objectContaining({code:'MFA_STEP_UP_REQUIRED'}),
+      });
+      await expect(invoke('/api/v1/auth/me/extra')).rejects.toMatchObject({
+        response: expect.objectContaining({code:'MFA_STEP_UP_REQUIRED'}),
+      });
       session.mfa_verified=true;
       session.mfa_verified_at=new Date().toISOString();
       await expect(invoke('/api/v1/projects')).resolves.toBe(true);
