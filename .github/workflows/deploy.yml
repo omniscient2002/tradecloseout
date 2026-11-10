@@ -75,6 +75,12 @@ jobs:
           MIGRATOR_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/tradecloseout
         run: pnpm test:security
 
+      - name: Run Explicit RBAC Authorization Matrix
+        env:
+          APP_DATABASE_URL: postgres://tc_app:app_local_pw@127.0.0.1:5432/tradecloseout
+          MIGRATOR_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/tradecloseout
+        run: pnpm test:rbac
+
       - name: Strict production-mode API authentication smoke (fixture-only; no provider calls)
         env:
           NODE_ENV: production
