@@ -13,7 +13,7 @@ jest.setTimeout(180_000);
 describe('G01 trusted independent external-party authority', () => {
   it('requires two distinct reviewers, matching evidence, and immutable signed grant', async () => {
     await withDisposableDatabase(async ({admin,app}) => {
-      const org=uuidv7(), issuer=uuidv7(),project=uuidv7(),party=uuidv7(),grant=uuidv7();
+      const org=uuidv7(), issuer=uuidv7(),project=uuidv7(),party=uuidv7(),grant=uuidv7(),otherParty=uuidv7();
       const reviewerNames = [
         'tc_g01reviewer_a_' + uuidv7().replace(/-/g,'').slice(0,8),
         'tc_g01reviewer_b_' + uuidv7().replace(/-/g,'').slice(0,8),
@@ -33,6 +33,8 @@ describe('G01 trusted independent external-party authority', () => {
           [project,org,issuer]);
         await admin.query(`INSERT INTO parties(id,org_id,name,types,status)
           VALUES($1,$2,'Independent Client',ARRAY['CLIENT']::text[],'ACTIVE')`,[party,org]);
+        await admin.query(`INSERT INTO parties(id,org_id,name,types,status)
+          VALUES($1,$2,'Other Client',ARRAY['CLIENT']::text[],'ACTIVE')`,[otherParty,org]);
         await admin.query(`INSERT INTO guest_grants
           (id,org_id,project_id,party_id,grant_type,role,capabilities,
            token_hash,target_email,status,expires_at,created_by)
@@ -64,6 +66,10 @@ describe('G01 trusted independent external-party authority', () => {
           }
         };
 
+        // A grant's review must not succeed merely because the contractor
+        // inserted an arbitrary client party in its own organisation.
+        await expect(asReviewer(reviewerNames[0])).rejects.toMatchObject({code:'42501'});
+        await admin.query('UPDATE projects SET client_party_id=$1 WHERE id=$2',[party,project]);
         expect(await asReviewer(reviewerNames[0])).toMatchObject({
           review_count:1,independently_verified:false,
         });
@@ -103,6 +109,20 @@ describe('G01 trusted independent external-party authority', () => {
           await inTenant.query('ROLLBACK');
         } finally { inTenant.release(); }
         await expect(asReviewer(reviewerNames[1])).rejects.toMatchObject({code:'23505'});
+
+        // An already-approved grant prevents a contractor or DBA from silently
+        // retargeting the project and later restoring it to make the old review
+        // appear valid. Explicit revocation must precede party reassignment.
+        await expect(admin.query(
+          'UPDATE projects SET client_party_id=$1 WHERE id=$2',[otherParty,project],
+        )).rejects.toMatchObject({code:'42501'});
+        await admin.query(
+          `UPDATE guest_grants SET status='REVOKED' WHERE id=$1`,[grant],
+        );
+        await admin.query(
+          'UPDATE projects SET client_party_id=$1 WHERE id=$2',[otherParty,project],
+        );
+        await expect(asReviewer(reviewerNames[0])).rejects.toMatchObject({code:'42501'});
       } finally {
         for(const name of reviewersReady.reverse()){
           await admin.query(`REVOKE tc_external_authority_reviewer FROM "${name}"`).catch(()=>{});
