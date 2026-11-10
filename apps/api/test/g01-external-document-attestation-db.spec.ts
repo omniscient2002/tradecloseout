@@ -115,6 +115,16 @@ describe('G01 independent real external-document decision evidence',()=>{
           .rejects.toMatchObject({code:'22023'});
         expect(await attest(reviewers[1])).toMatchObject({review_count:2,independently_verified:true});
         expect(await check()).toBe(true);
+        // Simulate a previously committed externally approved document so a
+        // later independent revocation cannot leave readiness trusting it.
+        await admin.query(
+          `UPDATE document_versions SET review_status='APPROVED'
+            WHERE id=$1`,[targetVersion],
+        );
+        await admin.query(
+          `UPDATE documents SET current_approved_version_id=$1
+            WHERE id=$2`,[targetVersion,targetDoc],
+        );
 
         // Emergency revocation is an independent, immutable platform action
         // and immediately changes the normal API's boolean decision.
@@ -131,6 +141,15 @@ describe('G01 independent real external-document decision evidence',()=>{
           emergency.release();
         }
         expect(await check()).toBe(false);
+        const revokedDocument=(await admin.query(
+          'SELECT current_approved_version_id FROM documents WHERE id=$1',
+          [targetDoc],
+        )).rows[0];
+        expect(revokedDocument.current_approved_version_id).toBeNull();
+        expect((await admin.query(
+          'SELECT review_status FROM document_versions WHERE id=$1',
+          [targetVersion],
+        )).rows[0].review_status).toBe('CHANGES_REQUESTED');
         await expect(admin.query(
           `UPDATE external_document_approval_revocations SET reason_ref='TAMPERED'
              WHERE document_version_id=$1`,[targetVersion],
