@@ -37,11 +37,11 @@ export class PermissionGuard implements CanActivate {
 
     const isGuest = Boolean(user.guestGrantId || user.actorType === 'GUEST');
 
-    if (isGuest && ['package.accept', 'inspection.witness'].includes(requiredPermission) &&
+    if (isGuest && ['package.accept', 'inspection.witness', 'review.decide'].includes(requiredPermission) &&
         user.guestAuthorityVerified !== true) {
       throw new ForbiddenException({
         code: 'INDEPENDENT_PARTY_AUTHORITY_REQUIRED',
-        detail: 'An OTP delivered to an issuer-selected contact is not independent party authorization.',
+        detail: 'Independent counterparty authority is required before externally binding reviews, witness attestations or package acceptance.',
       });
     }
     if (isGuest) {
