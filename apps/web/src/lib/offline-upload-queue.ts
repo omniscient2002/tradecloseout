@@ -226,7 +226,15 @@ export async function drainOfflineUploadQueue(
   onProgress?: (queueId: string, uploadedBytes: number, totalBytes: number) => void,
 ): Promise<void> {
   if (typeof navigator !== 'undefined' && !navigator.onLine) return;
-  if (typeof indexedDB === 'undefined') return;
+  if (typeof indexedDB === 'undefined' || typeof window === 'undefined') return;
+
+  // Recover a valid cookie-only session before selecting queued work, but
+  // never auto-rebind after an explicit cross-tab actor change.
+  try {
+    await requireAuthenticatedBrowserContext();
+  } catch {
+    return;
+  }
 
   const db = await openOfflineDb();
   const items = await new Promise<OfflineQueuedUpload[]>((resolve, reject) => {
