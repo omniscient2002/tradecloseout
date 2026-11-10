@@ -182,6 +182,29 @@ export class InMemoryRedis {
   }
 }
 
+/**
+ * A generic webhook/gateway HTTP 2xx only proves transport success. OTPs and
+ * invitations must not be activated if the adapter explicitly declined the
+ * message or returned an ambiguous/empty response. The deployment's trusted
+ * SMS/mail adapter must expose this versioned submission-ack contract.
+ */
+async function requireGatewaySubmissionAccepted(response: Response): Promise<void> {
+  if (!response.ok) throw new Error('PROVIDER_SUBMISSION_REJECTED');
+  const contentType=response.headers.get('content-type') || '';
+  if (!/^application\\/json(?:;|$)/i.test(contentType.trim())) {
+    throw new Error('PROVIDER_SUBMISSION_ACK_REQUIRED');
+  }
+  const raw=await response.text();
+  if (raw.length>4096) throw new Error('PROVIDER_SUBMISSION_ACK_TOO_LARGE');
+  let receipt:unknown;
+  try {receipt=JSON.parse(raw);}
+  catch {throw new Error('PROVIDER_SUBMISSION_ACK_INVALID');}
+  if (!receipt || typeof receipt!=='object' ||
+      (receipt as {accepted?:unknown}).accepted!==true) {
+    throw new Error('PROVIDER_SUBMISSION_NOT_ACCEPTED');
+  }
+}
+
 @Injectable()
 export class DltSmsService implements DltSmsGateway {
   async sendOtpSms(phoneE164: string, otp: string, templateId: string): Promise<{ delivered: boolean }> {
@@ -212,9 +235,7 @@ export class DltSmsService implements DltSmsGateway {
           }),
         });
 
-        if (!response.ok) {
-          throw new Error(`DLT SMS provider responded with status ${response.status}`);
-        }
+        await requireGatewaySubmissionAccepted(response);
         return { delivered: true };
       } catch (err: any) {
         throw new ServiceUnavailableException({
@@ -265,9 +286,7 @@ export class TransactionalMailService implements TransactionalMailGateway {
             from: process.env.MAIL_FROM_ADDRESS || 'security@tradecloseout.com',
           }),
         });
-        if (!response.ok) {
-          throw new Error(`Mail provider responded with status ${response.status}`);
-        }
+        await requireGatewaySubmissionAccepted(response);
         return;
       } catch (err: any) {
         throw new ServiceUnavailableException({
@@ -312,9 +331,7 @@ export class TransactionalMailService implements TransactionalMailGateway {
             from: process.env.MAIL_FROM_ADDRESS || 'security@tradecloseout.com',
           }),
         });
-        if (!response.ok) {
-          throw new Error(`Mail provider responded with status ${response.status}`);
-        }
+        await requireGatewaySubmissionAccepted(response);
         return;
       } catch (err: any) {
         throw new ServiceUnavailableException({
