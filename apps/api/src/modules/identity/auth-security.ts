@@ -1,7 +1,7 @@
 import { ForbiddenException } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { createHmac, createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import { HttpException, HttpStatus } from '@nestjs/common';
 import { isIP } from 'node:net';
 
@@ -281,10 +281,44 @@ export async function recordAuthenticationEvent(
  * budgets, critical successful MFA/revocation events, and original denial
  * decisions do not depend on audit sampling.
  */
-const AUTH_DENIAL_QUERY_TIMEOUT_MS = 750;
-const AUTH_DENIAL_TOTAL_WAIT_MS = 1_000;
+// The optional audit request may queue for at most 250 ms. A late pool
+// checkout is released immediately without sending ANY SQL. Once acquired,
+// the bounded transaction uses actual PostgreSQL server timeouts instead of
+// pg's client-only query_timeout, and is settled before returning.
+const AUTH_DENIAL_ACQUIRE_TIMEOUT_MS = 250;
+const AUTH_DENIAL_STATEMENT_TIMEOUT_MS = 600;
+const AUTH_DENIAL_LOCK_TIMEOUT_MS = 350;
+const AUTH_DENIAL_TOTAL_TRANSACTION_BUDGET_MS = 1_000;
 const AUTH_DENIAL_DIAGNOSTIC_WINDOW_MS = 60_000;
 let lastAuthDenialDiagnosticAt = Number.NEGATIVE_INFINITY;
+
+/**
+ * Pool.connect() has no built-in cancellation for queued checkouts. The
+ * abandoned promise must retain a rejection handler AND must release a client
+ * that arrives after the deadline. Never submit SQL from that late callback.
+ */
+async function acquireDeniedAuditClient(pool: Pool): Promise<PoolClient | null> {
+  let expired = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const acquiring = pool.connect().then(client => {
+    if (expired) {
+      client.release();
+      return null;
+    }
+    return client;
+  });
+  try {
+    return await Promise.race([
+      acquiring,
+      new Promise<null>(resolve => {
+        timer = setTimeout(() => { expired = true; resolve(null); },
+          AUTH_DENIAL_ACQUIRE_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 /** Fixed single-line diagnostics are capped to one per minute per replica. */
 function reportAuthDenialPersistenceFailure(): void {
@@ -297,11 +331,13 @@ function reportAuthDenialPersistenceFailure(): void {
 
 /**
  * Persist the sampled denial independently after the protected operation's
- * rollback. Database query_timeout bounds each query (750 ms); a failed,
- * unavailable or timed-out event store is best-effort and NEVER authorizes the
- * denied request. During a full database outage there is no reliable shared
- * sampling coordinator: only the fixed, per-replica diagnostic cap applies.
- * The exact denial is rethrown by the MFA handler/session guard.
+ * rollback. Acquisition can time out without a late SQL execution. An
+ * acquired client is held until its transactional INSERT commits or rolls
+ * back. PostgreSQL's server-side SET LOCAL lock_timeout/statement_timeout
+ * cancels locked or slow statements; the client is never returned idle with
+ * an open transaction. A failed event store is best-effort and NEVER
+ * authorizes the denied request. During a database outage shared sampling
+ * is unavailable and only fixed per-replica diagnostics can be emitted.
  */
 export async function recordDeniedAuthenticationEvent(
   pool: Pool, eventType: string,
@@ -346,7 +382,20 @@ export async function recordDeniedAuthenticationEvent(
     // Conditional UPSERTs never increment a saturated counter or insert an
     // extra event. The event and both reservations succeed or roll back
     // together, even across simultaneous callers from different API nodes.
-    const eventWrite = pool.query({
+    const client = await acquireDeniedAuditClient(pool);
+    if (!client) return; // Late checkout promise releases its client, no SQL.
+    let destroy = false;
+    let transactionOpen = false;
+    const transactionStartedAt = Date.now();
+    try {
+      await client.query('BEGIN');
+      transactionOpen = true;
+      // SET LOCAL does not affect any other use of this pooled connection.
+      // Server-side limits cancel backend lock waits and running SQL, unlike
+      // the previous caller-only Promise.race + pg query_timeout.
+      await client.query(`SET LOCAL lock_timeout = '${AUTH_DENIAL_LOCK_TIMEOUT_MS}ms'`);
+      await client.query(`SET LOCAL statement_timeout = '${AUTH_DENIAL_STATEMENT_TIMEOUT_MS}ms'`);
+      await client.query({
       text: `WITH tick AS (
         SELECT statement_timestamp() AS at
       ), global_saturated AS (
@@ -393,24 +442,29 @@ export async function recordDeniedAuthenticationEvent(
       values: [sourceKey,sourceLimit,globalKey,globalLimit,
         details.userId || null,details.orgId || null,details.sessionId || null,
         eventType,subjectDigest,details.reasonCode,sourceDigest],
-      // node-postgres supports per-query query_timeout at runtime; the
-      // installed @types/pg QueryConfig omits this driver-supported field.
-      query_timeout: AUTH_DENIAL_QUERY_TIMEOUT_MS,
-    } as import('pg').QueryConfig & { query_timeout: number });
-    // pool.query's query_timeout can start only after pool checkout. Bound
-    // queueing as well; the pg query timeout still cancels an active query.
-    // A late result is observed by Promise.race and cannot change a decision.
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      await Promise.race([
-        eventWrite,
-        new Promise<never>((_,reject)=>{
-          timer=setTimeout(()=>reject(new Error('AUTH_DENIAL_EVENT_STORE_TIMEOUT')),
-            AUTH_DENIAL_TOTAL_WAIT_MS);
-        }),
-      ]);
+    });
+      if (Date.now() - transactionStartedAt >= AUTH_DENIAL_TOTAL_TRANSACTION_BUDGET_MS) {
+        throw new Error('AUTH_DENIAL_TRANSACTION_DEADLINE');
+      }
+      await client.query('COMMIT');
+      transactionOpen = false;
+    } catch (error) {
+      if (transactionOpen) {
+        try {
+          await client.query('ROLLBACK');
+          transactionOpen = false;
+        } catch {
+          // A connection whose transaction state cannot be established must
+          // never be returned to the pool.
+          destroy = true;
+        }
+      } else {
+        // BEGIN failure may leave an unknown connection state.
+        destroy = true;
+      }
+      throw error;
     } finally {
-      if(timer)clearTimeout(timer);
+      client.release(destroy);
     }
   } catch {
     reportAuthDenialPersistenceFailure();
