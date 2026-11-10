@@ -108,6 +108,12 @@ describe('G01 membership privilege escalation and invitation validity', () => {
       expect((await admin.query(
         `SELECT count(*)::int AS n FROM memberships WHERE org_id=$1 AND role='R-OWNER'`,
         [org])).rows[0].n).toBe(1);
+      const ownerOnlyInvite=await service.createInvitation(ctx(owner,'R-OWNER'),org,{
+        email:'elevated-admin@g01.example',role:'R-ADMIN',
+      });
+      expect((await admin.query(
+        'SELECT status FROM invitations WHERE id=$1',[ownerOnlyInvite.id],
+      )).rows[0].status).toBe('PENDING');
       const transferred=await service.transferOwnership(ctx(owner,'R-OWNER'),administrator);
       expect(transferred).toMatchObject({
         previousOwnerUserId:owner,newOwnerUserId:administrator,
@@ -117,6 +123,20 @@ describe('G01 membership privilege escalation and invitation validity', () => {
       )).rows;
       expect(afterTransfer.find(row=>row.user_id===owner).role).toBe('R-ADMIN');
       expect(afterTransfer.find(row=>row.user_id===administrator).role).toBe('R-OWNER');
+      expect((await admin.query(
+        'SELECT status FROM invitations WHERE id=$1',[ownerOnlyInvite.id],
+      )).rows[0].status).toBe('REVOKED');
+      expect((await admin.query(
+        'SELECT status FROM invitations WHERE id=$1',[reissued.id],
+      )).rows[0].status).toBe('PENDING');
+      const adminIssued=await service.createInvitation(ctx(owner,'R-ADMIN'),org,{
+        email:'from-admin@g01.example',role:'R-PM',
+      });
+      await service.updateMemberRole(ctx(administrator,'R-OWNER'),org,
+        owner,{role:'R-PM'});
+      expect((await admin.query(
+        'SELECT status FROM invitations WHERE id=$1',[adminIssued.id],
+      )).rows[0].status).toBe('REVOKED');
       expect((await admin.query(
         'SELECT user_id,revoked_at,mfa_verified FROM sessions WHERE id=ANY($1::uuid[])',
         [[sessionIds.get(owner),sessionIds.get(administrator)]],
