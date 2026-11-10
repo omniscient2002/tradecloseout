@@ -124,13 +124,16 @@ export async function assertRuntimeDatabasePrivileges(pool: Pool): Promise<void>
   const { rows } = await pool.query(
     `SELECT current_user AS role_name, r.rolsuper, r.rolbypassrls,
       (SELECT pg_has_role(current_user, m.oid, 'MEMBER')
-         FROM pg_roles m WHERE m.rolname='tc_migrator') AS can_assume_migrator
+         FROM pg_roles m WHERE m.rolname='tc_migrator') AS can_assume_migrator,
+      (SELECT pg_has_role(current_user, m.oid, 'MEMBER')
+         FROM pg_roles m WHERE m.rolname='tc_external_authority_reviewer')
+        AS can_approve_external_authority
        FROM pg_roles r WHERE r.rolname=current_user`,
   );
   const role = rows[0];
   if (!role || role.rolsuper || role.rolbypassrls ||
-      role.can_assume_migrator ||
-      ['postgres','tc_migrator'].includes(String(role.role_name))) {
+      role.can_assume_migrator || role.can_approve_external_authority ||
+      ['postgres','tc_migrator','tc_external_authority_reviewer'].includes(String(role.role_name))) {
     throw new Error('BOOT_AUTH_RUNTIME_ROLE_PRIVILEGED');
   }
 }
