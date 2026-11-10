@@ -211,11 +211,14 @@ describe('G01 production PostgreSQL OTP transaction', () => {
         const rejected=await ctrl.verifyOtp({
           challengeId:before.challengeId,code:oldCode,
         },req,res).catch((e:any)=>e);
-        expect(rejected?.getResponse?.()).toMatchObject({code:'OTP_INVALID'});
+        // Authentication intent is also keyed by AUTH_OTP_HMAC_KEY. A
+        // rotating deployment fails closed at this earlier browser-bound
+        // proof check, before trying an old-key OTP hash or consuming it.
+        expect(rejected?.getResponse?.()).toMatchObject({code:'LOGIN_INTENT_MISMATCH'});
         expect((await admin.query(
           'SELECT attempts,consumed_at FROM otp_challenges WHERE id=$1',
           [before.challengeId],
-        )).rows[0]).toMatchObject({attempts:1,consumed_at:null});
+        )).rows[0]).toMatchObject({attempts:0,consumed_at:null});
         const current=await ctrl.requestOtp({identifier:email},req,res);
         const currentCode=mail.sendOtpEmail.mock.calls[1][1] as string;
         req.cookies.tc_auth_intent=res.cookie.mock.calls.filter(
