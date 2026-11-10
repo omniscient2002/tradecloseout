@@ -13,6 +13,7 @@ import { canonicalJson } from '@tradecloseout/shared';
 import { withDisposableDatabase } from '../../../packages/db/test/helpers/disposable-database';
 import { scoped, seedTenants } from '../../../packages/db/test/helpers/fixtures';
 import { TradeCloseoutScheduler } from '../src/scheduler';
+import { assertWorkerRuntimeDatabasePrivileges } from '../src/worker-startup-security';
 import { compileAndPersistPortableArchive } from '../src/queues/portable-archive.processor';
 import { BoundedByteStream } from '../src/queues/bounded-stream';
 import { OUTBOX_EVENT_REGISTRY } from '../src/event-registry';
@@ -27,6 +28,11 @@ void test('Isolated worker DB/Redis and storage HTTP contract regressions', asyn
       NOTIFICATION_DELIVERY_TOKEN: process.env.NOTIFICATION_DELIVERY_TOKEN };
     const scheduler = new TradeCloseoutScheduler(app, redis);
     try {
+      // Verify the actual connection identity under the restricted DB role,
+      // not only a mocked pg_roles response.
+      await assert.doesNotReject(assertWorkerRuntimeDatabasePrivileges(app));
+      await assert.rejects(assertWorkerRuntimeDatabasePrivileges(admin),
+        /BOOT_WORKER_RUNTIME_ROLE_UNSAFE/);
       await redis.connect();
       await t.test('SCHED-01/02: real Redis NX excludes concurrent owner and old owner cannot delete replacement lock', async () => {
         const name = randomUUID();
