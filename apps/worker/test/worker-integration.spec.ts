@@ -66,6 +66,34 @@ void test('Isolated worker DB/Redis and storage HTTP contract regressions', asyn
         assert.equal((await admin.query('SELECT id FROM idempotency_keys WHERE id = $1', [completed])).rowCount, 0);
         // Replay the actual interceptor in API tests; here prove cleanup preserves its durable protection.
       });
+      await t.test('G01-020: abandoned unconfirmed invitations never become redeemable',async()=>{
+        const stale=randomUUID(),expired=randomUUID(),fresh=randomUUID(),other=randomUUID();
+        await admin.query(
+          `INSERT INTO invitations
+             (id,org_id,email,role,token_hash,status,expires_at,invited_by,created_at)
+           VALUES
+             ($1,$5,'stale@g01.test','R-SITE',$1::text,'DELIVERY_PENDING',now()+interval '2 days',$7,now()-interval '30 minutes'),
+             ($2,$5,'expired@g01.test','R-SITE',$2::text,'PENDING',now()-interval '1 day',$7,now()-interval '2 days'),
+             ($3,$5,'fresh@g01.test','R-SITE',$3::text,'DELIVERY_PENDING',now()+interval '1 day',$7,now()),
+             ($4,$6,'other@g01.test','R-SITE',$4::text,'PENDING',now()+interval '1 day',$7,now())`,
+          [stale,expired,fresh,other,a.orgId,b.orgId,userId],
+        );
+        const first=await scheduler.cleanupStaleInvitations();
+        assert.equal(first.staleDelivery,1);
+        assert.equal(first.expired,1);
+        const {rows}=await admin.query(
+          'SELECT id,status FROM invitations WHERE id=ANY($1::uuid[])',
+          [[stale,expired,fresh,other]],
+        );
+        const status=(id:string)=>rows.find(row=>row.id===id)?.status;
+        assert.equal(status(stale),'REVOKED');
+        assert.equal(status(expired),'EXPIRED');
+        assert.equal(status(fresh),'DELIVERY_PENDING');
+        assert.equal(status(other),'PENDING');
+        const second=await scheduler.cleanupStaleInvitations();
+        assert.equal(second.staleDelivery,0);
+        assert.equal(second.expired,0);
+      });
       await t.test('NOTIF-01/04: no configuration, rejection and invalid ack stay queued; matching capture acknowledgment permits SENT', async () => {
         const id = randomUUID(); const foreignId = randomUUID();
         await admin.query(`INSERT INTO notifications (id, org_id, recipient_user_id, channel, event_key, payload_json, status, dedup_key)
