@@ -69,6 +69,102 @@ describe('G01-R3: bounded, independently committed denial telemetry',()=>{
     });
   });
 
+  it('sequentially admits 40 distinct throttled sources across two tc_app pools and persists exactly 30',async()=>{
+    await withDisposableDatabase(async({admin,app,name})=>{
+      const runtime=new URL(process.env.APP_DATABASE_URL!);
+      runtime.pathname='/'+name;
+      const replica=new Pool({connectionString:runtime.toString(),max:2});
+      replica.on('error',()=>{});
+      try{
+        await app.query('SELECT 1');
+        await replica.query('SELECT 1');
+        const seconds=Number((await admin.query(
+          "SELECT EXTRACT(SECOND FROM clock_timestamp()) AS s",
+        )).rows[0].s);
+        if(seconds>46)await new Promise(r=>setTimeout(r,(61-seconds)*1000));
+        for(let i=0;i<40;i++){
+          await recordDeniedAuthenticationEvent(i%2?app:replica,
+            'MFA_VERIFY_DENIED',{
+              reasonCode:'RATE_LIMITED',sourceIp:`192.0.2.${i+1}`,
+            });
+        }
+        const events=(await admin.query(
+          "SELECT count(*)::int AS n FROM auth_security_events WHERE event_type='MFA_VERIFY_DENIED'",
+        )).rows[0].n;
+        const globals=(await admin.query(
+          "SELECT count FROM auth_request_budgets WHERE budget_key LIKE 'audit-denied:global:%'",
+        )).rows;
+        expect(events).toBe(30);
+        expect(globals).toHaveLength(1);
+        expect(globals[0].count).toBe(30);
+      }finally{await replica.end();}
+    });
+  });
+
+  it('a queued checkout expires without SQL and releases the late client (real PG16)',async()=>{
+    await withDisposableDatabase(async({admin,name})=>{
+      const runtime=new URL(process.env.APP_DATABASE_URL!);
+      runtime.pathname='/'+name;
+      const pool=new Pool({connectionString:runtime.toString(),max:1,
+        application_name:'g01_r3_queued'});
+      pool.on('error',()=>{});
+      const held=await pool.connect();
+      try{
+        expect((await held.query('SELECT current_user AS role')).rows[0].role).toBe('tc_app');
+        const began=performance.now();
+        await recordDeniedAuthenticationEvent(pool,'AUTH_SESSION_DENIED',{
+          reasonCode:'UNAUTHENTICATED',sourceIp:'198.51.100.10',
+        });
+        expect(performance.now()-began).toBeLessThan(900);
+        expect(pool.waitingCount).toBe(1);
+        expect((await admin.query('SELECT count(*)::int AS n FROM auth_security_events')).rows[0].n).toBe(0);
+      }finally{held.release();}
+      // The late acquisition must be released without querying, and the
+      // pool must remain reusable. WaitingCount may take a tick to drain.
+      await new Promise(resolve=>setTimeout(resolve,150));
+      expect(pool.waitingCount).toBe(0);
+      expect((await admin.query('SELECT count(*)::int AS n FROM auth_security_events')).rows[0].n).toBe(0);
+      expect((await admin.query('SELECT count(*)::int AS n FROM auth_request_budgets')).rows[0].n).toBe(0);
+      await expect(pool.query('SELECT 1 AS ok')).resolves.toMatchObject({rows:[{ok:1}]});
+      await pool.end();
+    });
+  });
+
+  it('server lock_timeout cancels audit SQL and rolls back before releasing the client (real PG16)',async()=>{
+    await withDisposableDatabase(async({admin,name})=>{
+      const runtime=new URL(process.env.APP_DATABASE_URL!);
+      runtime.pathname='/'+name;
+      const pool=new Pool({connectionString:runtime.toString(),max:1,
+        application_name:'g01_r3_locked'});
+      pool.on('error',()=>{});
+      const lock=await admin.connect();
+      try {
+        await lock.query('BEGIN');
+        await lock.query('LOCK TABLE auth_request_budgets IN ACCESS EXCLUSIVE MODE');
+        const began=performance.now();
+        await recordDeniedAuthenticationEvent(pool,'AUTH_SESSION_DENIED',{
+          reasonCode:'UNAUTHENTICATED',sourceIp:'198.51.100.11',
+        });
+        expect(performance.now()-began).toBeLessThan(1_500);
+        const active=(await admin.query(
+          `SELECT pid,state,wait_event_type FROM pg_stat_activity
+            WHERE application_name='g01_r3_locked'
+              AND state='active' AND wait_event_type='Lock'`,
+        )).rows;
+        expect(active).toHaveLength(0);
+        expect(pool.waitingCount).toBe(0);
+      }finally{
+        await lock.query('COMMIT').catch(()=>{});
+        lock.release();
+      }
+      await new Promise(resolve=>setTimeout(resolve,150));
+      expect((await admin.query('SELECT count(*)::int AS n FROM auth_security_events')).rows[0].n).toBe(0);
+      expect((await admin.query('SELECT count(*)::int AS n FROM auth_request_budgets')).rows[0].n).toBe(0);
+      await expect(pool.query('SELECT 1 AS ok')).resolves.toMatchObject({rows:[{ok:1}]});
+      await pool.end();
+    });
+  });
+
   it('records enrollment-start denial after rollback, without revealing the factor',async()=>{
     await withDisposableDatabase(async({admin,app})=>{
       const user=uuidv7(),org=uuidv7(),session=uuidv7();
@@ -152,8 +248,17 @@ describe('G01-R3: bounded, independently committed denial telemetry',()=>{
     const base=Date.now()+120_000;
     const now=jest.spyOn(Date,'now').mockReturnValue(base);
     try{
+      const failedClients:any[]=[];
       const badPool:any={
-        query:jest.fn().mockRejectedValue(new Error('leaked otp bearer-secret-sensitive')),
+        waitingCount:0,
+        connect:jest.fn(async()=>{
+          const client={
+            query:jest.fn().mockRejectedValue(new Error('leaked otp bearer-secret-sensitive')),
+            release:jest.fn(),
+          };
+          failedClients.push(client);
+          return client;
+        }),
       };
       for(let i=0;i<80;i++){
         await recordDeniedAuthenticationEvent(badPool,'AUTH_SESSION_DENIED',{
@@ -162,7 +267,8 @@ describe('G01-R3: bounded, independently committed denial telemetry',()=>{
       }
       expect(rawConsole).toHaveBeenCalledTimes(1);
       expect(rawConsole.mock.calls[0]).toEqual(['AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE']);
-      expect(badPool.query.mock.calls[0][0]).toMatchObject({query_timeout:750});
+      expect(failedClients[0].query).toHaveBeenCalledWith('BEGIN');
+      expect(failedClients[0].release).toHaveBeenCalledWith(true);
       now.mockReturnValue(base+60_001);
       await recordDeniedAuthenticationEvent(badPool,'AUTH_SESSION_DENIED',{
         reasonCode:'UNAUTHENTICATED',
@@ -178,12 +284,24 @@ describe('G01-R3: bounded, independently committed denial telemetry',()=>{
       expect(rawConsole).toHaveBeenCalledTimes(2);
       // A completely stalled pool checkout must not block the original
       // protected denial indefinitely; the backup wall timeout is 1000 ms.
-      const never:any={query:jest.fn(()=>new Promise(()=>{}))};
+      let lateCheckout: ((client:any)=>void) | undefined;
+      const never:any={
+        waitingCount:1,
+        connect:jest.fn(()=>new Promise(resolve=>{lateCheckout=resolve;})),
+      };
+      // A busy pool skips optional audit sampling. For the exact pending
+      // checkout regression, simulate an as-yet-unreported queued client.
+      never.waitingCount=0;
       const before=performance.now();
       await recordDeniedAuthenticationEvent(never,'AUTH_SESSION_DENIED',{
         reasonCode:'UNAUTHENTICATED',
       });
-      expect(performance.now()-before).toBeLessThan(2_500);
+      expect(performance.now()-before).toBeLessThan(1_000);
+      const late={query:jest.fn(),release:jest.fn()};
+      lateCheckout!(late);
+      await new Promise(resolve=>setImmediate(resolve));
+      expect(late.release).toHaveBeenCalledTimes(1);
+      expect(late.query).not.toHaveBeenCalled();
       expect(rawConsole).toHaveBeenCalledTimes(2);
     }finally{
       now.mockRestore();
