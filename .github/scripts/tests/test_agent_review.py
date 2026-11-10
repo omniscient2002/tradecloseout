@@ -1,8 +1,11 @@
 import copy
 import importlib.util
+import io
 import json
 import pathlib
 import unittest
+import urllib.error
+from contextlib import redirect_stdout
 from unittest.mock import patch
 
 SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "agent_review.py"
@@ -242,6 +245,18 @@ class CoordinationTests(unittest.TestCase):
         for path in ("https://attacker.test", "//attacker.test", "/issues#secret"):
             with self.assertRaises(ValueError):
                 github.request(path)
+
+    def test_http_diagnostics_never_log_credentials_bodies_or_queries(self):
+        github = module.Github("fixture-secret-token", REPO)
+        output = io.StringIO()
+        error = urllib.error.HTTPError("https://api.github.com", 403, "Forbidden", {}, None)
+        with patch.object(module.urllib.request, "build_opener") as opener:
+            opener.return_value.open.side_effect = error
+            with redirect_stdout(output), self.assertRaises(urllib.error.HTTPError):
+                github.request("/issues/5/comments?private=hidden-query", "POST", {"body": "private-body"})
+        self.assertEqual("GitHub API POST /issues/5/comments\n", output.getvalue())
+        for secret in ("fixture-secret-token", "hidden-query", "private-body"):
+            self.assertNotIn(secret, output.getvalue())
 
 
 if __name__ == "__main__":

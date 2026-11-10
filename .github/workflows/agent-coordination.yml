@@ -1,6 +1,9 @@
 name: Agent PR coordination
 
 on:
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/agent-coordination.yml']
   issue_comment:
     types: [created]
   workflow_run:
@@ -27,14 +30,15 @@ concurrency:
 
 jobs:
   coordinate:
-    if: (github.event_name != 'issue_comment' || github.event.issue.pull_request) && (github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main')
+    if: github.event_name != 'pull_request' && (github.event_name != 'issue_comment' || github.event.issue.pull_request) && (github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: read
       actions: read
-      issues: write
-      pull-requests: read
+      issues: read
+      # This job writes PR conversation comments, not issue records or code.
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -48,3 +52,35 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           AGENT_NATIVE_TRANSPORT_VERIFIED: ${{ vars.AGENT_NATIVE_TRANSPORT_VERIFIED }}
+
+  comment-permission-smoke:
+    # Exercise real PR-comment permissions before changing the live coordinator.
+    # Forks are excluded and ONLY existing main/base code receives the token.
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      issues: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+      - name: Publish status using trusted base code and actual comment permissions
+        run: |
+          python3 - <<'PY'
+          import importlib.util
+          import os
+          spec = importlib.util.spec_from_file_location('coordinator', '.github/scripts/agent_review.py')
+          coordinator = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(coordinator)
+          policy, registers = coordinator.load_policy()
+          api = coordinator.Github(os.environ['GITHUB_TOKEN'], policy['repository'])
+          event = {'inputs': {'group': 'G01', 'action': 'status'}}
+          print(coordinator.coordinate(api, policy, registers, 'workflow_dispatch', event, False))
+          PY
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
