@@ -489,18 +489,23 @@ export class OrganisationsService {
 
       await client.query(
         `UPDATE invitations SET status='REVOKED'
-          WHERE org_id=$1 AND lower(email)=lower($2) AND status='PENDING'`,
+          WHERE org_id=$1 AND lower(email)=lower($2)
+            AND status IN ('PENDING','DELIVERY_PENDING')`,
         [orgId,email],
       );
       const rawToken = randomBytes(32).toString('hex');
       const tokenHash = createHash('sha256').update(rawToken).digest('hex');
       const invId = uuidv7();
 
+      // Until a delivery provider has actually accepted the invitation,
+      // its token cannot be redeemed. Crashes and ambiguous timeouts leave
+      // DELIVERY_PENDING, never an implicitly usable PENDING grant.
+      const initialStatus = this.mailGateway ? 'DELIVERY_PENDING' : 'PENDING';
       const { rows: inv } = await client.query(
         `INSERT INTO invitations (id, org_id, email, role, token_hash, status, expires_at, invited_by)
-         VALUES ($1, $2, $3, $4, $5, 'PENDING', now() + interval '7 days', $6)
+         VALUES ($1, $2, $3, $4, $5, $6, now() + interval '7 days', $7)
          RETURNING id, email, role, status, expires_at, created_at`,
-        [invId, orgId, email, dto.role, tokenHash, ctx.userId],
+        [invId, orgId, email, dto.role, tokenHash, initialStatus, ctx.userId],
       );
 
       return {
@@ -510,24 +515,51 @@ export class OrganisationsService {
     });
     if (this.mailGateway) {
       const appOrigin = process.env.FRONTEND_URL || process.env.PUBLIC_APP_URL;
-      if (!appOrigin || (isProductionEnvironment() && !appOrigin.startsWith('https://'))) {
-        await this.revokeInvitation(ctx,orgId,issued.id);
-        throw new ServiceUnavailableException({
-          code:'INVITATION_APP_ORIGIN_INVALID',
+      const failDelivery = async () => {
+        // This recovery does not assume the issuer still holds authority:
+        // expiry, role change or a process restart must never convert an
+        // unconfirmed delivery into a valid invitation.
+        await withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+          await client.query(
+            `UPDATE invitations SET status='REVOKED'
+               WHERE org_id=$1 AND id=$2 AND status='DELIVERY_PENDING'`,
+            [orgId, issued.id],
+          );
         });
+      };
+      if (!appOrigin || (isProductionEnvironment() && !appOrigin.startsWith('https://'))) {
+        await failDelivery();
+        throw new ServiceUnavailableException({code:'INVITATION_APP_ORIGIN_INVALID'});
       }
       try {
         const link = new URL('/login',appOrigin);
         link.searchParams.set('invite',issued.invitationToken);
         await this.mailGateway.sendMagicLinkEmail(email,link.toString());
+
+        // This conditional promotion is atomic and protects concurrent
+        // invitation supersession: provider acceptance for an old challenge
+        // cannot revive it or make its response appear successful.
+        const promoted = await withTenantTransaction(this.pool, ctx, async (client: PoolClient) =>
+          client.query(
+            `UPDATE invitations SET status='PENDING'
+               WHERE org_id=$1 AND id=$2 AND status='DELIVERY_PENDING'
+                 AND expires_at>now() RETURNING id`,
+            [orgId, issued.id],
+          ),
+        );
+        if (!promoted.rowCount) {
+          throw new ConflictException({code:'INVITATION_SUPERSEDED_DURING_DELIVERY'});
+        }
         return { id: issued.id, email: issued.email,
-          role: issued.role, status: issued.status,
+          role: issued.role, status: 'PENDING',
           expires_at: issued.expires_at, created_at:issued.created_at,
           deliveryStatus:'SENT' };
-      } catch {
-        // Provider acceptance followed by a timeout is ambiguous: revoke
-        // the now-untrustworthy token and let the issuer explicitly retry.
-        await this.revokeInvitation(ctx,orgId,issued.id);
+      } catch (error) {
+        // The provider may have accepted and then timed out. The invitation
+        // remains non-redeemable unless its accepted state was committed.
+        // Retried issuances generate fresh tokens.
+        await failDelivery();
+        if (error instanceof ConflictException) throw error;
         throw new ServiceUnavailableException({
           code:'INVITATION_DELIVERY_UNVERIFIED',
           detail:'Could not confirm the invitation email. Create a new invitation.',
