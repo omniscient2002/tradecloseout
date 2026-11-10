@@ -69,7 +69,20 @@ describe('G01: real PostgreSQL session generation and CSRF boundaries', () => {
       await expect(evaluate(request({headers:{
         'x-csrf-token':'wrong-token',
       }}))).rejects.toThrow(ForbiddenException);
-      const idleAfterDenials=(await admin.query(
+      const sessionDenials=(await admin.query(
+        `SELECT reason_code,source_digest,actor_user_id
+           FROM auth_security_events
+          WHERE event_type='AUTH_SESSION_DENIED'
+            AND session_id=$1 ORDER BY occurred_at ASC`,[sessionId],
+      )).rows;
+      expect(sessionDenials.map(e=>e.reason_code)).toEqual(
+        expect.arrayContaining(['AUTH_CONTEXT_CHANGED','CSRF_INVALID']),
+      );
+      for(const ev of sessionDenials){
+        expect(ev.actor_user_id).toBe(userId);
+        expect(ev.source_digest).toMatch(/^[0-9a-f]{64}$/);
+      }
+            const idleAfterDenials=(await admin.query(
         'SELECT last_activity_at FROM sessions WHERE id=$1',[sessionId])).rows[0].last_activity_at;
       expect(idleAfterDenials.getTime()).toBe(idleBefore.getTime());
       await expect(evaluate(request())).resolves.toBe(true);
