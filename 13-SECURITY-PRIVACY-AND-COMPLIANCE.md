@@ -112,7 +112,7 @@
 | Control | Requirement |
 |---|---|
 | OTP | 6 digits, CSPRNG, 5-minute expiry, max 5 attempts, single-use, hashed at rest |
-| Magic link | ≥128-bit token, 15-minute expiry, single-use, bound to identifier |
+| Magic link (future, not implemented for member login) | Proposed only: ≥128-bit token, 15-minute expiry, single-use and identifier-bound **if implemented in a future separately reviewed feature**. No current `/auth/magic-link/request` or `/auth/magic-link/consume` endpoint exists; organisation invitation links are a separate identity-verified claim flow, not login magic links. |
 | Session | **Opaque random token (≥256 bits), hashed at rest in `sessions`, looked up on every request — not a JWT.** HttpOnly, Secure, SameSite=Lax, 30-day idle expiry, rotation on privilege change. `sessions.active_org_id` is server-side state (`AUD-S-15`, `AUD-014`). |
 | CSRF | Token required for unsafe cookie-authenticated requests |
 | Revocation | On logout, role change, member removal, identity change; propagate ≤60 s. **Session rows are not cached** (`AUD-S-17`); any future cache must carry a revocation filter. |
@@ -120,6 +120,8 @@
 | Enumeration | Neutral responses; no account existence disclosure |
 | Admin | MFA required before production access; separate identity provider if possible |
 | Guest | Scoped session; short-lived; OTP where review/acceptance is involved |
+
+**Implemented authentication in this release:** member login is an OTP challenge bound to its identifier and challenge ID. Guest login uses the grant's designated verified email or phone; no automatic SMS-to-email fallback, magic-link login or alternative-contact recovery is implemented. A provider timeout/ambiguous result does not authorize a fallback or an unverified recipient. The magic-link table entry is a future design requirement, **not a deployed security control**.
 
 No passwords in MVP. If passwords are added later: Argon2id, breach checks, reset tokens, MFA.
 
