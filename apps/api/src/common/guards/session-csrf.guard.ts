@@ -375,6 +375,8 @@ export class SessionCsrfGuard implements CanActivate {
     (req as any).userContext = {
       orgId: session.active_org_id,
       userId: session.user_id,
+      sessionId: session.session_id,
+      authGeneration: String(session.auth_generation),
       actorType: session.guest_grant_id ? 'GUEST' : 'USER',
       requestId: authData.requestId,
       orgRole,
