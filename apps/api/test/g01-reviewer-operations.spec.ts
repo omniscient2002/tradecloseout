@@ -9,6 +9,9 @@ import {
 import {
   parseExternalDocumentReviewArgs,executeExternalDocumentReview,
 } from '../src/modules/identity/external-document-review-operations';
+import {
+  parseExternalRevocationArgs,executeExternalRevocation,
+} from '../src/modules/identity/external-review-revocation';
 
 const UUID_A='11111111-1111-4111-8111-111111111111';
 const UUID_B='22222222-2222-4222-8222-222222222222';
@@ -118,4 +121,51 @@ describe('G01 independent human reviewer operations',()=>{
       [parsed.org,parsed.version,parsed.proof,parsed.party,parsed.digest,parsed.caseRef],
     ]);
   });
+  it('requires explicit independent incident revocation attestation and role',async()=>{
+    const args=['--kind','guest','--org',UUID_A,'--grant',UUID_B,
+      '--reason','INCIDENT-G01-2026','--attest-incident-verified'];
+    expect(parseExternalRevocationArgs(args)).toEqual({
+      kind:'guest',org:UUID_A,grant:UUID_B,reason:'INCIDENT-G01-2026',
+    });
+    expect(()=>parseExternalRevocationArgs(args.slice(0,-1)))
+      .toThrow('G01_REVOKE_ATTESTATION_REQUIRED');
+    expect(()=>parseExternalRevocationArgs([...args,'--proof',UUID_A]))
+      .toThrow('G01_REVOKE_ARGUMENT_INVALID');
+    const invalid={query:jest.fn().mockResolvedValue({rows:[{
+      login:'tc_app',effective_login:'tc_app',eligible:false,
+    }]})};
+    await expect(executeExternalRevocation(invalid as any,parseExternalRevocationArgs(args)))
+      .rejects.toThrow('G01_REVOKER_ROLE_DENIED');
+    expect(invalid.query).toHaveBeenCalledTimes(1);
+
+    const allow={query:jest.fn()
+      .mockResolvedValueOnce({rows:[{
+        login:'reviewer_a',effective_login:'reviewer_a',eligible:true,
+        rolsuper:false,rolbypassrls:false,rolcreaterole:false,rolcreatedb:false,
+      }]})
+      .mockResolvedValueOnce({rows:[{revoked:true}]})};
+    await expect(executeExternalRevocation(allow as any,parseExternalRevocationArgs(args)))
+      .resolves.toBeUndefined();
+    expect(allow.query.mock.calls[1]).toEqual([
+      'SELECT revoke_independent_external_guest_grant($1,$2,$3) AS revoked',
+      [UUID_A,UUID_B,'INCIDENT-G01-2026'],
+    ]);
+    const documentArgs=['--kind','document','--org',UUID_A,
+      '--version',UUID_B,'--proof','33333333-3333-4333-8333-333333333333',
+      '--party','44444444-4444-4444-8444-444444444444',
+      '--reason','DOCUMENT-INCIDENT-G01','--attest-incident-verified'];
+    const parsed=parseExternalRevocationArgs(documentArgs);
+    expect(parsed.kind).toBe('document');
+    const allowDoc={query:jest.fn()
+      .mockResolvedValueOnce({rows:[{
+        login:'reviewer_b',effective_login:'reviewer_b',eligible:true,
+        rolsuper:false,rolbypassrls:false,rolcreaterole:false,rolcreatedb:false,
+      }]})
+      .mockResolvedValueOnce({rows:[{revoked:true}]})};
+    await expect(executeExternalRevocation(allowDoc as any,parsed))
+      .resolves.toBeUndefined();
+    expect(allowDoc.query.mock.calls[1][0]).toBe(
+      'SELECT revoke_external_document_approval($1,$2,$3,$4,$5) AS revoked');
+  });
+
 });
