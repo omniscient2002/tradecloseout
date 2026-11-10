@@ -28,6 +28,33 @@ export interface AuthenticatedRequest extends Request {
 
 const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
+// MFA bypasses are an explicit, reviewed route contract. Do not exempt the
+// entire /auth namespace: newly added authenticated administrative endpoints
+// must be MFA-protected by default, including privileged GET/read operations.
+const PRE_MFA_AUTH_ROUTES = new Set([
+  'GET /api/v1/auth/me',
+  'GET /api/v1/auth/orgs',
+  'GET /api/v1/auth/session/bootstrap',
+  'GET /api/v1/auth/sessions',
+  'POST /api/v1/auth/switch-org',
+  'POST /api/v1/auth/logout',
+  'POST /api/v1/auth/sessions/revoke-all',
+  'GET /api/v1/auth/mfa/status',
+  'POST /api/v1/auth/mfa/enroll/start',
+  'POST /api/v1/auth/mfa/enroll/confirm',
+  'POST /api/v1/auth/mfa/verify',
+  'POST /api/v1/auth/mfa/recovery',
+  'POST /api/v1/auth/mfa/reset',
+]);
+
+function isPreMfaAuthRoute(method: string, path: string): boolean {
+  if (PRE_MFA_AUTH_ROUTES.has(`${method.toUpperCase()} ${path}`)) return true;
+  // Session inventory/revocation is an emergency account-security function;
+  // allow only the precise device-revocation UUID route without MFA.
+  return method.toUpperCase() === 'POST' &&
+    /^\\/api\\/v1\\/auth\\/sessions\\/[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\\/revoke$/i.test(path);
+}
+
 @Injectable()
 export class SessionCsrfGuard implements CanActivate {
   constructor(private readonly pool: Pool) {}
@@ -251,7 +278,7 @@ export class SessionCsrfGuard implements CanActivate {
       (orgRole === 'R-OWNER' || orgRole === 'R-ADMIN') &&
       // An owner may read basic login/bootstrap information before MFA, but
       // tenant project or billing reads are privileged as well as writes.
-      !String(req.path || '').startsWith('/api/v1/auth/');
+      !isPreMfaAuthRoute(req.method, String(req.path || '').split('?')[0].replace(/\\/$/, ''));
     if (needsPrivilegedMfa &&
         (!session.mfa_verified || !session.mfa_verified_at ||
          new Date(session.mfa_verified_at).getTime() < Date.now() - 12 * 3600_000)) {
