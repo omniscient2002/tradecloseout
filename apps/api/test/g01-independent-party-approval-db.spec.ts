@@ -110,6 +110,21 @@ describe('G01 trusted independent external-party authority', () => {
         } finally { inTenant.release(); }
         await expect(asReviewer(reviewerNames[1])).rejects.toMatchObject({code:'23505'});
 
+        // An accepted reviewer signature is never editable or erasable,
+        // including by a broad administrative SQL UPDATE/DELETE.
+        await expect(admin.query(
+          'UPDATE external_authority_reviews SET evidence_ref=$1 WHERE grant_id=$2',
+          ['TAMPERED-EVIDENCE-REF',grant],
+        )).rejects.toMatchObject({code:'42501'});
+        await expect(admin.query(
+          'DELETE FROM external_authority_reviews WHERE grant_id=$1',[grant],
+        )).rejects.toMatchObject({code:'42501'});
+        // The active approved signatory must be revoked before deactivating
+        // its party; reactivation cannot silently reinstate older authority.
+        await expect(admin.query(
+          'UPDATE parties SET status=$1 WHERE id=$2',['INACTIVE',party],
+        )).rejects.toMatchObject({code:'42501'});
+
         // An already-approved grant prevents a contractor or DBA from silently
         // retargeting the project and later restoring it to make the old review
         // appear valid. Explicit revocation must precede party reassignment.
@@ -122,6 +137,10 @@ describe('G01 trusted independent external-party authority', () => {
         await admin.query(
           'UPDATE projects SET client_party_id=$1 WHERE id=$2',[otherParty,project],
         );
+        // Once the approval has been explicitly revoked, the project and
+        // counterparty can be retired without resurrecting that approval.
+        await admin.query('UPDATE parties SET status=$1 WHERE id=$2',
+          ['INACTIVE',party]);
         await expect(asReviewer(reviewerNames[0])).rejects.toMatchObject({code:'42501'});
       } finally {
         for(const name of reviewersReady.reverse()){
