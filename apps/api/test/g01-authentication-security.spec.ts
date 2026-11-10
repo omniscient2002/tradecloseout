@@ -114,6 +114,8 @@ describe('G01: authentication hardening negative controls', () => {
       {role_name:'postgres',rolsuper:true,rolbypassrls:true,can_assume_migrator:true},
       {role_name:'tc_app',rolsuper:false,rolbypassrls:true,can_assume_migrator:false},
       {role_name:'tc_app',rolsuper:false,rolbypassrls:false,can_assume_migrator:true},
+      {role_name:'custom_tc_runtime',rolsuper:false,rolbypassrls:false,
+        can_assume_migrator:false,can_approve_external_authority:true},
       {role_name:'tc_migrator',rolsuper:false,rolbypassrls:false,can_assume_migrator:false},
     ]) {
       await expect(assertRuntimeDatabasePrivileges(make(invalid)))
