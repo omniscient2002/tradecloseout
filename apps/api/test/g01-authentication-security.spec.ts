@@ -37,12 +37,35 @@ describe('G01: authentication hardening negative controls', () => {
     jest.restoreAllMocks();
   });
 
-  it('G01-R5: documents only supported OTP login and explicitly withdraws magic-link fallback',()=>{
+  it('G01-R5: every current member/guest authentication contract rejects unsupported fallback claims',()=>{
     const contract=readFileSync(resolve(__dirname,'../../../10-API-AND-INTEGRATIONS.md'),'utf8');
-    expect(contract).toContain('Member-login magic-link request is **not implemented**');
-    expect(contract).toContain('No automatic SMS-to-email fallback');
+    const security=readFileSync(resolve(__dirname,'../../../13-SECURITY-PRIVACY-AND-COMPLIANCE.md'),'utf8');
+    const between=(text:string,from:string,to:string)=>{
+      const a=text.indexOf(from),b=text.indexOf(to,a+from.length);
+      expect(a).toBeGreaterThanOrEqual(0);
+      expect(b).toBeGreaterThan(a);
+      return text.slice(a,b);
+    };
+    const member=between(contract,'### 7.1 Auth and identity','### 7.2 Organisations and members');
+    const guest=between(contract,'### 7.3 Parties and guests','### 7.4 Projects and contracts');
+    const limits=between(contract,'## 10. Rate limits (proposed)','## 11.');
+    const integrations=between(contract,'## 12. Integrations','### 12.1 Payment integration rules');
+    const session=between(security,'## 6. Authentication and session security','No passwords in MVP.');
     expect(contract).toContain('original `challengeId`');
-    expect(contract).not.toContain('fallback to email magic link after 2 failures');
+    expect(member).toContain('API-005 (withdrawn)');
+    expect(member).toContain('API-006 (withdrawn)');
+    expect(member).not.toMatch(/\\| API-00[56] \\| POST \`\\/auth\\/magic-link\\//);
+    expect(guest).toContain('no automatic channel switching or guest email fallback');
+    expect(guest).toContain('does not switch to another channel');
+    expect(guest).not.toMatch(/max 3\\/hr[^\\n]*; email fallback/i);
+    expect(limits).toContain('no automatic email fallback or alternate recipient');
+    expect(limits).not.toMatch(/Guest OTP request[^\\n]*; email fallback;/i);
+    expect(integrations).toContain('No automatic SMS-to-email fallback');
+    expect(integrations).not.toMatch(/fallback to email magic link after 2 failures/i);
+    expect(session).toContain('Magic link (future, not implemented for member login)');
+    expect(session).toContain('No current');
+    expect(session).toContain('no automatic SMS-to-email fallback');
+    expect(session).not.toMatch(/\\| Magic link \\| ≥128-bit token/);
   });
 
   it('requires explicit production keys and HTTPS before starting the API', () => {
