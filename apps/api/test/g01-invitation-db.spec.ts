@@ -177,6 +177,71 @@ describe('G01 production PostgreSQL OTP transaction', () => {
       }
     }
   });
+  it('G01-008: HMAC key rotation invalidates outstanding OTPs without legacy digest fallback',async()=>{
+    const previous={
+      NODE_ENV:process.env.NODE_ENV,FRONTEND_URL:process.env.FRONTEND_URL,
+      AUTH_OTP_HMAC_KEY:process.env.AUTH_OTP_HMAC_KEY,
+      AUTH_CSRF_KEY:process.env.AUTH_CSRF_KEY,
+    };
+    process.env.NODE_ENV='production';
+    process.env.FRONTEND_URL='https://app.g01.test';
+    process.env.AUTH_OTP_HMAC_KEY='o'.repeat(48);
+    process.env.AUTH_CSRF_KEY='c'.repeat(48);
+    try {
+      await withDisposableDatabase(async({admin,app})=>{
+        const mail={sendOtpEmail:jest.fn().mockResolvedValue(undefined)};
+        const ctrl=new IdentityController(app,new InMemoryRedis() as any,
+          {sendOtpSms:jest.fn()} as any,mail as any);
+        const email='g01-hmac-rotation@example.test';
+        const req:any={ip:'127.0.0.1',headers:{
+          origin:'https://app.g01.test','sec-fetch-site':'same-origin',
+          'user-agent':'g01-hmac-test',
+        },cookies:{}};
+        const res:any={cookie:jest.fn(),clearCookie:jest.fn()};
+        const before=await ctrl.requestOtp({identifier:email},req,res);
+        const oldCode=mail.sendOtpEmail.mock.calls[0][1] as string;
+        req.cookies.tc_auth_intent=res.cookie.mock.calls.find(
+          (x:any[])=>x[0]==='tc_auth_intent')?.[1];
+        expect((await admin.query(
+          'SELECT code_hash FROM otp_challenges WHERE id=$1',[before.challengeId],
+        )).rows[0].code_hash).not.toContain(oldCode);
+        // A new HMAC key cannot validate a proof protected with the old key:
+        // operational rollout must drain/invalidate outstanding challenges.
+        process.env.AUTH_OTP_HMAC_KEY='z'.repeat(48);
+        const rejected=await ctrl.verifyOtp({
+          challengeId:before.challengeId,code:oldCode,
+        },req,res).catch((e:any)=>e);
+        expect(rejected?.getResponse?.()).toMatchObject({code:'OTP_INVALID'});
+        expect((await admin.query(
+          'SELECT attempts,consumed_at FROM otp_challenges WHERE id=$1',
+          [before.challengeId],
+        )).rows[0]).toMatchObject({attempts:1,consumed_at:null});
+        const current=await ctrl.requestOtp({identifier:email},req,res);
+        const currentCode=mail.sendOtpEmail.mock.calls[1][1] as string;
+        req.cookies.tc_auth_intent=res.cookie.mock.calls.filter(
+          (x:any[])=>x[0]==='tc_auth_intent').at(-1)?.[1];
+        const oldReplay=await ctrl.verifyOtp({
+          challengeId:before.challengeId,code:oldCode,
+        },req,res).catch((e:any)=>e);
+        expect(oldReplay?.getResponse?.()).toMatchObject({code:'OTP_EXPIRED'});
+        const accepted=await ctrl.verifyOtp({
+          challengeId:current.challengeId,code:currentCode,
+          signupProfile:{fullName:'HMAC Rotation User',orgName:'Key Rotation Org',state:'KA'},
+        },req,res);
+        expect(accepted.userId).toBeDefined();
+        expect((await admin.query(
+          'SELECT count(*)::int AS n FROM sessions WHERE user_id=$1',
+          [accepted.userId],
+        )).rows[0].n).toBe(1);
+      });
+    }finally{
+      for(const [key,value] of Object.entries(previous)){
+        if(value===undefined)delete process.env[key];
+        else process.env[key]=value;
+      }
+    }
+  });
+
   it('refuses success for a late internal OTP after another request superseded its proof', async () => {
     const prior = {
       NODE_ENV: process.env.NODE_ENV,
