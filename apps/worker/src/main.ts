@@ -18,17 +18,22 @@ import { compileAndPersistHandoverPackage, markHandoverPackageFailed } from './q
 import { compileAndPersistPortableArchive } from './queues/portable-archive.processor';
 import { BoundedByteStream } from './queues/bounded-stream';
 import { OUTBOX_EVENT_REGISTRY } from './event-registry';
+import { validateWorkerStartupConfig, assertWorkerRuntimeDatabasePrivileges } from './worker-startup-security';
 
 const execFileAsync = promisify(execFile);
 
+// In production/staging no development fallback may be selected. Connection
+// setup is lazy; bootWorker validates configuration and actual DB identity
+// before scheduling, polling or consuming a single tenant job.
+const nonProd = ['development','test'].includes(process.env.NODE_ENV || '');
 const pool = new Pool({
-  connectionString:
-    process.env.APP_DATABASE_URL ||
-    'postgres://tc_app:tc_app_pass@127.0.0.1:5432/tradecloseout',
+  connectionString: process.env.APP_DATABASE_URL ||
+    (nonProd ? 'postgres://tc_app:tc_app_pass@127.0.0.1:5432/tradecloseout' : ''),
 });
-
-const redis = new Redis(process.env.REDIS_URL || 'redis://127.0.0.1:6379', {
+const redis = new Redis(process.env.REDIS_URL ||
+  (nonProd ? 'redis://127.0.0.1:6379' : 'redis://invalid.invalid:6379'), {
   maxRetriesPerRequest: null,
+  lazyConnect: true,
 });
 
 const scheduler = new TradeCloseoutScheduler(pool, redis);
@@ -59,7 +64,17 @@ async function bootWorker() {
   console.log('TradeCloseout Background Worker & Leader-Locked Scheduler Booting...');
   console.log('======================================================================');
 
+  validateWorkerStartupConfig();
+  if (['staging','production'].includes(process.env.NODE_ENV || '')) {
+    await assertWorkerRuntimeDatabasePrivileges(pool);
+  }
+  // A successful TCP connection alone is not proof the queue is available.
+  await redis.connect();
+  await redis.ping();
   await checkDependencies();
+  if (['staging','production'].includes(process.env.NODE_ENV || '') && !qpdfAvailable) {
+    throw new Error('BOOT_WORKER_QPDF_REQUIRED');
+  }
 
   // 1. Scheduled Background Tasks
   const runScheduledCycles = async () => {
