@@ -386,8 +386,10 @@ export async function recordDeniedAuthenticationEvent(
       values: [sourceKey,sourceLimit,globalKey,globalLimit,
         details.userId || null,details.orgId || null,details.sessionId || null,
         eventType,subjectDigest,details.reasonCode,sourceDigest],
+      // node-postgres supports per-query query_timeout at runtime; the
+      // installed @types/pg QueryConfig omits this driver-supported field.
       query_timeout: AUTH_DENIAL_QUERY_TIMEOUT_MS,
-    });
+    } as import('pg').QueryConfig & { query_timeout: number });
     // pool.query's query_timeout can start only after pool checkout. Bound
     // queueing as well; the pg query timeout still cancels an active query.
     // A late result is observed by Promise.race and cannot change a decision.
