@@ -236,6 +236,39 @@ describe('G01 membership privilege escalation and invitation validity', () => {
           [org,'parallel@g01.example'],
         )).rows[0].n).toBe(1);
 
+        // An in-flight administrator-issued invitation cannot activate
+        // after the issuing administrator loses the required membership
+        // authority, even if the provider later reports success.
+        const adminUser=uuidv7();
+        await admin.query("INSERT INTO users(id,name,status) VALUES($1,'Inviting Admin','ACTIVE')",[adminUser]);
+        await admin.query(
+          `INSERT INTO memberships(id,org_id,user_id,role,status)
+             VALUES($1,$2,$3,'R-ADMIN','ACTIVE')`,
+          [uuidv7(),org,adminUser],
+        );
+        const adminIssuer={...issuer,userId:adminUser,orgRole:'R-ADMIN'};
+        let adminStarted!:()=>void;
+        let adminRelease!:()=>void;
+        const adminSendStarted=new Promise<void>(resolve=>{adminStarted=resolve;});
+        const adminSendBlocked=new Promise<void>(resolve=>{adminRelease=resolve;});
+        gateway.sendMagicLinkEmail.mockImplementationOnce(async()=>{
+          adminStarted();
+          await adminSendBlocked;
+        });
+        const demotedInvite=service.createInvitation(adminIssuer,org,{
+          email:'demoted@g01.example',role:'R-SITE',
+        });
+        await adminSendStarted;
+        await service.updateMemberRole(issuer,org,adminUser,{role:'R-SITE'});
+        adminRelease();
+        await expect(demotedInvite).rejects.toMatchObject({
+          response:expect.objectContaining({code:'INVITATION_SUPERSEDED_DURING_DELIVERY'}),
+        });
+        expect((await admin.query(
+          `SELECT status FROM invitations WHERE org_id=$1 AND email=$2`,
+          [org,'demoted@g01.example'],
+        )).rows[0].status).toBe('REVOKED');
+
         gateway.sendMagicLinkEmail.mockRejectedValueOnce(
           new Error('accepted delivery then timeout'),
         );
