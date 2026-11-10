@@ -923,38 +923,22 @@ export class ReviewsService {
       }
       if (proofRes.rows.length > 1) throw new UnprocessableEntityException('EXTERNAL_PROOF_VERSION_AMBIGUOUS');
 
-      // G01-001: a contractor-uploaded file, even after malware/size checks,
-      // proves file integrity, NOT that the named counterparty approved it.
-      // In production, offline external decisions must be backed by a proof
-      // uploaded through that specific party's separately reviewed and
-      // independently approved guest grant, with the uploaded actor pinned to
-      // the external principal. Contractor self-asserted names/PDFs cannot
-      // directly mark documents APPROVED.
+      // G01-001: an issuer-selected PDF, email screenshot or claimed party
+      // name is not itself an authorised external acceptance. Two different
+      // platform reviewers must attest to the identical, scanned READY proof
+      // bytes, exact target revision and designated counterparty before a
+      // contractor can record an offline external approval. This trusted SQL
+      // function exposes only a boolean; the API cannot forge review records.
       if (isProductionEnvironment()) {
-        const {rows:authenticProof} = await client.query(
-          `SELECT 1
-             FROM document_versions proof
-             JOIN guest_grants grant ON grant.id=proof.uploaded_by_grant_id
-              AND grant.org_id=proof.org_id AND grant.project_id=proof.project_id
-              AND grant.principal_user_id=proof.uploaded_by
-             JOIN projects project ON project.org_id=proof.org_id
-              AND project.id=proof.project_id
-            WHERE proof.org_id=$1 AND proof.project_id=$2 AND proof.id=$3
-              AND grant.party_id=$4 AND grant.status='ACTIVE'
-              AND grant.expires_at>now()
-              AND grant.independent_authority_verified_at IS NOT NULL
-              AND (
-                (grant.grant_type='CLIENT_VIEW' AND project.client_party_id=grant.party_id)
-                OR (grant.grant_type='CONSULTANT_REVIEW' AND project.consultant_party_id=grant.party_id)
-              )
-            LIMIT 1`,
-          [ctx.orgId,version.project_id,proofRes.rows[0].proof_version_id,
+        const {rows:verified} = await client.query(
+          `SELECT has_verified_external_document_approval($1,$2,$3,$4) AS valid`,
+          [ctx.orgId,version.id,proofRes.rows[0].proof_version_id,
            dto.externalPartyId],
         );
-        if (!authenticProof.length) {
+        if (verified[0]?.valid !== true) {
           throw new ForbiddenException({
             code:'INDEPENDENT_EXTERNAL_PROOF_REQUIRED',
-            detail:'External approval evidence must originate from a verified, independently authorised counterparty principal.',
+            detail:'External approval requires independent verification of this exact document revision and the external decision evidence.',
           });
         }
       }
