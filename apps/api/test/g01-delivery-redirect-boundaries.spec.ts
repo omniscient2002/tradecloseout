@@ -42,6 +42,10 @@ describe('G01 real HTTP OTP/mail delivery boundary',()=>{
         body:Buffer.concat(chunks).toString('utf8')});
       if(path.startsWith('/redirect')){
         res.writeHead(307,{Location:sinkUrl+'/captured-secret'}).end();
+      }else if(path.startsWith('/reject')){
+        res.writeHead(202,{'Content-Type':'application/json'}).end('{"accepted":false}');
+      }else if(path.startsWith('/empty')){
+        res.writeHead(204).end();
       }else{
         res.writeHead(202,{'Content-Type':'application/json'}).end('{"accepted":true}');
       }
@@ -78,6 +82,21 @@ describe('G01 real HTTP OTP/mail delivery boundary',()=>{
       for(const call of received.slice(2)){
         expect(call.path).toMatch(/^\/redirect/);
       }
+      // HTTP 202 without explicit acceptance is not a usable credential
+      // delivery proof; neither provider rejection nor empty 204 is success.
+      process.env.DLT_SMS_URL=url+'/reject-sms';
+      process.env.MAIL_GATEWAY_URL=url+'/reject-mail';
+      await expect(sms.sendOtpSms('+919999999999','123489','G01-SMS-TEMPLATE'))
+        .rejects.toMatchObject({response:expect.objectContaining({code:'SMS_GATEWAY_ERROR'})});
+      await expect(mail.sendOtpEmail('verified@g01.test','444421','LOGIN'))
+        .rejects.toMatchObject({response:expect.objectContaining({code:'MAIL_GATEWAY_ERROR'})});
+      process.env.DLT_SMS_URL=url+'/empty-sms';
+      process.env.MAIL_GATEWAY_URL=url+'/empty-mail';
+      await expect(sms.sendOtpSms('+919999999999','123489','G01-SMS-TEMPLATE'))
+        .rejects.toMatchObject({response:expect.objectContaining({code:'SMS_GATEWAY_ERROR'})});
+      await expect(mail.sendMagicLinkEmail('verified@g01.test',
+        'https://app.g01.test/login?invite=secret-token-fixture'))
+        .rejects.toMatchObject({response:expect.objectContaining({code:'MAIL_GATEWAY_ERROR'})});
     }finally{
       await stop(provider);
       await stop(sink);
