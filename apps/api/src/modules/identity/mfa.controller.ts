@@ -179,6 +179,11 @@ export class MfaController {
     await this.enforceMfaAttemptBudget(req, 'enroll');
     const secret = newTotpSecret();
     await this.transact(req.auth.userId, async client => {
+      // G01-014/019: the request guard can precede a logout, org switch or
+      // offboarding transaction. Lock and revalidate this exact cookie and
+      // generation before persisting any pending factor secret. Revocation
+      // serializes on the same session row, so it cannot race this mutation.
+      await this.assertCurrentMemberSession(client, req);
       const { rows } = await client.query(
         `SELECT id, mfa_enabled_at FROM users WHERE id=$1 AND status='ACTIVE' FOR UPDATE`,
         [req.auth.userId],
