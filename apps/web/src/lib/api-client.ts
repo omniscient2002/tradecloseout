@@ -97,6 +97,40 @@ async function restoreSessionSecurity(): Promise<void> {
   await bootstrapPromise;
 }
 
+/**
+ * Obtain a verified generation before persisting an offline command. A valid
+ * cookie with cleared sessionStorage may restore CSRF through the same-origin
+ * bootstrap; an explicitly invalidated tab may never silently rebind.
+ */
+export async function requireAuthenticatedBrowserContext(): Promise<{
+  authGeneration:string;authEpoch:string;
+}> {
+  if (typeof window === 'undefined') {
+    throw new ApiProblemError({status:401,code:'BROWSER_SESSION_REQUIRED'});
+  }
+  if (staleCrossTabContext) {
+    throw new ApiProblemError({
+      status:409,code:'AUTH_CONTEXT_CHANGED',
+      detail:'Your account changed in another tab. Reload and confirm before uploading.',
+    });
+  }
+  await restoreSessionSecurity();
+  const authGeneration = getAuthGeneration();
+  if (!authGeneration) {
+    throw new ApiProblemError({status:401,code:'AUTHENTICATION_REQUIRED'});
+  }
+  if (!getAuthEpoch()) {
+    // A restored legacy browser session may predate the epoch marker. Create
+    // one shared nonsecret event rather than accepting unbound offline work.
+    window.localStorage.setItem(AUTH_CHANGE_EVENT_KEY,crypto.randomUUID());
+  }
+  const authEpoch=getAuthEpoch();
+  if (!authEpoch) {
+    throw new ApiProblemError({status:401,code:'AUTH_GENERATION_UNAVAILABLE'});
+  }
+  return {authGeneration,authEpoch};
+}
+
 export async function apiFetch<T>(
   path: string,
   options: RequestInit & { rowVersion?: number; idempotencyKey?: string } = {},
