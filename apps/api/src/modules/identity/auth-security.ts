@@ -282,6 +282,7 @@ export async function recordAuthenticationEvent(
  * decisions do not depend on audit sampling.
  */
 const AUTH_DENIAL_QUERY_TIMEOUT_MS = 750;
+const AUTH_DENIAL_TOTAL_WAIT_MS = 1_000;
 const AUTH_DENIAL_DIAGNOSTIC_WINDOW_MS = 60_000;
 let lastAuthDenialDiagnosticAt = Number.NEGATIVE_INFINITY;
 
@@ -338,7 +339,7 @@ export async function recordDeniedAuthenticationEvent(
     // Conditional UPSERTs never increment a saturated counter or insert an
     // extra event. The event and both reservations succeed or roll back
     // together, even across simultaneous callers from different API nodes.
-    await pool.query({
+    const eventWrite = pool.query({
       text: `WITH tick AS (
         SELECT statement_timestamp() AS at
       ), global_saturated AS (
@@ -387,6 +388,21 @@ export async function recordDeniedAuthenticationEvent(
         eventType,subjectDigest,details.reasonCode,sourceDigest],
       query_timeout: AUTH_DENIAL_QUERY_TIMEOUT_MS,
     });
+    // pool.query's query_timeout can start only after pool checkout. Bound
+    // queueing as well; the pg query timeout still cancels an active query.
+    // A late result is observed by Promise.race and cannot change a decision.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        eventWrite,
+        new Promise<never>((_,reject)=>{
+          timer=setTimeout(()=>reject(new Error('AUTH_DENIAL_EVENT_STORE_TIMEOUT')),
+            AUTH_DENIAL_TOTAL_WAIT_MS);
+        }),
+      ]);
+    } finally {
+      if(timer)clearTimeout(timer);
+    }
   } catch {
     reportAuthDenialPersistenceFailure();
   }
