@@ -194,6 +194,9 @@ export class DltSmsService implements DltSmsGateway {
       try {
         const response = await fetch(dltUrl, {
           method: 'POST',
+          // OTPs, magic links and provider bearer keys must never follow
+          // 30x redirects to a different origin (or any unapproved endpoint).
+          redirect: 'error',
           signal: AbortSignal.timeout(10_000),
           headers: {
             'Content-Type': 'application/json',
@@ -246,6 +249,9 @@ export class TransactionalMailService implements TransactionalMailGateway {
       try {
         const response = await fetch(mailUrl, {
           method: 'POST',
+          // OTPs, magic links and provider bearer keys must never follow
+          // 30x redirects to a different origin (or any unapproved endpoint).
+          redirect: 'error',
           signal: AbortSignal.timeout(10_000),
           headers: {
             'Content-Type': 'application/json',
@@ -291,6 +297,9 @@ export class TransactionalMailService implements TransactionalMailGateway {
       try {
         const response = await fetch(mailUrl, {
           method: 'POST',
+          // OTPs, magic links and provider bearer keys must never follow
+          // 30x redirects to a different origin (or any unapproved endpoint).
+          redirect: 'error',
           signal: AbortSignal.timeout(10_000),
           headers: {
             'Content-Type': 'application/json',
