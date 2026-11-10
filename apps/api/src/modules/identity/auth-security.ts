@@ -266,9 +266,41 @@ export async function recordAuthenticationEvent(
 }
 
 /**
- * Persist a denied decision independently of a transaction that was rolled
- * back. The underlying denial is NEVER transformed into success on telemetry
- * failure. In production alert on this fixed non-sensitive diagnostic.
+ * G01-R3: an authentication denial is never a permit to perform unbounded
+ * logging. Each replica uses the SAME PostgreSQL reservation ledger under the
+ * restricted tc_app role. Both source and global caps are atomic and the
+ * append-only event is inserted in that SAME statement. Saturated sources
+ * cannot consume further global slots. Different application processes therefore
+ * share the same counters without relying on local memory or Redis availability.
+ *
+ * Caps per 60-second database-time window:
+ *   anonymous/session denial: 10/source and 60/event-type globally;
+ *   privileged MFA denial: 20/source and 120/event-type globally;
+ *   already-throttled MFA: 1/source and 30/event-type globally.
+ * This is bounded forensic sampling, NOT an auth rate limiter. Authentication
+ * budgets, critical successful MFA/revocation events, and original denial
+ * decisions do not depend on audit sampling.
+ */
+const AUTH_DENIAL_QUERY_TIMEOUT_MS = 750;
+const AUTH_DENIAL_DIAGNOSTIC_WINDOW_MS = 60_000;
+let lastAuthDenialDiagnosticAt = Number.NEGATIVE_INFINITY;
+
+/** Fixed single-line diagnostics are capped to one per minute per replica. */
+function reportAuthDenialPersistenceFailure(): void {
+  const now = Date.now();
+  if (now - lastAuthDenialDiagnosticAt < AUTH_DENIAL_DIAGNOSTIC_WINDOW_MS) return;
+  lastAuthDenialDiagnosticAt = now;
+  // No exception string, HTTP request data, raw source or credentials.
+  console.error('AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE');
+}
+
+/**
+ * Persist the sampled denial independently after the protected operation's
+ * rollback. Database query_timeout bounds each query (750 ms); a failed,
+ * unavailable or timed-out event store is best-effort and NEVER authorizes the
+ * denied request. During a full database outage there is no reliable shared
+ * sampling coordinator: only the fixed, per-replica diagnostic cap applies.
+ * The exact denial is rethrown by the MFA handler/session guard.
  */
 export async function recordDeniedAuthenticationEvent(
   pool: Pool, eventType: string,
@@ -276,10 +308,79 @@ export async function recordDeniedAuthenticationEvent(
     reasonCode: string;sourceIp?: string;subject?: string},
 ): Promise<void> {
   try {
-    await recordAuthenticationEvent(pool,eventType,'DENIED',details);
+    const secret = process.env.AUTH_OTP_HMAC_KEY;
+    if (isProductionEnvironment() && (!secret || secret.length < 32)) {
+      throw new Error('AUTH_EVENT_HMAC_KEY_UNAVAILABLE');
+    }
+    if (!/^[A-Z][A-Z0-9_]{0,63}$/.test(eventType) ||
+        !/^[A-Z][A-Z0-9_]{0,63}$/.test(details.reasonCode)) {
+      throw new Error('AUTH_DENIAL_EVENT_METADATA_INVALID');
+    }
+    const digest = (purpose: string, raw: string) =>
+      (secret ? createHmac('sha256', secret) : createHash('sha256'))
+        .update(`auth-event:${purpose}:v1:${raw}`).digest('hex');
+    const isMfa = eventType.startsWith('MFA_');
+    const throttled = details.reasonCode === 'RATE_LIMITED';
+    const sourceLimit = throttled ? 1 : isMfa ? 20 : 10;
+    const globalLimit = throttled ? 30 : isMfa ? 120 : 60;
+    // A verified principal cannot switch IP to evade its per-actor cap.
+    // Anonymous denials are keyed by the trusted remote IP, never the
+    // user-supplied authorization header or an email/phone identifier.
+    const source = details.userId
+      ? `actor:${details.userId}` : `network:${details.sourceIp || 'unknown'}`;
+    const sourceKey = 'audit-denied:source:' + digest('denial-budget',
+      `${eventType}:${details.reasonCode}:${source}`);
+    const globalKey = 'audit-denied:global:' + digest('denial-budget',
+      `${eventType}:${details.reasonCode}`);
+    const sourceDigest = details.sourceIp ? digest('source',details.sourceIp) : null;
+    const subjectDigest = details.subject ? digest('subject',details.subject) : null;
+    // DB clock defines the common window, and expired buckets are reused.
+    // Conditional UPSERTs never increment a saturated counter or insert an
+    // extra event. The event and both reservations succeed or roll back
+    // together, even across simultaneous callers from different API nodes.
+    await pool.query({
+      text: `WITH tick AS (
+        SELECT statement_timestamp() AS at
+      ), source_slot AS (
+        INSERT INTO auth_request_budgets (budget_key,count,expires_at)
+        SELECT $1,1, date_trunc('minute',at)+interval '1 minute' FROM tick
+        ON CONFLICT (budget_key) DO UPDATE
+          SET count=CASE WHEN auth_request_budgets.expires_at<=statement_timestamp()
+                         THEN 1 ELSE auth_request_budgets.count+1 END,
+              expires_at=CASE WHEN auth_request_budgets.expires_at<=statement_timestamp()
+                              THEN date_trunc('minute',statement_timestamp())+interval '1 minute'
+                              ELSE auth_request_budgets.expires_at END,
+              updated_at=statement_timestamp()
+          WHERE auth_request_budgets.expires_at<=statement_timestamp()
+             OR auth_request_budgets.count<$2
+        RETURNING budget_key
+      ), global_slot AS (
+        INSERT INTO auth_request_budgets (budget_key,count,expires_at)
+        SELECT $3,1,date_trunc('minute',at)+interval '1 minute'
+          FROM tick WHERE EXISTS (SELECT 1 FROM source_slot)
+        ON CONFLICT (budget_key) DO UPDATE
+          SET count=CASE WHEN auth_request_budgets.expires_at<=statement_timestamp()
+                         THEN 1 ELSE auth_request_budgets.count+1 END,
+              expires_at=CASE WHEN auth_request_budgets.expires_at<=statement_timestamp()
+                              THEN date_trunc('minute',statement_timestamp())+interval '1 minute'
+                              ELSE auth_request_budgets.expires_at END,
+              updated_at=statement_timestamp()
+          WHERE auth_request_budgets.expires_at<=statement_timestamp()
+             OR auth_request_budgets.count<$4
+        RETURNING budget_key
+      )
+      INSERT INTO auth_security_events
+        (id,actor_user_id,org_id,session_id,event_type,outcome,
+         subject_digest,reason_code,source_digest)
+      SELECT gen_random_uuid(),$5,$6,$7,$8,'DENIED',$9,$10,$11
+        FROM global_slot`,
+      values: [sourceKey,sourceLimit,globalKey,globalLimit,
+        details.userId || null,details.orgId || null,details.sessionId || null,
+        eventType,subjectDigest,details.reasonCode,sourceDigest],
+      query_timeout: AUTH_DENIAL_QUERY_TIMEOUT_MS,
+    });
   } catch {
-    // No raw driver errors, inputs, OTP values, headers or stack traces.
-    console.error('AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE');
+    reportAuthDenialPersistenceFailure();
   }
 }
 
