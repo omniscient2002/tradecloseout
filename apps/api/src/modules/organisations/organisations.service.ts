@@ -541,9 +541,17 @@ export class OrganisationsService {
         // cannot revive it or make its response appear successful.
         const promoted = await withTenantTransaction(this.pool, ctx, async (client: PoolClient) =>
           client.query(
-            `UPDATE invitations SET status='PENDING'
-               WHERE org_id=$1 AND id=$2 AND status='DELIVERY_PENDING'
-                 AND expires_at>now() RETURNING id`,
+            `UPDATE invitations i SET status='PENDING'
+               WHERE i.org_id=$1 AND i.id=$2 AND i.status='DELIVERY_PENDING'
+                 AND i.expires_at>now()
+                 AND EXISTS (
+                   SELECT 1 FROM memberships m
+                    WHERE m.org_id=i.org_id AND m.user_id=i.invited_by
+                      AND m.status='ACTIVE'
+                      AND (m.role='R-OWNER' OR
+                           (m.role='R-ADMIN' AND i.role<>'R-ADMIN'))
+                 )
+               RETURNING i.id`,
             [orgId, issued.id],
           ),
         );
@@ -583,7 +591,7 @@ export class OrganisationsService {
       const { rows } = await client.query(
         `UPDATE invitations
             SET status = 'REVOKED'
-          WHERE org_id = $1 AND id = $2 AND status = 'PENDING'
+          WHERE org_id = $1 AND id = $2 AND status IN ('PENDING','DELIVERY_PENDING')
           RETURNING id, status`,
         [orgId, invitationId],
       );
@@ -672,7 +680,7 @@ export class OrganisationsService {
       // redemption serializes on the invitation row.
       const revokedInvitations = await client.query(
         `UPDATE invitations SET status='REVOKED'
-          WHERE org_id=$1 AND invited_by=$2 AND status='PENDING'
+          WHERE org_id=$1 AND invited_by=$2 AND status IN ('PENDING','DELIVERY_PENDING')
             AND ($3 <> 'R-ADMIN' OR role='R-ADMIN')`,
         [orgId,targetUserId,dto.role],
       );
@@ -745,7 +753,7 @@ export class OrganisationsService {
         // delegating its former organisation authority to others.
         await client.query(
           `UPDATE invitations SET status='REVOKED'
-             WHERE org_id=$1 AND invited_by=$2 AND status='PENDING'`,
+             WHERE org_id=$1 AND invited_by=$2 AND status IN ('PENDING','DELIVERY_PENDING')`,
           [ctx.orgId,input.targetUserId],
         );
       }
@@ -925,7 +933,7 @@ export class OrganisationsService {
       // invitations that relied on owner-only issuance authority are void.
       await client.query(
         `UPDATE invitations SET status='REVOKED'
-          WHERE org_id=$1 AND invited_by=$2 AND status='PENDING'
+          WHERE org_id=$1 AND invited_by=$2 AND status IN ('PENDING','DELIVERY_PENDING')
             AND role='R-ADMIN'`,
         [ctx.orgId,ctx.userId],
       );
