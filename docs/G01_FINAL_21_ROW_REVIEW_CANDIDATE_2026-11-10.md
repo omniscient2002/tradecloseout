@@ -48,9 +48,9 @@
 
 ## Stacked PR integration resolution
 
-- PR #2 (templates/dossiers/billing), PR #3 (audit documentation), PR #4 (witness/recipient security) and PR #5 (G01) remain separate unmerged draft review domains. Current G01 verification checks PR #5's integration merge to main, **not** a proven validated sequence of #2–#4 release merges.
-- Architecture lead must inspect commit ancestry and file overlap, independently approve each predecessor, and choose an explicit, signed merge order. Proposed dependency order is #2, then #3, then #4, then rebase/retest #5 **only after** predecessor changes have been independently accepted. Do not cherry-pick partial approval logic or change PR base without review.
-- After any predecessor merges, require a new full CI/security/browser run, compare the effective merge tree and migrations, validate no privilege/authority/closure regressions and obtain new independent review on the final head. This pass does not grant merge authorization.
+- **Verified repository ancestry from GitHub compare at this pass:** PR #2 head `7d80d163` is an ancestor of PR #4 head `ecc4be6a` (ahead 32 / behind 0); PR #4 is an ancestor of PR #5 (ahead at the compared head 344 / behind 0). **PR #3 head `f6740339` diverges from PR #5** (ahead 391 / behind 4) and changes three independent documentation files, none shared with PR #5. PR #2's 11 changed paths are also changed in PR #4 and PR #5; PR #4's 31 paths overlap PR #5. These PRs are not four independent cherry-pick sets.
+- **Concrete safe candidate merge sequence, subject to separate independent approval and explicit owner authorization:** first PR #2, then PR #4 (which already contains PR #2's ancestry), then PR #5 (which already contains PR #4's ancestry). PR #3's three independent audit-document files may be reviewed/landed separately as an independent docs PR, without cherry-picking its historical changes into #5. No automatic rebasing or selective SQL migration duplication.
+- **Before each authorized merge**, reviewers must verify main's new base and effective diff, find overlapping migration names/checksums, execute the full application CI, migration upgrade, RLS/security/role/browser tests on the **actual merge tree**, and reapprove affected domain invariants. Reviewers must also compare updated main after the independently merged docs branch PR #3. No merge or deploy is authorized by this analysis.
 
 ## Prerequisites that require a named owner
 
