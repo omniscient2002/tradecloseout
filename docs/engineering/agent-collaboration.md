@@ -73,6 +73,12 @@ starting another writer. This queued request consumes the coordinator's writer b
 
 It updates one bot-owned status comment; it never changes source, finding status,
 permissions, approvals or merges. CI success is described as CI evidence only.
+The job uses contents/actions/issues read and pull-requests write for PR conversation
+comments. Keep the repository's Actions pull-request approval setting disabled;
+no contents-write token is provided and the code contains no approval/merge API.
+Changes to the coordinator workflow also run a live comment-permission smoke on
+trusted same-repository PRs. It checks out only the already trusted base commit,
+not candidate code, and performs a status-only publication with the real job token.
 It never executes candidate code with its comment-write token. Job concurrency is
 serialized; handoffs are idempotent by PR/head/action. One implementation
 request per PR is permitted and the pilot's existing request consumes it. Native

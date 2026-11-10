@@ -111,6 +111,9 @@ class Github:
             data=json.dumps(data).encode() if data is not None else None, method=method,
             headers={"Authorization": "Bearer " + self.token, "Accept": "application/vnd.github+json",
                      "X-GitHub-Api-Version": "2022-11-28", "Content-Type": "application/json"})
+        # Only internally constructed routes are logged, never headers, tokens,
+        # request/response bodies or query strings. Keep live failures diagnosable.
+        print(f"GitHub API {method} {path.split('?', 1)[0]}")
         with urllib.request.build_opener(NoRedirect).open(req, timeout=30) as response:
             return json.load(response)
 
