@@ -1,5 +1,6 @@
 import { ForbiddenException } from '@nestjs/common';
 import { SessionCsrfGuard } from '../src/common/guards/session-csrf.guard';
+import { PermissionGuard } from '../src/common/guards/permission.guard';
 import { ProblemJsonExceptionFilter } from '../src/common/filters/problem-json.filter';
 import { DltSmsService, TransactionalMailService } from '../src/modules/identity/identity.module';
 import { createHash } from 'node:crypto';
@@ -255,6 +256,30 @@ describe('G01: authentication hardening negative controls', () => {
       if (previous===undefined) delete process.env.NODE_ENV;
       else process.env.NODE_ENV=previous;
     }
+  });
+
+  it('requires independent guest authority for binding consultant review decisions', async () => {
+    const reflector:any={getAllAndOverride:jest.fn().mockReturnValue('review.decide')};
+    const pool:any={connect:jest.fn()};
+    const guard=new PermissionGuard(reflector,pool);
+    const req:any={
+      method:'POST',path:'/api/v1/projects/project-1/reviews/decision',
+      params:{projectId:'project-1'},
+      user:{
+        orgRole:'GUEST',guestGrantId:'guest-1',guestProjectId:'project-1',
+        guestCapabilities:['review.decide'],guestAuthorityVerified:false,
+      },
+    };
+    const context:any={
+      getHandler:()=>({}),getClass:()=>({}),
+      switchToHttp:()=>({getRequest:()=>req}),
+    };
+    await expect(guard.canActivate(context)).rejects.toMatchObject({
+      response:expect.objectContaining({code:'INDEPENDENT_PARTY_AUTHORITY_REQUIRED'}),
+    });
+    req.user.guestAuthorityVerified=true;
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+    expect(pool.connect).not.toHaveBeenCalled();
   });
 
   it('redacts external delivery-provider exceptions from customer-visible HTTP responses', async () => {
