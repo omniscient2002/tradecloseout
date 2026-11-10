@@ -10,7 +10,8 @@
     "test": "jest --runInBand",
     "test:rls": "jest test/rls-isolation.spec.ts",
     "test:rbac": "jest test/rbac-matrix.spec.ts",
-    "test:concurrency": "jest test/concurrency.spec.ts"
+    "test:concurrency": "jest test/concurrency.spec.ts",
+    "review:external": "tsx scripts/approve-external-authority.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1161.0",
