@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { isQueuedUploadContextCurrent } from '../src/lib/offline-upload-queue';
 
 test.describe('TradeCloseout v0.2.1 Critical User Flows (SCR-002 -> SCR-010 -> SCR-013 -> SCR-025)', () => {
   test('E2E-01: Unauthenticated visitor to / is redirected to /login by middleware', async ({ page }) => {
@@ -32,6 +33,23 @@ test.describe('TradeCloseout v0.2.1 Critical User Flows (SCR-002 -> SCR-010 -> S
  * outgoing HTTP request are exercised.
  */
 test.describe('G01 browser authentication contract', () => {
+  test('E2E-G01: queued uploads reject changed account, generation, tab epoch and legacy drafts', async () => {
+    const bound = {
+      actorPartition:'member:org-a:user-a',authGeneration:'session-generation-1',
+      authEpoch:'cross-tab-epoch-1',
+    };
+    const current = {
+      partition:'member:org-a:user-a',generation:'session-generation-1',
+      epoch:'cross-tab-epoch-1',
+    };
+    expect(isQueuedUploadContextCurrent(bound,current)).toBe(true);
+    expect(isQueuedUploadContextCurrent(bound,{...current,partition:'member:org-b:user-b'})).toBe(false);
+    expect(isQueuedUploadContextCurrent(bound,{...current,generation:'session-generation-2'})).toBe(false);
+    expect(isQueuedUploadContextCurrent(bound,{...current,epoch:'cross-tab-epoch-2'})).toBe(false);
+    expect(isQueuedUploadContextCurrent({...bound,authEpoch:undefined},current)).toBe(false);
+    expect(isQueuedUploadContextCurrent({...bound,authGeneration:undefined},current)).toBe(false);
+  });
+
   test('E2E-G01: blocks contractor content until session identity is verified', async ({ page }) => {
     await page.context().addCookies([{
       name:'tc_session', value:'expired-opaque-cookie',
