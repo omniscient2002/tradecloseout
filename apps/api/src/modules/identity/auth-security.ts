@@ -335,6 +335,13 @@ export async function recordDeniedAuthenticationEvent(
       `${eventType}:${details.reasonCode}`);
     const sourceDigest = details.sourceIp ? digest('source',details.sourceIp) : null;
     const subjectDigest = details.subject ? digest('subject',details.subject) : null;
+    // This is optional forensic telemetry, never a reason to put unlimited
+    // pending audit tasks behind business/authentication queries in the pool.
+    // At most ONE queued audit checkout is admitted per replica; with all
+    // connections busy, subsequent denials are safely sampled out. The actual
+    // shared event-volume authority remains PostgreSQL, not this local guard.
+    if (pool.waitingCount > 0) return;
+
     // DB clock defines the common window, and expired buckets are reused.
     // Conditional UPSERTs never increment a saturated counter or insert an
     // extra event. The event and both reservations succeed or roll back
