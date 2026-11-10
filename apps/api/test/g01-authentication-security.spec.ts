@@ -145,13 +145,22 @@ describe('G01: authentication hardening negative controls', () => {
       rolcreatedb:false,rolcreaterole:false,can_assume_migrator:false,
       can_approve_external_authority:false,
     }))).resolves.toBeUndefined();
+    const safeRole = {
+      login_role:'tc_app',role_name:'tc_app',
+      rolsuper:false,rolbypassrls:false,rolcreatedb:false,
+      rolcreaterole:false,can_assume_migrator:false,
+      can_approve_external_authority:false,
+    };
     for (const invalid of [
-      {role_name:'postgres',rolsuper:true,rolbypassrls:true,can_assume_migrator:true},
-      {role_name:'tc_app',rolsuper:false,rolbypassrls:true,can_assume_migrator:false},
-      {role_name:'tc_app',rolsuper:false,rolbypassrls:false,can_assume_migrator:true},
-      {role_name:'custom_tc_runtime',rolsuper:false,rolbypassrls:false,
-        can_assume_migrator:false,can_approve_external_authority:true},
-      {role_name:'tc_migrator',rolsuper:false,rolbypassrls:false,can_assume_migrator:false},
+      {...safeRole,login_role:'postgres'},
+      {...safeRole,login_role:'tc_migrator'},
+      {...safeRole,role_name:'postgres',rolsuper:true},
+      {...safeRole,rolbypassrls:true},
+      {...safeRole,rolcreatedb:true},
+      {...safeRole,rolcreaterole:true},
+      {...safeRole,can_assume_migrator:true},
+      {...safeRole,can_approve_external_authority:true},
+      {...safeRole,role_name:'custom_tc_runtime'},
     ]) {
       await expect(assertRuntimeDatabasePrivileges(make(invalid)))
         .rejects.toThrow('BOOT_AUTH_RUNTIME_ROLE_PRIVILEGED');
