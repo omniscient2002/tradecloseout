@@ -50,7 +50,7 @@ test.describe('G01 browser authentication contract', () => {
     await expect(page.getByRole('status')).toContainText('Verifying your workspace session');
     await expect(page.getByRole('navigation')).toHaveCount(0);
     releaseVerification();
-    await expect(page).toHaveURL(/\\/login(?:\\?|$)/);
+    await expect(page).toHaveURL(/\/login(?:\?|$)/);
   });
 
   test('E2E-G01: forwards the server-issued challenge ID with the human-entered code', async ({ page }) => {
