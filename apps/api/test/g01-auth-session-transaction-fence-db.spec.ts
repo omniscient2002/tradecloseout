@@ -35,6 +35,31 @@ describe('G01 authenticated transaction generation fencing',()=>{
         return found.length;
       });
       expect(first).toBe(1);
+      // An in-flight authorised write holds the session lock until COMMIT.
+      // Concurrent offboarding/revocation must serialize with that write,
+      // rather than permitting a stale-context commit after revocation.
+      let finishWrite!:()=>void;
+      let signalStarted!:()=>void;
+      const releaseWrite=new Promise<void>(resolve=>{finishWrite=resolve;});
+      const writeStarted=new Promise<void>(resolve=>{signalStarted=resolve;});
+      const runningWrite=withTenantTransaction(app,ctx,async()=>{
+        signalStarted();
+        await releaseWrite;
+      });
+      await writeStarted;
+      const opponent=await admin.connect();
+      try {
+        await opponent.query('BEGIN');
+        await opponent.query("SET LOCAL lock_timeout='250ms'");
+        await expect(opponent.query(
+          'UPDATE sessions SET revoked_at=now() WHERE id=$1',[session],
+        )).rejects.toMatchObject({code:'55P03'});
+        await opponent.query('ROLLBACK');
+      } finally {
+        finishWrite();
+        opponent.release();
+      }
+      await runningWrite;
       let callbackEntered=false;
       await expect(withTenantTransaction(app,{...ctx,authGeneration:uuidv7()},async()=>{
         callbackEntered=true;
