@@ -68,6 +68,29 @@ pnpm --filter @tradecloseout/api review:external-document -- \
 
 Two different named reviewer accounts must approve the same values. Before the second review commits, the ordinary API must return `INDEPENDENT_EXTERNAL_PROOF_REQUIRED` and leave the document unchanged. After two matches, authorised internal recording can proceed only if the target is still the latest eligible document revision, proof remains READY and storage-verifiable, and the designated counterparty has not changed. Any changed proof, revision, party or evidence reference requires a fresh independent review, not relabelling an earlier decision. The reviewer cannot approve from the normal API; this is a platform operations pathway only.
 
+## Independent emergency revocation commands (migration 0033)
+
+A newly discovered forged client/consultant delegation, compromised reviewer credential, revoked signatory authority or disputed externally approved document must be blocked **without requiring contractor cooperation**. Migration `0033` implements immutable, platform-reviewer-only revocation records with dedicated stored procedures. The reviewer command `pnpm --filter @tradecloseout/api review:revoke-external` uses the same separate individual PostgreSQL credentials, TLS CA and strict role isolation as the approval commands. All incidents require an opaque incident/case reference, never personal identifiers or bearer credentials.
+
+For a verified sensitive guest grant, independently revoke grant + all active sessions:
+
+```bash
+pnpm --filter @tradecloseout/api review:revoke-external -- \
+  --kind guest --org "$ORG_UUID" --grant "$GUEST_GRANT_UUID" \
+  --reason "$INCIDENT_CASE_REF" --attest-incident-verified
+```
+
+For a particular offline approved document proof, revoke the *exact* proof/version/party attestation and prevent subsequent `recordExternalApproval` calls from using that attestation:
+
+```bash
+pnpm --filter @tradecloseout/api review:revoke-external -- \
+  --kind document --org "$ORG_UUID" --version "$TARGET_VERSION_UUID" \
+  --proof "$PROOF_VERSION_UUID" --party "$EXTERNAL_PARTY_UUID" \
+  --reason "$INCIDENT_CASE_REF" --attest-incident-verified
+```
+
+**Important:** revoking a document attestation prevents *new* uses of that approval proof. It does not itself rewind previously committed `APPROVED` document states or legally annul certificates previously distributed. Run the separately authorised document-review dispute/withdrawal/notification workflow and review already-delivered packages; record incident response and communicate with the external party. This follow-up remains a release acceptance gate.
+
 ## Revocation, changes and incident response
 
 - Reviewer decisions are append-only under migration `0030`; privileged SQL mutation is rejected. An active, independently approved grant must be revoked before its counterparty party record is archived, so restoring the party cannot silently revive old approval.
