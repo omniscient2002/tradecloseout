@@ -69,7 +69,15 @@ export class ProblemJsonExceptionFilter implements ExceptionFilter {
     } else if (exception instanceof Error) {
       // Map known domain / database error codes without leaking SQL details (10 §4)
       const anyErr = exception as any;
-      if (anyErr.code === 'PLAN_LIMIT_EXCEEDED') {
+      if (exception.message === 'AUTH_SESSION_CONTEXT_CHANGED') {
+        // A session changed between the request guard and the transactional
+        // write lock (logout, org switch, MFA rotation or member offboarding).
+        // This is an expected safe rejection, not an internal server error.
+        status = HttpStatus.CONFLICT;
+        code = 'AUTH_CONTEXT_CHANGED';
+        title = 'Authentication context changed';
+        detail = 'Your session or organisation changed. Reauthenticate before changing data.';
+      } else if (anyErr.code === 'PLAN_LIMIT_EXCEEDED') {
         status = HttpStatus.CONFLICT;
         code = 'PLAN_LIMIT_EXCEEDED';
         title = 'Plan limit reached';
