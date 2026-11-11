@@ -831,6 +831,9 @@ export class ProjectsService {
    * GET /projects/:id/members
    */
   async listProjectMembers(ctx: TenantActorContext, projectId: string) {
+    // G02-007: external guests may view scoped project details, never the
+    // internal user identity roster or login identifiers.
+    if (ctx.actorType === 'GUEST' || ctx.guestGrantId) throw new NotFoundException('PROJECT_NOT_FOUND');
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
       const res = await client.query(
         `SELECT pm.*, u.name,
