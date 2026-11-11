@@ -1,0 +1,5 @@
+{
+  "sourceSha": "36c8efb94ce2ed77ef016ef58ad44d494bfc6e84",
+  "exitCode": 0,
+  "scope": "Existing E2E-G01 production-built Next + real API/PG/Redis; test OTP and fixture delivery only. Not full Phase3/4 workflow/provider acceptance."
+}

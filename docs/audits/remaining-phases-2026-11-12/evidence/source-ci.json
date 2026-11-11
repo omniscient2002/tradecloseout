@@ -1,0 +1,26 @@
+{
+  "sourceSha": "36c8efb94ce2ed77ef016ef58ad44d494bfc6e84",
+  "method": "GitHub connector workflow-run metadata; pull-request-triggered first page only",
+  "workflow_runs": [
+    {
+      "id": 43109650771,
+      "name": "TradeCloseout CI/CD Pipeline (15 §4)",
+      "status": "completed",
+      "conclusion": "success",
+      "run_number": 465,
+      "jobs_url": "https://api.github.com/repos/omniscient2002/tradecloseout/actions/runs/43109650771/jobs",
+      "logs_url": "https://api.github.com/repos/omniscient2002/tradecloseout/actions/runs/43109650771/logs",
+      "workflow_id": 404777124
+    },
+    {
+      "id": 43109650765,
+      "name": "Group review protocol verification",
+      "status": "completed",
+      "conclusion": "success",
+      "run_number": 132,
+      "jobs_url": "https://api.github.com/repos/omniscient2002/tradecloseout/actions/runs/43109650765/jobs",
+      "logs_url": "https://api.github.com/repos/omniscient2002/tradecloseout/actions/runs/43109650765/logs",
+      "workflow_id": 413166255
+    }
+  ]
+}

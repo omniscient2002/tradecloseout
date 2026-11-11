@@ -1,0 +1,32 @@
+{
+  "sourceSha": "36c8efb94ce2ed77ef016ef58ad44d494bfc6e84",
+  "executionDateUtc": "2026-11-11",
+  "sourceFilesVerified": 368,
+  "cleanWorkspaceChecks": {
+    "installFrozen": 0,
+    "typecheck": 0,
+    "build": 0,
+    "test": 0,
+    "testSecurity": 0,
+    "testRbac": 0
+  },
+  "observations": {
+    "apiWorker": 45,
+    "apiJestWrappers": 1,
+    "browserQueue": 2
+  },
+  "selectedApplicationContracts": {
+    "total": 6,
+    "liveAuth": 2,
+    "function": 2,
+    "interceptedBrowser": 2
+  },
+  "portableReplays": {
+    "apiWorkerExit": 0,
+    "offlineExit": 0,
+    "applicationContractsExit": 0
+  },
+  "externalAcceptance": false,
+  "productionDeployed": false,
+  "applicationFixes": false
+}

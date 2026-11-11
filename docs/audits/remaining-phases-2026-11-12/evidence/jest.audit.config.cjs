@@ -1,0 +1,3 @@
+const path=require('path');
+const root=path.resolve(__dirname,'../../../..');
+module.exports={rootDir:root,roots:[__dirname],testRegex:'remaining-probes\\.spec\\.ts$',testEnvironment:'node',moduleDirectories:['node_modules'],transform:{'^.+\\.tsx?$':[require.resolve(root+'/apps/api/node_modules/ts-jest'),{tsconfig:__dirname+'/tsconfig.audit.json'}]},moduleNameMapper:{'^@tradecloseout/shared/(.*)$':'<rootDir>/packages/shared/src/$1','^@tradecloseout/shared$':'<rootDir>/packages/shared/src','^@tradecloseout/db/(.*)$':'<rootDir>/packages/db/src/$1','^@tradecloseout/db$':'<rootDir>/packages/db/src','^@tradecloseout/pdf-engine/(.*)$':'<rootDir>/packages/pdf-engine/src/$1','^@tradecloseout/pdf-engine$':'<rootDir>/packages/pdf-engine/src'}};

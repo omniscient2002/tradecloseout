@@ -1,0 +1,13 @@
+
+Running 6 tests using 1 worker
+
+(node:29398) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [application] › e2e/critical-flows.spec.ts:60:7 › G01 browser authentication contract › E2E-G01: actual API/PG/Redis OTP, MFA rotation and logout revocation (1.8s)
+  ✓  2 [application] › e2e/critical-flows.spec.ts:132:7 › G01 browser authentication contract › E2E-G01: live API denies login CSRF from arbitrary origin/fetch metadata (32ms)
+  ✓  3 [application] › e2e/critical-flows.spec.ts:152:7 › G01 browser authentication contract › E2E-G01: redirect allowlist rejects external and doubly encoded navigation (6ms)
+  ✓  4 [application] › e2e/critical-flows.spec.ts:167:7 › G01 browser authentication contract › E2E-G01: queued uploads reject changed account, generation, tab epoch and legacy drafts (2ms)
+  ✓  5 [application] › e2e/critical-flows.spec.ts:184:7 › G01 browser authentication contract › E2E-G01: blocks contractor content until session identity is verified (364ms)
+  ✓  6 [application] › e2e/critical-flows.spec.ts:205:7 › G01 browser authentication contract › E2E-G01: forwards the server-issued challenge ID with the human-entered code (454ms)
+
+  6 passed (3.8s)

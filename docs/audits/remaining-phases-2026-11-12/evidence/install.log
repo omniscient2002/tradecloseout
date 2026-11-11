@@ -1,0 +1,28 @@
+Scope: all 7 workspace projects
+? Verifying lockfile against supply-chain policies (956 entries)...
+Update available! 12.4.1 → 12.18.0.
+Changelog: https://pnpm.io/v/12.18.0
+To update, run: curl -fsSL https://get.pnpm.io/install.sh | sh -
+Packages are hard linked from the content-addressable store to the virtual store.
+  Content-addressable store is at: /workspace/.tradecloseout-tools/pnpm-store/v11
+  Virtual store is at:             node_modules/.pnpm
+✓ Lockfile passes supply-chain policies (956 entries in 8.1s)
+Lockfile is up to date, resolution step is skipped
+Packages: +859
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+Progress: resolved 859, reused 859, downloaded 0, added 859, done
+
+dependencies:
++ @pdf-lib/fontkit 1.1.1
++ fontkit 2.0.4
+
+devDependencies:
++ @types/node 22.20.5
++ fast-glob 3.3.3
++ ts-node 10.9.2
++ tsx 4.23.15
++ turbo 2.11.10
++ typescript 5.9.3
++ xlsx 0.20.3
+
+Done in 8.3s using pnpm v12.4.1

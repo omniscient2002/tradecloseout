@@ -1,0 +1,178 @@
+{
+  "authority": "User-provided five-phase list, order 1–28; preserved G01/G02 existing audits without duplicate re-audit",
+  "current_audit_phases": [
+    3,
+    4,
+    5
+  ],
+  "groups": [
+    {
+      "phase": 1,
+      "order": 1,
+      "group": "G26",
+      "work": "Database schema, constraints, migrations and transactions"
+    },
+    {
+      "phase": 1,
+      "order": 2,
+      "group": "G01",
+      "work": "Authentication, OTP, MFA and session security"
+    },
+    {
+      "phase": 1,
+      "order": 3,
+      "group": "G02",
+      "work": "RBAC, permissions and resource isolation"
+    },
+    {
+      "phase": 1,
+      "order": 4,
+      "group": "G27",
+      "work": "Security controls, audit integrity and observability"
+    },
+    {
+      "phase": 1,
+      "order": 5,
+      "group": "G24",
+      "work": "Background workers, queues, retries and scheduling"
+    },
+    {
+      "phase": 2,
+      "order": 6,
+      "group": "G20",
+      "work": "Email, SMS and notification delivery"
+    },
+    {
+      "phase": 2,
+      "order": 7,
+      "group": "G18",
+      "work": "Subscriptions, entitlements and seat limits"
+    },
+    {
+      "phase": 2,
+      "order": 8,
+      "group": "G03",
+      "work": "Organisation management, teams and ownership"
+    },
+    {
+      "phase": 2,
+      "order": 9,
+      "group": "G05",
+      "work": "Project creation, teams and lifecycle"
+    },
+    {
+      "phase": 2,
+      "order": 10,
+      "group": "G06",
+      "work": "Configuration, trade packs and templates"
+    },
+    {
+      "phase": 3,
+      "order": 11,
+      "group": "G07",
+      "work": "Checklists, requirements and waivers"
+    },
+    {
+      "phase": 3,
+      "order": 12,
+      "group": "G08",
+      "work": "Assets, equipment and system relationships"
+    },
+    {
+      "phase": 3,
+      "order": 13,
+      "group": "G10",
+      "work": "Secure uploads, scanning and file storage"
+    },
+    {
+      "phase": 3,
+      "order": 14,
+      "group": "G09",
+      "work": "Document management, revisions and metadata"
+    },
+    {
+      "phase": 3,
+      "order": 15,
+      "group": "G04",
+      "work": "External-party access and guest workflows"
+    },
+    {
+      "phase": 3,
+      "order": 16,
+      "group": "G21",
+      "work": "Workflow orchestration and responsibility tracking"
+    },
+    {
+      "phase": 3,
+      "order": 17,
+      "group": "G11",
+      "work": "Reviews, approvals and separation of duties"
+    },
+    {
+      "phase": 3,
+      "order": 18,
+      "group": "G12",
+      "work": "Signatures, attestations and verification"
+    },
+    {
+      "phase": 4,
+      "order": 19,
+      "group": "G13",
+      "work": "HVAC inspections, testing and commissioning"
+    },
+    {
+      "phase": 4,
+      "order": 20,
+      "group": "G17",
+      "work": "Defects, rectifications and closure"
+    },
+    {
+      "phase": 4,
+      "order": 21,
+      "group": "G25",
+      "work": "PDF generation, archives and evidence verification"
+    },
+    {
+      "phase": 4,
+      "order": 22,
+      "group": "G14",
+      "work": "Handover package generation"
+    },
+    {
+      "phase": 4,
+      "order": 23,
+      "group": "G15",
+      "work": "Customer submission, response and acceptance"
+    },
+    {
+      "phase": 4,
+      "order": 24,
+      "group": "G16",
+      "work": "Warranty tracking and management"
+    },
+    {
+      "phase": 4,
+      "order": 25,
+      "group": "G19",
+      "work": "Billing, payments, retention and tax"
+    },
+    {
+      "phase": 5,
+      "order": 26,
+      "group": "G23",
+      "work": "Complete frontend journeys, accessibility and UX"
+    },
+    {
+      "phase": 5,
+      "order": 27,
+      "group": "G22",
+      "work": "Offline data capture, mobile synchronization and recovery"
+    },
+    {
+      "phase": 5,
+      "order": 28,
+      "group": "G28",
+      "work": "Deployment, backups, CI/CD, E2E tests and release verification"
+    }
+  ]
+}

@@ -1,0 +1,618 @@
+{
+  "sourceSha": "36c8efb94ce2ed77ef016ef58ad44d494bfc6e84",
+  "method": "Actual services and restricted disposable PG16; synthetic mechanism records, fake presigner and clean scanner socket fixture. Not real HVAC/provider evidence.",
+  "results": [
+    {
+      "id": "R01",
+      "group": "G07",
+      "name": "closed project still accepts a new waiver request",
+      "observed": {
+        "waiverId": "01a1ccd3-6504-7045-968c-5c3d3c5d0f6a",
+        "requirementId": "071d8253-bcbd-4374-b5ff-9e8637a2cb92",
+        "status": "PENDING_SECOND_APPROVAL",
+        "requirementStatus": "PENDING_WAIVER"
+      }
+    },
+    {
+      "id": "R02",
+      "group": "G07",
+      "name": "optional waiver always requires a second approval",
+      "observed": {
+        "waiverId": "01a1ccd3-6526-74db-8375-a533e3484c99",
+        "requirementId": "24bc014d-76fa-4f75-b829-a513d4d80adf",
+        "status": "PENDING_SECOND_APPROVAL",
+        "requirementStatus": "PENDING_WAIVER"
+      }
+    },
+    {
+      "id": "R03",
+      "group": "G07",
+      "name": "NOT_APPLICABLE countersign returns and stores WAIVED",
+      "observed": {
+        "result": {
+          "waiverId": "01a1ccd3-6536-7f49-b79a-961a16530e9c",
+          "status": "ACTIVE",
+          "requirementStatus": "WAIVED"
+        },
+        "stored": {
+          "type": "NOT_APPLICABLE",
+          "status": "WAIVED"
+        }
+      }
+    },
+    {
+      "id": "R04",
+      "group": "G07",
+      "name": "repeat waiver requests create concurrent pending rows",
+      "observed": {
+        "n": 2
+      }
+    },
+    {
+      "id": "R05",
+      "group": "G08",
+      "name": "asset tag PATCH accepts regex syntax that breaks matching",
+      "observed": {
+        "stored": {
+          "tag": "["
+        },
+        "matching": {
+          "rejected": true,
+          "code": "SyntaxError",
+          "message": "Invalid regular expression: /(^|[^A-Z0-9])[([^A-Z0-9]|$)/i: Unmatched ')'"
+        }
+      }
+    },
+    {
+      "id": "R06",
+      "group": "G08",
+      "name": "retiring an unknown asset reports success and writes an event",
+      "observed": {
+        "assetId": "fcdcb398-1d9b-4e49-8f6d-b94338480ea7",
+        "status": "RETIRED"
+      }
+    },
+    {
+      "id": "R07",
+      "group": "G08",
+      "name": "replacement links silently ignore nonexistent predecessor",
+      "observed": {
+        "id": "01a1ccd3-65b9-7768-acd8-6458fcfbe412",
+        "org_id": "78f939c8-a68a-4b31-ae4c-9def75cbf950",
+        "project_id": "31a18ca0-6cfa-4f76-9139-e3ebe12cce3e",
+        "tag": "NEW-SYNTH-01",
+        "name": "Mechanism only",
+        "category_key": "SYNTHETIC",
+        "make": null,
+        "model": null,
+        "serial_no": null,
+        "location": null,
+        "capacity_json": {},
+        "refrigerant": null,
+        "install_date": null,
+        "warranty_start": null,
+        "warranty_start_basis": "HANDOVER",
+        "warranty_end": null,
+        "status": "ACTIVE",
+        "replaced_by_asset_id": null,
+        "metadata_json": {},
+        "row_version": 1,
+        "created_by": "ef31580a-3432-4dde-a574-93ded0439c77",
+        "created_at": "2026-11-11T22:56:08.628Z",
+        "updated_at": "2026-11-11T22:56:08.628Z",
+        "deleted_at": null,
+        "assetId": "01a1ccd3-65b9-7768-acd8-6458fcfbe412",
+        "instantiatedRequirements": 0
+      }
+    },
+    {
+      "id": "R08",
+      "group": "G10",
+      "name": "closed project creates an upload intent",
+      "observed": {
+        "created": true
+      }
+    },
+    {
+      "id": "R09",
+      "group": "G10",
+      "name": "late completion rewinds document latest version pointer",
+      "observed": {
+        "latestIsOlder": true,
+        "older": "01a1ccd3-65e3-7f00-8a95-9b4b703c5863",
+        "newer": "01a1ccd3-65ed-7d29-a6bf-be570ccbf3d7"
+      }
+    },
+    {
+      "id": "R10",
+      "group": "G09",
+      "name": "delete verified record hits text-to-bigint quota SQL",
+      "observed": {
+        "rejected": true,
+        "code": "42804",
+        "message": "column \"value\" is of type bigint but expression is of type text"
+      }
+    },
+    {
+      "id": "R11",
+      "group": "G09",
+      "name": "restore verified record hits text-to-bigint quota SQL",
+      "observed": {
+        "rejected": true,
+        "code": "42804",
+        "message": "column \"value\" is of type bigint but expression is of type text"
+      }
+    },
+    {
+      "id": "R12",
+      "group": "G09",
+      "name": "closed project document without ready bytes can be soft-deleted",
+      "observed": {
+        "documentId": "d6367ced-1d73-4be2-abc2-5d162afdecde",
+        "deleted": true,
+        "refundedBytes": 0
+      }
+    },
+    {
+      "id": "R13",
+      "group": "G04",
+      "name": "party create accepts invalid email and unknown party type",
+      "observed": {
+        "id": "01a1ccd3-677a-7468-8ebd-f422077a7e60",
+        "org_id": "ba93db34-f33d-46b9-a570-a8b783232e57",
+        "name": "Synthetic Party",
+        "types": [
+          "UNRECOGNIZED"
+        ],
+        "gstin": null,
+        "email": "not-an-email",
+        "phone": null,
+        "status": "ACTIVE",
+        "created_at": "2026-11-11T22:56:09.018Z"
+      }
+    },
+    {
+      "id": "R14",
+      "group": "G04",
+      "name": "closed project accepts an issued empty procurement order",
+      "observed": {
+        "poId": "01a1ccd3-6790-77b0-9810-0242a455d0b9",
+        "poNumber": "SYNTH-PO",
+        "linesCount": 0,
+        "obligationsCount": 0,
+        "status": "ISSUED"
+      }
+    },
+    {
+      "id": "R15",
+      "group": "G11",
+      "name": "expired unverified file record can be submitted for review",
+      "observed": {
+        "returned": {
+          "reviewId": "01a1ccd3-67a6-7987-91b8-344def03dc6c",
+          "requirementId": "ebec97b9-5dfa-4591-9c9a-671de56bb490",
+          "versionId": "dee9306d-9aeb-4af7-8f35-8b33835cc5e5",
+          "status": "IN_REVIEW"
+        }
+      }
+    },
+    {
+      "id": "R16",
+      "group": "G11",
+      "name": "public submission assigns the uploader actor as its own reviewer",
+      "observed": {
+        "submitted": {
+          "reviewId": "01a1ccd3-67da-73cd-984a-48d1868d60cf",
+          "requirementId": "3ab23464-41c9-4968-9316-187c5056d224",
+          "versionId": "3993a78d-caca-474c-832e-c294184bf5d4",
+          "status": "IN_REVIEW"
+        },
+        "decision": {
+          "rejected": true,
+          "code": "ForbiddenException",
+          "message": "SELF_APPROVAL_DENIED: Uploader cannot approve own submittal"
+        }
+      }
+    },
+    {
+      "id": "R17",
+      "group": "G11",
+      "name": "closed project accepts an assigned review decision",
+      "observed": {
+        "status": "OK",
+        "decision": "REJECT",
+        "versionId": "c0725716-4de6-451f-bc5e-146613055539"
+      }
+    },
+    {
+      "id": "R18",
+      "group": "G11",
+      "name": "rejection leaves linked requirement status IN_REVIEW",
+      "observed": {
+        "status": "IN_REVIEW"
+      }
+    },
+    {
+      "id": "R19",
+      "group": "G21",
+      "name": "project-wide work feed exposes a restricted-out defect",
+      "observed": {
+        "items": [
+          "Synthetic hidden defect"
+        ],
+        "count": 1
+      }
+    },
+    {
+      "id": "R20",
+      "group": "G12",
+      "name": "cryptographic signature recording fails closed",
+      "observed": {
+        "rejected": true,
+        "code": "CRYPTOGRAPHIC_SIGNING_UNAVAILABLE",
+        "message": "Gone Exception"
+      }
+    },
+    {
+      "id": "R21",
+      "group": "G13",
+      "name": "closed project accepts a completed TAB calculation with no procedure or reviewed design",
+      "observed": {
+        "id": "01a1ccd3-685d-7b97-8d7c-4a5fce3939b4",
+        "projectId": "2150d4f1-c259-4f5a-a9ca-3b351d50b6d3",
+        "assetId": null,
+        "systemType": "AIR_SIDE",
+        "worksheetType": "Synthetic mechanics only",
+        "isWithinTolerance": true,
+        "status": "COMPLETED",
+        "designSummary": {
+          "totalDesignFlow": 100,
+          "totalActualFlow": 100,
+          "overallDeviationPercent": 0,
+          "tolerancePercent": 10,
+          "evaluationBasis": "EXACT_RAW_UNROUNDED",
+          "readingsCount": 1,
+          "outOfToleranceCount": 0
+        },
+        "readings": [
+          {
+            "terminalOrTag": "SYNTH",
+            "unit": "CFM",
+            "designFlow": 100,
+            "actualFlow": 100,
+            "deviationPercent": 0,
+            "rawDeviationRatio": 0,
+            "withinTolerance": true
+          }
+        ],
+        "testedAt": "2026-11-11T22:56:09.311Z"
+      }
+    },
+    {
+      "id": "R22",
+      "group": "G13",
+      "name": "closed project accepts a PASSED inspection",
+      "observed": {
+        "id": "01a1ccd3-686b-719e-874d-7336889ee1a6",
+        "projectId": "40b27408-65a5-4304-b4ea-a6af7a974757",
+        "assetId": null,
+        "itrNumber": "SYNTH-ITR",
+        "title": "Synthetic mechanics only",
+        "stageKey": "SYNTHETIC",
+        "outcome": "PASSED",
+        "checklistItems": [
+          {
+            "itemNo": 1,
+            "description": "Synthetic fixture only",
+            "result": "PASS"
+          }
+        ],
+        "witnessParties": [],
+        "inspectedAt": "2026-11-11T22:56:09.325Z"
+      }
+    },
+    {
+      "id": "R23",
+      "group": "G13",
+      "name": "seasonal test accepts arbitrary result object and resets completed record",
+      "observed": {
+        "done": {
+          "id": "01a1ccd3-687a-7cf2-9fc3-bb27c129617e",
+          "projectId": "cec94be4-22f0-403a-861c-559783547530",
+          "status": "PERFORMED",
+          "completedAt": "2026-11-11T22:56:09.349Z",
+          "testResults": {
+            "syntheticAnything": true
+          }
+        },
+        "reset": {
+          "id": "01a1ccd3-687a-7cf2-9fc3-bb27c129617e",
+          "projectId": "cec94be4-22f0-403a-861c-559783547530",
+          "status": "SCHEDULED",
+          "completedAt": "2026-11-11T22:56:09.344Z",
+          "testResults": {
+            "syntheticAnything": true
+          }
+        },
+        "stored": {
+          "status": "SCHEDULED",
+          "completed_at": null
+        }
+      }
+    },
+    {
+      "id": "R24",
+      "group": "G13",
+      "name": "all-NA inspection remains pending, a positive control",
+      "observed": {
+        "outcome": "PENDING"
+      }
+    },
+    {
+      "id": "R25",
+      "group": "G17",
+      "name": "closed project accepts a new defect",
+      "observed": {
+        "defectId": "01a1ccd3-68ba-7742-853f-4b12c7d12cb4",
+        "status": "OPEN",
+        "severity": "MEDIUM"
+      }
+    },
+    {
+      "id": "R26",
+      "group": "G17",
+      "name": "remedy accepts READY marker with no immutable provider receipt",
+      "observed": {
+        "defectId": "01a1ccd3-68c9-7488-be0a-46935fde9808",
+        "status": "RECTIFIED",
+        "rowVersion": 2
+      }
+    },
+    {
+      "id": "R27",
+      "group": "G16",
+      "name": "same-basis unsupported warranty confirmation changes coverage",
+      "observed": {
+        "warrantyEventId": "01a1ccd3-68e2-70d4-97e0-9be7b98489ee",
+        "status": "CONFIRMED",
+        "hasBasisConflict": false
+      }
+    },
+    {
+      "id": "R28",
+      "group": "G16",
+      "name": "conflicting same-basis start dates both labelled confirmed",
+      "observed": [
+        {
+          "status": "CONFIRMED",
+          "warranty_start": "2025-01-01T00:00:00.000Z"
+        },
+        {
+          "status": "CONFIRMED",
+          "warranty_start": "2026-01-01T00:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": "R29",
+      "group": "G19",
+      "name": "TDS certificate reconciliation accepts a pending storage object without verified bytes",
+      "observed": {
+        "tdsId": "542676f6-c8e1-4808-9851-216f579259af",
+        "status": "RECONCILED",
+        "form16aCertificateRef": "SYNTHETIC-REF"
+      }
+    },
+    {
+      "id": "R30",
+      "group": "G19",
+      "name": "TDS deduction may exceed invoice total",
+      "observed": {
+        "id": "01a1ccd3-692c-7a67-b71c-062059ae3f51",
+        "org_id": "8cf35d7a-ee7f-4e0d-892d-c19c06c919e4",
+        "invoice_id": "1bd500e6-08d3-46fa-824a-2ec94818e078",
+        "section": "194C",
+        "rate_bps": 100,
+        "amount_paise": "999999",
+        "certificate_reference": null,
+        "certificate_object_id": null,
+        "status": "PENDING_CERTIFICATE",
+        "deducted_at": "2026-11-11T00:00:00.000Z",
+        "created_at": "2026-11-11T22:56:09.506Z"
+      }
+    },
+    {
+      "id": "R31",
+      "group": "G15",
+      "name": "identical submission retry creates two submissions with package still READY",
+      "observed": {
+        "submissions": 2,
+        "packageStatus": "READY"
+      }
+    },
+    {
+      "id": "R32",
+      "group": "G15",
+      "name": "recipient acceptance rejects an internal member, a positive control",
+      "observed": {
+        "rejected": true,
+        "code": "EXTERNAL_RECIPIENT_AUTHORITY_REQUIRED",
+        "message": "Forbidden Exception"
+      }
+    },
+    {
+      "id": "R33",
+      "group": "G14",
+      "name": "generation with unconfigured baseline fails closed",
+      "observed": {
+        "rejected": true,
+        "code": "READINESS_BLOCKERS_PRESENT",
+        "message": "Unprocessable Entity Exception"
+      }
+    },
+    {
+      "id": "R34",
+      "group": "G10",
+      "name": "SVG upload intent is rejected, a positive control",
+      "observed": {
+        "rejected": true,
+        "code": "BadRequestException",
+        "message": "400 UNSUPPORTED_FILE_TYPE: SVG format is strictly banned for security"
+      }
+    },
+    {
+      "id": "R35",
+      "group": "G08",
+      "name": "closed asset mutation is rejected under lifecycle lock, a positive control",
+      "observed": {
+        "rejected": true,
+        "code": "CLOSED_PROJECT_REQUIRES_FORMAL_REOPEN",
+        "message": "Conflict Exception"
+      }
+    },
+    {
+      "id": "R37",
+      "group": "G12",
+      "name": "inspection creator can store forged verified-looking witness metadata",
+      "observed": {
+        "witnesses": [
+          {
+            "role": "CONSULTANT",
+            "partyName": "Synthetic Party",
+            "isVerified": true,
+            "signedByUserId": "bfd9efb1-1039-472f-adde-a364255dedb4",
+            "attestationType": "AUTHENTICATED_ATTESTATION",
+            "representativeName": "Synthetic Caller"
+          }
+        ]
+      }
+    },
+    {
+      "id": "R38",
+      "group": "G11",
+      "name": "a second assigned review can contradict a committed terminal decision on the same version",
+      "observed": {
+        "approved": {
+          "status": "OK",
+          "decision": "APPROVE",
+          "versionId": "07f73d6a-3e79-4a36-95c3-edd59840c8e7"
+        },
+        "rejected": {
+          "status": "OK",
+          "decision": "REJECT",
+          "versionId": "07f73d6a-3e79-4a36-95c3-edd59840c8e7"
+        },
+        "stored": {
+          "review_status": "REJECTED",
+          "pointer_still_current": true
+        }
+      }
+    },
+    {
+      "id": "R42",
+      "group": "G08",
+      "name": "atomic asset import commits the first row before later validation failure",
+      "observed": {
+        "result": {
+          "rejected": true,
+          "code": "VALIDATION_FAILED",
+          "message": "Unprocessable Entity Exception"
+        },
+        "persisted": [
+          {
+            "tag": "FIRST-SYNTH"
+          }
+        ]
+      }
+    },
+    {
+      "id": "R43",
+      "group": "G08",
+      "name": "asset retirement bypasses stored narrower asset scope",
+      "observed": {
+        "visibleBefore": [
+          "806ee3f1-bcb3-42c7-bb53-2f138443e4c7"
+        ],
+        "hidden": "ce893f8b-6088-467f-9434-0a8a4d090d8c",
+        "retirement": {
+          "assetId": "ce893f8b-6088-467f-9434-0a8a4d090d8c",
+          "status": "RETIRED"
+        }
+      }
+    },
+    {
+      "id": "R45",
+      "group": "G28",
+      "name": "quarantine incident runbook rolls back on an approved version",
+      "observed": {
+        "exitCode": 1,
+        "checkViolation": true,
+        "stored": {
+          "file_status": "READY",
+          "review_status": "APPROVED"
+        }
+      }
+    },
+    {
+      "id": "R36",
+      "group": "G10",
+      "name": "malformed OOXML-like ZIP accepted as READY after clean scanner fixture acknowledgement",
+      "observed": {
+        "finalStatus": "READY",
+        "detectedMime": "application/zip",
+        "sha256": "a344f65e3ca4f8e49a93c4accb0c5f27f3292e391452ab774ef652fee2082240",
+        "pageCount": null
+      }
+    },
+    {
+      "id": "R39",
+      "group": "G25",
+      "name": "actual dossier compilation preserves a page-level JavaScript action",
+      "observed": {
+        "pages": 3,
+        "hasJavaScript": true,
+        "hasPageAdditionalAction": true,
+        "payload": "Inert void 0; no network/action execution attempted"
+      }
+    },
+    {
+      "id": "R40",
+      "group": "G25",
+      "name": "stream sanitizer reports stripped scripts while retaining page action",
+      "observed": {
+        "result": {
+          "safe": true,
+          "pageCount": 1,
+          "objectCount": 2,
+          "strippedScriptsCount": 2
+        },
+        "hasJavaScript": true,
+        "hasPageAdditionalAction": true
+      }
+    },
+    {
+      "id": "R41",
+      "group": "G10",
+      "name": "compressed PDF object inventory bypasses upload object-count budget",
+      "observed": {
+        "actualObjects": 25014,
+        "result": {
+          "finalStatus": "READY",
+          "detectedMime": "application/pdf",
+          "sha256": "642137245b26479993f83cd483f5bc7b96682973fc9ead8516464314585b79b8",
+          "pageCount": 1
+        },
+        "method": "Harmless bounded object-inventory fixture, clean scanner acknowledgement; no malware"
+      }
+    },
+    {
+      "id": "R44",
+      "group": "G10",
+      "name": "S3 receipt with versionId literal null is accepted as immutable",
+      "observed": {
+        "observedSizeBytes": 10,
+        "versionId": "null"
+      }
+    }
+  ]
+}

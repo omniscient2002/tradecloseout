@@ -1,0 +1,25 @@
+{
+  "sourceSha": "36c8efb94ce2ed77ef016ef58ad44d494bfc6e84",
+  "observations": [
+    {
+      "id": "B01",
+      "group": "G22",
+      "scenario": "expired-presign",
+      "intents": 1,
+      "puts": 2,
+      "completes": 0,
+      "refreshes": 0,
+      "method": "Real Chromium, IndexedDB Blob and actual browser modules; loopback protocol fixture, not real S3/API acceptance"
+    },
+    {
+      "id": "B02",
+      "group": "G22",
+      "scenario": "concurrent-drain",
+      "intents": 2,
+      "puts": 2,
+      "completes": 2,
+      "refreshes": 0,
+      "method": "Real Chromium, IndexedDB Blob and actual browser modules; loopback protocol fixture, not real S3/API acceptance"
+    }
+  ]
+}
