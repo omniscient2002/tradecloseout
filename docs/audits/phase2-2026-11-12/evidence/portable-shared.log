@@ -1,0 +1,9 @@
+Verified 323 source blobs for shared-pr16 at e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4
+PASS ../../docs/audits/phase2-2026-11-12/evidence/phase2-probes.spec.ts (8.896 s)
+  ✓ Phase 2 actual-source observations; disposable PG16 and restricted tc_app; synthetic fixtures only (1577 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       1 passed, 1 total
+Snapshots:   0 total
+Time:        9.172 s
+Ran all test suites.

@@ -1,0 +1,24 @@
+{
+  "findings": 58,
+  "groups": {
+    "G20": 12,
+    "G18": 10,
+    "G03": 12,
+    "G05": 12,
+    "G06": 12
+  },
+  "kinds": {
+    "CODE_DEFECT": 38,
+    "WORKFLOW_GAP": 16,
+    "RELEASE_GATE": 4
+  },
+  "statuses": {
+    "OPEN": 54,
+    "BLOCKED_EXTERNAL": 4
+  },
+  "observations": 44,
+  "source_references": 162,
+  "local_markdown_links": "PASS",
+  "source_markers": "PASS",
+  "g03_original_ids": 23
+}

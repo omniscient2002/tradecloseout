@@ -1,0 +1,40 @@
+{
+  "primary_source_sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+  "g03_source_sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08",
+  "main_policy_sha": "c6b6024d3d5b25d2d1ab87f77e2d3294500c5bb0",
+  "date_utc": "2026-11-11",
+  "assessment_timezone": "Asia/Calcutta",
+  "node_major": 22,
+  "pnpm": "12.4.1",
+  "postgres_major": 16,
+  "runtime_role": "tc_app",
+  "disposable_database_helper": "packages/db/test/helpers/disposable-database.ts",
+  "services": "loopback disposable PostgreSQL/Redis; no production credentials",
+  "primary": {
+    "typecheck": "PASS",
+    "build": "PASS",
+    "workspace": {
+      "api_tests": 382,
+      "api_suites": 62,
+      "shared_tests": 71,
+      "shared_suites": 5,
+      "db_tests": 13,
+      "worker_tests": 24,
+      "archive_auth_storage_browser_tests": 10,
+      "pdf_checks": "inspection/front matter/compilation PASS"
+    },
+    "security_tests": 15,
+    "rbac_tests": 8,
+    "audit_observations": 33
+  },
+  "g03": {
+    "typecheck": "PASS",
+    "validation_tests": 5,
+    "audit_observations": 11,
+    "full_local_workspace": "NOT_RUN",
+    "remote_ci": "FAIL: 2 API tests"
+  },
+  "integrated_candidate_tested": false,
+  "application_changes_published": false,
+  "release_acceptance": false
+}

@@ -1,0 +1,8 @@
+PASS test/phase2-g03-probes.spec.ts (8.59 s)
+  ✓ G03 separate candidate focused real DB recheck; not integrated with Phase1 (1615 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       1 passed, 1 total
+Snapshots:   0 total
+Time:        8.66 s, estimated 17 s
+Ran all test suites within paths "test/phase2-g03-probes.spec.ts".

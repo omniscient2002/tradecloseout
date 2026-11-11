@@ -1,0 +1,139 @@
+{
+  "sourceSha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08",
+  "integration": "Separate PR13; no merged Phase1 candidate tested",
+  "results": [
+    {
+      "id": "G01",
+      "name": "partial profile update succeeds and nullable PAN clears",
+      "observed": {
+        "display_name": "Changed Synthetic",
+        "pan": null
+      }
+    },
+    {
+      "id": "G02",
+      "name": "profile self approval setting still diverges from organisation policy",
+      "observed": {
+        "org_policy": false,
+        "profile_policy": true
+      }
+    },
+    {
+      "id": "G03",
+      "name": "ordinary Site cannot use repaired organisation audit service",
+      "observed": {
+        "denial": "AUDIT_NOT_FOUND"
+      }
+    },
+    {
+      "id": "G04",
+      "name": "owner dashboard executes against migrated schema",
+      "observed": {
+        "returned": true
+      }
+    },
+    {
+      "id": "G05",
+      "name": "self replacement is rejected before transfer",
+      "observed": {
+        "code": "SELF_REPLACEMENT_NOT_ALLOWED"
+      }
+    },
+    {
+      "id": "G06",
+      "name": "closed project transfer is rejected",
+      "observed": {
+        "code": "PROJECT_LIFECYCLE_BLOCKS_REASSIGNMENT"
+      }
+    },
+    {
+      "id": "G07",
+      "name": "one-sided owner transfer now fails closed",
+      "observed": {
+        "code": "OWNERSHIP_TWO_PARTY_CONFIRMATION_REQUIRED"
+      }
+    },
+    {
+      "id": "G08",
+      "name": "replacement races closure because editable affected projects are not locked",
+      "observed": {
+        "status": "CLOSED",
+        "reassigned": 2
+      }
+    },
+    {
+      "id": "G09",
+      "name": "invitation issue and revoke now produce secret-free business events",
+      "observed": {
+        "events": [
+          {
+            "action": "ORG_INVITATION_ISSUED",
+            "after_json": {
+              "role": "R-SITE",
+              "invitedBy": "394997cb-374b-438c-8607-1d0b737a18f5",
+              "deliveryStatus": "DELIVERY_PENDING"
+            }
+          },
+          {
+            "action": "ORG_INVITATION_REVOKED",
+            "after_json": {
+              "status": "REVOKED",
+              "revokedBy": "394997cb-374b-438c-8607-1d0b737a18f5"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "G10",
+      "name": "ACTIVE seat limit blocks but PAST_DUE bypasses the same capacity",
+      "observed": {
+        "activePlanDenial": "PLAN_SEAT_LIMIT_REACHED",
+        "pastDueBypassed": true,
+        "limit": 1,
+        "activeMembers": 2,
+        "authentication": "debug OTP fixture; not production-provider acceptance"
+      }
+    },
+    {
+      "id": "G11",
+      "name": "positive new contact and footer fields round trip through profile read DTO",
+      "observed": {
+        "keys": [
+          "id",
+          "legal_name",
+          "display_name",
+          "entity_type",
+          "status",
+          "country",
+          "state",
+          "row_version",
+          "created_at",
+          "updated_at",
+          "profile"
+        ],
+        "profile": {
+          "gstin": null,
+          "pan": "ABCDE1234F",
+          "brand_color": "#0F172A",
+          "signatory_name": null,
+          "signatory_designation": null,
+          "logo_object_id": null,
+          "accent_color": null,
+          "watermark_enabled": false,
+          "allow_self_approval": false,
+          "default_retention_months": 96,
+          "address_json": {},
+          "contact_email": "synthetic-contact@example.invalid",
+          "contact_phone": null,
+          "footer_text": "Synthetic Footer",
+          "row_version": 2
+        },
+        "stored": {
+          "contact_email": "synthetic-contact@example.invalid",
+          "footer_text": "Synthetic Footer"
+        }
+      }
+    }
+  ]
+}

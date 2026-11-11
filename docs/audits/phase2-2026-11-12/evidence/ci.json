@@ -1,0 +1,238 @@
+{
+  "primary": {
+    "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+    "workflow_runs": [
+      {
+        "id": 43105998461,
+        "name": "Group review protocol verification",
+        "status": "completed",
+        "conclusion": "success",
+        "run_number": 131,
+        "jobs_url": "https://api.github.com/repos/omniscient2002/tradecloseout/actions/runs/43105998461/jobs",
+        "logs_url": "https://api.github.com/repos/omniscient2002/tradecloseout/actions/runs/43105998461/logs",
+        "workflow_id": 413166255
+      },
+      {
+        "id": 43105998545,
+        "name": "TradeCloseout CI/CD Pipeline (15 \u00a74)",
+        "status": "completed",
+        "conclusion": "success",
+        "run_number": 464,
+        "jobs_url": "https://api.github.com/repos/omniscient2002/tradecloseout/actions/runs/43105998545/jobs",
+        "logs_url": "https://api.github.com/repos/omniscient2002/tradecloseout/actions/runs/43105998545/logs",
+        "workflow_id": 404777124
+      }
+    ]
+  },
+  "g03": {
+    "sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08",
+    "workflow_runs": [
+      {
+        "id": 42991530920,
+        "name": "Group review protocol verification",
+        "status": "completed",
+        "conclusion": "success",
+        "run_number": 96,
+        "jobs_url": "https://api.github.com/repos/omniscient2002/tradecloseout/actions/runs/42991530920/jobs",
+        "logs_url": "https://api.github.com/repos/omniscient2002/tradecloseout/actions/runs/42991530920/logs",
+        "workflow_id": 413166255
+      },
+      {
+        "id": 42991530966,
+        "name": "TradeCloseout CI/CD Pipeline (15 \u00a74)",
+        "status": "completed",
+        "conclusion": "failure",
+        "run_number": 429,
+        "jobs_url": "https://api.github.com/repos/omniscient2002/tradecloseout/actions/runs/42991530966/jobs",
+        "logs_url": "https://api.github.com/repos/omniscient2002/tradecloseout/actions/runs/42991530966/logs",
+        "workflow_id": 404777124
+      }
+    ],
+    "job": {
+      "jobs": [
+        {
+          "id": 130425350753,
+          "name": "verify-and-test",
+          "status": "completed",
+          "conclusion": "failure",
+          "run_id": 42991530966,
+          "logs_url": null,
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1
+            },
+            {
+              "name": "Initialize containers",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2
+            },
+            {
+              "name": "Checkout repository",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3
+            },
+            {
+              "name": "Install PDF and independent archive test tools",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4
+            },
+            {
+              "name": "Setup pnpm & Node.js 22",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5
+            },
+            {
+              "name": "Run actions/setup-node@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6
+            },
+            {
+              "name": "Install dependencies",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 7
+            },
+            {
+              "name": "Install offline verifier test browser",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8
+            },
+            {
+              "name": "Static Type Verification",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 9
+            },
+            {
+              "name": "Build Monorepo Workspaces",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 10
+            },
+            {
+              "name": "Apply PostgreSQL 16 Migrations & Forced RLS",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 11
+            },
+            {
+              "name": "Run API, isolated DB and worker, shared, PDF and offline browser regressions",
+              "status": "completed",
+              "conclusion": "failure",
+              "number": 12
+            },
+            {
+              "name": "Run Mandatory Negative Security & RLS Test Suite (05 \u00a712)",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 13
+            },
+            {
+              "name": "Run Explicit RBAC Authorization Matrix",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 14
+            },
+            {
+              "name": "Strict production-mode API authentication smoke (fixture-only; no provider calls)",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 15
+            },
+            {
+              "name": "Run production-built Next + real API browser auth journey (test-only OTP)",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 16
+            },
+            {
+              "name": "Preserve browser failure evidence",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 17
+            },
+            {
+              "name": "Post Run actions/setup-node@v4",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 31
+            },
+            {
+              "name": "Post Setup pnpm & Node.js 22",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 32
+            },
+            {
+              "name": "Post Checkout repository",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 33
+            },
+            {
+              "name": "Stop containers",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 34
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 35
+            }
+          ]
+        }
+      ]
+    },
+    "failure_excerpt": [
+      "2026-11-11T09:02:33.6622605Z Test Suites: 5 passed, 5 total",
+      "2026-11-11T09:02:33.6623087Z Tests:       71 passed, 71 total",
+      "2026-11-11T09:02:33.6623616Z Snapshots:   0 total",
+      "2026-11-11T09:02:33.6623987Z Time:        1.994 s",
+      "2026-11-11T09:02:33.6624322Z Ran all test suites.",
+      "2026-11-11T09:02:33.7861215Z $ playwright test --project=archive --project=auth-storage",
+      "2026-11-11T09:02:54.6471846Z FAIL test/discovery-lifecycle-foundations.spec.ts",
+      "2026-11-11T09:02:54.6473987Z   \u25cf Discovery & Lifecycle Foundations Test Suite \u203a Full Responsibility-Transfer Manifest & Gap Analysis \u203a computes real draftPackagesCount and assignedDefectsCount and reassigns them atomically",
+      "2026-11-11T09:02:54.6475820Z ",
+      "2026-11-11T09:02:54.6476083Z     ForbiddenException: Forbidden Exception",
+      "2026-11-11T09:02:54.6476573Z ",
+      "2026-11-11T09:02:54.6476951Z     \u001b[0m \u001b[90m 717 |\u001b[39m       )\u001b[33m;\u001b[39m",
+      "2026-11-11T09:04:10.8968464Z FAIL test/g01-member-invitation-authority-db.spec.ts",
+      "2026-11-11T09:04:10.8970398Z   \u25cf G01 membership privilege escalation and invitation validity \u203a forbids admins and owners minting R-OWNER via ordinary member or invitation changes",
+      "2026-11-11T09:04:10.8971086Z ",
+      "2026-11-11T09:04:10.8971550Z     ConflictException: Conflict Exception",
+      "2026-11-11T09:04:10.8972065Z ",
+      "2026-11-11T09:04:10.8972849Z     \u001b[0m \u001b[90m 1016 |\u001b[39m     \u001b[90m// transfer sole control. This remains disabled until that contract is\u001b[39m",
+      "2026-11-11T09:04:54.4660701Z FAIL test/discovery-lifecycle-foundations.spec.ts",
+      "2026-11-11T09:04:54.4670567Z   \u25cf Discovery & Lifecycle Foundations Test Suite \u203a Full Responsibility-Transfer Manifest & Gap Analysis \u203a computes real draftPackagesCount and assignedDefectsCount and reassigns them atomically",
+      "2026-11-11T09:04:54.4671294Z ",
+      "2026-11-11T09:04:54.4671476Z     ForbiddenException: Forbidden Exception",
+      "2026-11-11T09:04:54.4671753Z ",
+      "2026-11-11T09:04:54.4672216Z     \u001b[0m \u001b[90m 717 |\u001b[39m       )\u001b[33m;\u001b[39m",
+      "2026-11-11T09:04:54.4786878Z FAIL test/g01-member-invitation-authority-db.spec.ts",
+      "2026-11-11T09:04:54.4788615Z   \u25cf G01 membership privilege escalation and invitation validity \u203a forbids admins and owners minting R-OWNER via ordinary member or invitation changes",
+      "2026-11-11T09:04:54.4789507Z ",
+      "2026-11-11T09:04:54.4790077Z     ConflictException: Conflict Exception",
+      "2026-11-11T09:04:54.4790667Z ",
+      "2026-11-11T09:04:54.4791437Z     \u001b[0m \u001b[90m 1016 |\u001b[39m     \u001b[90m// transfer sole control. This remains disabled until that contract is\u001b[39m",
+      "2026-11-11T09:04:54.4804298Z Test Suites: 2 failed, 54 passed, 56 total",
+      "2026-11-11T09:04:54.4804790Z Tests:       2 failed, 347 passed, 349 total",
+      "2026-11-11T09:04:54.4805210Z Snapshots:   0 total",
+      "2026-11-11T09:04:54.4805781Z Time:        131.383 s",
+      "2026-11-11T09:04:54.4806175Z Ran all test suites.",
+      "2026-11-11T09:04:54.6417852Z [ELIFECYCLE] Test failed. See above for more details."
+    ]
+  },
+  "limits": "GitHub connector returns first page; statuses are remote CI metadata, not release acceptance.",
+  "retrieved_on_utc": "2026-11-11"
+}

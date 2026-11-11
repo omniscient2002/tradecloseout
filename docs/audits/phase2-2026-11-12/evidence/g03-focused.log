@@ -1,0 +1,13 @@
+PASS test/g03-organisation-validation.spec.ts
+  G03 organisation input boundaries
+    ✓ rejects malformed path identifiers before PostgreSQL UUID casts (9 ms)
+    ✓ requires a real optimistic concurrency version and explicit allowlist (15 ms)
+    ✓ distinguishes omission from explicit clearing of nullable profile fields
+    ✓ rejects unsafe branding, states and retention (3 ms)
+    ✓ rejects numeric and object profile values (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       5 passed, 5 total
+Snapshots:   0 total
+Time:        3.979 s
+Ran all test suites within paths "test/g03-organisation-validation.spec.ts".

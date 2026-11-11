@@ -1,0 +1,8 @@
+PASS test/phase2-probes.spec.ts (25.311 s)
+  ✓ Phase 2 actual-source observations; disposable PG16 and restricted tc_app; synthetic fixtures only (4211 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       1 passed, 1 total
+Snapshots:   0 total
+Time:        26.014 s
+Ran all test suites within paths "test/phase2-probes.spec.ts".
