@@ -166,6 +166,12 @@ void test('Isolated worker DB/Redis and storage HTTP contract regressions', asyn
                  ($4::uuid,$5,$3,'EMAIL','TEST','{}','QUEUED',$4::text)`, [id, a.orgId, userId, foreignId, b.orgId]);
         delete process.env.NOTIFICATION_DELIVERY_URL; delete process.env.NOTIFICATION_DELIVERY_TOKEN;
         assert.equal(await scheduler.dispatchQueuedNotifications(), 0);
+        assert.equal((await admin.query('SELECT delivery_attempts FROM notifications WHERE id=$1',[id])).rows[0].delivery_attempts,0);
+        // Explicitly advance the disposable fixture's retry clock, not the
+        // production policy: failures now have durable exponential backoff.
+        const due=()=>admin.query(`UPDATE notifications
+          SET next_attempt_at=now()-interval '1 second' WHERE id=$1`,[id]);
+        await due();
         let mode = 'reject'; const requests: any[] = [];
         const gateway = createServer(async (req, res) => {
           let body = ''; for await (const chunk of req) body += chunk;
@@ -179,7 +185,9 @@ void test('Isolated worker DB/Redis and storage HTTP contract regressions', asyn
         process.env.NOTIFICATION_DELIVERY_TOKEN = 'local-capture-token';
         try {
           assert.equal(await scheduler.dispatchQueuedNotifications(), 0);
+          await due();
           mode = 'bad-ack'; assert.equal(await scheduler.dispatchQueuedNotifications(), 0);
+          await due();
           mode = 'accept'; assert.equal(await scheduler.dispatchQueuedNotifications(), 1);
           const own = (await admin.query('SELECT status, sent_at FROM notifications WHERE id = $1', [id])).rows[0];
           assert.equal(own.status, 'SENT'); assert(own.sent_at instanceof Date);

@@ -2,7 +2,7 @@ import { Pool } from 'pg';
 import Redis from 'ioredis';
 import { createHash } from 'crypto';
 import { uuidv7 } from 'uuidv7';
-import { deliverNotification } from './notification-delivery';
+import { dispatchDueNotifications } from './notification-dispatch';
 import { isIndiaQuietHour, sumPaise } from '@tradecloseout/shared';
 import { AuthDeliveryLedger } from '@tradecloseout/db';
 
@@ -531,69 +531,11 @@ export class TradeCloseoutScheduler {
     }
   }
 
-  /**
-   * T11: Dispatches queued notifications honoring IST quiet hours (22:00 - 08:00 IST).
-   * External messages stay queued until a deduplicating gateway acknowledges them.
-   */
+  /** Claim/ack outside network I/O; quiet hours are applied before claiming. */
   async dispatchQueuedNotifications(): Promise<number> {
-    const isQuietHour = isIndiaQuietHour();
-    const client = await this.pool.connect();
-    let sentCount = 0;
-
-    try {
-      const { rows: orgs } = await client.query(`SELECT id FROM organisations WHERE status = 'ACTIVE'`);
-
-      for (const org of orgs) {
-        await client.query('BEGIN');
-        await client.query(
-          `SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`,
-          [org.id],
-        );
-
-        // Fetch queued notifications (NP06: filter quiet-hour restricted channels before LIMIT to avoid head-of-line starvation)
-        const { rows: queued } = await client.query(
-          `SELECT id, org_id, channel, event_key, payload_json, recipient_user_id, recipient_party_id
-             FROM notifications
-            WHERE org_id = $1
-              AND status = 'QUEUED'
-              AND ($2::boolean = false OR channel NOT IN ('SMS', 'WHATSAPP'))
-            ORDER BY created_at ASC
-            LIMIT 25
-            FOR UPDATE SKIP LOCKED`,
-          [org.id, isQuietHour],
-        );
-
-        for (const notif of queued) {
-          const isQuietDeferral = (notif.channel === 'SMS' || notif.channel === 'WHATSAPP') && isQuietHour;
-          if (isQuietDeferral) {
-            // Keep in QUEUED until quiet hours conclude at 08:00 IST
-            continue;
-          }
-
-          try {
-            if (!await deliverNotification(notif)) continue;
-          } catch {
-            // Keep retryable delivery queued; do not log provider secrets/payloads.
-            continue;
-          }
-          await client.query(
-            `UPDATE notifications
-                SET status = 'SENT',
-                    sent_at = now()
-              WHERE org_id = $1 AND id = $2`,
-            [org.id, notif.id],
-          );
-          sentCount++;
-        }
-
-        await client.query('COMMIT');
-      }
-      return sentCount;
-    } catch (err) {
-      await client.query('ROLLBACK').catch(() => {});
-      throw err;
-    } finally {
-      client.release();
-    }
+    const result=await dispatchDueNotifications(this.pool,isIndiaQuietHour());
+    if (result.failed) console.error('NOTIFICATION_DELIVERY_RETRY_OR_FAILURE', { count:result.failed });
+    return result.accepted;
   }
+
 }
