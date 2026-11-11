@@ -1,0 +1,8 @@
+PASS test/remaining-probes.spec.ts (16.048 s)
+  ✓ Remaining phases actual-source observations; synthetic mechanism fixtures only (4488 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       1 passed, 1 total
+Snapshots:   0 total
+Time:        16.225 s
+Ran all test suites within paths "test/remaining-probes.spec.ts".

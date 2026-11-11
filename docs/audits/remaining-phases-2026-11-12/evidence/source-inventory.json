@@ -1,0 +1,1478 @@
+{
+  "sourceSha": "36c8efb94ce2ed77ef016ef58ad44d494bfc6e84",
+  "algorithm": "git blob object IDs from git ls-tree -r; not a claim of executed coverage",
+  "files": [
+    {
+      "path": ".github/workflows/deploy.yml",
+      "gitBlob": "9caff346f2cd8d9b5d2afdf054970a7f4d15718b"
+    },
+    {
+      "path": "00-PRODUCT-VISION.md",
+      "gitBlob": "0bd2d2e78f620db48de331bc754c02651b032f66"
+    },
+    {
+      "path": "01-MARKET-AND-DOMAIN-RESEARCH.md",
+      "gitBlob": "479aa0b7247073612d7dc0682746a6dbe6058946"
+    },
+    {
+      "path": "02-BUSINESS-REQUIREMENTS.md",
+      "gitBlob": "63cf150763a077d6a5fd9c3c96cdf6f2cdd67e40"
+    },
+    {
+      "path": "03-PRODUCT-REQUIREMENTS.md",
+      "gitBlob": "e63cd0cd355cd137f6fc83c59d836acbba4b7600"
+    },
+    {
+      "path": "04-DOCUMENT-CATALOGUE.md",
+      "gitBlob": "e6041b24f882b7e52d36e1ca9c146e7e943f7e7b"
+    },
+    {
+      "path": "05-ACTORS-AND-PERMISSIONS.md",
+      "gitBlob": "3a4b62186730dcdc4d855c25351293f2d5aea1d6"
+    },
+    {
+      "path": "06-WORKFLOWS-AND-STATE-MACHINES.md",
+      "gitBlob": "8d7142196a4c7bb0517a549a4a76c20da7c3b631"
+    },
+    {
+      "path": "07-CUSTOMISATION-ENGINE.md",
+      "gitBlob": "bc3263b8b63db5ea7c1b5d1e54db3b1b458e1c8a"
+    },
+    {
+      "path": "08-DATA-MODEL-AND-ERD.md",
+      "gitBlob": "90c21e1df9718e060b870231e95d0700b85faebf"
+    },
+    {
+      "path": "09-SYSTEM-ARCHITECTURE.md",
+      "gitBlob": "db9927688e0b78a1b2e9deb9438619527a2f216f"
+    },
+    {
+      "path": "10-API-AND-INTEGRATIONS.md",
+      "gitBlob": "6f9286067854976ba0f69d91276ca023a949096f"
+    },
+    {
+      "path": "11-UI-UX-SPECIFICATION.md",
+      "gitBlob": "f83bff9282c59cea9110c267c89730b5f8cd97c6"
+    },
+    {
+      "path": "12-EDGE-CASES-AND-FAILURE-MODES.md",
+      "gitBlob": "b0609182b7276dd6ed3187802167b2f13c10faa7"
+    },
+    {
+      "path": "13-SECURITY-PRIVACY-AND-COMPLIANCE.md",
+      "gitBlob": "01cc974b93bc6ce1cc99a77f49ac63bc9cd74c3e"
+    },
+    {
+      "path": "14-TESTING-AND-ACCEPTANCE.md",
+      "gitBlob": "0cc026e93eee86367042f924b82510f8083ddf80"
+    },
+    {
+      "path": "15-DEPLOYMENT-AND-OPERATIONS.md",
+      "gitBlob": "4da1c05c8ef3441f2341f7216cd3fde51b768714"
+    },
+    {
+      "path": "16-MVP-AND-IMPLEMENTATION-ROADMAP.md",
+      "gitBlob": "d42f0996d8e4fcde2d7088bcc714e6353e123122"
+    },
+    {
+      "path": "17-BUSINESS-VALIDATION-PLAN.md",
+      "gitBlob": "f1305dbcdb3a25d2a65dd206188777a0001b69ca"
+    },
+    {
+      "path": "AGENT-FULL-PRODUCTION-FLOW-DIRECTIVE.md",
+      "gitBlob": "c881bf625e7582fd7db1c0fd2c644e5fb42645ae"
+    },
+    {
+      "path": "DECISIONS-AND-OPEN-QUESTIONS.md",
+      "gitBlob": "23a7df7338da40c7284b9e914f7719a63ab1f01d"
+    },
+    {
+      "path": "LIVE-PRODUCTION-SIMULATION.md",
+      "gitBlob": "3694414ddd6ab331ea9798e22c6a67f8e9819c47"
+    },
+    {
+      "path": "PRODUCTION-EXECUTION-PLAYBOOK.md",
+      "gitBlob": "0e6722d7d2736f0e5183afa9a073ab56eeb2086a"
+    },
+    {
+      "path": "README.md",
+      "gitBlob": "74fe2a4c962369acb7c64c2d180455c660c9fa93"
+    },
+    {
+      "path": "SOURCES-VERIFICATION.md",
+      "gitBlob": "572de6ae44ce08ca64dafeeb69d54dcc2ea1f578"
+    },
+    {
+      "path": "THE-DECCAN-CLOSEOUT-STORY.md",
+      "gitBlob": "f462bba390d9aced467c11787622f46cc771f7fd"
+    },
+    {
+      "path": "THE-HVAC-CEO-OPERATIONS-AND-WORKFLOW-GUIDE.md",
+      "gitBlob": "52a8c814e2c663c571bebf620765d7e481803491"
+    },
+    {
+      "path": "THE-MEP-CONTRACTOR-EXECUTIVE-STORIES.md",
+      "gitBlob": "cf942e78a9b7fe1510cd6cd52006e0b72b175ccb"
+    },
+    {
+      "path": "TRADECLOSEOUT-COMPLETE-STUDENT-AND-DOMAIN-MASTER-GUIDE.md",
+      "gitBlob": "1be407c849144371b152114977f7b08ba8eb72f5"
+    },
+    {
+      "path": "TRADECLOSEOUT-MASTER-PROMPT.md",
+      "gitBlob": "daff3643542392e5e3fc18ce364a9382bf2efd83"
+    },
+    {
+      "path": "apps/api/jest.config.ts",
+      "gitBlob": "bc8887d667394733c7836f061e4515d2350d09f2"
+    },
+    {
+      "path": "apps/api/nest-cli.json",
+      "gitBlob": "43468ae5245b5e1489dc645447c723b0533f75c0"
+    },
+    {
+      "path": "apps/api/package.json",
+      "gitBlob": "0aaf43ce89c0de18fb7f648b26ff84185d23fb82"
+    },
+    {
+      "path": "apps/api/scripts/approve-external-authority.ts",
+      "gitBlob": "107cdf5cf9c9dc212d1f9c7fb4cae43f59b4ec5f"
+    },
+    {
+      "path": "apps/api/scripts/attest-external-document.ts",
+      "gitBlob": "303027ba3df3872ad3a79505e9778f624d1ac12e"
+    },
+    {
+      "path": "apps/api/scripts/g01-route-inventory.ts",
+      "gitBlob": "47a2343377d6451faf56487014ad51a27c5784c5"
+    },
+    {
+      "path": "apps/api/scripts/recover-identity.ts",
+      "gitBlob": "396d8302cce8bbbfb37de3370bf9467e0a29136e"
+    },
+    {
+      "path": "apps/api/scripts/revoke-external-authority.ts",
+      "gitBlob": "2260c817eee372eafb5e9b48f7e8bf196e3a92b9"
+    },
+    {
+      "path": "apps/api/scripts/run-live-simulation.ts",
+      "gitBlob": "1f969349ae87399dbfcb686963550f9c14ad5967"
+    },
+    {
+      "path": "apps/api/scripts/seed-portfolio.ts",
+      "gitBlob": "b0af31fc99e4429b943ce869f1af00caa5d30301"
+    },
+    {
+      "path": "apps/api/src/app.module.ts",
+      "gitBlob": "9be63c8ea71aacd0ce1c0bb6ab4265ab3826bb1c"
+    },
+    {
+      "path": "apps/api/src/common/decorators/idempotency.decorator.ts",
+      "gitBlob": "18b2f27be98c3d87aade0647bd1a4b4a4336cb47"
+    },
+    {
+      "path": "apps/api/src/common/filters/problem-json.filter.ts",
+      "gitBlob": "911a9cf8954ff55ef4d73ce4631d67ca016354d4"
+    },
+    {
+      "path": "apps/api/src/common/guards/permission.guard.ts",
+      "gitBlob": "3969105d9d66ee4a373f24a34bc8b9f0a47b1aaa"
+    },
+    {
+      "path": "apps/api/src/common/guards/session-csrf.guard.ts",
+      "gitBlob": "62faf1b212b4f4b3defb6bd4018a163e582f3d91"
+    },
+    {
+      "path": "apps/api/src/common/interceptors/authentication-audit.interceptor.ts",
+      "gitBlob": "6f8aa9ec2ba2f064e93f25d324e6715b3c5136a9"
+    },
+    {
+      "path": "apps/api/src/common/interceptors/idempotency.interceptor.ts",
+      "gitBlob": "1bc968bcbff72e6f30035d723f5be14579b7f447"
+    },
+    {
+      "path": "apps/api/src/common/interceptors/visibility-projection.interceptor.ts",
+      "gitBlob": "03802f75864de5a95f9e4a7a83d55cc5159ebb49"
+    },
+    {
+      "path": "apps/api/src/common/security/audit-metadata.ts",
+      "gitBlob": "a31932b8387d35cce675c3b3c1bef287a0bab3c6"
+    },
+    {
+      "path": "apps/api/src/common/security/route-inventory.ts",
+      "gitBlob": "b881be702b720548ed23ca2c467cbb41f29bc172"
+    },
+    {
+      "path": "apps/api/src/database/database.module.ts",
+      "gitBlob": "4244aec5a27c1f1d552daca07a1416671605c57e"
+    },
+    {
+      "path": "apps/api/src/database/tenant-db.service.ts",
+      "gitBlob": "5f683aa6d61ec848def17b6993e9100ba0ed3bad"
+    },
+    {
+      "path": "apps/api/src/main.ts",
+      "gitBlob": "3dbac4c29e466383ff1400677dee508ee825c9c2"
+    },
+    {
+      "path": "apps/api/src/modules/assets/assets.controller.ts",
+      "gitBlob": "eeda028d344df15d1ac87c73cd6351857a0a6685"
+    },
+    {
+      "path": "apps/api/src/modules/assets/assets.module.ts",
+      "gitBlob": "36e1c66dbd84fb02101343f9934f1b8c7c4061d1"
+    },
+    {
+      "path": "apps/api/src/modules/assets/assets.service.ts",
+      "gitBlob": "e70951e9089b4cb99ce2357e6837d39da9c21645"
+    },
+    {
+      "path": "apps/api/src/modules/billing/billing.controller.ts",
+      "gitBlob": "adf0e115b460a0b1d6d21bd91e2ddd42c3db2db1"
+    },
+    {
+      "path": "apps/api/src/modules/billing/billing.module.ts",
+      "gitBlob": "f7263be7289e371511e1039ed1aa8eb43effdb8e"
+    },
+    {
+      "path": "apps/api/src/modules/billing/billing.service.ts",
+      "gitBlob": "8332937d5c1ae1b54d7cabbe7671b9bc239d42a6"
+    },
+    {
+      "path": "apps/api/src/modules/billing/gst-einvoice-tds.service.ts",
+      "gitBlob": "24ddcebe92aa18b13cf11771f8876924abac0e3a"
+    },
+    {
+      "path": "apps/api/src/modules/billing/warranty-and-billing.service.ts",
+      "gitBlob": "0509b299e2e6bc52433f0d15b94e7a150d84c164"
+    },
+    {
+      "path": "apps/api/src/modules/checklists/checklists.controller.ts",
+      "gitBlob": "d7d233c183623132a428c6788601da9e09af3b12"
+    },
+    {
+      "path": "apps/api/src/modules/checklists/checklists.module.ts",
+      "gitBlob": "ac7c682cbaed078906ddc6105ec2fa9ca8ec56cc"
+    },
+    {
+      "path": "apps/api/src/modules/checklists/checklists.service.ts",
+      "gitBlob": "d04a69680bac6a18c4cf7e619a29da69be9d5d52"
+    },
+    {
+      "path": "apps/api/src/modules/commissioning/commissioning.controller.ts",
+      "gitBlob": "0115111208dc7ea5cafb47ac23fedcd927dcb13d"
+    },
+    {
+      "path": "apps/api/src/modules/commissioning/commissioning.module.ts",
+      "gitBlob": "95fd2edbbb0b3af27e4c110509f3cf74af5a400c"
+    },
+    {
+      "path": "apps/api/src/modules/commissioning/commissioning.service.ts",
+      "gitBlob": "4202a1f2ea193ea8f06ae128af61c00c107b5f53"
+    },
+    {
+      "path": "apps/api/src/modules/configuration/config-resolver.ts",
+      "gitBlob": "7c54683d4c00453d257b888583f4eaa54961e143"
+    },
+    {
+      "path": "apps/api/src/modules/configuration/configuration.module.ts",
+      "gitBlob": "44b6db43bf0f3cb1803491877c8d0575124a63aa"
+    },
+    {
+      "path": "apps/api/src/modules/documents/documents.controller.ts",
+      "gitBlob": "38fcdb61247e80e2a6594fcdac75f39e243f59f0"
+    },
+    {
+      "path": "apps/api/src/modules/documents/documents.module.ts",
+      "gitBlob": "e970147f00d9ab27e18d93591332a068f9f61087"
+    },
+    {
+      "path": "apps/api/src/modules/documents/documents.service.ts",
+      "gitBlob": "d9dd4d76c95c021b393169609ef7d2892b480f86"
+    },
+    {
+      "path": "apps/api/src/modules/documents/dto/upload-intent.dto.ts",
+      "gitBlob": "06de734696edb3d48036dd4010102452df9bb7f3"
+    },
+    {
+      "path": "apps/api/src/modules/documents/s3-storage.service.ts",
+      "gitBlob": "fb08e47291b0fb05ed003d1e664221fcaad70f8a"
+    },
+    {
+      "path": "apps/api/src/modules/handover/closeout-readiness.ts",
+      "gitBlob": "8d0100d2fc8073bec2b1334faa0362e321a2b662"
+    },
+    {
+      "path": "apps/api/src/modules/handover/dto/handover-packages.dto.ts",
+      "gitBlob": "10a96ea35450b4eaefe746f68df49b76f7039372"
+    },
+    {
+      "path": "apps/api/src/modules/handover/handover.controller.ts",
+      "gitBlob": "981b1d24d340783aee6019a27cbdefdbd02f2010"
+    },
+    {
+      "path": "apps/api/src/modules/handover/handover.module.ts",
+      "gitBlob": "569d3e529e91395731bc1d2a5f952a42d3863f35"
+    },
+    {
+      "path": "apps/api/src/modules/handover/handover.service.ts",
+      "gitBlob": "8399ad6576a25dfabffca762fc6d462a1aa67d49"
+    },
+    {
+      "path": "apps/api/src/modules/health/health.controller.ts",
+      "gitBlob": "70098dd2d9930f9d40b40b047818e9ebc302b494"
+    },
+    {
+      "path": "apps/api/src/modules/health/health.module.ts",
+      "gitBlob": "7c7bd0a996d8c49acffc73620a52a668bc464324"
+    },
+    {
+      "path": "apps/api/src/modules/identity/auth-delivery.controller.ts",
+      "gitBlob": "207d7aec16ddd20afaddd9fe6af389c35d5c73f2"
+    },
+    {
+      "path": "apps/api/src/modules/identity/auth-security.ts",
+      "gitBlob": "281e45d2129cd46a70cc6bc2032dd15c43d791a3"
+    },
+    {
+      "path": "apps/api/src/modules/identity/external-document-review-operations.ts",
+      "gitBlob": "3cfc935481ab14a6ddcc332f527de7490f083bd9"
+    },
+    {
+      "path": "apps/api/src/modules/identity/external-review-operations.ts",
+      "gitBlob": "fcd35de87e42fb602394a4b6f998b2b64e0231ab"
+    },
+    {
+      "path": "apps/api/src/modules/identity/external-review-revocation.ts",
+      "gitBlob": "610e3047f4ecfe924de05690ea5249d16c268638"
+    },
+    {
+      "path": "apps/api/src/modules/identity/identity-recovery-operations.ts",
+      "gitBlob": "3f0fa7d025458abd4b701a97276ce477377861bf"
+    },
+    {
+      "path": "apps/api/src/modules/identity/identity.controller.ts",
+      "gitBlob": "5b1ec4a7d6a396828ab805ce093bc18881986dc8"
+    },
+    {
+      "path": "apps/api/src/modules/identity/identity.module.ts",
+      "gitBlob": "f4489141383d3d6a729ee98d24431938d315282d"
+    },
+    {
+      "path": "apps/api/src/modules/identity/mfa-crypto.ts",
+      "gitBlob": "8fa1620afcd90db231d7ede382202f6182ed6dc8"
+    },
+    {
+      "path": "apps/api/src/modules/identity/mfa.controller.ts",
+      "gitBlob": "3bfa91cbfd3c7391a509a13a415c8f08d43aa358"
+    },
+    {
+      "path": "apps/api/src/modules/notifications/notifications.controller.ts",
+      "gitBlob": "f675bfa1c329e0311007cf6c545310eea3cf28e2"
+    },
+    {
+      "path": "apps/api/src/modules/notifications/notifications.module.ts",
+      "gitBlob": "5b89ed116dba0545c0fac88329cd47c663562584"
+    },
+    {
+      "path": "apps/api/src/modules/notifications/notifications.service.ts",
+      "gitBlob": "fe10ef7cc5ffb6d4c2d6ee2b97538e9e0f034b16"
+    },
+    {
+      "path": "apps/api/src/modules/organisations/organisations.controller.ts",
+      "gitBlob": "b81611916ea9089e69fc38356efa77c763cda7bd"
+    },
+    {
+      "path": "apps/api/src/modules/organisations/organisations.module.ts",
+      "gitBlob": "4fb19f5360e50348e1921eb56e5376154035a568"
+    },
+    {
+      "path": "apps/api/src/modules/organisations/organisations.service.ts",
+      "gitBlob": "15614d5e8b8e1c04fef3e501094a44e901bee97c"
+    },
+    {
+      "path": "apps/api/src/modules/parties/parties.controller.ts",
+      "gitBlob": "e7f932ce89ac16b9bfdfea12967ac3161940e857"
+    },
+    {
+      "path": "apps/api/src/modules/parties/parties.module.ts",
+      "gitBlob": "b2dac524c33f2960e3d7359b2a2f501fc79ceb92"
+    },
+    {
+      "path": "apps/api/src/modules/parties/parties.service.ts",
+      "gitBlob": "1c688aa55627483b2a722f66a8c371ac234df805"
+    },
+    {
+      "path": "apps/api/src/modules/parties/supplier-guest.service.ts",
+      "gitBlob": "25920d13ccf5038d18964e9f9ac6245ea67f63b4"
+    },
+    {
+      "path": "apps/api/src/modules/projects/dto/close-project.dto.ts",
+      "gitBlob": "eed0291ba8e66311d820b06bd66e78763d8a2c1b"
+    },
+    {
+      "path": "apps/api/src/modules/projects/projects.controller.ts",
+      "gitBlob": "dcbb6e9a55abea6c70ca8afbc4bd5265e9543c79"
+    },
+    {
+      "path": "apps/api/src/modules/projects/projects.module.ts",
+      "gitBlob": "fda31145168ddcfef83f543924dfc8372e06e6f4"
+    },
+    {
+      "path": "apps/api/src/modules/projects/projects.service.ts",
+      "gitBlob": "d7c616062425726da840696d571fd3f6310f3159"
+    },
+    {
+      "path": "apps/api/src/modules/reviews/dto/decide-review.dto.ts",
+      "gitBlob": "74160a81dbb52c66dbaa28e83d0a76305f9f1961"
+    },
+    {
+      "path": "apps/api/src/modules/reviews/dto/external-approval.dto.ts",
+      "gitBlob": "a2befc574c1aa815a04f5f5d8b8fbe4594adc130"
+    },
+    {
+      "path": "apps/api/src/modules/reviews/review-decision.service.ts",
+      "gitBlob": "78b3a8e3aaaacc74713d92b2b34c49f620fcb5c7"
+    },
+    {
+      "path": "apps/api/src/modules/reviews/reviews.controller.ts",
+      "gitBlob": "52d108d553bb3bc7adc8fa172aff53f8224860d1"
+    },
+    {
+      "path": "apps/api/src/modules/reviews/reviews.module.ts",
+      "gitBlob": "791aac240cd979cc575d11523344dd992e2aae7b"
+    },
+    {
+      "path": "apps/api/src/modules/reviews/reviews.service.ts",
+      "gitBlob": "4df1b63f3b1b2e77b65a52c84d842888a97ba737"
+    },
+    {
+      "path": "apps/api/src/modules/signatures/digital-signature.controller.ts",
+      "gitBlob": "846edca69dcdecd8e68493d0589db1b3b2b65ef1"
+    },
+    {
+      "path": "apps/api/src/modules/signatures/digital-signature.service.ts",
+      "gitBlob": "6d887ceecee718da3df013165669cf54ca4dcc69"
+    },
+    {
+      "path": "apps/api/src/modules/signatures/signatures.module.ts",
+      "gitBlob": "d571614e9bda51ade93dbef3f08a2786e26f38a1"
+    },
+    {
+      "path": "apps/api/src/modules/work-items/work-items.controller.ts",
+      "gitBlob": "aed034579936ddfb43f177d32e92fcf1cc0631d6"
+    },
+    {
+      "path": "apps/api/src/modules/work-items/work-items.module.ts",
+      "gitBlob": "1905f3d606e1b8660e3e34d3363ec0bfaaf55f7f"
+    },
+    {
+      "path": "apps/api/src/modules/work-items/work-items.service.ts",
+      "gitBlob": "aa86a13e8729e58d05f40001afd63a59b7a9dcb1"
+    },
+    {
+      "path": "apps/api/src/modules/workflows/v021-workflows.service.ts",
+      "gitBlob": "2441a670a4c6d3b082d3fa2c54a6f745c7c2c1d9"
+    },
+    {
+      "path": "apps/api/src/modules/workflows/workflows.module.ts",
+      "gitBlob": "90be201d2165f441b60b06b65939357909bf6df6"
+    },
+    {
+      "path": "apps/api/test/concurrency.spec.ts",
+      "gitBlob": "065eceffd1c530436ae8e5aaec07146ea65cb3c2"
+    },
+    {
+      "path": "apps/api/test/contractor-user-journey.spec.ts",
+      "gitBlob": "12140ae4fd4ccff75ab4b961a89b40921e65315e"
+    },
+    {
+      "path": "apps/api/test/discovery-lifecycle-foundations.spec.ts",
+      "gitBlob": "12cdaf507c0e8d9b5f71688853761a3eb571a396"
+    },
+    {
+      "path": "apps/api/test/document-download-boundaries.spec.ts",
+      "gitBlob": "dbf2bd56ff62b595c91b56c8ab4623da9ec58929"
+    },
+    {
+      "path": "apps/api/test/g01-auth-denial-budget-db.spec.ts",
+      "gitBlob": "4190a2694a1600ba045e9822eb49d4251e8a3b4a"
+    },
+    {
+      "path": "apps/api/test/g01-auth-route-audit-db.spec.ts",
+      "gitBlob": "cffdcab71245f3780b78806b38b86da5f1d8e050"
+    },
+    {
+      "path": "apps/api/test/g01-auth-session-transaction-fence-db.spec.ts",
+      "gitBlob": "006e4759586fd51e76b290949b2f3a08ae88eb61"
+    },
+    {
+      "path": "apps/api/test/g01-authentication-security.spec.ts",
+      "gitBlob": "cc22d1604643f2e32411abbec752801d7062c811"
+    },
+    {
+      "path": "apps/api/test/g01-delivery-reconciliation-db.spec.ts",
+      "gitBlob": "cbf4959a94844385c997ae17e68e6f4e6d1f92d8"
+    },
+    {
+      "path": "apps/api/test/g01-delivery-redirect-boundaries.spec.ts",
+      "gitBlob": "2f6d3d6344f0201738c935daadc8c9bf0d7ebfca"
+    },
+    {
+      "path": "apps/api/test/g01-device-session-revocation-db.spec.ts",
+      "gitBlob": "b3f3facfa6e173b4d866c53fafe0b23adcee840e"
+    },
+    {
+      "path": "apps/api/test/g01-distributed-rate-budgets.spec.ts",
+      "gitBlob": "85f1c61c5d36acd4490428429bb113eae2829595"
+    },
+    {
+      "path": "apps/api/test/g01-external-authority-db.spec.ts",
+      "gitBlob": "966a2f8cff647c08b57a226387ded566216bdb8f"
+    },
+    {
+      "path": "apps/api/test/g01-external-document-attestation-db.spec.ts",
+      "gitBlob": "b268136a2526585b25416dd156f719ace1383208"
+    },
+    {
+      "path": "apps/api/test/g01-guest-principal-db.spec.ts",
+      "gitBlob": "57cb932c012c8312c3dce75f12cb668c3e3da75a"
+    },
+    {
+      "path": "apps/api/test/g01-guest-project-party-db.spec.ts",
+      "gitBlob": "4404563587cf9a11e742c4cee5acc1c5eaabd8eb"
+    },
+    {
+      "path": "apps/api/test/g01-identity-recovery-db.spec.ts",
+      "gitBlob": "d6883a9582a20e68521fa259a4aa0913a59bede9"
+    },
+    {
+      "path": "apps/api/test/g01-independent-party-approval-db.spec.ts",
+      "gitBlob": "2a961a9926e629a06b9697dbc0055d42de3c3fbd"
+    },
+    {
+      "path": "apps/api/test/g01-invitation-db.spec.ts",
+      "gitBlob": "796b5296743303becc29006d34cfb5c44d59bf9b"
+    },
+    {
+      "path": "apps/api/test/g01-legacy-external-migration-upgrade-db.spec.ts",
+      "gitBlob": "9826cd3041ed08eee6f47030c420fbed1ee36d0f"
+    },
+    {
+      "path": "apps/api/test/g01-member-invitation-authority-db.spec.ts",
+      "gitBlob": "61bfaccbca07d82ae0cdee07635fb1c1d34fde24"
+    },
+    {
+      "path": "apps/api/test/g01-mfa-db.spec.ts",
+      "gitBlob": "03dc52c05e08f917227ceb61b5acc56972e4e42b"
+    },
+    {
+      "path": "apps/api/test/g01-org-switch-review-regressions.spec.ts",
+      "gitBlob": "4e98b3f392f814f5b600ae8e6ab766929a57adbb"
+    },
+    {
+      "path": "apps/api/test/g01-privileged-route-inventory.spec.ts",
+      "gitBlob": "afee2dc47ab0027b28d94cbe95bb2760978442d6"
+    },
+    {
+      "path": "apps/api/test/g01-request-id-privacy.spec.ts",
+      "gitBlob": "3955999c4770936954c303a9caee65b294d433a3"
+    },
+    {
+      "path": "apps/api/test/g01-reviewer-operations.spec.ts",
+      "gitBlob": "4606582acc35e6650f82da2ba1ee7990f84e4cd6"
+    },
+    {
+      "path": "apps/api/test/g01-session-guard-db.spec.ts",
+      "gitBlob": "fa6247d14be4715e4cef1407146319ef80ba696c"
+    },
+    {
+      "path": "apps/api/test/g01-two-api-http.spec.ts",
+      "gitBlob": "6001bc02dcc0537285f86f30229e6d70c385ea6d"
+    },
+    {
+      "path": "apps/api/test/g02-authorization-contract.spec.ts",
+      "gitBlob": "3529e924cc1f12a45b9107ee0136c66c2a2f65b0"
+    },
+    {
+      "path": "apps/api/test/g02-authorization-db.spec.ts",
+      "gitBlob": "5231844203cca58637d812819495df6e8cbc3e49"
+    },
+    {
+      "path": "apps/api/test/guest-session-boundaries.spec.ts",
+      "gitBlob": "107c6e248118c9ef51e971d36421d4ca9703b9d6"
+    },
+    {
+      "path": "apps/api/test/helpers/g01-auth-budget-process.cjs",
+      "gitBlob": "23bc367d59301cdc4c5924e5750433b5781e2c50"
+    },
+    {
+      "path": "apps/api/test/hvac-checklist-readiness-branch.spec.ts",
+      "gitBlob": "686da95ca9aaa7d2d6435002e2d1bfaa956eaa1f"
+    },
+    {
+      "path": "apps/api/test/hvac-domain-excellence.spec.ts",
+      "gitBlob": "d7d755b7eb18ddc6d43380cd723f0d37eee6fe8f"
+    },
+    {
+      "path": "apps/api/test/hvac-production-reaudit-remediation.spec.ts",
+      "gitBlob": "6b1dbcdc63fdb74b06286243bd089e39c9714478"
+    },
+    {
+      "path": "apps/api/test/idempotency-cleanup-replay.spec.ts",
+      "gitBlob": "f56673a7c63d716e9b1faebfb1cb776a57b44fb1"
+    },
+    {
+      "path": "apps/api/test/idempotency-expired-claim.spec.ts",
+      "gitBlob": "6faa89dcd9513db85bb5c7904c1b821c6b5a34fa"
+    },
+    {
+      "path": "apps/api/test/modules/auth-iam.spec.ts",
+      "gitBlob": "ba51328860d3b8fa9cb43768f5eed08329e07e21"
+    },
+    {
+      "path": "apps/api/test/modules/config-checklists-assets.spec.ts",
+      "gitBlob": "6e31dc6bc192885b22692d9fea5bf4f663b3248b"
+    },
+    {
+      "path": "apps/api/test/modules/documents-reviews.spec.ts",
+      "gitBlob": "241dd42358a7ac53f2b71d002e76fdf4b201827a"
+    },
+    {
+      "path": "apps/api/test/modules/handover-billing-system.spec.ts",
+      "gitBlob": "df035cb8c10722796afab1655dd8521e3481c099"
+    },
+    {
+      "path": "apps/api/test/modules/nfr-quality-attributes.spec.ts",
+      "gitBlob": "1afed6d404d9842c8acd1e189eed7464a7e2f074"
+    },
+    {
+      "path": "apps/api/test/modules/parties-projects.spec.ts",
+      "gitBlob": "821bbd6a1f486972cc6202f99e00e811cdcb655d"
+    },
+    {
+      "path": "apps/api/test/perfect-10-remediation.spec.ts",
+      "gitBlob": "6248718243a3d13a4713d5a8efb4506c6322ba77"
+    },
+    {
+      "path": "apps/api/test/phase0-evidence-integrity-remediation.spec.ts",
+      "gitBlob": "8711d6fc299454abadc000dd23fd30b3a543f12e"
+    },
+    {
+      "path": "apps/api/test/phase1-error-leakage.spec.ts",
+      "gitBlob": "1fa87e3a28a81d5901891baced6525032bc25bf6"
+    },
+    {
+      "path": "apps/api/test/phase1-live-session-eligibility-db.spec.ts",
+      "gitBlob": "295ea73f66700ef5505e13f827b1fc240affb210"
+    },
+    {
+      "path": "apps/api/test/phase1-mfa-idempotency-boundary.spec.ts",
+      "gitBlob": "7441a9f438e8b7b2697a552318fc76bec3f93257"
+    },
+    {
+      "path": "apps/api/test/phase1-notification-producer-db.spec.ts",
+      "gitBlob": "c2953443b74884d5009af9cd1287fae681710a6c"
+    },
+    {
+      "path": "apps/api/test/phase1-tenant-event-boundaries.spec.ts",
+      "gitBlob": "226959663ed1fa594dc7a160dbdd64ec9bb3661b"
+    },
+    {
+      "path": "apps/api/test/phase1-tenantdb-rollback.spec.ts",
+      "gitBlob": "4ab8b99572e6fd5004f68deb430bba8f3b9de677"
+    },
+    {
+      "path": "apps/api/test/pr1-independent-db-acceptance.spec.ts",
+      "gitBlob": "d2fda3205782723bb70062621d68aa440b3d0109"
+    },
+    {
+      "path": "apps/api/test/pr4-authorization-evidence-gates.spec.ts",
+      "gitBlob": "cb55544e3e9db4a7d5b52cf0bef58e6bc60f5045"
+    },
+    {
+      "path": "apps/api/test/production-reaudit-remediation.spec.ts",
+      "gitBlob": "a1835e967039a9eae40bee9dd2a5a6fa9c15a26d"
+    },
+    {
+      "path": "apps/api/test/production-review-remediation.spec.ts",
+      "gitBlob": "701fbe62fa64de69f281732da79bff65f92f9331"
+    },
+    {
+      "path": "apps/api/test/rbac-matrix.spec.ts",
+      "gitBlob": "86f3013b2c72b4bca54d1bd575aea90c587c38e3"
+    },
+    {
+      "path": "apps/api/test/remaining-dossier-delivery.spec.ts",
+      "gitBlob": "522132e98af54c349df7ec622f0870023de90943"
+    },
+    {
+      "path": "apps/api/test/remaining-production-gaps.spec.ts",
+      "gitBlob": "358539b3f14323d793d737403ac03b62b6bf3cf2"
+    },
+    {
+      "path": "apps/api/test/review-authority-boundaries.spec.ts",
+      "gitBlob": "5638301483989e2674d73f65522557b879284397"
+    },
+    {
+      "path": "apps/api/test/rls-and-integrity.spec.ts",
+      "gitBlob": "cd7a8579203e5195a15790d9aada12a328fef828"
+    },
+    {
+      "path": "apps/api/test/rls-isolation.spec.ts",
+      "gitBlob": "8eaa593a317cb194dbfcbf96eadb807479b491f3"
+    },
+    {
+      "path": "apps/api/test/security-invariants.e2e-spec.ts",
+      "gitBlob": "bfbaf0279696bc7989d7d51b226d707d90a20d18"
+    },
+    {
+      "path": "apps/api/test/sol-integrity-verification.spec.ts",
+      "gitBlob": "89cb15ec401b7b7b14062ba2b8de77dc039b6b73"
+    },
+    {
+      "path": "apps/api/test/v021-edge-cases.e2e-spec.ts",
+      "gitBlob": "0d944c0980f43425d2799140f302977fd2f44b91"
+    },
+    {
+      "path": "apps/api/tsconfig.json",
+      "gitBlob": "c826599b3149e6fefcabda6bbc1eaf7c27ed0a84"
+    },
+    {
+      "path": "apps/web/e2e/archive-verifier.spec.ts",
+      "gitBlob": "050c10c86711c1f10b194991447788617a76887a"
+    },
+    {
+      "path": "apps/web/e2e/critical-flows.spec.ts",
+      "gitBlob": "f408d98c57f011e8435b7a5f52b52d7a62417b33"
+    },
+    {
+      "path": "apps/web/e2e/g01-offline-context.spec.ts",
+      "gitBlob": "e69a28943b37e95471270f1f33d3dc1ccddc7c80"
+    },
+    {
+      "path": "apps/web/next-env.d.ts",
+      "gitBlob": "830fb594ca2970a827555c28a253b097367e08d8"
+    },
+    {
+      "path": "apps/web/next.config.mjs",
+      "gitBlob": "837d65f7742e21b561d08d46ba7b2d061b650f2c"
+    },
+    {
+      "path": "apps/web/package.json",
+      "gitBlob": "2bfe6f34a12b317df34d73ab19b3458899570e10"
+    },
+    {
+      "path": "apps/web/playwright.config.ts",
+      "gitBlob": "0ee1e230fb6c66512064debd8b670c18a6483adc"
+    },
+    {
+      "path": "apps/web/postcss.config.mjs",
+      "gitBlob": "2aa7205d4b402a1bdfbe07110c61df920b370066"
+    },
+    {
+      "path": "apps/web/public/manifest.json",
+      "gitBlob": "ab7f3355d3108bd6bf3572e8b7a14188605752be"
+    },
+    {
+      "path": "apps/web/public/sw.js",
+      "gitBlob": "9d4d153baf50d73f5be3ef88797f722ab398bbda"
+    },
+    {
+      "path": "apps/web/src/app/(contractor)/audit/page.tsx",
+      "gitBlob": "282ea58ddcef22e14078f30033fc09162fa0ea29"
+    },
+    {
+      "path": "apps/web/src/app/(contractor)/billing/page.tsx",
+      "gitBlob": "6630055e310d8ffa71b9bc5e5e01a17f9ad2f97a"
+    },
+    {
+      "path": "apps/web/src/app/(contractor)/dashboard/page.tsx",
+      "gitBlob": "438625b1dded87758d704b707197d5564de81384"
+    },
+    {
+      "path": "apps/web/src/app/(contractor)/layout.tsx",
+      "gitBlob": "209d29ad499dc504898cf4c64055b7accd9c7427"
+    },
+    {
+      "path": "apps/web/src/app/(contractor)/parties/page.tsx",
+      "gitBlob": "d4b79b9f9af13e7f15bd1c0cd8207b4f729591ee"
+    },
+    {
+      "path": "apps/web/src/app/(contractor)/projects/[projectId]/page.tsx",
+      "gitBlob": "38087efe2b5b42f905ebaefe6c3bb845e37989e9"
+    },
+    {
+      "path": "apps/web/src/app/(contractor)/projects/[projectId]/review/[versionId]/page.tsx",
+      "gitBlob": "8a0534e3a8c7fc8875b96dd3cad769f928f9c031"
+    },
+    {
+      "path": "apps/web/src/app/(contractor)/projects/page.tsx",
+      "gitBlob": "a536306924fe6a0bc75f5627f95d8e5e080962f0"
+    },
+    {
+      "path": "apps/web/src/app/(guest)/guest/[token]/page.tsx",
+      "gitBlob": "85cdb46db412d3e2c819bdb4bf7129145c62c854"
+    },
+    {
+      "path": "apps/web/src/app/(public)/login/page.tsx",
+      "gitBlob": "5ca247c26ea038721ac53862062db8a4b04db4cf"
+    },
+    {
+      "path": "apps/web/src/app/(public)/mfa/page.tsx",
+      "gitBlob": "5292c7c5abe2a1bf1a2e9256216aa4846fbb05ea"
+    },
+    {
+      "path": "apps/web/src/app/globals.css",
+      "gitBlob": "4a105ba65fb3fcae5541c27b1f0c1bd0809d4fbb"
+    },
+    {
+      "path": "apps/web/src/app/layout.tsx",
+      "gitBlob": "d1a1e803db7bff5fb52bb43a73ae14adaa0096e4"
+    },
+    {
+      "path": "apps/web/src/app/page.tsx",
+      "gitBlob": "27cd02c2f4b89316b8e5d26dfb42c1ab8960bd66"
+    },
+    {
+      "path": "apps/web/src/components/layout/header.tsx",
+      "gitBlob": "e2f02b7791f9a05b09b7f03aeeff5df4e8f76489"
+    },
+    {
+      "path": "apps/web/src/components/layout/sidebar.tsx",
+      "gitBlob": "7f3546698c88e0ac0e2752f610c7e7f78b829631"
+    },
+    {
+      "path": "apps/web/src/components/modals/add-requirement-modal.tsx",
+      "gitBlob": "76f980bca34f4c03d057068224818624470aadb9"
+    },
+    {
+      "path": "apps/web/src/components/modals/compile-handover-modal.tsx",
+      "gitBlob": "204fc52c7cd0d0b9b6b8849dc525903afaba7ecf"
+    },
+    {
+      "path": "apps/web/src/components/modals/create-project-modal.tsx",
+      "gitBlob": "77ea501df627c86fb6e192204196e8bba889520b"
+    },
+    {
+      "path": "apps/web/src/components/modals/external-approval-modal.tsx",
+      "gitBlob": "8995faf6a3c6a76e19a8d912f7177307478880d7"
+    },
+    {
+      "path": "apps/web/src/components/modals/import-checklist-modal.tsx",
+      "gitBlob": "1bc434d96595ea9612b93d32634f1af637095019"
+    },
+    {
+      "path": "apps/web/src/components/modals/login-switch-user-modal.tsx",
+      "gitBlob": "656be6697e3f0ae552fe6997945dac0f6af730eb"
+    },
+    {
+      "path": "apps/web/src/components/modals/request-waiver-modal.tsx",
+      "gitBlob": "b6d6c60ff8ea3a927e8dc91a3e711758c0b18a40"
+    },
+    {
+      "path": "apps/web/src/components/modals/share-supplier-link-modal.tsx",
+      "gitBlob": "37388c3926ba692238ae254b811f9b12d53f44cd"
+    },
+    {
+      "path": "apps/web/src/components/modals/upload-evidence-modal.tsx",
+      "gitBlob": "c820769e2f3b31dd1748b43c3a9e607b64c964ca"
+    },
+    {
+      "path": "apps/web/src/components/modals/upload-modal.tsx",
+      "gitBlob": "128fdeeeca4b65eccb55204be3f7d4590753ff95"
+    },
+    {
+      "path": "apps/web/src/components/modals/waiver-modal.tsx",
+      "gitBlob": "92af2dce10194a7e1eb971d7d4450f82cb8b3291"
+    },
+    {
+      "path": "apps/web/src/components/pwa-register.tsx",
+      "gitBlob": "28fbcd81a3a2448005627dbbeac48b1ea6bad8ce"
+    },
+    {
+      "path": "apps/web/src/components/requirement-status-pill.tsx",
+      "gitBlob": "1b1b059ed09f369a92d8441448b836578b162815"
+    },
+    {
+      "path": "apps/web/src/components/ui/metric-card.tsx",
+      "gitBlob": "e01a79ec0d3075ffd86639b346d29926d0f368b8"
+    },
+    {
+      "path": "apps/web/src/components/ui/modal.tsx",
+      "gitBlob": "0a7635a75be10dfdfe40dc3b30143eeb63ed8023"
+    },
+    {
+      "path": "apps/web/src/components/ui/motion-button.tsx",
+      "gitBlob": "4e04d0e34d307e0f58efc95dd7327533c34e7b7b"
+    },
+    {
+      "path": "apps/web/src/components/ui/motion-card.tsx",
+      "gitBlob": "f5602f10b295128e9c62791610d73ca1e953142a"
+    },
+    {
+      "path": "apps/web/src/components/ui/progress-bar.tsx",
+      "gitBlob": "41c26d427de2b3be3a25c45185a0a39156e1a51d"
+    },
+    {
+      "path": "apps/web/src/components/ui/status-badge.tsx",
+      "gitBlob": "1d187484f6244d2a6f8e4cda80c366596beec56a"
+    },
+    {
+      "path": "apps/web/src/components/upload-sheet.tsx",
+      "gitBlob": "8a26df4b044596d8e1b933a77b9bf0d9c1bdcc9b"
+    },
+    {
+      "path": "apps/web/src/components/views/checklist-view.tsx",
+      "gitBlob": "ec0b064145fa5008d2f8f1c89da472d61e2220af"
+    },
+    {
+      "path": "apps/web/src/components/views/client-guest-view.tsx",
+      "gitBlob": "b1be46457cbfed9971f70e3bba02d28382034060"
+    },
+    {
+      "path": "apps/web/src/components/views/overview-view.tsx",
+      "gitBlob": "6a8e34ba23559e0555ee0cbf5c2ea1aae74919ff"
+    },
+    {
+      "path": "apps/web/src/components/views/packages-view.tsx",
+      "gitBlob": "9ba5703f8ef834089ea2ee386e5d9219777cc5c8"
+    },
+    {
+      "path": "apps/web/src/components/views/reviews-view.tsx",
+      "gitBlob": "16946a4104c71cd8117de1fd2627854482bf9a38"
+    },
+    {
+      "path": "apps/web/src/components/views/supplier-guest-view.tsx",
+      "gitBlob": "3b3b4f030a7ae692b3035c0471e10c3c4b76adb6"
+    },
+    {
+      "path": "apps/web/src/components/views/warranties-view.tsx",
+      "gitBlob": "d668c8e3ca087a5d5d9355a238367dc2e5f61781"
+    },
+    {
+      "path": "apps/web/src/lib/api-client.ts",
+      "gitBlob": "617785e35a587b501a2a27b332c6ded74a62356a"
+    },
+    {
+      "path": "apps/web/src/lib/draft-storage.ts",
+      "gitBlob": "4515e892dbf771233eb34ec2e861d5d9a7315b15"
+    },
+    {
+      "path": "apps/web/src/lib/offline-upload-queue.ts",
+      "gitBlob": "c491bfd50cbbe7fd67e69157e22430946255cbc0"
+    },
+    {
+      "path": "apps/web/src/lib/safe-return-path.ts",
+      "gitBlob": "168515bc2783e0ca3a60e02ed720496e2cc9611b"
+    },
+    {
+      "path": "apps/web/src/middleware.ts",
+      "gitBlob": "0e08f9587e4ba71eaa59f333604e7d63547b8cd3"
+    },
+    {
+      "path": "apps/web/tailwind.config.ts",
+      "gitBlob": "d0f6ed57917bb912694a8d4c126b48710cde1bb6"
+    },
+    {
+      "path": "apps/web/tsconfig.json",
+      "gitBlob": "8975fb824ae3da04cb9db9fa0cf4a7c6f1ef3dad"
+    },
+    {
+      "path": "apps/worker/package.json",
+      "gitBlob": "5e085404c74446c4df54fa4bc9dd4df5d3f1f6c6"
+    },
+    {
+      "path": "apps/worker/src/event-registry.ts",
+      "gitBlob": "7f7f44dcf89d2944d6d936db1b76bd24e9d0cf86"
+    },
+    {
+      "path": "apps/worker/src/main.ts",
+      "gitBlob": "e6d0ef5f879252b5e2621d6c89d756e5a592a6d2"
+    },
+    {
+      "path": "apps/worker/src/notification-delivery.ts",
+      "gitBlob": "58e37e26508ba0478cf6fd1e9258bc7d2efb9e46"
+    },
+    {
+      "path": "apps/worker/src/notification-dispatch.ts",
+      "gitBlob": "92b3e4d0a7acc6cb6a5eb910b75989935fda6a94"
+    },
+    {
+      "path": "apps/worker/src/outbox-dispatch.ts",
+      "gitBlob": "41192c669a4b23d568ae05cfdcdc96b3d1d6f56b"
+    },
+    {
+      "path": "apps/worker/src/queues/archive-verifier.ts",
+      "gitBlob": "b95def1dec0a335d20202d11eca41769f79dfcaf"
+    },
+    {
+      "path": "apps/worker/src/queues/bounded-stream.ts",
+      "gitBlob": "512418b247009cd66868f2c20a3edecd10396ee2"
+    },
+    {
+      "path": "apps/worker/src/queues/file.processor.ts",
+      "gitBlob": "c5d2831dcecc37391281fb0de1091e37e3208842"
+    },
+    {
+      "path": "apps/worker/src/queues/format-converter.ts",
+      "gitBlob": "2a26e9d76eb0277a6157beb5aec71f341dec24ca"
+    },
+    {
+      "path": "apps/worker/src/queues/handover-package.processor.ts",
+      "gitBlob": "04d1f60637d006be245a00216dca97d9ac126681"
+    },
+    {
+      "path": "apps/worker/src/queues/pdf-stream-compiler.ts",
+      "gitBlob": "4064b6cdae298f7b9cdd92dc733f9f86cfe588b5"
+    },
+    {
+      "path": "apps/worker/src/queues/pdf.processor.ts",
+      "gitBlob": "cdeedac0c0dbc49af7c9a7f921ed45269ea51a74"
+    },
+    {
+      "path": "apps/worker/src/queues/portable-archive.processor.ts",
+      "gitBlob": "654c8dd5ac30fdb4c386c442c65a2e5fb50e00f7"
+    },
+    {
+      "path": "apps/worker/src/scheduler.ts",
+      "gitBlob": "37e53699fa74b11db30dd0ecb5f83138598f78f3"
+    },
+    {
+      "path": "apps/worker/src/worker-startup-security.ts",
+      "gitBlob": "07b4ea5e9178beaa6c2c0be536fb759d7d767fd5"
+    },
+    {
+      "path": "apps/worker/test/g01-worker-startup-security.spec.ts",
+      "gitBlob": "3d9c57995c8845965ebaad97e2ea11875e622a58"
+    },
+    {
+      "path": "apps/worker/test/helpers/clamav-server.ts",
+      "gitBlob": "e3babf3d18e532fc812bb99ed34420da482babd7"
+    },
+    {
+      "path": "apps/worker/test/helpers/storage-server.ts",
+      "gitBlob": "445a4267d25c24dbe98828bb472d285306b7f67d"
+    },
+    {
+      "path": "apps/worker/test/notification-claims.spec.ts",
+      "gitBlob": "8c61962da5984881319b30d9d579a645eee0edd7"
+    },
+    {
+      "path": "apps/worker/test/notification-provider.spec.ts",
+      "gitBlob": "40676d3a1abce0c4080168a3960bf52f074f5892"
+    },
+    {
+      "path": "apps/worker/test/outbox-claim.spec.ts",
+      "gitBlob": "b63d4ad6cc953f9319d864ad46f9050cdf697bd4"
+    },
+    {
+      "path": "apps/worker/test/worker-integration.spec.ts",
+      "gitBlob": "19e0bbffe41ae6c026d00630e14b5c2096f663e6"
+    },
+    {
+      "path": "apps/worker/tsconfig.json",
+      "gitBlob": "9f8ebc41bdc6889a59853ec9e42b59e3929f240f"
+    },
+    {
+      "path": "infra/docker/docker-compose.yml",
+      "gitBlob": "e2c419877779dafa35dc4967ee7abd03d918667f"
+    },
+    {
+      "path": "infra/docker/postgres-init.sql",
+      "gitBlob": "5f139d96447bfb87c29fc5afcea5c42dd0b68388"
+    },
+    {
+      "path": "infra/terraform/main.tf",
+      "gitBlob": "981d49dc6b1aa306b887f5aee4dae37328defeae"
+    },
+    {
+      "path": "package.json",
+      "gitBlob": "82db7246bebdbd2ee2492157bc663e11fd1d648d"
+    },
+    {
+      "path": "packages/db/migrations/0000_complete_v021_schema_and_rls.sql",
+      "gitBlob": "12435c18f5f1dcb58f4e826bd9cfab0a8bbafd46"
+    },
+    {
+      "path": "packages/db/migrations/0001_rls_and_constraints.sql",
+      "gitBlob": "38de98421adb46278d76b63896837a4bb9a35d44"
+    },
+    {
+      "path": "packages/db/migrations/0002_create_missing_tables.sql",
+      "gitBlob": "14d044eb56710e56cdf620f58866aa1c65105b2a"
+    },
+    {
+      "path": "packages/db/migrations/0003_v021_redteam_patches.sql",
+      "gitBlob": "c6c2058da9dd01beacb6335c7c4ef0d91b704500"
+    },
+    {
+      "path": "packages/db/migrations/0004_perfect_10_hardening.sql",
+      "gitBlob": "0eadfd71d0460dcad8a507ea2b00bb657f49d9c3"
+    },
+    {
+      "path": "packages/db/migrations/0005_add_project_contract_columns.sql",
+      "gitBlob": "c53ab74a1db3d149b1a1c7e6537821ae7dc9bf95"
+    },
+    {
+      "path": "packages/db/migrations/0006_discovery_and_lifecycle_foundations.sql",
+      "gitBlob": "b5ef874c46a40d40d357a719ba3198263f2fe86a"
+    },
+    {
+      "path": "packages/db/migrations/0007_procurement_and_vendor_obligations.sql",
+      "gitBlob": "75382f9b307b600bcd79e28e647e2b988de27cd0"
+    },
+    {
+      "path": "packages/db/migrations/0008_external_review_authority.sql",
+      "gitBlob": "b2fe6bf0dd9caf9cb690b9b6e079bae6a2ae217e"
+    },
+    {
+      "path": "packages/db/migrations/0009_storage_object_verification.sql",
+      "gitBlob": "6a1ae732832b4bd8e0b9a7b79e0cc1a982b2998b"
+    },
+    {
+      "path": "packages/db/migrations/0010_transmittal_records.sql",
+      "gitBlob": "a6a3339abcdd0996ed808b86d3d8455f04da036a"
+    },
+    {
+      "path": "packages/db/migrations/0011_guest_grant_token_lookup.sql",
+      "gitBlob": "cacb3e743ea26a06494e929ec0cb783008208d87"
+    },
+    {
+      "path": "packages/db/migrations/0012_external_review_proof_version.sql",
+      "gitBlob": "4f003ef3d19c2b7f169714a7a0505ce3c9ae8c14"
+    },
+    {
+      "path": "packages/db/migrations/0013_reconcile_tenant_policies_and_composite_constraints.sql",
+      "gitBlob": "268d9cb9d8edc95e2dfdea5229fdd9b72d135253"
+    },
+    {
+      "path": "packages/db/migrations/0014_protect_remaining_tenant_tables.sql",
+      "gitBlob": "976ee7ac61153e4dda3fdde0acd58256eddf3317"
+    },
+    {
+      "path": "packages/db/migrations/0015_document_versions_updated_at.sql",
+      "gitBlob": "3ae6a4933d791096b752793bb8923822ea69f749"
+    },
+    {
+      "path": "packages/db/migrations/0016_canonical_tenant_alias_validation.sql",
+      "gitBlob": "f4646f9e9e71f23fecf55b409864363aae036cb2"
+    },
+    {
+      "path": "packages/db/migrations/0017_hvac_commissioning_tab_and_inspections.sql",
+      "gitBlob": "e6bcda66331f2ace5a4552e6dcc1c4098744e4af"
+    },
+    {
+      "path": "packages/db/migrations/0018_revalidation_concurrency_and_commissioning_composite_fks.sql",
+      "gitBlob": "724c6d2447e7a8b2ba55348e3404fb1dab84a50c"
+    },
+    {
+      "path": "packages/db/migrations/0019_defect_remedy_lifecycle.sql",
+      "gitBlob": "fdf33ce077dfed75a3489ab2a98b71f9c5bc54b4"
+    },
+    {
+      "path": "packages/db/migrations/0020_project_type_domain_alignment.sql",
+      "gitBlob": "fce4d8dc25a903700b9cb667d1caa97590bfe61d"
+    },
+    {
+      "path": "packages/db/migrations/0021_razorpay_verified_webhook_inbox.sql",
+      "gitBlob": "2ac00777d49b563ac560c0bb761e5a44ffa512b2"
+    },
+    {
+      "path": "packages/db/migrations/0022_handover_package_purpose.sql",
+      "gitBlob": "44325565a09a4dfdc9d5fe78fb05b78f854dab75"
+    },
+    {
+      "path": "packages/db/migrations/0023_g01_auth_principals_and_challenge_lifecycle.sql",
+      "gitBlob": "449e13b806e550cb71852a1dbcdaaf73a99c8108"
+    },
+    {
+      "path": "packages/db/migrations/0024_g01_external_authority_approval_boundary.sql",
+      "gitBlob": "112e9859d9c62b1ff41ecb6f5c049ec924de231a"
+    },
+    {
+      "path": "packages/db/migrations/0025_g01_guest_grant_immutable_identity.sql",
+      "gitBlob": "2afae99d296b44c859780c4e6b91c5214393533c"
+    },
+    {
+      "path": "packages/db/migrations/0026_g01_two_reviewer_external_authority.sql",
+      "gitBlob": "7a59b03e657d19d0bf3d824db4a4715c97ed18c6"
+    },
+    {
+      "path": "packages/db/migrations/0027_g01_external_authority_review_rls.sql",
+      "gitBlob": "65d08b40cb43b43f5adbed6a682122d7bfb12ba8"
+    },
+    {
+      "path": "packages/db/migrations/0028_g01_approved_guest_project_binding.sql",
+      "gitBlob": "1bb18ce5595732ab6428699e9447267baeaa6eca"
+    },
+    {
+      "path": "packages/db/migrations/0029_g01_project_signatory_guard_tenant_scope.sql",
+      "gitBlob": "52b7a0972bc57336f326cb33c9e662581a917d00"
+    },
+    {
+      "path": "packages/db/migrations/0030_g01_external_review_immutable_lifecycle.sql",
+      "gitBlob": "d52ffa80263e76892e28e1383502b0ff3ed722c7"
+    },
+    {
+      "path": "packages/db/migrations/0031_g01_invitation_delivery_pending.sql",
+      "gitBlob": "0fafd80fed9e72a314402a8e6c99cd92ca4c4be2"
+    },
+    {
+      "path": "packages/db/migrations/0032_g01_independently_attested_external_document_approval.sql",
+      "gitBlob": "4ed3bbeed5fc5dacc423e195db367b47f93dfdf0"
+    },
+    {
+      "path": "packages/db/migrations/0033_g01_independent_authority_emergency_revocation.sql",
+      "gitBlob": "383d8b035c5ecc53361b33f97cfb07ba49b1ec8b"
+    },
+    {
+      "path": "packages/db/migrations/0034_g01_revoked_external_decision_invalidates_current_approval.sql",
+      "gitBlob": "cb17a3b4526a603a61645f102c80479488d5a203"
+    },
+    {
+      "path": "packages/db/migrations/0035_g01_auth_denial_metadata.sql",
+      "gitBlob": "dca615781d7e0ad574ebac2885da8b960c860e73"
+    },
+    {
+      "path": "packages/db/migrations/0036_g01_quarantine_unverified_legacy_external_approvals.sql",
+      "gitBlob": "cd895ec19cee64933aa73a7d44d5431e84d27812"
+    },
+    {
+      "path": "packages/db/migrations/0037_g01_legacy_external_reconciliation_all_tenants.sql",
+      "gitBlob": "360edc3e41c0e5227f1150cf203965962f742d26"
+    },
+    {
+      "path": "packages/db/migrations/0038_g01_auth_delivery_receipts.sql",
+      "gitBlob": "1de9072eecf59bd2d55c1191a890c1b659a1f66b"
+    },
+    {
+      "path": "packages/db/migrations/0039_g01_independent_identity_recovery.sql",
+      "gitBlob": "927b4f8dcfcb347285895f9d4895145b33c3ef47"
+    },
+    {
+      "path": "packages/db/migrations/0040_g01_account_lock_fk_compatibility.sql",
+      "gitBlob": "ba2ac2da59e706548560bb3cb34dd1c7871406fb"
+    },
+    {
+      "path": "packages/db/migrations/0041_phase1_audit_partition_boundary.sql",
+      "gitBlob": "e3cfb7694afde62a1e69085b6c8774f2c56f09f1"
+    },
+    {
+      "path": "packages/db/migrations/0042_phase1_audit_sequence_trusted_order.sql",
+      "gitBlob": "d948659b40b67f1fa932d403e7378ef514f32bc0"
+    },
+    {
+      "path": "packages/db/migrations/0043_g01_pending_mfa_proposal_lifetime.sql",
+      "gitBlob": "e694f5398b0f8e7f44505ff66e4065262e85c872"
+    },
+    {
+      "path": "packages/db/migrations/0044_phase1_outbox_claim_dispatch_ack.sql",
+      "gitBlob": "86f14baa9d444afe544ca2e70ab110f24a8cc527"
+    },
+    {
+      "path": "packages/db/migrations/0045_phase1_notification_delivery_claims.sql",
+      "gitBlob": "8d66574eb13f5448e2a147946b62cf4c5334caa1"
+    },
+    {
+      "path": "packages/db/package.json",
+      "gitBlob": "70a2da4a395dd1ab78054590bcdb59509156ad33"
+    },
+    {
+      "path": "packages/db/src/auth-delivery.ts",
+      "gitBlob": "d3b6017880c2eae31e4ebb9bae7fedc1a313f67d"
+    },
+    {
+      "path": "packages/db/src/catalogue-rules.ts",
+      "gitBlob": "d4800e6888987c9865c60c1e96523c74d176ad55"
+    },
+    {
+      "path": "packages/db/src/index.ts",
+      "gitBlob": "30318ed159e069ad7ca7247688ec5a2e6c95104d"
+    },
+    {
+      "path": "packages/db/src/live-session-authority.ts",
+      "gitBlob": "b8fa8906bd4a3b212e2503b0ef6b94101bbbe9cd"
+    },
+    {
+      "path": "packages/db/src/project-authority.ts",
+      "gitBlob": "90cd17a7f4ba4ded6e2c373e116c52c326488240"
+    },
+    {
+      "path": "packages/db/src/run-migrations.ts",
+      "gitBlob": "b4e4d961cb5d8e0250b152c36fb9e79a014c8481"
+    },
+    {
+      "path": "packages/db/src/schema.ts",
+      "gitBlob": "0eb1ddd2856e6b0b643f43a4c9de279c15ee3ff8"
+    },
+    {
+      "path": "packages/db/src/seed-real-portfolio.ts",
+      "gitBlob": "6f192c7fa383581bf4388c17f1d3361752938f0f"
+    },
+    {
+      "path": "packages/db/src/seed-vayuputra-story.ts",
+      "gitBlob": "b2f18dd33b2d9199a8046c0371ed51e4a7f6a41e"
+    },
+    {
+      "path": "packages/db/src/tenant-tx.ts",
+      "gitBlob": "e31501e8caa40a41edbd74461ba9d9e94106e7c8"
+    },
+    {
+      "path": "packages/db/test/db-integration.spec.ts",
+      "gitBlob": "5dfbd3db3a43dacaeac6bd5a7bfbbfc013f3449a"
+    },
+    {
+      "path": "packages/db/test/helpers/disposable-database.ts",
+      "gitBlob": "e2c2aa2973021c2881588bd767b71b97a12a7f8d"
+    },
+    {
+      "path": "packages/db/test/helpers/fixtures.ts",
+      "gitBlob": "33a496d12110cc8b09c10f023f25d027dbc913c9"
+    },
+    {
+      "path": "packages/db/tsconfig.json",
+      "gitBlob": "228252f95c99606e387005818ef0572dee08e401"
+    },
+    {
+      "path": "packages/pdf-engine/package.json",
+      "gitBlob": "f0c8abe6316405cda889d9fa2407c8bbcbbeb2d5"
+    },
+    {
+      "path": "packages/pdf-engine/src/index.ts",
+      "gitBlob": "e25bea5b40bf561b8e8b8c9c7d782634b095e4f4"
+    },
+    {
+      "path": "packages/pdf-engine/src/package-builder.ts",
+      "gitBlob": "6d1bd40a62199354a983452e33d58621deb8fd41"
+    },
+    {
+      "path": "packages/pdf-engine/src/sanitise-pdf.ts",
+      "gitBlob": "7d92dbb1ec8b1f915f6fb9f45ce6ebc00449c013"
+    },
+    {
+      "path": "packages/pdf-engine/test/pdf-engine.spec.ts",
+      "gitBlob": "33fd19eba387b54a8018be75394d342ec851e2a6"
+    },
+    {
+      "path": "packages/pdf-engine/tsconfig.json",
+      "gitBlob": "90d76d7e8deff7f86637d98fa11e1d68f3423a9b"
+    },
+    {
+      "path": "packages/shared/jest.config.ts",
+      "gitBlob": "3ad822ae96be15869cc2cee4099d54f1b29a18db"
+    },
+    {
+      "path": "packages/shared/package.json",
+      "gitBlob": "de251bbeb6dcae7e9a7a52b4724f946fa31d3b2f"
+    },
+    {
+      "path": "packages/shared/src/authentication-identifiers.spec.ts",
+      "gitBlob": "e3b606bd599300c094ba4fa4bf8ee7b427c1f534"
+    },
+    {
+      "path": "packages/shared/src/business-rules.ts",
+      "gitBlob": "a812eb5ace31193302d8978cf5c566965fd1a2a3"
+    },
+    {
+      "path": "packages/shared/src/canonical-json.ts",
+      "gitBlob": "6cc7576ce9de2cbc54de7f3b7a92ccf32b1cdbc2"
+    },
+    {
+      "path": "packages/shared/src/env.ts",
+      "gitBlob": "6b762d394ad190dcc25d0cd62c960e237b37db2e"
+    },
+    {
+      "path": "packages/shared/src/index.ts",
+      "gitBlob": "9afdc64ab96e058bdbe2ad0f1517cf84e748d6c1"
+    },
+    {
+      "path": "packages/shared/src/permissions.ts",
+      "gitBlob": "494104e77e328ee7b88fc7953a7544c1cb838d6e"
+    },
+    {
+      "path": "packages/shared/src/status-enums.ts",
+      "gitBlob": "a70f829f2e4dd569f54b91bdee2d20dc79c9edcb"
+    },
+    {
+      "path": "packages/shared/src/types.ts",
+      "gitBlob": "cbaea7a3a1104eaa651b8ee7f9093b652cd1f5e1"
+    },
+    {
+      "path": "packages/shared/src/validators.ts",
+      "gitBlob": "d76c77271ea06c7d561e143012c5d53897f52282"
+    },
+    {
+      "path": "packages/shared/test/dates-money.property.spec.ts",
+      "gitBlob": "2cc5e140b0fa0408f0ec97551cd74b52f292cec3"
+    },
+    {
+      "path": "packages/shared/test/permissions.spec.ts",
+      "gitBlob": "d009765b3bf54a778d0688fe9d1dcb42f66cd3bc"
+    },
+    {
+      "path": "packages/shared/test/status-transitions.spec.ts",
+      "gitBlob": "7c5235acf0a7b04ebfb8f70a276b8357448b7f02"
+    },
+    {
+      "path": "packages/shared/test/validators.spec.ts",
+      "gitBlob": "98054419541ea3cdbd4310c0729d5c1ffb6c0b0e"
+    },
+    {
+      "path": "packages/shared/tsconfig.json",
+      "gitBlob": "90d76d7e8deff7f86637d98fa11e1d68f3423a9b"
+    },
+    {
+      "path": "pnpm-lock.yaml",
+      "gitBlob": "13f790272134dd8f7b7accb711ce06ca764a4a55"
+    },
+    {
+      "path": "pnpm-workspace.yaml",
+      "gitBlob": "46085d29365b78d73a5e0b37dfb70d941f14cc8e"
+    },
+    {
+      "path": "scripts/execute-runbooks.ts",
+      "gitBlob": "c972b34332d3d907561d959fcfb9d3f9e5b3cd6a"
+    },
+    {
+      "path": "scripts/master-prompt-header.txt",
+      "gitBlob": "81ba450a0e8c514e57511f851894b5868b5690ea"
+    },
+    {
+      "path": "scripts/rebuild-master-prompt.py",
+      "gitBlob": "6a93f6210c9ae96f3682b271b6d6a17d23c45d4b"
+    },
+    {
+      "path": "scripts/reconcile-consultant-checklist.ts",
+      "gitBlob": "9df2935bd68f2120cc739d9eca0b1559d7b11ba4"
+    },
+    {
+      "path": "scripts/run-restore-drill.sh",
+      "gitBlob": "7ca42dfd29f6fde36437f76dad87658558dc5504"
+    },
+    {
+      "path": "scripts/test-e2e-smoke.ts",
+      "gitBlob": "97e3917b4b201bf0e5cd4e61fa45923fb1aee04f"
+    },
+    {
+      "path": "scripts/test-real-excel-ingestion.ts",
+      "gitBlob": "1c071fa93a08cff592df0c77d3d335b1501d6ae3"
+    },
+    {
+      "path": "scripts/verify-traceability.ts",
+      "gitBlob": "1a060938fb0c9daaaaf807a534594db0ed96abd9"
+    },
+    {
+      "path": "tradecloseout_independent_red_team_audit_complete_single_file_deliverable(1).md",
+      "gitBlob": "d7df70d77939b065901d2fbbcff446422b80cf8c"
+    },
+    {
+      "path": "tradecloseout_master_implementation_blueprint_v0_2_1.md",
+      "gitBlob": "630740627d6c08cb2423d491607cdd1f2b90db47"
+    },
+    {
+      "path": "turbo.json",
+      "gitBlob": "d559efe9691b2abb97a02cb0fb9f1d9ec84e1c9d"
+    }
+  ]
+}

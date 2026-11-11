@@ -1,0 +1,8 @@
+PASS ../../docs/audits/remaining-phases-2026-11-12/evidence/remaining-probes.spec.ts (7.349 s)
+  ✓ Remaining phases actual-source observations; synthetic mechanism fixtures only (3772 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       1 passed, 1 total
+Snapshots:   0 total
+Time:        7.564 s, estimated 11 s
+Ran all test suites.

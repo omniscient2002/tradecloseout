@@ -1,0 +1,13 @@
+{
+  "extends": "../../../../apps/api/tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "../../../..",
+    "types": [
+      "node",
+      "jest"
+    ],
+    "typeRoots": [
+      "../../../../apps/api/node_modules/@types"
+    ]
+  }
+}
