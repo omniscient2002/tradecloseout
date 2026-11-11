@@ -613,6 +613,28 @@ export class IdentityController {
           throw new UnauthorizedException({ code: 'INVITATION_CANNOT_CHANGE_EXISTING_MEMBER_ROLE' });
         }
         if (!existing.length) {
+          // Serialize new seat activations with subscription plan changes.
+          // A successful OTP is not enough to overbook a priced entitlement.
+          const {rows:quota}=await client.query(
+            `SELECT p.limits_json->>'maxSeats' AS max_seats
+               FROM subscriptions sub
+               JOIN plans p ON p.id=sub.plan_id
+              WHERE sub.org_id=$1 AND sub.status IN ('ACTIVE','TRIAL')
+              FOR UPDATE OF sub`,[invitation.org_id],
+          );
+          if (quota.length) {
+            const limit=Number(quota[0].max_seats);
+            if (!Number.isSafeInteger(limit) || limit<1) {
+              throw new ConflictException({code:'SEAT_ENTITLEMENT_INVALID'});
+            }
+            const {rows:occupied}=await client.query(
+              `SELECT count(*)::int AS seats FROM memberships
+                WHERE org_id=$1 AND status='ACTIVE'`,[invitation.org_id],
+            );
+            if (Number(occupied[0]?.seats||0)>=limit) {
+              throw new ConflictException({code:'PLAN_SEAT_LIMIT_REACHED'});
+            }
+          }
           await client.query(
             `INSERT INTO memberships(id,org_id,user_id,role,status,joined_at)
              VALUES($1,$2,$3,$4,'ACTIVE',now())`,
