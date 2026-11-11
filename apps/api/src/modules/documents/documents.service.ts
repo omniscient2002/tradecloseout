@@ -600,6 +600,8 @@ export class DocumentsService {
     maybeVersionIdOrDto?: string | { checksumSha256?: string; isEicarTestVirus?: boolean; samplePayload?: string; parts?: Array<{ partNumber: number; etag?: string }> },
     maybeDto?: { checksumSha256?: string; isEicarTestVirus?: boolean; samplePayload?: string; parts?: Array<{ partNumber: number; etag?: string }> },
   ) {
+    const assertedProjectId =
+      typeof maybeVersionIdOrDto === 'string' ? projectIdOrVersionId : undefined;
     const versionId =
       typeof maybeVersionIdOrDto === 'string' ? maybeVersionIdOrDto : projectIdOrVersionId;
     const dto =
@@ -621,8 +623,13 @@ export class DocumentsService {
       if (!verRes.rows.length) {
         throw new NotFoundException('VERSION_NOT_FOUND');
       }
-      await this.assertGuestVersionScope(client, ctx, versionId, 'document.upload');
+      // G02-008: the idempotent PROCESSING/READY path must not expose
+      // another project's metadata simply because the URL contained A.
       const version = verRes.rows[0];
+      if (assertedProjectId && version.project_id !== assertedProjectId) {
+        throw new NotFoundException('VERSION_NOT_FOUND');
+      }
+      await this.assertGuestVersionScope(client, ctx, versionId, 'document.upload');
       if (version.file_status !== 'PENDING_UPLOAD') {
         if (['PROCESSING', 'READY'].includes(version.file_status) && version.provider_version_id) {
           return {
