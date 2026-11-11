@@ -1,0 +1,259 @@
+FILE: candidate-typecheck.log
+$ pnpm -r --parallel exec tsc --noEmit
+test/review-authority-boundaries.spec.ts(40,19): error TS2339: Property 'reviewId' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; } | { ...; }'.
+  Property 'reviewId' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; }'.
+test/review-authority-boundaries.spec.ts(41,19): error TS2339: Property 'requirementId' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; } | { ...; }'.
+  Property 'requirementId' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; }'.
+test/review-authority-boundaries.spec.ts(42,19): error TS2339: Property 'sha256' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; } | { ...; }'.
+  Property 'sha256' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; }'.
+test/review-authority-boundaries.spec.ts(43,19): error TS2339: Property 'uploadedByName' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; } | { ...; }'.
+  Property 'uploadedByName' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; }'.
+Error: ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL
+
+FILE: candidate-build.log
+@tradecloseout/api:build: $ nest build
+@tradecloseout/api:build: test/review-authority-boundaries.spec.ts:40:19 - error TS2339: Property 'reviewId' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; } | { ...; }'.
+@tradecloseout/api:build:   Property 'reviewId' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; }'.
+@tradecloseout/api:build:
+@tradecloseout/api:build:                      ~~~~~~~~
+@tradecloseout/api:build: test/review-authority-boundaries.spec.ts:41:19 - error TS2339: Property 'requirementId' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; } | { ...; }'.
+@tradecloseout/api:build:   Property 'requirementId' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; }'.
+@tradecloseout/api:build:
+@tradecloseout/api:build:                      ~~~~~~~~~~~~~
+@tradecloseout/api:build: test/review-authority-boundaries.spec.ts:42:19 - error TS2339: Property 'sha256' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; } | { ...; }'.
+@tradecloseout/api:build:   Property 'sha256' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; }'.
+@tradecloseout/api:build:
+@tradecloseout/api:build:                      ~~~~~~
+@tradecloseout/api:build: test/review-authority-boundaries.spec.ts:43:19 - error TS2339: Property 'uploadedByName' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; } | { ...; }'.
+@tradecloseout/api:build:   Property 'uploadedByName' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; }'.
+@tradecloseout/api:build:
+Cached:    0 cached, 6 total
+  Time:    28.754s
+Failed:    @tradecloseout/api#build
+
+
+FILE: foundation-probes.log
+FAIL test/phase1-foundation-probes.spec.ts
+  ● Test suite failed to run
+
+    test/phase1-foundation-probes.spec.ts:108:43 - error TS2345: Argument of type 'Redis<"legacy">' is not assignable to parameter of type 'Redis'.
+      Types of property 'options' are incompatible.
+        Type 'import("/workspace/work/phase1-audit/candidate/node_modules/.pnpm/ioredis@6.0.0_supports-color@8.1.1/node_modules/ioredis/built/redis/RedisOptions").RedisOptions' is not assignable to type 'import("/workspace/work/phase1-audit/candidate/node_modules/.pnpm/ioredis@5.11.1_supports-color@8.1.1/node_modules/ioredis/built/redis/RedisOptions").RedisOptions'.
+
+FAIL test/g02-authorization-db.spec.ts (10.048 s)
+  ● G02 actual PostgreSQL16 with restricted tc_app, FORCE RLS › G02-001/011/015: direct ID across another project is denied before package detail, and emits a capped redacted event
+
+    error: null value in column "current_snapshot_id" of relation "requirements" violates not-null constraint
+
+      61 |   }
+
+    error: null value in column "current_snapshot_id" of relation "requirements" violates not-null constraint
+
+      61 |   }
+
+    error: null value in column "current_snapshot_id" of relation "requirements" violates not-null constraint
+
+      61 |   }
+
+    error: null value in column "current_snapshot_id" of relation "requirements" violates not-null constraint
+
+      61 |   }
+
+FAIL test/g02-authorization-contract.spec.ts
+  ● Console
+
+
+    Expected number of calls: 0
+    Received number of calls: 3
+
+    1: called with 0 arguments
+
+Test Suites: 3 failed, 3 total
+Tests:       5 failed, 8 passed, 13 total
+Snapshots:   0 total
+Time:        14.858 s
+Ran all test suites matching /test\/phase1-foundation-probes.spec.ts|test\/g02-authorization-db.spec.ts|test\/g02-authorization-contract.spec.ts/i.
+Error: ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL
+
+FILE: candidate-api-clean.log
+$ jest --runInBand
+FAIL test/g01-two-api-http.spec.ts (17.478 s)
+  ● G01 actual two-API strict-mode HTTP: shared budgets, MFA, lost response and crash rollback
+
+    G01_HTTP_PROCESS_BUILD_FAILED: ed: boolean; }'.
+    apps/api/test/review-authority-boundaries.spec.ts(41,19): error TS2339: Property 'requirementId' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; } | { ...; }'.
+      Property 'requirementId' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; }'.
+    apps/api/test/review-authority-boundaries.spec.ts(42,19): error TS2339: Property 'sha256' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; } | { ...; }'.
+      Property 'sha256' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; }'.
+    apps/api/test/review-authority-boundaries.spec.ts(43,19): error TS2339: Property 'uploadedByName' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; } | { ...; }'.
+      Property 'uploadedByName' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; }'.
+
+      44 |       {cwd:workspace,encoding:'utf8',timeout:60000});
+    > 45 |     if(build.status!==0)throw new Error('G01_HTTP_PROCESS_BUILD_FAILED: '+build.stdout.slice(-2000));
+         |                               ^
+      46 |   }
+
+FAIL test/g02-authorization-db.spec.ts (5.596 s)
+  ● G02 actual PostgreSQL16 with restricted tc_app, FORCE RLS › G02-001/011/015: direct ID across another project is denied before package detail, and emits a capped redacted event
+
+    error: null value in column "current_snapshot_id" of relation "requirements" violates not-null constraint
+
+      61 |   }
+
+    error: null value in column "current_snapshot_id" of relation "requirements" violates not-null constraint
+
+      61 |   }
+
+    error: null value in column "current_snapshot_id" of relation "requirements" violates not-null constraint
+
+      61 |   }
+
+    error: null value in column "current_snapshot_id" of relation "requirements" violates not-null constraint
+
+      61 |   }
+
+FAIL test/production-reaudit-remediation.spec.ts
+  ● Console
+
+
+FAIL test/discovery-lifecycle-foundations.spec.ts
+  ● Discovery & Lifecycle Foundations Test Suite › Portable Self-Verifying Archive Export › generates a complete manifest and canonical SHA-256 verification receipt
+
+
+FAIL test/g02-authorization-contract.spec.ts
+  ● Console
+
+
+    Expected number of calls: 0
+    Received number of calls: 3
+
+    1: called with 0 arguments
+
+FAIL test/g01-authentication-security.spec.ts
+  ● Console
+
+
+FAIL test/production-review-remediation.spec.ts
+  ● Production Review Remediation Suite (NP01..NP06, NP09, NP10) › NP05: Work-Item Action Routes and Preconditions › processes supplier obligation intake and updates status
+
+
+FAIL test/hvac-checklist-readiness-branch.spec.ts
+  ● HVAC checklist and readiness release gates › refuses an unconfigured snapshot instead of inventing a one-document dossier
+
+
+FAIL test/perfect-10-remediation.spec.ts
+  ● Perfect 10 Remediation & Hardening Test Suite › Business Risk 2: Two-Tier Supplier Link Friction › creates an OTP-protected supplier upload link without a project PIN
+
+PASS test/modules/auth-iam.spec.ts
+FAIL test/review-authority-boundaries.spec.ts
+  ● Test suite failed to run
+
+    test/review-authority-boundaries.spec.ts:40:19 - error TS2339: Property 'reviewId' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; } | { ...; }'.
+      Property 'reviewId' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; }'.
+
+                         ~~~~~~~~
+    test/review-authority-boundaries.spec.ts:41:19 - error TS2339: Property 'requirementId' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; } | { ...; }'.
+      Property 'requirementId' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; }'.
+
+                         ~~~~~~~~~~~~~
+    test/review-authority-boundaries.spec.ts:42:19 - error TS2339: Property 'sha256' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; } | { ...; }'.
+      Property 'sha256' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; }'.
+
+                         ~~~~~~
+    test/review-authority-boundaries.spec.ts:43:19 - error TS2339: Property 'uploadedByName' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; } | { ...; }'.
+      Property 'uploadedByName' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; }'.
+
+Summary of all failing tests
+FAIL test/g01-two-api-http.spec.ts (17.478 s)
+  ● G01 actual two-API strict-mode HTTP: shared budgets, MFA, lost response and crash rollback
+
+    G01_HTTP_PROCESS_BUILD_FAILED: ed: boolean; }'.
+    apps/api/test/review-authority-boundaries.spec.ts(41,19): error TS2339: Property 'requirementId' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; } | { ...; }'.
+      Property 'requirementId' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; }'.
+    apps/api/test/review-authority-boundaries.spec.ts(42,19): error TS2339: Property 'sha256' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; } | { ...; }'.
+      Property 'sha256' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; }'.
+    apps/api/test/review-authority-boundaries.spec.ts(43,19): error TS2339: Property 'uploadedByName' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; } | { ...; }'.
+      Property 'uploadedByName' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; }'.
+
+      44 |       {cwd:workspace,encoding:'utf8',timeout:60000});
+    > 45 |     if(build.status!==0)throw new Error('G01_HTTP_PROCESS_BUILD_FAILED: '+build.stdout.slice(-2000));
+         |                               ^
+      46 |   }
+
+FAIL test/g02-authorization-db.spec.ts (5.596 s)
+  ● G02 actual PostgreSQL16 with restricted tc_app, FORCE RLS › G02-001/011/015: direct ID across another project is denied before package detail, and emits a capped redacted event
+
+    error: null value in column "current_snapshot_id" of relation "requirements" violates not-null constraint
+
+      61 |   }
+
+    error: null value in column "current_snapshot_id" of relation "requirements" violates not-null constraint
+
+      61 |   }
+
+    error: null value in column "current_snapshot_id" of relation "requirements" violates not-null constraint
+
+      61 |   }
+
+    error: null value in column "current_snapshot_id" of relation "requirements" violates not-null constraint
+
+      61 |   }
+
+FAIL test/production-reaudit-remediation.spec.ts
+  ● Production Re-Audit Remediation Suite (PROD-001..PROD-018) › PROD-007 (PA07): Guest grant profiles and mandatory counterparty › FV01: PermissionGuard rejects guest session attempting unscoped organisation action
+
+
+FAIL test/discovery-lifecycle-foundations.spec.ts
+  ● Discovery & Lifecycle Foundations Test Suite › Portable Self-Verifying Archive Export › generates a complete manifest and canonical SHA-256 verification receipt
+
+
+FAIL test/g02-authorization-contract.spec.ts
+  ● G02 executable negative authorization contracts › G02-001/015: upload-only guest never gets package metadata or exports before DB reads
+
+
+    Expected number of calls: 0
+    Received number of calls: 3
+
+    1: called with 0 arguments
+
+FAIL test/g01-authentication-security.spec.ts
+  ● G01: authentication hardening negative controls › requires independent guest authority for binding consultant review decisions
+
+
+FAIL test/production-review-remediation.spec.ts
+  ● Production Review Remediation Suite (NP01..NP06, NP09, NP10) › NP05: Work-Item Action Routes and Preconditions › processes supplier obligation intake and updates status
+
+
+FAIL test/hvac-checklist-readiness-branch.spec.ts
+  ● HVAC checklist and readiness release gates › refuses an unconfigured snapshot instead of inventing a one-document dossier
+
+
+FAIL test/perfect-10-remediation.spec.ts
+  ● Perfect 10 Remediation & Hardening Test Suite › Business Risk 2: Two-Tier Supplier Link Friction › creates an OTP-protected supplier upload link without a project PIN
+
+
+FAIL test/review-authority-boundaries.spec.ts
+  ● Test suite failed to run
+
+    test/review-authority-boundaries.spec.ts:40:19 - error TS2339: Property 'reviewId' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; } | { ...; }'.
+      Property 'reviewId' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; }'.
+
+                         ~~~~~~~~
+    test/review-authority-boundaries.spec.ts:41:19 - error TS2339: Property 'requirementId' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; } | { ...; }'.
+      Property 'requirementId' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; }'.
+
+                         ~~~~~~~~~~~~~
+    test/review-authority-boundaries.spec.ts:42:19 - error TS2339: Property 'sha256' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; } | { ...; }'.
+      Property 'sha256' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; }'.
+
+                         ~~~~~~
+    test/review-authority-boundaries.spec.ts:43:19 - error TS2339: Property 'uploadedByName' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; } | { ...; }'.
+      Property 'uploadedByName' does not exist on type '{ versionId: any; documentId: any; documentTitle: any; docTypeKey: any; revisionCode: any; issueDate: any; expiryDate: any; fileStatus: string; reviewStatus: string; rowVersion: any; comments: never[]; reviewerIdentityRedacted: boolean; }'.
+
+
+Test Suites: 10 failed, 47 passed, 57 total
+Tests:       21 failed, 327 passed, 348 total
+Snapshots:   0 total
+Time:        102.939 s, estimated 117 s
+Ran all test suites.
+[ELIFECYCLE] Test failed. See above for more details.

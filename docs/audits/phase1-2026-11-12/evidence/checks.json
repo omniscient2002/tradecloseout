@@ -1,0 +1,112 @@
+{
+  "main_sha": "c6b6024d3d5b25d2d1ab87f77e2d3294500c5bb0",
+  "candidate_sha": "9ed91a9e96c77c9eff967f6c845d18c38fb62ac6",
+  "runtime": {
+    "node": "22.23.4",
+    "pnpm": "12.4.1",
+    "postgres": "16.15",
+    "database_role": "tc_app",
+    "data": "environment-local disposable fixtures"
+  },
+  "results": [
+    {
+      "source": "main",
+      "command": "pnpm build",
+      "result": "PASS"
+    },
+    {
+      "source": "main",
+      "command": "pnpm test",
+      "result": "PASS",
+      "api_suites_passed": 28,
+      "api_tests_passed": 249,
+      "shared_suites_passed": 4,
+      "shared_tests_passed": 44
+    },
+    {
+      "source": "candidate",
+      "command": "pnpm typecheck",
+      "result": "FAIL",
+      "cause": "TS2339 in review-authority-boundaries.spec.ts:40-43; new union return contract"
+    },
+    {
+      "source": "candidate",
+      "command": "pnpm build",
+      "result": "FAIL",
+      "cause": "same API type errors; downstream build incomplete"
+    },
+    {
+      "source": "candidate",
+      "command": "pnpm test",
+      "result": "FAIL",
+      "limits": "first run included developing audit harness; clean source API counts are recorded separately"
+    },
+    {
+      "source": "candidate",
+      "command": "pnpm --filter @tradecloseout/api test",
+      "result": "FAIL",
+      "suites_passed": 47,
+      "suites_failed": 10,
+      "tests_passed": 327,
+      "tests_failed": 21,
+      "audit_harness_in_discovery": false
+    },
+    {
+      "source": "candidate",
+      "command": "pnpm test:security",
+      "result": "PASS",
+      "suites": 3,
+      "tests": 15
+    },
+    {
+      "source": "candidate",
+      "command": "pnpm test:rbac",
+      "result": "PASS",
+      "suites": 1,
+      "tests": 8
+    },
+    {
+      "source": "candidate",
+      "command": "pnpm --filter @tradecloseout/db test",
+      "result": "PASS",
+      "checks": 10
+    },
+    {
+      "source": "candidate",
+      "command": "pnpm --filter @tradecloseout/worker test",
+      "result": "PASS",
+      "tests": 16
+    },
+    {
+      "source": "candidate",
+      "command": "pnpm --filter @tradecloseout/web test",
+      "result": "PASS",
+      "tests": 10,
+      "limits": "archive/auth-storage protocol fixtures; not deployed application/provider acceptance"
+    },
+    {
+      "source": "candidate",
+      "command": "pnpm --filter @tradecloseout/api exec jest --runInBand test/phase1-foundation-probes.spec.ts",
+      "result": "PASS",
+      "jest_tests": 1,
+      "probes": 25,
+      "limits": "historical defect reproductions; not fixed-control regression acceptance"
+    },
+    {
+      "source": "candidate plus published audit files",
+      "command": "pnpm --filter @tradecloseout/api exec jest --config ../../docs/audits/phase1-2026-11-12/evidence/jest.config.cjs --runInBand",
+      "result": "PASS",
+      "jest_tests": 1,
+      "probes": 25,
+      "limits": "portable publication reproduction; not production acceptance"
+    }
+  ],
+  "unperformed": [
+    "remote exact-head CI acceptance",
+    "actual production deployment",
+    "real vendor email/SMS/S3/scanner acceptance",
+    "independent human IAM/legal authority acceptance",
+    "deployed HTTPS production application journey",
+    "production backup/PITR/load/incident drills"
+  ]
+}

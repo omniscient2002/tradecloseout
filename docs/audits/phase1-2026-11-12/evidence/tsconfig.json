@@ -1,0 +1,20 @@
+{
+  "extends": "../../../../apps/api/tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": "../../../../apps/api",
+    "typeRoots": ["../../../../apps/api/node_modules/@types", "../../../../node_modules/@types"],
+    "paths": {
+      "@tradecloseout/shared": ["../../packages/shared/src"],
+      "@tradecloseout/shared/*": ["../../packages/shared/src/*"],
+      "@tradecloseout/db": ["../../packages/db/src"],
+      "@tradecloseout/db/*": ["../../packages/db/src/*"],
+      "@tradecloseout/pdf-engine": ["../../packages/pdf-engine/src"],
+      "@tradecloseout/pdf-engine/*": ["../../packages/pdf-engine/src/*"],
+      "ioredis": ["node_modules/ioredis"],
+      "@nestjs/core": ["node_modules/@nestjs/core"],
+      "rxjs": ["node_modules/rxjs"],
+      "drizzle-orm/pg-core": ["node_modules/drizzle-orm/pg-core"]
+    }
+  },
+  "include": ["phase1-foundation-probes.spec.ts"]
+}
