@@ -1,0 +1,8 @@
+packages/db build$ tsc
+packages/shared build$ tsc
+packages/shared build: Done
+packages/pdf-engine build$ tsc
+packages/pdf-engine build: Done
+packages/db build: Done
+apps/api build$ nest build
+apps/api build: Done

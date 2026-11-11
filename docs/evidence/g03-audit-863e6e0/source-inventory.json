@@ -1,0 +1,297 @@
+{
+  "source_sha": "863e6e0c56ad4a92af2580fbcbfc179832056b2d",
+  "source_status": "",
+  "total_registered_http_routes": 196,
+  "org_and_auth_org_routes": [
+    {
+      "method": "DELETE",
+      "path": "/api/v1/orgs/:orgId/invitations/:id",
+      "controller": "OrganisationsController",
+      "handler": "revokeInvitation",
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "permission": "org.manage"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/orgs/:orgId/members/:userId",
+      "controller": "OrganisationsController",
+      "handler": "removeMember",
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "permission": "org.manage"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/auth/orgs",
+      "controller": "IdentityController",
+      "handler": "getOrgs",
+      "guards": [
+        "SessionCsrfGuard"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/orgs/:orgId",
+      "controller": "OrganisationsController",
+      "handler": "getOrganisation",
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "permission": "org.read"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/orgs/:orgId/audit",
+      "controller": "OrganisationsController",
+      "handler": "getAuditLog",
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "permission": "org.read"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/orgs/:orgId/dashboard",
+      "controller": "OrganisationsController",
+      "handler": "getDashboard",
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "permission": "org.read"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/orgs/:orgId/members",
+      "controller": "OrganisationsController",
+      "handler": "listMembers",
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "permission": "org.read"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/orgs/:orgId/members/:userId/offboarding-gap-report",
+      "controller": "OrganisationsController",
+      "handler": "getOffboardingGapReport",
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "permission": "org.manage"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/orgs/:orgId",
+      "controller": "OrganisationsController",
+      "handler": "updateOrganisation",
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "permission": "org.manage"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/orgs/:orgId/members/:userId",
+      "controller": "OrganisationsController",
+      "handler": "updateMemberRole",
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "permission": "org.manage"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/switch-org",
+      "controller": "IdentityController",
+      "handler": "switchActiveOrg",
+      "guards": [
+        "SessionCsrfGuard"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/orgs/:orgId/invitations",
+      "controller": "OrganisationsController",
+      "handler": "createInvitation",
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "permission": "org.manage"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/orgs/:orgId/reassign-work",
+      "controller": "OrganisationsController",
+      "handler": "reassignWork",
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "permission": "org.manage"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/orgs/:orgId/transfer-ownership",
+      "controller": "OrganisationsController",
+      "handler": "transferOwnership",
+      "guards": [
+        "SessionCsrfGuard",
+        "PermissionGuard"
+      ],
+      "permission": "org.transfer_ownership"
+    }
+  ],
+  "tracked_web_pages": [
+    "apps/web/src/app/(contractor)/audit/page.tsx",
+    "apps/web/src/app/(contractor)/billing/page.tsx",
+    "apps/web/src/app/(contractor)/dashboard/page.tsx",
+    "apps/web/src/app/(contractor)/parties/page.tsx",
+    "apps/web/src/app/(contractor)/projects/[projectId]/page.tsx",
+    "apps/web/src/app/(contractor)/projects/[projectId]/review/[versionId]/page.tsx",
+    "apps/web/src/app/(contractor)/projects/page.tsx",
+    "apps/web/src/app/(guest)/guest/[token]/page.tsx",
+    "apps/web/src/app/(public)/login/page.tsx",
+    "apps/web/src/app/(public)/mfa/page.tsx",
+    "apps/web/src/app/page.tsx"
+  ],
+  "organisation_service_entries": [
+    {
+      "line": 49,
+      "declaration": "async getDashboard(ctx: TenantActorContext, targetOrgId: string) {"
+    },
+    {
+      "line": 64,
+      "declaration": "return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {"
+    },
+    {
+      "line": 235,
+      "declaration": "async getOrganisation(ctx: TenantActorContext, targetOrgId: string) {"
+    },
+    {
+      "line": 245,
+      "declaration": "return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {"
+    },
+    {
+      "line": 273,
+      "declaration": "async updateOrgProfile("
+    },
+    {
+      "line": 314,
+      "declaration": "return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {"
+    },
+    {
+      "line": 393,
+      "declaration": "async updateOrganisation(ctx: TenantActorContext, orgId: string, dto: any) {"
+    },
+    {
+      "line": 401,
+      "declaration": "async listMembers(ctx: TenantActorContext, targetOrgId: string) {"
+    },
+    {
+      "line": 405,
+      "declaration": "return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {"
+    },
+    {
+      "line": 431,
+      "declaration": "async createInvitation("
+    },
+    {
+      "line": 456,
+      "declaration": "const issued = await withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {"
+    },
+    {
+      "line": 517,
+      "declaration": "const failDelivery = async () => {"
+    },
+    {
+      "line": 521,
+      "declaration": "await withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {"
+    },
+    {
+      "line": 542,
+      "declaration": "const promoted = await withTenantTransaction(this.pool, ctx, async (client: PoolClient) =>"
+    },
+    {
+      "line": 589,
+      "declaration": "async revokeInvitation(ctx: TenantActorContext, orgId: string, invitationId: string) {"
+    },
+    {
+      "line": 592,
+      "declaration": "return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {"
+    },
+    {
+      "line": 612,
+      "declaration": "async updateMemberRole("
+    },
+    {
+      "line": 630,
+      "declaration": "return withTenantTransaction(this.pool, ctx, async ("
+    },
+    {
+      "line": 723,
+      "declaration": "async offboardOrReassignMember("
+    },
+    {
+      "line": 731,
+      "declaration": "return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {"
+    },
+    {
+      "line": 873,
+      "declaration": "async removeMember("
+    },
+    {
+      "line": 891,
+      "declaration": "async transferOwnership(ctx: TenantActorContext, newOwnerUserId: string) {"
+    },
+    {
+      "line": 899,
+      "declaration": "return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {"
+    },
+    {
+      "line": 976,
+      "declaration": "async reassignWork("
+    },
+    {
+      "line": 992,
+      "declaration": "async getOffboardingGapReport(ctx: TenantActorContext, orgId: string, targetUserId: string) {"
+    },
+    {
+      "line": 995,
+      "declaration": "return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {"
+    },
+    {
+      "line": 1000,
+      "declaration": "private async computeMemberGapReport("
+    },
+    {
+      "line": 1136,
+      "declaration": "async getAuditLog(ctx: TenantActorContext, orgId: string) {"
+    },
+    {
+      "line": 1137,
+      "declaration": "return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {"
+    }
+  ],
+  "scope_requirements": [
+    "FR-ORG-001\u2013012/014 (V2 branches are not a new MVP blocker)",
+    "FR-IAM membership/invitation/offboarding",
+    "WF-01, WF-02, WF-21",
+    "FR-AUD-003",
+    "FR-BIL-001 seat activation coordination",
+    "Section 05 current authority, scope, audit and external visibility"
+  ],
+  "source_inventory_limits": "Source reflection and selected route/service/UI inspection, not exhaustive behavioral verification. Generic profile/config/schema records do not certify completed product workflows."
+}
