@@ -97,7 +97,9 @@ export class PermissionGuard implements CanActivate {
         throw new ForbiddenException({code:'GUEST_PERMISSION_DENIED'});
       }
 
-      const route=String(req.route?.path||req.path||'');
+      // Express route.path may lack the controller prefix or leading slash.
+      // The actual parsed request pathname includes both, so use it first.
+      const route=String(req.path||req.route?.path||'');
       let projectId:string|undefined=req.params?.projectId ||
         (route.startsWith('/projects/:id') ||
          (route.startsWith('/api/v1/projects/') && !req.params?.projectId)
