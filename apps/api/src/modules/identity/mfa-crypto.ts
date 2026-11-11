@@ -70,18 +70,26 @@ export function encryptFactor(plaintext: string): string {
 export function decryptFactor(envelope: string): string {
   const parts = envelope.split(':');
   if (parts.length !== 4 || parts[0] !== 'v1') throw new Error('MFA_FACTOR_ENVELOPE_INVALID');
-  const [primary,previous]=[encryptionKey(),previousEncryptionKey()];
-  for (const key of [primary,previous]) {
-    if (!key) continue;
+  const decryptWithKey = (key: Buffer): string => {
+    const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(parts[1], 'base64'));
+    decipher.setAuthTag(Buffer.from(parts[2], 'base64'));
+    return Buffer.concat([
+      decipher.update(Buffer.from(parts[3], 'base64')), decipher.final(),
+    ]).toString('utf8');
+  };
+  // Always try the current key first. A malformed or retired fallback key
+  // must not prevent authentication with valid current-key material.
+  try {
+    return decryptWithKey(encryptionKey());
+  } catch {
+    // The GCM tag may belong to a permitted previous rotation key.
+  }
+  const previous = previousEncryptionKey();
+  if (previous) {
     try {
-      const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(parts[1], 'base64'));
-      decipher.setAuthTag(Buffer.from(parts[2], 'base64'));
-      return Buffer.concat([
-        decipher.update(Buffer.from(parts[3], 'base64')),decipher.final(),
-      ]).toString('utf8');
+      return decryptWithKey(previous);
     } catch {
-      // A prior-key GCM tag failing is expected during a staged rotation.
-      // Never report the input, key, decrypted material or raw crypto error.
+      // Never disclose key material or raw cryptographic errors.
     }
   }
   throw new Error('MFA_FACTOR_DECRYPT_FAILED');
