@@ -1,0 +1,15 @@
+{
+  "source_sha": "863e6e0c56ad4a92af2580fbcbfc179832056b2d",
+  "source_checkout": "/tmp/tc-g01-implementation",
+  "source_status": "",
+  "node": "22.23.2",
+  "pnpm": "12.4.1",
+  "postgres": "16.15",
+  "runtime_role": "tc_app",
+  "services": "Environment-local disposable PostgreSQL/Redis fixtures only",
+  "probe_run": "After successful API/dependency build; results contain timestamps, migration ledger and observations",
+  "application_changes": false,
+  "published_to_github": false,
+  "independent_acceptance": false,
+  "production_acceptance": false
+}
