@@ -1,0 +1,216 @@
+{
+  "sourceSha": "c6b6024d3d5b25d2d1ab87f77e2d3294500c5bb0",
+  "runtime": {
+    "current_user": "tc_app",
+    "version": "PostgreSQL 16.15 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit"
+  },
+  "probes": [
+    {
+      "name": "owner dashboard fails on nonexistent retention column",
+      "error": "42703",
+      "message": "column p.retention_at_risk_paise does not exist"
+    },
+    {
+      "name": "partial profile update supplies null to NOT NULL defaulted fields",
+      "error": "23502",
+      "message": "null value in column \"brand_color\" of relation \"org_profiles\" violates not-null constraint"
+    },
+    {
+      "name": "self approval setting writes profile but leaves organisation policy false",
+      "observed": {
+        "org_policy": false,
+        "profile_policy": true
+      }
+    },
+    {
+      "name": "explicit null cannot clear PAN",
+      "observed": {
+        "pan": "ABCDE1234F"
+      }
+    },
+    {
+      "name": "row version HTTP wrapper ignores If-Match contract and defaults to one",
+      "error": "PRECONDITION_FAILED",
+      "message": "Conflict Exception"
+    },
+    {
+      "name": "revoke invitation fails because updated_at does not exist",
+      "error": "42703",
+      "message": "column \"updated_at\" of relation \"invitations\" does not exist"
+    },
+    {
+      "name": "invitation stores an arbitrary role",
+      "observed": {
+        "role": "UNRECOGNISED",
+        "email": "not-an-email"
+      }
+    },
+    {
+      "name": "parallel invitation calls create duplicate live invitations",
+      "observed": {
+        "count": 2
+      }
+    },
+    {
+      "name": "role changes produce neither audit nor outbox events",
+      "observed": {
+        "audit": 0,
+        "outbox": 0
+      }
+    },
+    {
+      "name": "ownership transfer succeeds without target confirmation",
+      "observed": {
+        "previousOwnerUserId": "9f8f6335-f704-406d-bfa7-02402b36b0e3",
+        "newOwnerUserId": "985f99ff-5f3c-4714-a460-26d0c5595762"
+      }
+    },
+    {
+      "name": "owner transfer racing role change can leave zero owners",
+      "observed": {
+        "active_owners": 0
+      }
+    },
+    {
+      "name": "removal can reassign open work back to the removed user",
+      "observed": {
+        "status": "REMOVED",
+        "orphaned": true
+      }
+    },
+    {
+      "name": "replacement without project membership or defect permission is accepted",
+      "observed": {
+        "assigned_to_ineligible": true
+      }
+    },
+    {
+      "name": "removed user project membership remains ACTIVE",
+      "observed": {
+        "status": "ACTIVE"
+      }
+    },
+    {
+      "name": "defect reassignment does not increment row_version",
+      "observed": {
+        "row_version": 1
+      }
+    },
+    {
+      "name": "already removed member can be removed again and emits duplicate events",
+      "observed": {
+        "removals": 2
+      }
+    },
+    {
+      "name": "audit service ignores mismatched org argument",
+      "observed": []
+    },
+    {
+      "name": "profile service accepts stale actor authority after membership removal",
+      "observed": {
+        "orgId": "fb91988d-6ed4-4a56-9e46-394528a043b6",
+        "rowVersion": 2
+      }
+    },
+    {
+      "name": "suspended organisation guard denies GET instead of preserving reads",
+      "error": "SESSION_EXPIRED",
+      "message": "Unauthorized Exception"
+    },
+    {
+      "name": "project member can be added without an organisation membership",
+      "observed": {
+        "role": "MADE_UP_ROLE",
+        "status": "ACTIVE"
+      }
+    },
+    {
+      "name": "dashboard expiry query independently fails with excess bind parameter",
+      "error": "08P01",
+      "message": "bind message supplies 2 parameters, but prepared statement \"\" requires 1"
+    },
+    {
+      "name": "profile accepts unsafe retention and invalid colors",
+      "observed": {
+        "default_retention_months": -1,
+        "brand_color": "invalid-color"
+      }
+    },
+    {
+      "name": "offboarding reassigns HANDED_OVER requirements on CLOSED projects",
+      "observed": {
+        "status": "HANDED_OVER",
+        "changed": true,
+        "row_version": 2
+      }
+    },
+    {
+      "name": "gap report overcounts pending reviews through unrelated document links",
+      "observed": {
+        "actualReviewCount": 1,
+        "reported": 2
+      }
+    },
+    {
+      "name": "invitation expiry is ignored by pending listing",
+      "observed": {
+        "pending": 1
+      }
+    },
+    {
+      "name": "member role update does not protect against stale row versions",
+      "observed": {
+        "role": "R-SITE",
+        "row_version": 3
+      }
+    },
+    {
+      "name": "last owner demotion is blocked in a sequential request",
+      "error": "LAST_OWNER_DEMOTION_BLOCKED",
+      "message": "Conflict Exception"
+    },
+    {
+      "name": "second active owner is rejected by existing database uniqueness",
+      "error": "23505",
+      "message": "duplicate key value violates unique constraint \"memberships_one_active_owner_uq\""
+    },
+    {
+      "name": "tenant mismatch on member list is rejected",
+      "error": "NotFoundException",
+      "message": "ORGANISATION_NOT_FOUND"
+    },
+    {
+      "name": "RLS prevents a scoped profile read from another organisation",
+      "observed": {
+        "rows": 0
+      }
+    },
+    {
+      "name": "site role passes actual audit route permission and reads organisation audit payload",
+      "observed": {
+        "permission": "org.read",
+        "allowed": true,
+        "internalNote": "audit fixture sensitive internal note"
+      }
+    },
+    {
+      "name": "weekly owner discovery under restricted role sees zero owners despite active organisations",
+      "observed": {
+        "rows": 0
+      }
+    },
+    {
+      "name": "refused removal rolls back attempted session revocation",
+      "observed": {
+        "refusal": "OPEN_WORK_REQUIRES_REASSIGNMENT",
+        "revoked": false
+      }
+    },
+    {
+      "name": "PAN normalization is validated but normalized value is not persisted",
+      "error": "23514",
+      "message": "new row for relation \"org_profiles\" violates check constraint \"org_profiles_pan_check\""
+    }
+  ]
+}

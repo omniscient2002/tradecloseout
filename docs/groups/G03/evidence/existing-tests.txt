@@ -1,0 +1,10 @@
+PASS test/production-reaudit-remediation.spec.ts (9.811 s)
+PASS test/hvac-production-reaudit-remediation.spec.ts
+PASS test/discovery-lifecycle-foundations.spec.ts
+PASS test/modules/auth-iam.spec.ts
+
+Test Suites: 4 passed, 4 total
+Tests:       72 passed, 72 total
+Snapshots:   0 total
+Time:        10.546 s
+Ran all test suites matching /test\/modules\/auth-iam.spec.ts|test\/discovery-lifecycle-foundations.spec.ts|test\/hvac-production-reaudit-remediation.spec.ts|test\/production-reaudit-remediation.spec.ts/i.
