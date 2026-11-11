@@ -1,0 +1,23 @@
+{
+  "source_sha": "863e6e0c56ad4a92af2580fbcbfc179832056b2d",
+  "source_checkout": "/tmp/tc-g01-implementation",
+  "source_status": "",
+  "node": "22.23.2",
+  "pnpm": "12.4.1",
+  "postgres": "16.15",
+  "runtime_role": {
+    "current_user": "tc_app",
+    "rolsuper": false,
+    "rolbypassrls": false
+  },
+  "migration_count": 41,
+  "reused_build_sha": "863e6e0c56ad4a92af2580fbcbfc179832056b2d",
+  "reused_compiled_hashes_verified": true,
+  "strict_production_http": "Actual compiled API on loopback HTTP, seeded auth sessions/MFA, no deployed TLS/proxy/browser acceptance",
+  "seat_probe_authentication": "Test-mode debug OTP, nondelivering provider and in-memory Redis fixture",
+  "concurrency": "Actual independent PG connections, query scheduling hooks only; no SQL result mocked",
+  "services": "Environment-local disposable PostgreSQL and Redis fixtures only",
+  "application_changes": false,
+  "independent_acceptance": false,
+  "production_acceptance": false
+}

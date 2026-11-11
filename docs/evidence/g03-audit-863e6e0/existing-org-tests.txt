@@ -1,0 +1,10 @@
+$ jest --runInBand --runTestsByPath test/g01-member-invitation-authority-db.spec.ts test/g01-invitation-db.spec.ts test/g01-auth-session-transaction-fence-db.spec.ts
+PASS test/g01-invitation-db.spec.ts (11.228 s)
+PASS test/g01-member-invitation-authority-db.spec.ts
+PASS test/g01-auth-session-transaction-fence-db.spec.ts
+
+Test Suites: 3 passed, 3 total
+Tests:       7 passed, 7 total
+Snapshots:   0 total
+Time:        18.575 s, estimated 25 s
+Ran all test suites within paths "test/g01-member-invitation-authority-db.spec.ts", "test/g01-invitation-db.spec.ts", "test/g01-auth-session-transaction-fence-db.spec.ts".
