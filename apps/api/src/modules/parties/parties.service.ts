@@ -968,41 +968,116 @@ export class PartiesService {
     ctx: ExecutionContext,
     projectId: string,
     obligationId: string,
-    dto: { decision?: 'ACCEPT' | 'REJECT'; notes?: string; documentVersionId?: string },
+    dto: { decision?: 'ACCEPT'|'REJECT'; notes?: string; documentVersionId?: string },
   ) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
-      const { rows } = await client.query(
-        `SELECT * FROM supplier_document_obligations
-          WHERE org_id = $1 AND project_id = $2 AND id = $3
-          FOR UPDATE`,
-        [ctx.orgId, projectId, obligationId],
+    if(ctx.actorType==='GUEST'||ctx.guestGrantId ||
+       !['R-OWNER','R-ADMIN','R-PM','R-PROC'].includes(ctx.orgRole||'')){
+      throw new ForbiddenException({code:'CONTRACTOR_INTAKE_AUTHORITY_REQUIRED'});
+    }
+    const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if(!uuid.test(projectId)||!uuid.test(obligationId)||
+       !dto || !['ACCEPT','REJECT'].includes(dto.decision||'') ||
+       (dto.documentVersionId!==undefined && !uuid.test(dto.documentVersionId))){
+      throw new UnprocessableEntityException({code:'INVALID_SUPPLIER_INTAKE'});
+    }
+    return this.db.withTenantContext(ctx,async(client:PoolClient)=>{
+      // Lock the project before the obligation; closure and intake cannot
+      // accept evidence in different effective project states.
+      const {rows:projects}=await client.query(
+        `SELECT status FROM projects WHERE org_id=$1 AND id=$2 FOR UPDATE`,
+        [ctx.orgId,projectId],
       );
-      if (!rows.length) {
-        throw new NotFoundException({
-          code: 'OBLIGATION_NOT_FOUND',
-          detail: `Supplier document obligation ${obligationId} not found in project ${projectId}.`,
-        });
+      if(!projects.length||!['DRAFT','ACTIVE','HANDOVER'].includes(projects[0].status)){
+        throw new NotFoundException('PROJECT_NOT_AVAILABLE');
       }
-      const existing = rows[0];
-      const decision = dto.decision ?? 'ACCEPT';
-      const newStatus = decision === 'REJECT' ? 'PENDING' : 'ACCEPTED';
-
+      const {rows}=await client.query(
+        `SELECT id,status,supplier_party_id,requirement_id,doc_type_key,
+                document_version_id
+           FROM supplier_document_obligations
+          WHERE org_id=$1 AND project_id=$2 AND id=$3 FOR UPDATE`,
+        [ctx.orgId,projectId,obligationId],
+      );
+      if(!rows.length)throw new NotFoundException('OBLIGATION_NOT_FOUND');
+      const existing=rows[0];
+      const decision=dto.decision!;
+      const versionId=dto.documentVersionId||existing.document_version_id;
+      if(existing.status==='ACCEPTED'){
+        if(decision==='ACCEPT' && versionId===existing.document_version_id){
+          return {id:obligationId,projectId,status:'ACCEPTED',
+            decision,documentVersionId:versionId,alreadyAccepted:true};
+        }
+        throw new ConflictException({code:'SUPPLIER_INTAKE_ALREADY_ACCEPTED'});
+      }
+      if(!['PENDING','UPLOADED'].includes(existing.status)){
+        throw new ConflictException({code:'SUPPLIER_INTAKE_STATE_CHANGED'});
+      }
+      if(decision==='REJECT'){
+        if(typeof dto.notes!=='string'||dto.notes.trim().length<8){
+          throw new UnprocessableEntityException({code:'SUPPLIER_REJECTION_REASON_REQUIRED'});
+        }
+        await client.query(
+          `UPDATE supplier_document_obligations
+              SET status='PENDING'
+            WHERE org_id=$1 AND project_id=$2 AND id=$3`,
+          [ctx.orgId,projectId,obligationId],
+        );
+        return {id:obligationId,projectId,status:'PENDING',
+          decision,documentVersionId:existing.document_version_id||null,
+          notes:dto.notes.trim()};
+      }
+      if(!versionId)throw new UnprocessableEntityException({
+        code:'VERIFIED_SUPPLIER_EVIDENCE_REQUIRED',
+      });
+      // This is *document intake*, not automatic engineering approval.
+      // The verified bytes must exist and must belong to the obligation's
+      // exact project, supplier and requirement. No status-only shortcut.
+      const {rows:evidence}=await client.query(
+        `SELECT dv.id
+           FROM document_versions dv
+           JOIN documents d
+             ON d.org_id=dv.org_id AND d.project_id=dv.project_id
+            AND d.id=dv.document_id AND d.deleted_at IS NULL
+           JOIN storage_objects so
+             ON so.org_id=dv.org_id AND so.id=dv.object_id
+           LEFT JOIN guest_grants g
+             ON g.org_id=dv.org_id AND g.id=dv.uploaded_by_grant_id
+          WHERE dv.org_id=$1 AND dv.project_id=$2 AND dv.id=$3
+            AND dv.deleted_at IS NULL AND dv.file_status='READY'
+            AND so.status='READY' AND so.provider_version_id IS NOT NULL
+            AND so.sha256 IS NOT NULL AND so.observed_size_bytes=so.size_bytes
+            AND d.doc_type_key=$4
+            AND (
+              $5::uuid IS NULL
+              OR EXISTS(
+                SELECT 1 FROM document_requirements dr
+                 WHERE dr.org_id=d.org_id AND dr.project_id=d.project_id
+                   AND dr.document_id=d.id AND dr.requirement_id=$5
+              )
+            )
+            AND (
+              $6::uuid IS NULL OR
+              g.party_id=$6 OR EXISTS(
+                SELECT 1 FROM requirements r
+                 WHERE r.org_id=d.org_id AND r.project_id=d.project_id
+                   AND r.id=$5 AND r.owner_party_id=$6
+              )
+            )
+          FOR SHARE OF dv,d,so`,
+        [ctx.orgId,projectId,versionId,existing.doc_type_key,
+          existing.requirement_id||null,existing.supplier_party_id||null],
+      );
+      if(!evidence.length)throw new NotFoundException({
+        code:'SUPPLIER_EVIDENCE_NOT_ELIGIBLE',
+      });
       await client.query(
         `UPDATE supplier_document_obligations
-            SET status = $4,
-                document_version_id = COALESCE($5, document_version_id)
-          WHERE org_id = $1 AND project_id = $2 AND id = $3`,
-        [ctx.orgId, projectId, obligationId, newStatus, dto.documentVersionId ?? null],
+            SET status='ACCEPTED',document_version_id=$4
+          WHERE org_id=$1 AND project_id=$2 AND id=$3 AND status IN ('PENDING','UPLOADED')`,
+        [ctx.orgId,projectId,obligationId,versionId],
       );
-
-      return {
-        id: obligationId,
-        projectId,
-        status: newStatus,
-        decision,
-        documentVersionId: dto.documentVersionId ?? existing.document_version_id,
-        notes: dto.notes ?? null,
-      };
+      return {id:obligationId,projectId,status:'ACCEPTED',
+        decision,documentVersionId:versionId,engineeringAccepted:false};
     });
   }
+
 }
