@@ -3,7 +3,7 @@
 
 import { Injectable, Optional, ForbiddenException } from '@nestjs/common';
 import { Pool, PoolClient } from 'pg';
-import { assertCurrentProjectAuthority } from '@tradecloseout/db/project-authority';
+import { assertCurrentProjectAuthority } from '@tradecloseout/db/tenant-tx';
 
 export interface ExecutionContext {
   orgId: string;
