@@ -3,6 +3,7 @@
 
 import { Injectable, Optional, ForbiddenException } from '@nestjs/common';
 import { Pool, PoolClient } from 'pg';
+import { assertCurrentProjectAuthority } from '@tradecloseout/db/project-authority';
 
 export interface ExecutionContext {
   orgId: string;
@@ -11,6 +12,10 @@ export interface ExecutionContext {
   requestId: string;
   orgRole?: string;
   projectRole?: string;
+  projectId?: string;
+  projectScope?: Record<string, unknown>;
+  permission?: string;
+  docControllerOrgWideDownload?: boolean;
   guestGrantId?: string;
   guestScope?: Record<string, unknown>;
   guestCapabilities?: string[];
@@ -84,6 +89,8 @@ export class TenantDbService {
         );
         if (!live.length) throw new Error('AUTH_SESSION_CONTEXT_CHANGED');
       }
+
+      await assertCurrentProjectAuthority(client, {...ctx, actorType:ctx.actorType});
 
       const result = await fn(client);
       await client.query('COMMIT');
