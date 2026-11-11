@@ -126,7 +126,18 @@ export async function withTenantTransaction<T>(
             packageId: ev.entityType === 'HANDOVER_PACKAGE' ? ev.entityId : undefined,
             actorUserId: ctx.userId,
             requestId: ctx.requestId,
+            // The trusted context must win over all caller-provided fields.
+            // Preserve legacy consumer payloads but never let a domain event
+            // impersonate a different tenant, actor or resource identity.
             ...(ev.afterJson || {}),
+            eventId,
+            orgId: ctx.orgId,
+            projectId: ev.projectId ?? null,
+            entityType: ev.entityType,
+            entityId: ev.entityId,
+            packageId: ev.entityType === 'HANDOVER_PACKAGE' ? ev.entityId : undefined,
+            actorUserId: ctx.userId,
+            requestId: ctx.requestId,
           }),
         ],
       );
@@ -222,7 +233,7 @@ export async function reconcileStorageQuotaOnFileStatusChange(
 
   await client.query(
     `UPDATE usage_counters
-        SET value = GREATEST(0::numeric, value::numeric + $2)::text,
+        SET value = GREATEST(0::numeric, value::numeric + $2::numeric)::bigint,
             updated_at = now()
       WHERE org_id = $1 AND metric = 'STORAGE_BYTES' AND period = 'ALL_TIME'`,
     [orgId, delta.toString()],
