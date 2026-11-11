@@ -62,6 +62,46 @@ describe('Phase 1 audit/outbox tenant and secret boundaries', () => {
     expect(client.release).toHaveBeenCalledTimes(1);
   });
 
+  it('PH1-G26-006: rollback failure preserves command cause and destroys poisoned connection', async () => {
+    const original = new Error('ORIGINAL_BUSINESS_FAILURE');
+    const client = {
+      query: jest.fn(async (sql: string) => {
+        if (sql === 'ROLLBACK') throw new Error('CONNECTION_UNCERTAIN');
+        return {rows: [], rowCount: 1};
+      }),
+      release: jest.fn(),
+    };
+    const ctx = {
+      orgId:'tenant-a',userId:'system-a',actorType:'SYSTEM' as const,
+      ip:'127.0.0.1',userAgent:'test',requestId:'transaction-original-error',
+    };
+    await expect(withTenantTransaction({connect:async()=>client} as any,ctx,async()=>{
+      throw original;
+    })).rejects.toBe(original);
+    expect(client.release).toHaveBeenCalledTimes(1);
+    expect(client.release).toHaveBeenCalledWith(true);
+    expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+  });
+
+  it('PH1-G26-006: confirmed rollback reuses connection and applies bounded server timeouts', async () => {
+    const original=new Error('EXPECTED_COMMAND_REJECTION');
+    const client={
+      query:jest.fn(async(_sql:string)=>({rows:[],rowCount:1})),
+      release:jest.fn(),
+    };
+    const ctx={orgId:'tenant-a',userId:'system-a',actorType:'SYSTEM' as const,
+      ip:'127.0.0.1',userAgent:'test',requestId:'rollback-known'};
+    await expect(withTenantTransaction({connect:async()=>client} as any,ctx,async()=>{
+      throw original;
+    })).rejects.toBe(original);
+    expect(client.release).toHaveBeenCalledTimes(1);
+    expect(client.release).toHaveBeenCalledWith(false);
+    const statements=client.query.mock.calls.map(([sql])=>sql);
+    expect(statements).toContain(`SET LOCAL lock_timeout = '15s'`);
+    expect(statements).toContain(`SET LOCAL statement_timeout = '90s'`);
+    expect(statements).toContain(`SET LOCAL idle_in_transaction_session_timeout = '60s'`);
+  });
+
   it('PH1-G26-002: quota write binds bigint arithmetic, not text', async () => {
     const calls: { sql: string; params: unknown[] }[] = [];
     const client = {

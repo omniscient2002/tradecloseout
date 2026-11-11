@@ -58,6 +58,16 @@ void test('Isolated worker DB/Redis and storage HTTP contract regressions', asyn
         await assert.rejects(scheduler.runWithPeriodLock(name, done, 30, 30, async () => { throw new Error('injected failure'); }), /injected/);
         assert.equal(await redis.exists(done), 0);
         await run(); assert.equal(effects, 2); await redis.del(done);
+        // Simulate a replacement worker taking over after TTL/lost ownership:
+        // the old callback cannot record a fraudulent completion marker.
+        const takeover = `period-takeover:${randomUUID()}`;
+        const takeoverDone = `test:done:${takeover}`;
+        await assert.rejects(scheduler.runWithPeriodLock(takeover,takeoverDone,30,30,async()=>{
+          await redis.set(`lock:sched:${takeover}`,'replacement-worker','EX',30);
+        }), /SCHEDULER_LEASE_LOST/);
+        assert.equal(await redis.exists(takeoverDone),0);
+        assert.equal(await redis.get(`lock:sched:${takeover}`),'replacement-worker');
+        await redis.del(`lock:sched:${takeover}`);
         const period = scheduler.getIndiaSchedulePeriods(new Date('2027-01-03T18:30:00Z'));
         assert.equal(period.day, '2027-01-04'); assert.equal(period.hour, 0); assert.equal(period.week, '2027-W01');
       });

@@ -17,7 +17,7 @@ import { convertSupportingFormatToPdf } from './queues/format-converter';
 import { compileAndPersistHandoverPackage, markHandoverPackageFailed } from './queues/handover-package.processor';
 import { compileAndPersistPortableArchive } from './queues/portable-archive.processor';
 import { BoundedByteStream } from './queues/bounded-stream';
-import { OUTBOX_EVENT_REGISTRY } from './event-registry';
+import { dispatchDueOutbox } from './outbox-dispatch';
 import { validateWorkerStartupConfig, assertWorkerRuntimeDatabasePrivileges } from './worker-startup-security';
 
 const execFileAsync = promisify(execFile);
@@ -467,96 +467,36 @@ async function bootWorker() {
   });
   formatWorker.on('failed', (job, err) => console.error(`Job ${job?.id} failed:`, err));
 
-  // 4. Outbox Poller (every 2s) with durable transaction locking (TC2-005)
+  // 4. Outbox claim/dispatch/ack, every 2s. Queue/network work is outside
+  // every tenant DB transaction; each claim has a fenced, expiring owner token.
   const pollOutbox = async () => {
     try {
-      // organisations is the only global discovery surface. Event rows themselves are
-      // never queried until app.current_org has been set in a tenant-bound transaction.
-      const { rows: orgRows } = await pool.query(
-        `SELECT id FROM organisations WHERE status <> 'DELETED' ORDER BY id`,
-      );
-
-      for (const { id: orgId } of orgRows) {
-        const client = await pool.connect();
-        try {
-          await client.query('BEGIN');
-          await client.query(
-            `SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`,
-            [orgId],
-          );
-          const { rows } = await client.query(
-            `SELECT id, org_id, project_id, event_type, payload_json
-               FROM outbox_events
-              WHERE org_id = $1 AND dispatched_at IS NULL AND attempts < 5
-              ORDER BY created_at ASC
-              LIMIT 20
-              FOR UPDATE SKIP LOCKED`,
-            [orgId],
-          );
-
-          for (const row of rows) {
-            try {
-              const payload = typeof row.payload_json === 'string' ? JSON.parse(row.payload_json) : row.payload_json;
-              const fullPayload = {
-                ...payload,
-                orgId: row.org_id,
-                projectId: payload.projectId || row.project_id,
-                eventId: row.id,
-              };
-
-              const reg = OUTBOX_EVENT_REGISTRY[row.event_type];
-              if (!reg) {
-                throw new Error(`UNKNOWN_OUTBOX_EVENT_TYPE: ${row.event_type} (${row.id}) is not registered in the outbox event catalog`);
-              }
-
-              if (row.event_type === 'FILE_UPLOAD_COMPLETED_ENQUEUE_SCAN') {
-                await fileQueue.add('scan', fullPayload, {
-                  jobId: `file-scan-${row.id}`,
-                  attempts: 3,
-                  backoff: { type: 'exponential', delay: 1000 },
-                });
-              } else if (row.event_type === 'HANDOVER_PACKAGE_QUEUED') {
-                await pdfQueue.add('compile', fullPayload, {
-                  jobId: `pdf-compile-${row.id}`,
-                  attempts: 2,
-                  backoff: { type: 'fixed', delay: 2000 },
-                });
-              } else if (row.event_type === 'PROJECT_ARCHIVE_EXPORT_QUEUED') {
-                await archiveQueue.add('export', fullPayload, {
-                  jobId: `archive-export-${row.id}`,
-                  attempts: 2,
-                  backoff: { type: 'fixed', delay: 2000 },
-                });
-              } else if (reg.category === 'INFORMATIONAL') {
-                // Registered informational domain events are acknowledged for downstream audit / notification
-                console.log(`[Outbox Poller] Dispatched informational event: ${row.event_type} (${row.id})`);
-              } else {
-                throw new Error(`UNHANDLED_EXECUTABLE_OUTBOX_EVENT: ${row.event_type} (${row.id})`);
-              }
-
-              await client.query(
-                `UPDATE outbox_events SET dispatched_at = now()
-                  WHERE org_id = $1 AND id = $2 AND dispatched_at IS NULL`,
-                [orgId, row.id],
-              );
-            } catch (dispatchErr) {
-              console.error(`Failed to dispatch outbox event ${row.id}:`, dispatchErr);
-              await client.query(
-                `UPDATE outbox_events SET attempts = attempts + 1 WHERE org_id = $1 AND id = $2`,
-                [orgId, row.id],
-              );
-            }
-          }
-          await client.query('COMMIT');
-        } catch (err) {
-          await client.query('ROLLBACK').catch(() => {});
-          console.error(`[Outbox Poller Error] tenant ${orgId}:`, err);
-        } finally {
-          client.release();
+      const result = await dispatchDueOutbox(pool, async (eventType, payload, eventId) => {
+        if (eventType === 'FILE_UPLOAD_COMPLETED_ENQUEUE_SCAN') {
+          await fileQueue.add('scan', payload, {
+            jobId: `file-scan-${eventId}`,
+            attempts: 3, backoff: {type:'exponential',delay:1000},
+          });
+        } else if (eventType === 'HANDOVER_PACKAGE_QUEUED') {
+          await pdfQueue.add('compile', payload, {
+            jobId: `pdf-compile-${eventId}`,
+            attempts: 2, backoff: {type:'fixed',delay:2000},
+          });
+        } else if (eventType === 'PROJECT_ARCHIVE_EXPORT_QUEUED') {
+          await archiveQueue.add('export', payload, {
+            jobId: `archive-export-${eventId}`,
+            attempts: 2, backoff: {type:'fixed',delay:2000},
+          });
+        } else {
+          throw new Error('OUTBOX_EVENT_INVALID');
         }
+      });
+      if (result.failed) {
+        console.error('OUTBOX_DISPATCH_FAILURES', {failed:result.failed});
       }
-    } catch (err) {
-      console.error('[Outbox Poller Error]:', err);
+    } catch {
+      // Never forward raw provider errors, payloads, or tenant identifiers.
+      console.error('OUTBOX_POLL_FAILED');
     }
   };
 

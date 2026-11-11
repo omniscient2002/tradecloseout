@@ -73,9 +73,15 @@ export async function withTenantTransaction<T>(
 
   const client = await pool.connect();
   const stagedEvents: DomainOutboxEvent[] = [];
+  let destroyConnection = false;
 
   try {
     await client.query('BEGIN');
+    // Server-side limits bound stranded locks and idle sessions. Transaction-
+    // local settings are automatically cleared after COMMIT/ROLLBACK.
+    await client.query(`SET LOCAL lock_timeout = '15s'`);
+    await client.query(`SET LOCAL statement_timeout = '90s'`);
+    await client.query(`SET LOCAL idle_in_transaction_session_timeout = '60s'`);
 
     // Bind transaction-local settings for PostgreSQL RLS policies (08 §5.2)
     await client.query(`SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`, [ctx.orgId]);
@@ -160,10 +166,14 @@ export async function withTenantTransaction<T>(
     await client.query('COMMIT');
     return result;
   } catch (err) {
-    await client.query('ROLLBACK');
+    // If the transaction cannot be rolled back, the physical connection must
+    // be removed from the pool. Preserve the ORIGINAL command/commit error:
+    // replacing it with a rollback failure hides the causal evidence.
+    try { await client.query('ROLLBACK'); }
+    catch { destroyConnection = true; }
     throw err;
   } finally {
-    client.release();
+    client.release(destroyConnection);
   }
 }
 

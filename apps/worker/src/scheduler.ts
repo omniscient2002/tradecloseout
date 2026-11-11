@@ -63,7 +63,21 @@ export class TradeCloseoutScheduler {
     try {
       if (await this.redis.exists(completedKey)) return;
       await fn();
-      await this.redis.set(completedKey, '1', 'EX', completedTtlSeconds);
+      // PH1-G24-001: an expired/replaced lease must NEVER be allowed to
+      // manufacture a durable period-complete receipt. Check owner and write
+      // the completion marker atomically, before releasing the lease.
+      const commitLua = `
+        if redis.call("get", KEYS[1]) == ARGV[1] then
+          redis.call("set", KEYS[2], "1", "EX", ARGV[2])
+          redis.call("del", KEYS[1])
+          return 1
+        end
+        return 0
+      `;
+      const committed = await this.redis.eval(
+        commitLua, 2, fullKey, completedKey, ownerToken, String(completedTtlSeconds),
+      );
+      if (committed !== 1) throw new Error('SCHEDULER_LEASE_LOST');
     } finally {
       const releaseLua = `
         if redis.call("get", KEYS[1]) == ARGV[1] then
