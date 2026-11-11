@@ -237,7 +237,7 @@ export async function reconcileStorageQuotaOnFileStatusChange(
  * schema-level event allowlists or secret-free producer contracts.
  */
 export function redactSensitiveFields(obj: Record<string, unknown>): Record<string, unknown> {
-  const secretKey = /(?:^|_)(?:tokens?|secrets?|passwords?|otps?|pins?|api_keys?|access_keys?|private_keys?|recovery_codes?|backup_codes?|authorization|cookies?|qr_payload|client_secrets?)(?:_|$)/i;
+  const secretKey = /(?:^|_)(?:tokens?|secrets?|passwords?|otps?|totp|pins?|api_keys?|access_keys?|private_keys?|recovery_codes?|backup_codes?|manual_setup_key|mfa_factor|authorization|cookies?|qr_payload|client_secrets?)(?:_|$)/i;
   const isSecretKey = (key: string) => secretKey.test(
     key.replace(/([a-z0-9])([A-Z])/g, '$1_$2').replace(/[.\-]/g, '_').toLowerCase(),
   );
