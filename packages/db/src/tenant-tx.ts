@@ -1,6 +1,7 @@
 import { Pool, PoolClient } from 'pg';
 import { createHash } from 'crypto';
 import { uuidv7 } from 'uuidv7';
+import { assertCurrentProjectAuthority } from './project-authority';
 
 export interface TenantActorContext {
   orgId: string;       // Must come exclusively from session.active_org_id (AUD-014)
@@ -11,6 +12,10 @@ export interface TenantActorContext {
   requestId: string;
   orgRole?: string;
   projectRole?: string;
+  projectId?: string;
+  projectScope?: Record<string, unknown>;
+  permission?: string;
+  docControllerOrgWideDownload?: boolean;
   guestGrantId?: string;
   guestProjectId?: string;
   guestCapabilities?: string[];
@@ -96,6 +101,8 @@ export async function withTenantTransaction<T>(
         throw new Error('AUTH_SESSION_CONTEXT_CHANGED');
       }
     }
+
+    await assertCurrentProjectAuthority(client, ctx);
 
     const result = await work(client, (ev) => stagedEvents.push(ev));
 
