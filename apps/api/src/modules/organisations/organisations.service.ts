@@ -603,6 +603,14 @@ export class OrganisationsService {
           (dto.role === 'R-ADMIN' && activeActorRole !== 'R-OWNER')) {
         throw new ForbiddenException({code:'MEMBER_ROLE_CHANGE_NOT_AUTHORIZED'});
       }
+      // G03-023: Session row locks precede target membership row locks in
+      // both role-change and offboarding. Otherwise one transaction can hold
+      // session SHARE while the other holds membership FOR UPDATE.
+      await client.query(
+        `SELECT id FROM sessions WHERE user_id=$1 AND active_org_id=$2
+          AND revoked_at IS NULL ORDER BY id FOR UPDATE`,
+        [targetUserId,orgId],
+      );
       const { rows: targetRoles } = await client.query(
         `SELECT role FROM memberships WHERE org_id=$1 AND user_id=$2
           AND status='ACTIVE' FOR UPDATE`,
@@ -704,6 +712,11 @@ export class OrganisationsService {
       if (!['R-OWNER','R-ADMIN'].includes(actor[0]?.role)) {
         throw new ForbiddenException({code:'OFFBOARDING_NOT_AUTHORIZED'});
       }
+      await client.query(
+        `SELECT id FROM sessions WHERE user_id=$1 AND active_org_id=$2
+          AND revoked_at IS NULL ORDER BY id FOR UPDATE`,
+        [input.targetUserId,ctx.orgId],
+      );
       const { rows: targetMemberRows } = await client.query(
         `SELECT id, role, status FROM memberships
           WHERE org_id = $1 AND user_id = $2
