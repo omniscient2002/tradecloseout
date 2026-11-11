@@ -67,7 +67,7 @@ export class PartiesController {
    */
   @Post('projects/:projectId/supplier-links')
   @UseGuards(SessionCsrfGuard, PermissionGuard)
-  @RequirePermission('document.upload')
+  @RequirePermission('party.manage')
   async createSupplierLink(
     @Req() req: any,
     @Param('projectId') projectId: string,
@@ -111,7 +111,7 @@ export class PartiesController {
    */
   @Post('projects/:projectId/supplier-upload-links')
   @UseGuards(SessionCsrfGuard, PermissionGuard)
-  @RequirePermission('document.upload')
+  @RequirePermission('party.manage')
   async createSupplierUploadLink(
     @Req() req: any,
     @Param('projectId') projectId: string,
@@ -258,7 +258,7 @@ export class PartiesController {
     'projects/:projectId/supplier-document-obligations/:id/intake',
   ])
   @UseGuards(SessionCsrfGuard, PermissionGuard)
-  @RequirePermission('document.upload')
+  @RequirePermission('party.manage')
   async intakeSupplierObligation(
     @Req() req: any,
     @Param('projectId') projectId: string,
