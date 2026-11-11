@@ -1,0 +1,193 @@
+{
+  "canonical_register_source": "https://github.com/omniscient2002/tradecloseout/blob/33d32a55a1286fd2b18e1c083b8a02d88a5244f6/docs/groups/G03/findings.json",
+  "canonical_reviewed_sha": "863e6e0c56ad4a92af2580fbcbfc179832056b2d",
+  "original_count": 23,
+  "candidate_sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08",
+  "canonical_register_modified": false,
+  "findings": [
+    {
+      "id": "G03-001",
+      "original_title": "Organisation audit endpoint bypasses audit permission and project scope",
+      "canonical_status_unchanged": "OPEN",
+      "phase2_assessment": "PROPOSED_FIX_REPROBED",
+      "assessment": "PR13 requires audit.read and returns metadata-only to full-tenant auditors; G03 probe G03 denies Site. PR16 still has org.read/raw audit. Integrate and test actual HTTP scope.",
+      "candidate_sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08"
+    },
+    {
+      "id": "G03-002",
+      "original_title": "Organisation dashboard fails against the migrated database",
+      "canonical_status_unchanged": "OPEN",
+      "phase2_assessment": "PROPOSED_FIX_REPROBED",
+      "assessment": "PR13 dashboard executes on migrated DB in G04. Shared PR16 retains older query. Browser/metric acceptance remains separate.",
+      "candidate_sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08"
+    },
+    {
+      "id": "G03-003",
+      "original_title": "Profile PATCH breaks partial updates and cannot clear optional values",
+      "canonical_status_unchanged": "OPEN",
+      "phase2_assessment": "PROPOSED_FIX_REPROBED",
+      "assessment": "PR13 typed PATCH preserves omitted fields and clears PAN in G01; stale-version parser tests pass. Integrate full consumer checks.",
+      "candidate_sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08"
+    },
+    {
+      "id": "G03-004",
+      "original_title": "Branding, state and retention inputs are not validated",
+      "canonical_status_unchanged": "OPEN",
+      "phase2_assessment": "PROPOSED_FIX_FOCUSED_TESTS",
+      "assessment": "PR13 allowlist rejects invalid branding/state/retention in five parser tests and verifies logo metadata. Generated output, actual scanner/provider and legal retention remain separate.",
+      "candidate_sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08"
+    },
+    {
+      "id": "G03-005",
+      "original_title": "Required profile/default fields are silently ignored",
+      "canonical_status_unchanged": "OPEN",
+      "phase2_assessment": "PARTIAL",
+      "assessment": "Contact/address/footer/logo fields now store/read (G11), but G02 proves self-approval policy divergence; defaults, multiple signatories and generated-output consumers remain incomplete.",
+      "candidate_sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08"
+    },
+    {
+      "id": "G03-006",
+      "original_title": "Offboarding accepts replacements without the required role or project access",
+      "canonical_status_unchanged": "OPEN",
+      "phase2_assessment": "PARTIAL",
+      "assessment": "PR13 adds active identity/project/reviewer-role checks. Replacement membership locking, resource scope, stage/separation and allocation remain in PH2-G03-004.",
+      "candidate_sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08"
+    },
+    {
+      "id": "G03-007",
+      "original_title": "Self-replacement removes a member while leaving their open work assigned",
+      "canonical_status_unchanged": "OPEN",
+      "phase2_assessment": "PROPOSED_FIX_REPROBED",
+      "assessment": "G05 rejects self replacement with SELF_REPLACEMENT_NOT_ALLOWED. Revalidate all aliases and integrated boundaries.",
+      "candidate_sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08"
+    },
+    {
+      "id": "G03-008",
+      "original_title": "Bulk reassignment mutates closed-project obligations without lifecycle locking",
+      "canonical_status_unchanged": "OPEN",
+      "phase2_assessment": "PARTIAL_REPRODUCED_DEFECT",
+      "assessment": "G06 rejects already CLOSED; G08 closes during reassignment and then commits requirement changes. PH2-G03-003 remains open.",
+      "candidate_sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08"
+    },
+    {
+      "id": "G03-009",
+      "original_title": "Gap reports multiply reviews and infer roles from unrelated documents",
+      "canonical_status_unchanged": "OPEN",
+      "phase2_assessment": "PROPOSED_FIX_SOURCE_ONLY",
+      "assessment": "PR13 uses document-version/requirement joins and COUNT(DISTINCT rv.id). Fresh complex review/stage gap and integration regression remains required; full manifest is still incomplete.",
+      "candidate_sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08"
+    },
+    {
+      "id": "G03-010",
+      "original_title": "Bulk reassignment cannot safely handle PARTY review assignments",
+      "canonical_status_unchanged": "OPEN",
+      "phase2_assessment": "FAIL_CLOSED_WORKFLOW_MISSING",
+      "assessment": "PR13 blocks non-USER reviews instead of assigning a USER into PARTY authority. Legitimate delegated external transition is still missing; do not call this workflow complete.",
+      "candidate_sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08"
+    },
+    {
+      "id": "G03-011",
+      "original_title": "Offboarding gap omits pending submission responsibility",
+      "canonical_status_unchanged": "OPEN",
+      "phase2_assessment": "PARTIAL",
+      "assessment": "PR13 blocks REMOVE on pending submissions, preserving history; public gap DTO omits them and no operational successor is supported.",
+      "candidate_sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08"
+    },
+    {
+      "id": "G03-012",
+      "original_title": "Organisation suspension blocks promised reads and exports",
+      "canonical_status_unchanged": "OPEN",
+      "phase2_assessment": "OPEN",
+      "assessment": "PR13 blanket expiry and PR16 business denial/live ACTIVE fence still prevent the required suspended-org read/export contract.",
+      "candidate_sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08"
+    },
+    {
+      "id": "G03-013",
+      "original_title": "Emergency member suspension and reactivation lack a supported API workflow",
+      "canonical_status_unchanged": "OPEN",
+      "phase2_assessment": "PARTIAL",
+      "assessment": "PR13 adds suspension and revocation; no supported reactivation/seat/assignment review flow or complete web journey.",
+      "candidate_sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08"
+    },
+    {
+      "id": "G03-014",
+      "original_title": "Ownership transfer completes without recipient confirmation",
+      "canonical_status_unchanged": "OPEN",
+      "phase2_assessment": "FAIL_CLOSED_WORKFLOW_MISSING",
+      "assessment": "G07 confirms one-sided ownership disabled. Two-party intent/confirm/cancel/expiry remains unimplemented.",
+      "candidate_sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08"
+    },
+    {
+      "id": "G03-015",
+      "original_title": "A globally suspended identity can become the sole organisation owner",
+      "canonical_status_unchanged": "OPEN",
+      "phase2_assessment": "CONTAINED_BY_DISABLED_TRANSFER",
+      "assessment": "Disabled transfer prevents this transfer path in PR13; no completed eligible-owner recovery/global suspension policy is accepted.",
+      "candidate_sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08"
+    },
+    {
+      "id": "G03-016",
+      "original_title": "Seat limits are not enforced at invitation membership activation",
+      "canonical_status_unchanged": "OPEN",
+      "phase2_assessment": "PARTIAL_REPRODUCED_DEFECT",
+      "assessment": "Primary P21 exceeds one seat. PR13 G10 blocks ACTIVE at limit, then PAST_DUE bypasses the same capacity. Effective entitlement/integration/concurrency remains open.",
+      "candidate_sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08"
+    },
+    {
+      "id": "G03-017",
+      "original_title": "Mobile member invitations promised by the contract are unsupported",
+      "canonical_status_unchanged": "OPEN",
+      "phase2_assessment": "OPEN",
+      "assessment": "Issuer still accepts email only. Mobile destination/provider acceptance absent.",
+      "candidate_sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08"
+    },
+    {
+      "id": "G03-018",
+      "original_title": "Successful invitation issue/revocation leaves no business audit event",
+      "canonical_status_unchanged": "OPEN",
+      "phase2_assessment": "PROPOSED_FIX_REPROBED",
+      "assessment": "G09 observes ORG_INVITATION_ISSUED/REVOKED with safe metadata in PR13. Delivery-state/acceptance correlation and integration still require regression.",
+      "candidate_sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08"
+    },
+    {
+      "id": "G03-019",
+      "original_title": "Organisation member identifiers reach SQL without runtime validation",
+      "canonical_status_unchanged": "OPEN",
+      "phase2_assessment": "PROPOSED_FIX_FOCUSED_TESTS",
+      "assessment": "PR13 validates member/reassignment UUIDs at controller and uses profile allowlist. Real HTTP malformed-input matrix still required on integrated head.",
+      "candidate_sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08"
+    },
+    {
+      "id": "G03-020",
+      "original_title": "Resumable company onboarding is not implemented",
+      "canonical_status_unchanged": "OPEN",
+      "phase2_assessment": "OPEN",
+      "assessment": "No persisted resumable four-step onboarding/required consent journey.",
+      "candidate_sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08"
+    },
+    {
+      "id": "G03-021",
+      "original_title": "Organisation administration has no application UI journey",
+      "canonical_status_unchanged": "OPEN",
+      "phase2_assessment": "OPEN",
+      "assessment": "No complete org/team/settings/offboarding/ownership web administration journey.",
+      "candidate_sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08"
+    },
+    {
+      "id": "G03-022",
+      "original_title": "Owner-confirmed organisation deletion request workflow is missing",
+      "canonical_status_unchanged": "OPEN",
+      "phase2_assessment": "OPEN",
+      "assessment": "No owner-name-confirmed staged org deletion request/status/cancel workflow.",
+      "candidate_sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08"
+    },
+    {
+      "id": "G03-023",
+      "original_title": "Offboarding and role-change transactions have an inverse lock order",
+      "canonical_status_unchanged": "OPEN",
+      "phase2_assessment": "PROPOSED_FIX_SOURCE_ONLY",
+      "assessment": "PR13 orders target session locks before target membership for role change/offboard. Not independently race-accepted with PR16 live authority locks; rerun deterministic multi-connection suite after integration.",
+      "candidate_sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08"
+    }
+  ]
+}

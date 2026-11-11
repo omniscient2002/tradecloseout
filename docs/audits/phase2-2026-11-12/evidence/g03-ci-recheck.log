@@ -1,0 +1,40 @@
+FAIL test/discovery-lifecycle-foundations.spec.ts (6.178 s)
+  ● Discovery & Lifecycle Foundations Test Suite › Full Responsibility-Transfer Manifest & Gap Analysis › computes real draftPackagesCount and assignedDefectsCount and reassigns them atomically
+
+    ForbiddenException: Forbidden Exception
+
+      717 |       );
+      718 |       if (!['R-OWNER','R-ADMIN'].includes(actor[0]?.role)) {
+    > 719 |         throw new ForbiddenException({code:'OFFBOARDING_NOT_AUTHORIZED'});
+          |               ^
+      720 |       }
+      721 |       await client.query(
+      722 |         `SELECT id FROM sessions WHERE user_id=$1 AND active_org_id=$2
+
+      at src/modules/organisations/organisations.service.ts:719:15
+      at async withTenantTransaction (../../packages/db/src/tenant-tx.ts:100:20)
+      at async Object.<anonymous> (test/discovery-lifecycle-foundations.spec.ts:742:19)
+
+FAIL test/g01-member-invitation-authority-db.spec.ts
+  ● G01 membership privilege escalation and invitation validity › forbids admins and owners minting R-OWNER via ordinary member or invitation changes
+
+    ConflictException: Conflict Exception
+
+      1016 |     // transfer sole control. This remains disabled until that contract is
+      1017 |     // implemented and independently accepted.
+    > 1018 |     throw new ConflictException({
+           |           ^
+      1019 |       code:'OWNERSHIP_TWO_PARTY_CONFIRMATION_REQUIRED',
+      1020 |       detail:'One-sided ownership transfer is disabled until two-party confirmation is available.',
+      1021 |     });
+
+      at OrganisationsService.transferOwnership (src/modules/organisations/organisations.service.ts:1018:11)
+      at test/g01-member-invitation-authority-db.spec.ts:117:39
+      at async withDisposableDatabase (../../packages/db/test/helpers/disposable-database.ts:107:5)
+      at async Object.<anonymous> (test/g01-member-invitation-authority-db.spec.ts:8:5)
+
+Test Suites: 2 failed, 2 total
+Tests:       2 failed, 11 passed, 13 total
+Snapshots:   0 total
+Time:        8.856 s
+Ran all test suites within paths "test/discovery-lifecycle-foundations.spec.ts", "test/g01-member-invitation-authority-db.spec.ts".

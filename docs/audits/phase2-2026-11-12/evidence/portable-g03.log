@@ -1,0 +1,9 @@
+Verified 310 source blobs for separate-g03-pr13 at 7b2b649ecf33b69e8cf1b5753630d82ed89aaf08
+PASS ../../docs/audits/phase2-2026-11-12/evidence/phase2-g03-probes.spec.ts (7.85 s)
+  ✓ G03 separate candidate focused real DB recheck; not integrated with Phase1 (1588 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       1 passed, 1 total
+Snapshots:   0 total
+Time:        8.204 s
+Ran all test suites.

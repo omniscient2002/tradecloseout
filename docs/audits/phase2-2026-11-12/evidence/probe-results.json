@@ -1,0 +1,393 @@
+{
+  "sourceSha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+  "fixtures": "Synthetic authorization/quota/configuration only. No HVAC engineering baseline or production provider evidence.",
+  "results": [
+    {
+      "id": "C01",
+      "name": "locked keyed item can be unlocked at ORG then removed at PROJECT",
+      "observed": {
+        "payload": {
+          "checklist.requirements": []
+        },
+        "provenance": {
+          "checklist.requirements": {
+            "level": "PROJECT",
+            "versionId": "synthetic-PROJECT"
+          }
+        },
+        "conflicts": [],
+        "checksum": "d851beb4a08f7d95efbef88f388b61918e233decb8dd5d2c2bb9a0a669673448"
+      }
+    },
+    {
+      "id": "C02",
+      "name": "root requirements consumed by checklist service bypass registered keyed locks",
+      "observed": {
+        "payload": {
+          "requirements": []
+        },
+        "provenance": {
+          "requirements": {
+            "level": "PROJECT",
+            "versionId": "synthetic-PROJECT"
+          }
+        },
+        "conflicts": [],
+        "checksum": "1061b645f6e505401934ff4aa283d34abe8f4cc4f9bda053eddedd4372f7d0f9"
+      }
+    },
+    {
+      "id": "C03",
+      "name": "unknown schema and unknown fields silently accepted",
+      "observed": {
+        "payload": {
+          "unknown.field": true
+        },
+        "provenance": {
+          "unknown.field": {
+            "level": "PROJECT",
+            "versionId": "synthetic-PROJECT"
+          }
+        },
+        "conflicts": [],
+        "checksum": "b3e5fb0b3237670b569a2d3e2caa93c428ad96797cef37e79bef3d6a4ba89134"
+      }
+    },
+    {
+      "id": "C04",
+      "name": "absent platform layer permits ORG ownership of PLATFORM locked field",
+      "observed": {
+        "payload": {
+          "security.max_file_size_bytes": 999999999
+        },
+        "provenance": {
+          "security.max_file_size_bytes": {
+            "level": "ORG",
+            "versionId": "synthetic-ORG"
+          }
+        },
+        "conflicts": [],
+        "checksum": "db9d48f3750bf634be49a6247cf839deee33abf4ece3f9808be6b88de21f86ea"
+      }
+    },
+    {
+      "id": "C05",
+      "name": "missing keyed-array keys collapse to undefined rather than reject",
+      "observed": {
+        "payload": {
+          "checklist.requirements": [
+            {
+              "title": "two",
+              "provenanceLevel": "ORG"
+            }
+          ]
+        },
+        "provenance": {
+          "checklist.requirements": {
+            "level": "ORG",
+            "versionId": "synthetic-ORG"
+          }
+        },
+        "conflicts": [],
+        "checksum": "801fdb3dd21795c370d69a48c0f24cc600c3000635d2c9fbfc3ef734d0260180"
+      }
+    },
+    {
+      "id": "C06",
+      "name": "object additive recipients are not semantically deduplicated",
+      "observed": {
+        "payload": {
+          "notifications.extra_recipients": [
+            {
+              "email": "synthetic@example.invalid"
+            },
+            {
+              "email": "synthetic@example.invalid"
+            }
+          ]
+        },
+        "provenance": {
+          "notifications.extra_recipients": {
+            "level": "PROJECT",
+            "versionId": "synthetic-PROJECT"
+          }
+        },
+        "conflicts": [],
+        "checksum": "74200bf044711778e7e5834b0a49191d9179640f5f363e560f4b9a424fffe24d"
+      }
+    },
+    {
+      "id": "C07",
+      "name": "contradictory record level is trusted by map placement",
+      "observed": {
+        "payload": {
+          "security.max_file_size_bytes": 123
+        },
+        "provenance": {
+          "security.max_file_size_bytes": {
+            "level": "PLATFORM",
+            "versionId": "synthetic-PROJECT"
+          }
+        },
+        "conflicts": [],
+        "checksum": "9ced7af0bc26d3901e99a6711a2ac96964ff1e70adae7bdfd4270707c0d7c70b"
+      }
+    },
+    {
+      "id": "C08",
+      "name": "positive explicit platform locked override raises conflict",
+      "observed": {
+        "payload": {
+          "security.max_file_size_bytes": 100
+        },
+        "provenance": {
+          "security.max_file_size_bytes": {
+            "level": "PLATFORM",
+            "versionId": "synthetic-PLATFORM"
+          }
+        },
+        "conflicts": [
+          {
+            "path": "security.max_file_size_bytes",
+            "level": "ORG",
+            "message": "Field 'security.max_file_size_bytes' is LOCKED by PLATFORM and cannot be overridden at ORG."
+          }
+        ],
+        "checksum": "d78c116f06424210c10a60caf0b28212515d1f92ef0958de955adbd93c5e0bd1"
+      }
+    },
+    {
+      "id": "C09",
+      "name": "positive installed resolution ignores later mutable trade input",
+      "observed": {
+        "payload": {
+          "x": 2
+        },
+        "provenance": {
+          "x": {
+            "level": "ORG",
+            "versionId": "test-installed"
+          }
+        },
+        "conflicts": [],
+        "checksum": "5e2b030a4a0f1582d78c0fd9924511cd6b1f2df9879e574f5ea1406c94052418"
+      }
+    },
+    {
+      "id": "P01",
+      "name": "no subscription UI reports zero while activation uses ten-project default",
+      "observed": {
+        "reportedLimit": 0,
+        "activated": "ACTIVE"
+      }
+    },
+    {
+      "id": "P02",
+      "name": "expired active subscription still authorizes activation",
+      "observed": {
+        "status": "ACTIVE"
+      }
+    },
+    {
+      "id": "P03",
+      "name": "cancelled subscription falls back to ten projects for activation",
+      "observed": {
+        "subscription": "CANCELLED",
+        "activated": "ACTIVE"
+      }
+    },
+    {
+      "id": "P04",
+      "name": "zero storage entitlement still creates an upload intent",
+      "observed": {
+        "intentCreated": true,
+        "objects": 1
+      }
+    },
+    {
+      "id": "P05",
+      "name": "two intents exceed capacity without a storage reservation",
+      "observed": {
+        "intents": 2,
+        "requestedBytes": 20,
+        "limit": 10
+      }
+    },
+    {
+      "id": "P06",
+      "name": "create project stores supplied contract value outside dashboard canonical column",
+      "observed": {
+        "contract_value_paise": null,
+        "settings_json": {
+          "contract_value_paise": "123456"
+        }
+      }
+    },
+    {
+      "id": "P07",
+      "name": "stale reopen version succeeds and skips active project entitlement",
+      "observed": {
+        "result": {
+          "projectId": "e2f9bd05-2c0d-41bc-9db3-d521e7db6804",
+          "status": "ACTIVE",
+          "reopenCount": 1
+        },
+        "counters": []
+      }
+    },
+    {
+      "id": "P08",
+      "name": "last managing project member can be removed without gap checks",
+      "observed": {
+        "result": {
+          "success": true,
+          "removedUserId": "38887e12-6455-448e-87fb-aa3d48f21660"
+        },
+        "activeManagers": 0
+      }
+    },
+    {
+      "id": "P09",
+      "name": "project membership accepts an identity without any organisation membership",
+      "observed": {
+        "status": "ACTIVE",
+        "role": "R-PM",
+        "memberships": 0
+      }
+    },
+    {
+      "id": "P10",
+      "name": "cancelled project remains mutable through metadata patch",
+      "observed": {
+        "name": "Changed after cancellation"
+      }
+    },
+    {
+      "id": "P11",
+      "name": "closed project accepts a new commercial contract",
+      "observed": {
+        "contractStatus": "ACTIVE"
+      }
+    },
+    {
+      "id": "P12",
+      "name": "closed project accepts specification reference",
+      "observed": {
+        "created": true
+      }
+    },
+    {
+      "id": "P13",
+      "name": "positive composite FK rejects cross-project contract variation",
+      "observed": {
+        "rejected": true,
+        "code": "23503"
+      }
+    },
+    {
+      "id": "P14",
+      "name": "successful project metadata edit creates no business audit event",
+      "observed": {
+        "events": 0
+      }
+    },
+    {
+      "id": "P15",
+      "name": "notification duplicate rewrites delivered payload and retains old project",
+      "observed": {
+        "sameId": true,
+        "status": "SENT",
+        "event": "synthetic",
+        "project": "62384abb-8b12-4c86-a85b-9c3c5d632bfc",
+        "payload": {
+          "internalComment": "changed after sent"
+        }
+      }
+    },
+    {
+      "id": "P16",
+      "name": "in-app broadcast from unassigned project appears in ordinary member feed",
+      "observed": {
+        "rows": 1,
+        "payload": {
+          "internalComment": "synthetic unrelated project"
+        }
+      }
+    },
+    {
+      "id": "P17",
+      "name": "disabled nonessential channel preference is ignored on enqueue",
+      "observed": {
+        "status": "QUEUED"
+      }
+    },
+    {
+      "id": "P18",
+      "name": "generic notification retains prohibited sensitive fields and unbounded title",
+      "observed": {
+        "internalComment": "synthetic internal",
+        "requirementTitle": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "contractValuePaise": "synthetic-commercial"
+      }
+    },
+    {
+      "id": "P19",
+      "name": "activation accepts a managing project member whose org membership was removed",
+      "observed": {
+        "status": "ACTIVE"
+      }
+    },
+    {
+      "id": "P20",
+      "name": "public active-project import accepts unregistered types without config version or approved change request",
+      "observed": {
+        "result": {
+          "snapshotId": "01a1cca6-8049-708a-80d9-1743cfa6d93e",
+          "versionNo": 1,
+          "checksum": "f772c9d1591d373da1b617de494eff9974f04e70c91d536a0da83493a72baf60",
+          "instantiatedRequirements": 2
+        },
+        "configVersions": 0,
+        "changeRequests": 0
+      }
+    },
+    {
+      "id": "P21",
+      "name": "primary candidate actual invitation acceptance exceeds configured one-seat plan",
+      "observed": {
+        "limit": 1,
+        "activeMembers": 2,
+        "authentication": "debug OTP fixture; not production-provider acceptance"
+      }
+    },
+    {
+      "id": "P22",
+      "name": "actual project list DTO crashes current frontend filter",
+      "observed": {
+        "returnedClientName": null,
+        "error": "Cannot read properties of undefined (reading 'toLowerCase')",
+        "method": "Actual server list plus exact frontend filter expression; no browser run"
+      }
+    },
+    {
+      "id": "P23",
+      "name": "catalogue pressure-test type DT-033 receives no standard calibration companion rule",
+      "observed": {
+        "hasMissingCompanions": false,
+        "hasMissingMandatory": false,
+        "companions": []
+      }
+    },
+    {
+      "id": "N01",
+      "name": "gateway acceptance is labelled delivery and transmits full sensitive payload",
+      "observed": {
+        "accepted": true,
+        "payloadSent": {
+          "internalComment": "synthetic-not-for-message",
+          "contractValuePaise": "synthetic"
+        }
+      }
+    }
+  ]
+}

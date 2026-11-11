@@ -1,0 +1,34 @@
+{
+  "extends": "../../../../apps/api/tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": "../../../../apps/api",
+    "typeRoots": [
+      "../../../../apps/api/node_modules/@types",
+      "../../../../node_modules/@types"
+    ],
+    "paths": {
+      "@tradecloseout/shared": [
+        "../../packages/shared/src"
+      ],
+      "@tradecloseout/shared/*": [
+        "../../packages/shared/src/*"
+      ],
+      "@tradecloseout/db": [
+        "../../packages/db/src"
+      ],
+      "@tradecloseout/db/*": [
+        "../../packages/db/src/*"
+      ],
+      "@tradecloseout/pdf-engine": [
+        "../../packages/pdf-engine/src"
+      ],
+      "@tradecloseout/pdf-engine/*": [
+        "../../packages/pdf-engine/src/*"
+      ]
+    }
+  },
+  "include": [
+    "phase2-probes.spec.ts",
+    "phase2-g03-probes.spec.ts"
+  ]
+}
