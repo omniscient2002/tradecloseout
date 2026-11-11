@@ -1,0 +1,846 @@
+{
+  "schema_version": 1,
+  "scope": "Phase 1 security and platform foundations",
+  "namespace": "PH1",
+  "main_sha": "c6b6024d3d5b25d2d1ab87f77e2d3294500c5bb0",
+  "g01_candidate_sha": "863e6e0c56ad4a92af2580fbcbfc179832056b2d",
+  "reviewed_candidate_sha": "9ed91a9e96c77c9eff967f6c845d18c38fb62ac6",
+  "release_decision": "NO_GO",
+  "group_order": [
+    "G26",
+    "G01",
+    "G02",
+    "G27",
+    "G24"
+  ],
+  "findings": [
+    {
+      "id": "PH1-G26-001",
+      "title": "Audit partitions bypass tenant RLS and append-only permissions",
+      "priority": "P0",
+      "status": "OPEN",
+      "classification": "REPRODUCED",
+      "sources": [
+        "packages/db/migrations/0000_complete_v021_schema_and_rls.sql",
+        "packages/db/migrations/0001_rls_and_constraints.sql",
+        "packages/db/migrations/0004_perfect_10_hardening.sql"
+      ],
+      "observation": "All four audit children grant tc_app SELECT/UPDATE/DELETE with neither enabled nor forced RLS. A no-context parent query returns zero rows while a direct child query returns a tenant event; direct child UPDATE and DELETE succeed. This is a restricted-database-role boundary failure, not a demonstrated SQL-injection entry point.",
+      "required_change": "Revoke direct child access, constrain the parent command surface, and apply independently verified child policies/triggers if any direct access is necessary. Cover default, existing and future partitions and default privileges. Review inherited statement versus row triggers; protect TRUNCATE and table ownership as separate privileges.",
+      "acceptance": "Under actual tc_app, direct child SELECT/INSERT/UPDATE/DELETE/TRUNCATE cannot disclose or change another tenant or bypass immutability. Parent authorised insert/read works. Fresh/upgrade and newly attached partition tests must inspect ACLs/policies and execute negative SQL.",
+      "local_probes": [
+        "P01",
+        "P02",
+        "P03",
+        "P04"
+      ]
+    },
+    {
+      "id": "PH1-G26-002",
+      "title": "Storage quota reconciliation has an executable SQL type error",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "REPRODUCED",
+      "sources": [
+        "packages/db/src/tenant-tx.ts",
+        "apps/worker/src/main.ts"
+      ],
+      "observation": "reconcileStorageQuotaOnFileStatusChange writes GREATEST(...)::text into BIGINT value. PostgreSQL rejects with 42804. The file worker calls this while finalising READY, so the same transaction can roll back a successfully scanned file.",
+      "required_change": "Use correctly typed bigint/numeric arithmetic, validate size/delta, and reconcile the transition once against immutable object/version identity. Preserve atomic file state, usage counters and audit; provide reconciliation for previously stuck jobs.",
+      "acceptance": "Actual migrated PG16 finalisation, duplicate scan, retry, quarantine, delete/restore and rollback cases preserve exact non-negative byte counts. Scanner/storage success alone must not be reported as persisted READY.",
+      "local_probes": [
+        "P06"
+      ]
+    },
+    {
+      "id": "PH1-G26-003",
+      "title": "Drizzle definitions and deployed SQL disagree across 33 represented tables",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "REPRODUCED",
+      "sources": [
+        "packages/db/src/schema.ts",
+        "packages/db/migrations/0000_complete_v021_schema_and_rls.sql"
+      ],
+      "observation": "Column inventory finds 33 represented tables with missing or extra columns. Examples: nonexistent organisations.allow_generic_review, profile default_timezone/default_locale, invitation phone versus phone_e164, and project-member timestamp names. This is column drift; the probe does not claim exhaustive constraint/type parity.",
+      "required_change": "Inventory columns, types, nullability, defaults, constraints, indexes, FKs, policies and grants; designate migrated SQL as the baseline and reconcile the ORM explicitly. Add forward migrations only where the intended contract actually needs a schema change; do not rewrite applied checksums.",
+      "acceptance": "Automated fresh/upgrade schema equivalence includes the ORM contract and real queries for each supported table, with documented deliberate exclusions and no defined-but-absent runtime fields.",
+      "local_probes": [
+        "P25"
+      ]
+    },
+    {
+      "id": "PH1-G26-004",
+      "title": "Transaction session fences omit current account/tenant eligibility",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "REPRODUCED",
+      "sources": [
+        "packages/db/src/tenant-tx.ts",
+        "apps/api/src/database/tenant-db.service.ts",
+        "packages/db/src/project-authority.ts"
+      ],
+      "observation": "A valid session/generation still allows a project mutation after the organisation is suspended. The project authority helper trusts ctx.orgRole Owner/Admin without querying live membership. HTTP guards check eligibility earlier; these probes concern the later transaction boundary, not unauthenticated access.",
+      "required_change": "Define a common current-authority command boundary that locks and checks account, tenant, membership, role, scope and session where required. Bind the resource project to the command, with a documented exception for separately privileged system work.",
+      "acceptance": "Pause real authenticated commands before mutation; suspend/demote/remove/change scope on another connection and verify a clear linearization rule. No post-transition command may rely on a stale Owner/Admin shortcut.",
+      "local_probes": [
+        "P13",
+        "P14"
+      ]
+    },
+    {
+      "id": "PH1-G26-005",
+      "title": "Exactly-one-owner and organisation-member relationships remain weak database invariants",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "SOURCE_CONFIRMED",
+      "sources": [
+        "packages/db/migrations/0000_complete_v021_schema_and_rls.sql",
+        "apps/api/src/modules/organisations/organisations.service.ts",
+        "apps/api/src/modules/projects/projects.service.ts"
+      ],
+      "observation": "The unique active-owner index proves at most one owner. Generic role/transfer paths still require a shared invariant strategy. Work and project membership point to global users, which does not establish current organisation eligibility. G03 audits record corresponding service races and invalid allocations.",
+      "required_change": "Serialize owner transitions and enforce the final eligible-owner invariant at commit. Add reviewed membership/assignment constraints or command functions where feasible, and explicitly enforce temporal eligibility where static FKs cannot express it. Repair ambiguous legacy rows through an operator-reviewed inventory.",
+      "acceptance": "Concurrent transfer/demotion/removal and user deletion leave exactly one eligible owner for each active organisation. Cross-tenant or inactive assignees/project grants are rejected without fabricating replacement identity.",
+      "local_probes": []
+    },
+    {
+      "id": "PH1-G26-006",
+      "title": "Rollback failure and transaction timeout policy are incomplete",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "SOURCE_CONFIRMED",
+      "sources": [
+        "packages/db/src/tenant-tx.ts",
+        "apps/api/src/database/tenant-db.service.ts",
+        "packages/db/src/run-migrations.ts"
+      ],
+      "observation": "General wrappers await ROLLBACK and then release without the explicit destroy-on-unknown-state logic used by the newer auth-denial writer. They do not set server-side lock/statement/idle transaction budgets or implement a common bounded deadlock/serialization policy.",
+      "required_change": "Preserve the original error, destroy connections whose rollback/state is uncertain, define server-side timeouts and cancellation, and retry only whole idempotent commands on classified failures. Keep external I/O outside business locks and preserve nested savepoint ownership.",
+      "acceptance": "Inject BEGIN/statement/COMMIT/ROLLBACK disconnects, lock timeouts and 40P01/40001; verify no idle transaction or tenant context leak, healthy pool reuse and no duplicate committed effects.",
+      "local_probes": []
+    },
+    {
+      "id": "PH1-G26-007",
+      "title": "Tenant alias validation is not applied uniformly",
+      "priority": "P2",
+      "status": "OPEN",
+      "classification": "SOURCE_CONFIRMED",
+      "sources": [
+        "packages/db/migrations/0001_rls_and_constraints.sql",
+        "apps/api/src/database/tenant-db.service.ts",
+        "packages/db/src/tenant-tx.ts"
+      ],
+      "observation": "The canonical conflicting-alias checker introduced in migration 0016 is used by selected later tables; many core policies still read app.current_org directly. Normal wrappers set both aliases consistently, but the database does not uniformly reject conflicting settings.",
+      "required_change": "Standardise tenant context and policy functions across all relevant tables and privileged functions, split self-discovery SELECT from writes where appropriate, and retain explicit token/bootstrap exceptions. Do not broaden RLS to repair a caller bug.",
+      "acceptance": "Test no context, conflicting aliases, pooled commit/rollback, self-membership discovery, guest/invitation token contexts and every tenant table/partition under the restricted role.",
+      "local_probes": [
+        "P17"
+      ]
+    },
+    {
+      "id": "PH1-G26-008",
+      "title": "Audit sequence ordering is caller-influenced",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "REPRODUCED",
+      "sources": [
+        "packages/db/migrations/0004_perfect_10_hardening.sql",
+        "apps/worker/src/scheduler.ts"
+      ],
+      "observation": "The trigger keeps a caller-supplied non-null chain_seq and the DEFAULT sequence is allocated before its advisory lock. Explicit reverse sequences are accepted and cause the verifier to reject the chain. Ordinary concurrent sequence allocation ordering also needs a deterministic test; that race was not executed here.",
+      "required_change": "Allocate chain position inside the serialised insertion boundary, prohibit caller-controlled chain fields, define uniqueness and stable head ordering, and check genesis/head linkage. Preserve existing history through versioned migration/checkpoints.",
+      "acceptance": "Caller-supplied sequence/hash fields cannot corrupt ordering. Deterministic competing inserts, rollback gaps, cross-tenant concurrency and restore verification agree on the same canonical chain.",
+      "local_probes": [
+        "P05"
+      ]
+    },
+    {
+      "id": "PH1-G26-009",
+      "title": "Migration success does not establish production-safe data conversion",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "OPERATIONAL_GATE",
+      "sources": [
+        "packages/db/src/run-migrations.ts",
+        "scripts/run-restore-drill.sh"
+      ],
+      "observation": "The migrator already verifies checksums, handles reviewed legacy names and serialises runners. The candidate adds 41 total migrations including legacy external-approval quarantine/reconciliation. Fresh empty/test upgrades do not quantify real legacy business impact, lock duration or restore outcomes.",
+      "required_change": "Prepare read-only preflight counts and affected entity IDs, staged rollout/rollback compatibility, operator-approved quarantine reconciliation and a restored representative data rehearsal. Keep applied files immutable and separate migration credentials from runtime.",
+      "acceptance": "Signed exact-head/source/ledger evidence, representative upgrade timing and lock budgets, failure recovery, old/new process overlap and approved impact disposition for every destructive or authority-changing migration.",
+      "local_probes": []
+    },
+    {
+      "id": "PH1-G26-010",
+      "title": "Backup and restore evidence is not a complete recovery contract",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "OPERATIONAL_GATE",
+      "sources": [
+        "scripts/run-restore-drill.sh",
+        "infra/terraform/main.tf"
+      ],
+      "observation": "The drill script performs useful count/hash/storage checks, but compares live source counts after a dump, uses a seconds-based database name and does not by itself establish production PITR, cross-service consistency or secret/key recovery. No production restore drill ran in this audit.",
+      "required_change": "Use a consistent snapshot/manifest, collision-resistant disposable names, cleanup traps, exact immutable storage version inventory, audited credentials and key recovery. Exercise PITR and application startup on the restored state with documented RPO/RTO.",
+      "acceptance": "Restore into an isolated environment; reconcile rows and object versions against the snapshot, verify audit checkpoints and RLS, prove runtime operation and timed recovery, and retain externally reviewable evidence without customer-data leakage.",
+      "local_probes": []
+    },
+    {
+      "id": "PH1-G26-011",
+      "title": "Resource budgets and privileged-function ownership need deployment evidence",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "OPERATIONAL_GATE",
+      "sources": [
+        "packages/db/src/run-migrations.ts",
+        "packages/db/migrations/0039_g01_independent_identity_recovery.sql",
+        "infra/terraform/main.tf"
+      ],
+      "observation": "Candidate API/worker checks now reject privileged runtime logins and recovery/reviewer memberships. Production database TLS/CA, pool budgets across replicas, owner/default ACLs, SECURITY DEFINER search_path and human reviewer/executor IAM still need evidence on the actual deployed cluster.",
+      "required_change": "Inventory effective privileges/functions/owners; verify TLS, immutable migrations, network restrictions and pool capacity. Provision individually accountable human roles only after the recovery/authority policy is approved. Never grant runtime reviewer/executor or migrator roles.",
+      "acceptance": "Actual runtime and human-role negative tests, TLS verification failure tests, pool saturation/cancellation drills and privileged-function execute/tenant-boundary tests on the release environment.",
+      "local_probes": []
+    },
+    {
+      "id": "PH1-G01-001",
+      "title": "Generic idempotency storage defeats MFA secret-at-rest protection",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "REPRODUCED",
+      "sources": [
+        "apps/api/src/common/interceptors/idempotency.interceptor.ts",
+        "apps/api/src/modules/identity/mfa.controller.ts"
+      ],
+      "observation": "The actual MFA enroll/start controller, wrapped by the actual idempotency interceptor, writes its returned manualSetupKey in plaintext to idempotency_keys.response_json. The browser adds Idempotency-Key to POSTs. Confirmation also returns recovery codes, so every secret-bearing response needs review.",
+      "required_change": "Exclude secret-bearing auth responses from generic receipt capture or design a dedicated encrypted, actor/session-bound, tightly expired one-time result contract. Inventory and securely expire existing plaintext receipts without weakening forensic obligations. Do not merely redact the response sent to the legitimate user.",
+      "acceptance": "Exercise enrollment, confirmation, recovery, rotation and retries through the actual interceptor/HTTP stack; database dumps, logs, outbox and receipts contain no plaintext factor/recovery/session credentials. Lost-response behavior remains safe.",
+      "local_probes": [
+        "P21"
+      ]
+    },
+    {
+      "id": "PH1-G01-002",
+      "title": "Expiry of a previous encryption key disables valid current-key MFA",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "REPRODUCED",
+      "sources": [
+        "apps/api/src/modules/identity/mfa-crypto.ts",
+        "apps/api/src/modules/identity/auth-security.ts"
+      ],
+      "observation": "decryptFactor constructs previousEncryptionKey before trying the current key. Once the configured previous-key deadline expires it throws, even for an envelope encrypted with the current key. Current recovery-code candidate lookup similarly fails.",
+      "required_change": "Continue validating/decrypting current-key material after the previous-key window closes; reject only expired previous-key material. Define key IDs, re-encryption progress, emergency rotation and removal of retired configuration. Preserve expiry rather than extending old-key acceptance indefinitely.",
+      "acceptance": "Use a controlled clock across the retirement boundary: current factors/codes work, old unconsumed material follows the approved expiry policy, replay stays blocked, and key logs/metrics reveal no secret.",
+      "local_probes": [
+        "P19",
+        "P20"
+      ]
+    },
+    {
+      "id": "PH1-G01-003",
+      "title": "Pending MFA enrollment lacks an explicit expiry/session-bound proposal",
+      "priority": "P2",
+      "status": "OPEN",
+      "classification": "SOURCE_CONFIRMED",
+      "sources": [
+        "apps/api/src/modules/identity/mfa.controller.ts",
+        "apps/api/src/modules/identity/mfa-crypto.ts"
+      ],
+      "observation": "Enrollment stores a pending encrypted secret on the user and confirmation later consumes it; there is no pending-factor expiry or enrollment proposal/session identity in the inspected contract. Account/session locking is present and must be preserved.",
+      "required_change": "Bind setup to a single expiring proposal and current authenticated session/generation, invalidate older proposals on restart/recovery and define safe notification of factor changes. Do not allow an indefinite pending setup to become an unreviewed recovery path.",
+      "acceptance": "Expired, replaced, cross-session and cancelled proposals deny; valid setup succeeds once; concurrent starts/confirms serialize and do not overwrite or disclose another proposal.",
+      "local_probes": []
+    },
+    {
+      "id": "PH1-G01-004",
+      "title": "Session freshness must include live eligibility inside protected work",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "REPRODUCED",
+      "sources": [
+        "apps/api/src/common/guards/session-csrf.guard.ts",
+        "packages/db/src/tenant-tx.ts",
+        "apps/api/src/database/tenant-db.service.ts"
+      ],
+      "observation": "The newer guard implements generation, idle/absolute expiry, MFA and current membership checks. The later transaction fence still accepts a valid session after an organisation-state change and bypasses live project authority for a stale Owner snapshot. This overlaps PH1-G26-004 and should have one shared correction.",
+      "required_change": "Make authentication and transaction-authority contracts agree on account/member/org suspension and the linearization point. Preserve emergency logout/revocation and authorised selection of another organisation; tenant suspension must not masquerade as ordinary credential expiry.",
+      "acceptance": "Real HTTP commands across two instances, suspended current org plus eligible alternate org, concurrent account/membership suspension, delayed requests and offline retries obey the documented policy.",
+      "local_probes": [
+        "P13",
+        "P14"
+      ]
+    },
+    {
+      "id": "PH1-G01-005",
+      "title": "Delivery and recovery source improvements still lack external release acceptance",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "OPERATIONAL_GATE",
+      "sources": [
+        "packages/db/src/auth-delivery.ts",
+        "packages/db/migrations/0039_g01_independent_identity_recovery.sql",
+        "apps/api/src/modules/identity/identity.controller.ts"
+      ],
+      "observation": "The candidate now includes correlated delivery attempts, bounded status reconciliation, signed receipts and independently privileged recovery operations. These are real source improvements, not missing implementations. Programmable TLS/provider fixtures do not prove vendor delivery, independent legal authority or human recovery proof.",
+      "required_change": "Complete actual SMS/DLT/email sandbox and outage acceptance, receipt ordering/bounce/spend controls, independently authenticated human reviewer/executor IAM and approved recovery/cooldown policy. Keep missing evidence blocked; no operator role provisioning by implication.",
+      "acceptance": "Actual vendor receipt/accepted-timeout/retry evidence, independently obtained contact/delegation proof and supervised lost-factor/destination drills. Notification windows and independent approvals survive worker crashes and provider outages.",
+      "local_probes": []
+    },
+    {
+      "id": "PH1-G01-006",
+      "title": "Deployed browser, proxy and multi-instance assurance remains incomplete",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "OPERATIONAL_GATE",
+      "sources": [
+        "apps/api/src/main.ts",
+        "apps/api/src/common/guards/session-csrf.guard.ts",
+        "apps/api/src/modules/identity/auth-security.ts",
+        "apps/web/next.config.mjs"
+      ],
+      "observation": "The inspected branch has strict startup configuration, trusted proxy selection, origin/intent checks, real TOTP/recovery, session rotation and browser generation fencing. The current G02 integration candidate does not build, preventing a fresh end-to-end certification of the combined release.",
+      "required_change": "First restore exact-head typecheck/build/tests. Then exercise production API and Next through actual HTTPS/proxy with real cookie, origin, cache, storage-loss and MFA behavior; verify clock/key rotation and two-node failure/revocation behavior.",
+      "acceptance": "No debug OTP or seeded MFA used as proof of production enforcement. Attach exact candidate/base/integration SHA, deployed browser traces and outage/replay/device recovery evidence, independently reviewed.",
+      "local_probes": []
+    },
+    {
+      "id": "PH1-G01-007",
+      "title": "Authentication security history needs real retention and incident response acceptance",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "OPERATIONAL_GATE",
+      "sources": [
+        "apps/api/src/modules/identity/auth-security.ts",
+        "apps/api/src/modules/identity/mfa.controller.ts",
+        "apps/worker/src/event-registry.ts"
+      ],
+      "observation": "Bounded denial auditing, fixed request/device metadata and success/revocation events are implemented. The business audit partition bypass and generic secret capture undermine the broader assurance boundary. Event sampling is explicitly not complete forensic reconstruction.",
+      "required_change": "Fix PH1-G26-001 and PH1-G01-001; define sampled versus mandatory events, event-store outage handling, privacy/retention, SIEM routing and actionable incident alerts. Test factor reset/enrollment/new-device and supervised recovery notification coverage.",
+      "acceptance": "Secret-free critical-event coverage, verified retention/access controls and real alert/on-call drills; document dropped/sampled events and audit-store failure rather than claiming complete history from a green test.",
+      "local_probes": []
+    },
+    {
+      "id": "PH1-G02-001",
+      "title": "Document row and read-only scopes remain unenforced on major paths",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "REPRODUCED",
+      "sources": [
+        "apps/api/src/modules/documents/documents.service.ts",
+        "packages/db/src/project-authority.ts",
+        "apps/api/src/common/guards/permission.guard.ts"
+      ],
+      "observation": "A member with documentIds restricted to A lists A and B and reads B. A member with mode READ_ONLY can delete a document. The helper understands mode, but the guard checks only readOnly===true and several document services never call the helper. This leaves original G02-002 incomplete.",
+      "required_change": "Apply one validated scope policy to lists/details/versions/preview/download/upload/replace/delete/restore/import and relationships, including indirect asset/requirement scopes. Enforce it inside the transaction before reads/writes or pagination/counts escape.",
+      "acceptance": "Actual HTTP and restricted DB positives/negatives for every scope dimension and route alias; mixed bulk atomicity, current grant/member revocation, immutable evidence and legitimate scoped workflows remain correct.",
+      "local_probes": [
+        "P22",
+        "P23"
+      ]
+    },
+    {
+      "id": "PH1-G02-002",
+      "title": "Bulk review decisions lose project resolution and current membership checks",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "REPRODUCED",
+      "sources": [
+        "apps/api/src/common/guards/permission.guard.ts",
+        "apps/api/src/modules/reviews/reviews.service.ts",
+        "apps/api/src/modules/reviews/reviews.controller.ts",
+        "packages/db/src/project-authority.ts"
+      ],
+      "observation": "The real bulk guard allows a QC actor with removed project membership and leaves projectId unresolved. bulkDecisions then passes the same context to decideReview; the project authority helper returns early without projectId. An assigned old review is successfully REJECTED and persisted after membership removal.",
+      "required_change": "Resolve and authorise each review project/resource under the decision transaction, including current membership/scope/role and project lifecycle. Do not reuse a projectless context for mixed-project commands. Define atomic versus per-item semantics and report rejected rows accurately.",
+      "acceptance": "Single and mixed-project bulk decisions after removal/scope change deny; legitimate current assignments succeed. Test APPROVE, REJECT and changes requests through all route aliases with real evidence where approval is claimed.",
+      "local_probes": [
+        "P24"
+      ]
+    },
+    {
+      "id": "PH1-G02-003",
+      "title": "Malformed or unknown restrictive scope shapes can widen access",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "REPRODUCED",
+      "sources": [
+        "packages/db/src/project-authority.ts",
+        "apps/api/src/modules/projects/projects.service.ts"
+      ],
+      "observation": "assertMemberResourceScope ignores unknown keys and accepts readOnly as a string without treating it as a restriction. Scope JSON has no single validated runtime contract at creation/read boundaries. The probes are helper-level; they do not establish a public scope-edit endpoint exploit.",
+      "required_change": "Define a strict versioned scope schema and reject unsupported dimensions, types, modes and invalid dates/UUIDs. Quarantine ambiguous legacy scopes or deny until reconciled; never interpret malformed restrictive data as unrestricted access.",
+      "acceptance": "Property/table-driven scope validation and real HTTP list/write tests for unknown keys, empty arrays, string booleans, dates, nested objects, combined dimensions and legacy versions.",
+      "local_probes": [
+        "P11",
+        "P12"
+      ]
+    },
+    {
+      "id": "PH1-G02-004",
+      "title": "Org-wide capability tables and project-membership enforcement still conflict",
+      "priority": "P2",
+      "status": "OPEN",
+      "classification": "SOURCE_CONFIRMED",
+      "sources": [
+        "apps/api/src/common/guards/permission.guard.ts",
+        "apps/api/src/modules/projects/projects.service.ts"
+      ],
+      "observation": "The runtime tables still grant org-wide A/Y access to several non-admin roles; the rewritten guard generally requires project membership for every non-owner/admin target regardless of evaluation.scope. Project listing and detail can therefore disagree, and the separate specification engine remains present.",
+      "required_change": "Approve one role/scope policy, reconcile runtime and specification evaluators and enforce it consistently across list/detail/artifact routes. Do not silently broaden reads to fix denied workflows or remove legitimate ALL grants without a policy decision.",
+      "acceptance": "Complete org-role/project-role matrix including unassigned PM/DOC/AUDITOR, assigned reviewer, org-wide download toggle, no-role/unknown-role and guests; intended positive workflows and deny cases agree with the approved contract.",
+      "local_probes": []
+    },
+    {
+      "id": "PH1-G02-005",
+      "title": "Resource lookup is an incomplete string-based route heuristic",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "SOURCE_CONFIRMED",
+      "sources": [
+        "apps/api/src/common/guards/permission.guard.ts",
+        "apps/api/src/modules/reviews/reviews.service.ts"
+      ],
+      "observation": "Resolution uses URL substrings, selected UUID parameter names and body array fields. The bulk review gap demonstrates an uncovered shape. Scalar body IDs and other resource families/aliases require coverage; plain authority errors can still become generic 500 responses.",
+      "required_change": "Use explicit route resource metadata or typed command/resource resolvers, validate all identity-bearing inputs before SQL, and map changed/denied authority to stable non-disclosing domain responses. Revalidate nested parent-child project consistency in services.",
+      "acceptance": "Inventory every registered business route, including bulk, export, commissioning, direct IDs and nested aliases; malformed scalars/arrays/UUIDs return controlled 4xx before lookup, and wrong-project/tenant objects never disclose existence.",
+      "local_probes": []
+    },
+    {
+      "id": "PH1-G02-006",
+      "title": "Guest visibility improvements require complete relationship/scope acceptance",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "SOURCE_CONFIRMED",
+      "sources": [
+        "apps/api/src/modules/documents/documents.service.ts",
+        "apps/api/src/modules/reviews/reviews.service.ts",
+        "apps/api/src/modules/checklists/checklists.service.ts",
+        "apps/api/src/common/interceptors/visibility-projection.interceptor.ts"
+      ],
+      "observation": "Candidate SQL adds supplier requirement filtering and a client/consultant approved-version read branch; roster and guest grant issuance/intake restrictions are also present. The new guest read branch and list predicates need tests for requirement/resource restrictions, current object validity and all nested fields; projection is not row authorisation.",
+      "required_change": "Complete legitimate positive external read/download/review/witness journeys with independently approved party authority and exact scope. Test all grant families and nested metadata; keep contractor/issuer identity separate and deny indirect relationship expansion.",
+      "acceptance": "Original G02-003..008 and 017 positive/negative cases executed through real routes and PG/storage fixtures, followed by real provider/authority acceptance. No status-only or mocked-object proof of engineering evidence.",
+      "local_probes": []
+    },
+    {
+      "id": "PH1-G02-007",
+      "title": "Candidate verification is red: type contract and fixtures do not match implementation",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "REPRODUCED",
+      "sources": [
+        "apps/api/test/g02-authorization-db.spec.ts",
+        "apps/api/test/g02-authorization-contract.spec.ts",
+        "apps/api/test/review-authority-boundaries.spec.ts"
+      ],
+      "observation": "Typecheck/build fail because review-authority-boundaries accesses fields absent from the new guest-return union. All four new DB cases fail at fixture seeding because current_snapshot_id is NOT NULL. A contract test expects no pool checkout while new denial auditing checks out a client. The old eight helper RBAC tests still pass.",
+      "required_change": "Repair the real return DTO/caller contract and valid baseline-aware fixtures; distinguish prohibited business reads from authorised bounded denial telemetry. Reconcile existing regressions and investigate each failure; do not cast away types, relax NOT NULL or disable security checks to pass.",
+      "acceptance": "Exact-head typecheck/build/full regressions green, all 17 original finding scenarios executed with real DB/HTTP positives and negatives, no skipped assertions or fabricated baseline/evidence.",
+      "local_probes": []
+    },
+    {
+      "id": "PH1-G02-008",
+      "title": "Current authority coverage needs a command-by-command proof",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "REPRODUCED",
+      "sources": [
+        "packages/db/src/tenant-tx.ts",
+        "apps/api/src/database/tenant-db.service.ts",
+        "packages/db/src/project-authority.ts"
+      ],
+      "observation": "Wrappers now lock live sessions and member/grant rows when context carries the expected fields, a meaningful improvement. Optional projectId/session context, Owner/Admin shortcuts and resource helpers at only selected callsites leave coverage gaps. Original G02-009 is not closed by the presence of one helper.",
+      "required_change": "Inventory every service command and system caller, require authenticated command context, and verify the resolved resource matches it. Document tightly controlled system exceptions. Include lifecycle, row-level scope and current capability checks, not merely membership existence.",
+      "acceptance": "Deterministic guard/remove/write, role/scope/tenant change and session revocation tests on each mutation family. Two-node proof uses actual processes and DB locks; mocks are not release acceptance.",
+      "local_probes": [
+        "P13",
+        "P14",
+        "P24"
+      ]
+    },
+    {
+      "id": "PH1-G02-009",
+      "title": "Project lifecycle is not a universal write authorisation gate",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "SOURCE_CONFIRMED",
+      "sources": [
+        "apps/api/src/common/guards/permission.guard.ts",
+        "packages/db/src/project-authority.ts",
+        "apps/api/src/modules/documents/documents.service.ts",
+        "apps/api/src/modules/assets/assets.service.ts"
+      ],
+      "observation": "The guard and shared project-authority helper do not enforce project status. Some domain writers take explicit lifecycle locks, while document soft delete/restore and selected asset operations do not share a universal gate. Owner/Admin capability must not override CLOSED/SUSPENDED baseline policy.",
+      "required_change": "Inventory every write, distinguish permitted administrative aftercare from baseline/evidence changes, and enforce the approved project state under the shared project lock inside each command. Add the same check to bulk and worker-derived mutations where applicable.",
+      "acceptance": "Table-driven CLOSED/SUSPENDED/CANCELLED/ARCHIVED positive and negative HTTP/DB tests for every write family, including Owner/Admin. Close-versus-write races preserve frozen accepted evidence and require formal reopening where specified.",
+      "local_probes": []
+    },
+    {
+      "id": "PH1-G27-001",
+      "title": "Audit immutability can be bypassed through partition access",
+      "priority": "P0",
+      "status": "OPEN",
+      "classification": "REPRODUCED",
+      "sources": [
+        "packages/db/migrations/0000_complete_v021_schema_and_rls.sql",
+        "packages/db/migrations/0001_rls_and_constraints.sql",
+        "packages/db/migrations/0004_perfect_10_hardening.sql",
+        "apps/worker/src/scheduler.ts"
+      ],
+      "observation": "The database runtime role can alter audit metadata or delete history through child tables. The hash verifier accepts the changed IP and the missing tail. Parent append-only protection is not end-to-end immutable audit storage.",
+      "required_change": "Share the PH1-G26-001 ACL/policy correction; add trusted externally anchored chain heads/counts and immutable export/checkpoint policy, with a narrowly reviewed operator recovery path. Do not describe an unanchored mutable database hash chain as tamper-proof.",
+      "acceptance": "Direct partition mutation denies under runtime roles; independently anchored verification detects prefix/tail removal, rewritten history and payload/metadata changes. Restore/retention preserves checkpoint provenance.",
+      "local_probes": [
+        "P01",
+        "P02",
+        "P03",
+        "P04"
+      ]
+    },
+    {
+      "id": "PH1-G27-002",
+      "title": "Verifier omits genesis/head expectations and some security metadata",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "REPRODUCED",
+      "sources": [
+        "packages/db/migrations/0004_perfect_10_hardening.sql",
+        "apps/worker/src/scheduler.ts",
+        "scripts/run-restore-drill.sh"
+      ],
+      "observation": "The verifier skips predecessor comparison for the first returned event and has no trusted expected final head/count. Canonical hash excludes IP/user_agent/chain_seq. IP tampering and deletion of an organisation's only event were accepted; explicit sequence manipulation can break ordering.",
+      "required_change": "Version the canonical event envelope and verification contract; define genesis, monotonic ordering, hashed security metadata and independently stored head/count checkpoints. Cover nullable/global/platform events instead of iterating only existing organisation IDs.",
+      "acceptance": "Known-good vectors and corruption tests for first/middle/last events, metadata, duplicate/out-of-order sequence, global events and restored partitions. Verify historical hash-version compatibility.",
+      "local_probes": [
+        "P03",
+        "P04",
+        "P05"
+      ]
+    },
+    {
+      "id": "PH1-G27-003",
+      "title": "Secret redaction is shallow and does not cover all persistence surfaces",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "REPRODUCED",
+      "sources": [
+        "packages/db/src/tenant-tx.ts",
+        "apps/api/src/common/interceptors/idempotency.interceptor.ts"
+      ],
+      "observation": "redactSensitiveFields removes a short set of top-level exact names but preserves nested otp and authToken fields. Outbox payloads are not redacted by this function. Separately, actual MFA factor material is captured by generic idempotency receipts.",
+      "required_change": "Define event/response allowlists and recursively enforce sensitive-field/value policy before logs, audit, outbox, traces and receipts. Exclude secret-bearing auth outputs through a dedicated contract. Test provider errors, nested objects, URLs and aliases without relying on key-name matching alone.",
+      "acceptance": "Canary credential tests across all persistence/export/telemetry paths find no raw OTP, factor secret, backup code, token, key or private signed URL; legitimate audit attribution and domain fields remain useful.",
+      "local_probes": [
+        "P09",
+        "P21"
+      ]
+    },
+    {
+      "id": "PH1-G27-004",
+      "title": "Domain payloads can replace trusted event envelope identities",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "REPRODUCED",
+      "sources": [
+        "packages/db/src/tenant-tx.ts",
+        "apps/worker/src/main.ts"
+      ],
+      "observation": "withTenantTransaction spreads afterJson after trusted orgId/actorUserId/entity fields. A real emitted fixture stores forged org and actor IDs in payload_json, although the outbox row retains the real tenant and the poller later overwrites orgId. This is not a proved worker cross-tenant write.",
+      "required_change": "Separate immutable envelope from validated versioned domain payload, reserve identity/correlation fields and validate at producer and consumer. Never derive authority from payload-provided actor or project when the row/resource is authoritative.",
+      "acceptance": "Forged reserved fields, unknown schema versions and tenant/project/resource mismatches reject or quarantine without effects; actual emitted jobs retain the correct actor, event and request provenance.",
+      "local_probes": [
+        "P10"
+      ]
+    },
+    {
+      "id": "PH1-G27-005",
+      "title": "Non-authentication errors and health responses expose unreviewed details",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "SOURCE_CONFIRMED",
+      "sources": [
+        "apps/api/src/common/filters/problem-json.filter.ts",
+        "apps/api/src/modules/health/health.controller.ts",
+        "apps/worker/src/main.ts"
+      ],
+      "observation": "Authentication errors now have useful redaction, but the general filter logs raw exception messages/stacks and the public health error returns err.message. Worker/scheduler paths log raw Error objects. The inspected code has no single safe product-wide telemetry schema.",
+      "required_change": "Return minimal public health/liveness status, keep readiness diagnostics private and sanitised, and use bounded structured error codes across API/worker/provider/database paths. Retain safe server correlation IDs and classified internal diagnostics with controlled access.",
+      "acceptance": "Fault-inject database/provider/processor errors containing synthetic secrets and PII; neither client responses nor normal logs expose them. Operators can still identify failures using safe correlation and error categories.",
+      "local_probes": []
+    },
+    {
+      "id": "PH1-G27-006",
+      "title": "Audit and notification coverage is inconsistent across business commands",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "SOURCE_CONFIRMED",
+      "sources": [
+        "apps/api/src/modules/organisations/organisations.service.ts",
+        "apps/worker/src/event-registry.ts",
+        "packages/db/src/tenant-tx.ts"
+      ],
+      "observation": "G03 paths omit events for role/invitation changes and emit names such as MEMBER_REMOVE that disagree with the registry. Informational outbox acknowledgement only logs; it does not deliver the required member/PM/security notification.",
+      "required_change": "Maintain a command/outcome/event/notification inventory, generate versioned event names from a shared catalogue and emit audit/outbox atomically. Define mandatory denials and critical changes separately from sampled telemetry.",
+      "acceptance": "Role/owner/suspension/invitation/factor/export changes and failures produce correct redacted attribution, registered events and genuine notification outcomes. Rollback produces no false success; retries do not duplicate legal effects.",
+      "local_probes": []
+    },
+    {
+      "id": "PH1-G27-007",
+      "title": "Security headers and browser isolation need a deployed enforcement contract",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "OPERATIONAL_GATE",
+      "sources": [
+        "apps/api/src/main.ts",
+        "apps/web/next.config.mjs",
+        "apps/api/src/modules/documents/documents.service.ts",
+        "infra/terraform/main.tf"
+      ],
+      "observation": "Auth/guest no-store/no-referrer and document-stream sandboxing exist. Whole-application CSP, framing isolation, HTTPS/HSTS and proxy/cache behavior are not established by source snippets or local HTTP. Terraform is a partial deployment scaffold, not a verified ingress.",
+      "required_change": "Define and enforce headers at the appropriate application/ingress boundary, private API/cache policy, trusted proxy/cookie scope and safe embedded document behavior. Validate actual deployment rather than marking absent app headers as proof the proxy is unsafe.",
+      "acceptance": "Real HTTPS browser tests for hostile origins/framing, cookies, cached tenant data, token/referrer leakage, content embedding and logout/storage-loss; capture actual response headers and proxy configuration.",
+      "local_probes": []
+    },
+    {
+      "id": "PH1-G27-008",
+      "title": "Observability is primarily console output, without demonstrated actionable SLOs",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "SOURCE_CONFIRMED",
+      "sources": [
+        "apps/worker/src/main.ts",
+        "apps/worker/src/scheduler.ts",
+        "apps/api/src/modules/health/health.controller.ts",
+        "apps/api/src/modules/identity/auth-security.ts"
+      ],
+      "observation": "Inspected runtime uses console output for queue/scheduler failures and fixed denial-persistence diagnostics. There is no demonstrated end-to-end metrics/tracing/alert pipeline for oldest outbox age, dropped denials, stalled jobs, queue retries, pool saturation or per-tenant delivery.",
+      "required_change": "Add structured tenant-safe correlation, bounded-cardinality metrics, traces across async boundaries, readiness and SLO dashboards. Give each critical alert an owner/runbook and verify redaction, retention, access and ingestion failure behavior.",
+      "acceptance": "Injected failures trigger the correct alert within a defined window and an operator successfully follows the runbook. No customer/credential fields become metric labels or unrestricted trace attributes.",
+      "local_probes": []
+    },
+    {
+      "id": "PH1-G27-009",
+      "title": "File/converter sandbox limits need operating-system enforcement",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "SOURCE_CONFIRMED",
+      "sources": [
+        "apps/worker/src/queues/file.processor.ts",
+        "apps/worker/src/queues/format-converter.ts",
+        "apps/worker/src/main.ts"
+      ],
+      "observation": "Scans use byte/page/object/time limits and fail closed on unavailable ClamAV; production now requires qpdf. The xref counter counts only lines containing offset =, so compressed-object entries need explicit accounting. Subprocess execution has time/output limits but no shown memory/cgroup boundary, and image/office conversion decodes untrusted content in shared worker processes.",
+      "required_change": "Isolate parsers/converters with process/container memory/CPU/pid/disk/network limits and patched tools. Enforce decoded image/archive complexity, temp cleanup and independent scanner health/signature freshness. Preserve tested byte limits and immutable storage verification.",
+      "acceptance": "Resource-exhaustion, malformed/polyglot/archive/image/PDF cases terminate within budgets without killing other tenants or returning READY. Actual ClamAV/qpdf/converter and storage acceptance is separate from programmable fixtures.",
+      "local_probes": []
+    },
+    {
+      "id": "PH1-G27-010",
+      "title": "Human privilege, key management and incident/legal readiness remain external gates",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "OPERATIONAL_GATE",
+      "sources": [
+        "packages/db/migrations/0039_g01_independent_identity_recovery.sql",
+        "infra/terraform/main.tf",
+        "apps/api/src/modules/identity/auth-security.ts"
+      ],
+      "observation": "Separate reviewer/executor roles and startup privilege validation are implemented. Actual human identity, secrets/KMS access, rotation/compromise drills, SIEM retention/privacy and incident response are not established by this code audit.",
+      "required_change": "Approve the threat model and legal/operational policies, provision independent named IAM, test least privilege and break-glass accountability, rotate all relevant keys and rehearse tenant-safe incident handling with evidence preservation.",
+      "acceptance": "Independent security/operations/legal acceptance of deployed roles, key lifecycle, time synchronisation, alert escalation, retention and incident procedures at the exact release. No fixture or sole implementer can supply that approval.",
+      "local_probes": []
+    },
+    {
+      "id": "PH1-G24-001",
+      "title": "Scheduler leases allow overlapping execution after expiry",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "REPRODUCED",
+      "sources": [
+        "apps/worker/src/scheduler.ts"
+      ],
+      "observation": "A real Redis test holds one callback longer than its one-second lease; a second invocation enters the same job while the first is still active. The Lua release correctly avoids deleting another owner's lock, but there is no renewal or durable fencing token.",
+      "required_change": "Use renewed ownership with safe cancellation and durable per-effect fencing/idempotency. Completion markers and TTLs alone cannot prevent an expired worker from committing. Define Redis outage/restart behavior and job-specific maximum duration.",
+      "acceptance": "Real multi-worker TTL expiry, long pause, Redis loss/failover and stale-owner completion drills yield one effective business outcome, and a stale worker cannot commit after ownership changes.",
+      "local_probes": [
+        "P18"
+      ]
+    },
+    {
+      "id": "PH1-G24-002",
+      "title": "Owner digest discovery returns zero recipients under runtime RLS",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "REPRODUCED",
+      "sources": [
+        "apps/worker/src/scheduler.ts"
+      ],
+      "observation": "Global owner discovery joins FORCE-RLS memberships without tenant context and finds zero rows despite active fixture organisations. A weekly period can be marked complete after doing no useful work.",
+      "required_change": "Discover eligible tenant IDs through the reviewed system boundary and load owner membership in each scoped transaction. Reconcile expected versus actual recipients and alert on missing owners; do not grant BYPASSRLS.",
+      "acceptance": "Multiple active/suspended/owner-transferred tenants produce only correct recipients under actual tc_app, with accurate counts, dedup and delivery evidence.",
+      "local_probes": [
+        "P15"
+      ]
+    },
+    {
+      "id": "PH1-G24-003",
+      "title": "Outbox and processor retries lack complete dead-letter/recovery handling",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "SOURCE_CONFIRMED",
+      "sources": [
+        "apps/worker/src/main.ts",
+        "apps/worker/src/event-registry.ts",
+        "apps/worker/src/queues/portable-archive.processor.ts"
+      ],
+      "observation": "Outbox rows stop being selected after attempts reaches five, without a shown durable dead-letter/recovery workflow. Archive/format terminal-failure handling is less complete than file/PDF handling. Unknown event types become stranded attempts rather than actionable operator work.",
+      "required_change": "Define explicit retry/dead-letter/blocked states, classified transient/permanent errors, bounded exponential backoff, durable reason/next-attempt timestamps, safe replay tooling and alerts. Reconcile terminal job state to the domain object for every queue.",
+      "acceptance": "Exhaust retries, unknown schemas, storage failures, process crashes and replay through real BullMQ/PG; each job has a visible recoverable terminal state, no permanent GENERATING/PROCESSING silence and no duplicate artifacts.",
+      "local_probes": []
+    },
+    {
+      "id": "PH1-G24-004",
+      "title": "Outbox polling holds database locks across Redis I/O and catches SQL without savepoints",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "SOURCE_CONFIRMED",
+      "sources": [
+        "apps/worker/src/main.ts",
+        "packages/db/src/tenant-tx.ts"
+      ],
+      "observation": "The poller locks a tenant batch, awaits queue.add and updates rows in one transaction. A SQL failure caught inside the loop can leave PostgreSQL aborted; the subsequent attempts UPDATE cannot repair it without a savepoint. Redis stalls hold database resources.",
+      "required_change": "Use a deliberate claim/lease/dispatch/ack protocol with durable dedup keys, short DB transactions and per-row savepoints where appropriate. Coordinate queue admission with outcome reconciliation; do not claim distributed exactly-once from a local transaction.",
+      "acceptance": "Inject queue-add acknowledgement loss, SQL error mid-batch, Redis timeout and process death before/after commit. Other tenants continue, rolled-back dispatches retry safely and no locks/connections remain stranded.",
+      "local_probes": []
+    },
+    {
+      "id": "PH1-G24-005",
+      "title": "Generic notification delivery is unbounded in retries and performs provider I/O under locks",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "SOURCE_CONFIRMED",
+      "sources": [
+        "apps/worker/src/scheduler.ts",
+        "apps/worker/src/notification-delivery.ts"
+      ],
+      "observation": "The dispatcher holds row locks and a transaction while up to 25 provider calls each wait up to ten seconds. Failures remain QUEUED with no shown per-recipient retry/backoff/dead-letter ledger. Old failures can monopolise the first batch; acknowledgement means gateway acceptance, not final delivery.",
+      "required_change": "Claim short-lived work, perform bounded external I/O outside DB locks, persist retry schedule/attempt/result/receipt state and enforce fairness. Require gateway idempotency and explicitly separate accepted, delivered, bounced and failed outcomes.",
+      "acceptance": "Provider outage/accepted-timeout/duplicate/bounce tests, >25 queued failures, multiple tenants and quiet hours prove bounded lock time, fair progress and accurate user-visible delivery state.",
+      "local_probes": []
+    },
+    {
+      "id": "PH1-G24-006",
+      "title": "Scheduler cycle overlap and failure coupling can starve independent jobs",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "SOURCE_CONFIRMED",
+      "sources": [
+        "apps/worker/src/main.ts",
+        "apps/worker/src/scheduler.ts"
+      ],
+      "observation": "setInterval starts async cycles without awaiting the previous cycle. One catch wraps the entire sequence, so an early task failure skips later tasks for that cycle. Daily successful completion markers can also defer newly discovered/corrected work until the next slot.",
+      "required_change": "Use non-overlapping orchestration or isolated durable repeatable jobs, per-task failure boundaries, explicit catch-up semantics and tenant-level progress. Persist sufficient execution state to resume partial work rather than treating zero rows as universal success.",
+      "acceptance": "Slow/failing tenant tasks and process restarts do not prevent auth reconciliation, security checks or other tenants from progressing; missed schedules catch up exactly according to the documented policy.",
+      "local_probes": []
+    },
+    {
+      "id": "PH1-G24-007",
+      "title": "READY finalisation can fail after successful scan because quota SQL is invalid",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "REPRODUCED",
+      "sources": [
+        "apps/worker/src/main.ts",
+        "packages/db/src/tenant-tx.ts",
+        "apps/worker/src/queues/file.processor.ts"
+      ],
+      "observation": "The file processor invokes the broken storage quota reconciliation inside its final state transaction. Retrying the same bytes cannot fix a deterministic 42804 error. This is the worker impact of PH1-G26-002, not a separate scanner failure.",
+      "required_change": "Share the typed quota correction and define deduplicated finalisation keyed to the exact object/provider version. Reconcile stuck files and counters; persist a classified actionable failure after bounded retries.",
+      "acceptance": "Actual scan-to-READY/QUARANTINED/FAILED transitions plus duplicate jobs and crashes preserve verified evidence and exact usage; no success is reported before the final transaction commits.",
+      "local_probes": [
+        "P06"
+      ]
+    },
+    {
+      "id": "PH1-G24-008",
+      "title": "Expired generic idempotency claims have no outcome reconciliation",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "SOURCE_CONFIRMED",
+      "sources": [
+        "apps/api/src/common/interceptors/idempotency.interceptor.ts",
+        "apps/worker/src/scheduler.ts"
+      ],
+      "observation": "The cleanup deliberately deletes only completed expired receipts. An unresolved response_status=0 claim remains blocked indefinitely if a process dies or receipt persistence fails after the domain commit. This fail-closed behavior is safer than deleting unknown outcomes but is not a complete recovery mechanism.",
+      "required_change": "Link command receipts to durable business outcomes, implement authorised idempotent reconciliation and expose pending/unknown status. Never retry an irreversible command solely because a receipt expired; separately fix secret-bearing response capture.",
+      "acceptance": "Crash before/after business commit and before/after receipt update, then restart/reconcile: one effect, a discoverable result and no permanently unresolvable client command.",
+      "local_probes": []
+    },
+    {
+      "id": "PH1-G24-009",
+      "title": "Resource, tenant and event schema validation must cover every queue",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "SOURCE_CONFIRMED",
+      "sources": [
+        "apps/worker/src/main.ts",
+        "apps/worker/src/event-registry.ts",
+        "apps/worker/src/queues/format-converter.ts"
+      ],
+      "observation": "File jobs validate important immutable identity fields and bounded streams; other queues receive job.data directly, including local filesystem paths for conversion. Outbox payloads are not a typed authority envelope and format enqueue/provenance is not established end to end.",
+      "required_change": "Use per-queue strict versioned schemas, resolve row/resource tenant and immutable version, constrain local paths to owned temporary roots and separate queue producer/consumer credentials. Reject unknown/mismatched events before effects; protect reserved envelope fields.",
+      "acceptance": "Malformed, cross-tenant/project, stale-version, arbitrary path and oversized jobs reject/quarantine. Legitimate producers emit actionable payloads and every consumer verifies the same source provenance.",
+      "local_probes": []
+    },
+    {
+      "id": "PH1-G24-010",
+      "title": "Shutdown does not explicitly drain in-flight pollers/schedulers",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "SOURCE_CONFIRMED",
+      "sources": [
+        "apps/worker/src/main.ts",
+        "apps/worker/src/scheduler.ts"
+      ],
+      "observation": "Signal handling clears intervals and closes BullMQ workers/queues, then ends PG/Redis and exits. It does not track and await already-running pollOutbox/runScheduledCycles invocations or define a bounded abort deadline for those independent operations.",
+      "required_change": "Track active work, stop new claims, renew/transfer or cancel ownership safely, drain or abort all execution families with a deadline, then close dependencies. Record uncertain outcomes for reconciliation instead of relying on process exit.",
+      "acceptance": "SIGTERM during provider I/O, DB commit, queue add and scheduled reconciliation leaves no lost claim, unacknowledged completed effect or poisoned client; restart recovers according to durable state.",
+      "local_probes": []
+    },
+    {
+      "id": "PH1-G24-011",
+      "title": "Production readiness checks do not cover the whole processing chain",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "SOURCE_CONFIRMED",
+      "sources": [
+        "apps/worker/src/worker-startup-security.ts",
+        "apps/worker/src/main.ts",
+        "apps/worker/src/queues/file.processor.ts",
+        "apps/worker/src/queues/format-converter.ts",
+        "apps/api/src/modules/health/health.controller.ts"
+      ],
+      "observation": "Worker startup now validates mode/URLs/actual DB role, pings Redis and requires qpdf. It does not establish complete S3 permissions/versioning, scanner/signature freshness, every required converter, writable/disk budget, queue lag or separate worker readiness status.",
+      "required_change": "Add scoped dependency/permission probes and ongoing readiness/metrics for the actual enabled processing capabilities; disable unsupported conversions explicitly. Keep liveness distinct from readiness and degraded provider delivery.",
+      "acceptance": "Misconfigured IAM/bucket/versioning, unavailable scanner/converter, full temp disk, Redis loss and DB failover produce safe readiness/operational signals and fail closed without accepting unusable work.",
+      "local_probes": []
+    },
+    {
+      "id": "PH1-G24-012",
+      "title": "Scale, fairness and provider acceptance remain deployment gates",
+      "priority": "P1",
+      "status": "OPEN",
+      "classification": "OPERATIONAL_GATE",
+      "sources": [
+        "apps/worker/src/main.ts",
+        "apps/worker/src/scheduler.ts",
+        "apps/worker/src/notification-delivery.ts",
+        "packages/db/src/auth-delivery.ts"
+      ],
+      "observation": "Polling iterates all organisations, locks batches and uses shared fixed worker concurrency. Real tenant load, large package CPU/memory pressure, queue persistence/failover and actual vendor throughput/rate budgets have not been accepted in this audit.",
+      "required_change": "Define per-tenant admission/concurrency/fairness, queue retention and Redis durability, retry/spend budgets, event lag SLOs and operator replay controls. Verify old/new worker compatibility and rolling deployment recovery.",
+      "acceptance": "Load/failure/chaos runs with representative data meet published SLOs and resource budgets. Real storage/scanner/mail/SMS receipts and alert/runbook drills supplement fixture tests; no fixture is relabelled as production acceptance.",
+      "local_probes": []
+    }
+  ]
+}

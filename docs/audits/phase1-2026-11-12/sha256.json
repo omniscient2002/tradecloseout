@@ -1,0 +1,22 @@
+{
+  "algorithm": "SHA-256",
+  "purpose": "bundle consistency only, not an independent signature or release approval",
+  "files": {
+    "G01.md": "91bf5c0fa1df2c62018f08df8bc8f0417849b03ac1fc0b091571a5325910237d",
+    "G02.md": "47f69979083570ffcf517394ae5b3fafd13f50572a2473bf4a2bf794eb8938fa",
+    "G24.md": "50f245deadcf4bd687a8130a2ec9df281c604cc120f62f87cf567ee044ed1a18",
+    "G26.md": "8e109528778f5ecb152f535d4671e82967edb5c0bbfe51e0866ed9df9305706b",
+    "G27.md": "f9e4157eca6cfb8728c2d39fad2b2d9a1fa3a939ad38a46fd14767590d05c018",
+    "README.md": "5f92f7cd901436ae9d1c3063141484e6ec23f77f427609a2d43a4c775fb26f53",
+    "evidence/README.md": "3fcf64e5cfca31625e4aee3ab7fd5834551aad5c0c200ebfdb2d008e7671239f",
+    "evidence/checks.json": "ecf656db6a503bf7e9db1063d4c79657686459f70521a1efdbd3630453c61e14",
+    "evidence/failure-excerpts.txt": "bbbacf28a98194b074955d0141f6b4de4dc0b3bedf4e7873bea80242c93195c4",
+    "evidence/foundation-probes.json": "31813d57189b79a1987e6e78c5f4b0e55b7e400d94500551f5e100f497b2be9f",
+    "evidence/jest.config.cjs": "ed5c85bece315e7a76984cccd7075e00090113ee4c79888249b470625c8d82a6",
+    "evidence/phase1-foundation-probes.spec.ts": "80a1bc6e4984ccac5954d76ba71a0a6e141d87343d34e261021f0bbee9ce711c",
+    "evidence/portable-run-summary.txt": "d9fdcaf34e583a2c85251d3cb6890b01d3a04aad68c910e42306cb3e97826b55",
+    "evidence/source-manifest.json": "639912b9cc90637c58e82d1dc32ce19bdfceaa5a746faf15dac0abdbc79f72c4",
+    "evidence/tsconfig.json": "2318000fde0311ea6338cff435c4856020f2097484c7df3f3085d6aee986c760",
+    "findings.json": "a41cf3bba6ee87204eae4248650c22e6b6dbadec9ba6409d5c785a32b531a86b"
+  }
+}

@@ -1,0 +1,525 @@
+{
+  "sourceSha": "9ed91a9e96c77c9eff967f6c845d18c38fb62ac6",
+  "probes": [
+    {
+      "id": "P01",
+      "name": "audit child partitions expose direct privileges without RLS",
+      "observed": [
+        {
+          "relname": "audit_events_2026_10",
+          "relrowsecurity": false,
+          "relforcerowsecurity": false,
+          "can_select": true,
+          "can_update": true,
+          "can_delete": true
+        },
+        {
+          "relname": "audit_events_2026_11",
+          "relrowsecurity": false,
+          "relforcerowsecurity": false,
+          "can_select": true,
+          "can_update": true,
+          "can_delete": true
+        },
+        {
+          "relname": "audit_events_2026_12",
+          "relrowsecurity": false,
+          "relforcerowsecurity": false,
+          "can_select": true,
+          "can_update": true,
+          "can_delete": true
+        },
+        {
+          "relname": "audit_events_default",
+          "relrowsecurity": false,
+          "relforcerowsecurity": false,
+          "can_select": true,
+          "can_update": true,
+          "can_delete": true
+        }
+      ]
+    },
+    {
+      "id": "P02",
+      "name": "unscoped child partition read reveals tenant audit data",
+      "observed": {
+        "parentRows": 0,
+        "childRows": 1
+      }
+    },
+    {
+      "id": "P03",
+      "name": "direct child UPDATE bypasses parent append-only control",
+      "observed": {
+        "changed": 1,
+        "verifierAccepted": true
+      }
+    },
+    {
+      "id": "P04",
+      "name": "direct child DELETE removes audit history and verifier accepts missing tail",
+      "observed": {
+        "deleted": 1,
+        "verifierAccepted": true
+      }
+    },
+    {
+      "id": "P05",
+      "name": "caller-supplied audit sequence can break hash ordering",
+      "observed": {
+        "inserted": 2,
+        "verifierRejects": true
+      }
+    },
+    {
+      "id": "P06",
+      "name": "storage quota reconciliation assigns text to bigint column",
+      "error": "42804",
+      "message": "column \"value\" is of type bigint but expression is of type text"
+    },
+    {
+      "id": "P07",
+      "name": "migration 0015 already permits the package quota metric",
+      "observed": {
+        "accepted": true
+      }
+    },
+    {
+      "id": "P08",
+      "name": "negative quota delta releases unrelated consumed usage",
+      "observed": {
+        "value": "1"
+      }
+    },
+    {
+      "id": "P09",
+      "name": "nested credential-shaped fields survive audit redaction",
+      "observed": {
+        "token": "[REDACTED]",
+        "nested": {
+          "otp": "synthetic"
+        },
+        "authToken": "synthetic"
+      }
+    },
+    {
+      "id": "P10",
+      "name": "raw event payload can replace trusted outbox envelope fields",
+      "observed": {
+        "envelope_org": "synthetic-forged-org",
+        "envelope_actor": "synthetic-forged-actor"
+      }
+    },
+    {
+      "id": "P11",
+      "name": "unknown restrictive member scope fails open",
+      "observed": {
+        "allowed": true
+      }
+    },
+    {
+      "id": "P12",
+      "name": "malformed readOnly scope is ignored",
+      "observed": {
+        "allowed": true
+      }
+    },
+    {
+      "id": "P13",
+      "name": "project authority treats a stale Owner role as current without membership check",
+      "observed": {
+        "allowed": true
+      }
+    },
+    {
+      "id": "P14",
+      "name": "live session fence allows suspended organisation after guard context was built",
+      "observed": {
+        "committed": true
+      }
+    },
+    {
+      "id": "P15",
+      "name": "owner digest tenant discovery sees zero owners under restricted RLS",
+      "observed": {
+        "rows": 0
+      }
+    },
+    {
+      "id": "P16",
+      "name": "default audit partition exists, preventing a false month-boundary outage finding",
+      "observed": {
+        "exists": true
+      }
+    },
+    {
+      "id": "P17",
+      "name": "transaction-local tenant context resets after commit",
+      "observed": {
+        "rows": 0
+      }
+    },
+    {
+      "id": "P18",
+      "name": "scheduler lease expires while original owner still runs, allowing overlapping work",
+      "observed": {
+        "concurrentExecutions": 2
+      }
+    },
+    {
+      "id": "P19",
+      "name": "expired previous MFA key blocks decryption of current-key factors",
+      "error": "Error",
+      "message": "BOOT_AUTH_MFA_PREVIOUS_KEY_EXPIRED_OR_UNBOUNDED"
+    },
+    {
+      "id": "P20",
+      "name": "expired previous MFA key also blocks current recovery-code lookup",
+      "error": "Error",
+      "message": "BOOT_AUTH_MFA_PREVIOUS_KEY_EXPIRED_OR_UNBOUNDED"
+    },
+    {
+      "id": "P21",
+      "name": "generic idempotency persists real MFA enrollment secret as plaintext",
+      "observed": {
+        "secretPersisted": true,
+        "sameAsReturned": true
+      }
+    },
+    {
+      "id": "P22",
+      "name": "document list and detail ignore the current documentIds subset",
+      "observed": {
+        "listed": 2,
+        "restrictedListed": true,
+        "restrictedDetailReturned": true
+      }
+    },
+    {
+      "id": "P23",
+      "name": "document delete ignores supported mode READ_ONLY resource restriction",
+      "observed": {
+        "deleted": true
+      }
+    },
+    {
+      "id": "P24",
+      "name": "bulk review guard and service permit decision after project membership removal",
+      "observed": {
+        "guardAllowed": true,
+        "projectResolved": false,
+        "resultSuccess": true,
+        "decision": "REJECT"
+      }
+    },
+    {
+      "id": "P25",
+      "name": "Drizzle table columns disagree with the complete migrated schema",
+      "observed": [
+        {
+          "table": "users",
+          "definedButAbsent": [],
+          "migratedButUndefined": [
+            "email_display",
+            "phone_display",
+            "locale"
+          ]
+        },
+        {
+          "table": "organisations",
+          "definedButAbsent": [
+            "allow_generic_review"
+          ],
+          "migratedButUndefined": [
+            "trade",
+            "timezone"
+          ]
+        },
+        {
+          "table": "org_profiles",
+          "definedButAbsent": [
+            "default_timezone",
+            "default_locale"
+          ],
+          "migratedButUndefined": [
+            "logo_url",
+            "accent_color",
+            "watermark_enabled",
+            "allow_self_approval",
+            "default_retention_months",
+            "footer_text",
+            "contact_email",
+            "contact_phone"
+          ]
+        },
+        {
+          "table": "invitations",
+          "definedButAbsent": [
+            "phone"
+          ],
+          "migratedButUndefined": [
+            "phone_e164"
+          ]
+        },
+        {
+          "table": "parties",
+          "definedButAbsent": [],
+          "migratedButUndefined": [
+            "phone_e164"
+          ]
+        },
+        {
+          "table": "party_contacts",
+          "definedButAbsent": [
+            "phone"
+          ],
+          "migratedButUndefined": [
+            "phone_e164"
+          ]
+        },
+        {
+          "table": "projects",
+          "definedButAbsent": [],
+          "migratedButUndefined": [
+            "project_type",
+            "retention_bps"
+          ]
+        },
+        {
+          "table": "project_members",
+          "definedButAbsent": [
+            "added_at",
+            "removed_at"
+          ],
+          "migratedButUndefined": [
+            "created_at",
+            "updated_at"
+          ]
+        },
+        {
+          "table": "guest_grants",
+          "definedButAbsent": [
+            "user_id",
+            "revoked_at"
+          ],
+          "migratedButUndefined": [
+            "otp_attempts_count"
+          ]
+        },
+        {
+          "table": "contracts",
+          "definedButAbsent": [],
+          "migratedButUndefined": [
+            "contract_ref",
+            "title",
+            "party_id",
+            "milestones_json",
+            "commencement_date",
+            "completion_date"
+          ]
+        },
+        {
+          "table": "specification_refs",
+          "definedButAbsent": [],
+          "migratedButUndefined": [
+            "spec_number",
+            "division",
+            "document_id",
+            "created_by"
+          ]
+        },
+        {
+          "table": "requirements",
+          "definedButAbsent": [],
+          "migratedButUndefined": [
+            "asset_id",
+            "milestone_key"
+          ]
+        },
+        {
+          "table": "requirement_change_requests",
+          "definedButAbsent": [
+            "updated_at"
+          ],
+          "migratedButUndefined": [
+            "requirement_id",
+            "change_type",
+            "delta_json",
+            "title",
+            "justification",
+            "decided_at"
+          ]
+        },
+        {
+          "table": "waivers",
+          "definedButAbsent": [],
+          "migratedButUndefined": [
+            "is_mandatory_item",
+            "requested_by",
+            "second_approved_at",
+            "created_at"
+          ]
+        },
+        {
+          "table": "asset_categories",
+          "definedButAbsent": [],
+          "migratedButUndefined": [
+            "created_at"
+          ]
+        },
+        {
+          "table": "storage_objects",
+          "definedButAbsent": [],
+          "migratedButUndefined": [
+            "av_scanned_at"
+          ]
+        },
+        {
+          "table": "document_versions",
+          "definedButAbsent": [
+            "external_comment"
+          ],
+          "migratedButUndefined": [
+            "uploader_comment"
+          ]
+        },
+        {
+          "table": "evidence_revalidations",
+          "definedButAbsent": [],
+          "migratedButUndefined": [
+            "row_version",
+            "scope_key"
+          ]
+        },
+        {
+          "table": "document_contracts",
+          "definedButAbsent": [],
+          "migratedButUndefined": [
+            "created_at"
+          ]
+        },
+        {
+          "table": "reviews",
+          "definedButAbsent": [
+            "updated_at"
+          ],
+          "migratedButUndefined": []
+        },
+        {
+          "table": "review_comments",
+          "definedButAbsent": [
+            "pin_x",
+            "pin_y"
+          ],
+          "migratedButUndefined": []
+        },
+        {
+          "table": "approval_overrides",
+          "definedButAbsent": [],
+          "migratedButUndefined": [
+            "overridden_by",
+            "justification",
+            "previous_status",
+            "new_status"
+          ]
+        },
+        {
+          "table": "handover_packages",
+          "definedButAbsent": [],
+          "migratedButUndefined": [
+            "title",
+            "created_by",
+            "package_purpose"
+          ]
+        },
+        {
+          "table": "submissions",
+          "definedButAbsent": [],
+          "migratedButUndefined": [
+            "submitted_at",
+            "submitted_by",
+            "cover_note",
+            "updated_at"
+          ]
+        },
+        {
+          "table": "submission_recipients",
+          "definedButAbsent": [],
+          "migratedButUndefined": [
+            "party_id",
+            "role",
+            "name",
+            "email",
+            "is_required_approver"
+          ]
+        },
+        {
+          "table": "notifications",
+          "definedButAbsent": [],
+          "migratedButUndefined": [
+            "project_id"
+          ]
+        },
+        {
+          "table": "security_events",
+          "definedButAbsent": [],
+          "migratedButUndefined": [
+            "cert_in_reportable",
+            "detected_at",
+            "report_due_at",
+            "reported_to_cert_in_at"
+          ]
+        },
+        {
+          "table": "outbox_events",
+          "definedButAbsent": [],
+          "migratedButUndefined": [
+            "attempts"
+          ]
+        },
+        {
+          "table": "subscriptions",
+          "definedButAbsent": [
+            "created_at"
+          ],
+          "migratedButUndefined": []
+        },
+        {
+          "table": "invoice_tds",
+          "definedButAbsent": [],
+          "migratedButUndefined": [
+            "certificate_object_id",
+            "status"
+          ]
+        },
+        {
+          "table": "warranty_events",
+          "definedButAbsent": [],
+          "migratedButUndefined": [
+            "row_version"
+          ]
+        },
+        {
+          "table": "defects",
+          "definedButAbsent": [],
+          "migratedButUndefined": [
+            "mandatory",
+            "remedied_by",
+            "remedied_at"
+          ]
+        },
+        {
+          "table": "variations",
+          "definedButAbsent": [],
+          "migratedButUndefined": [
+            "variation_ref",
+            "title",
+            "cost_delta_paise",
+            "scope_delta_json",
+            "requested_by"
+          ]
+        }
+      ]
+    }
+  ]
+}

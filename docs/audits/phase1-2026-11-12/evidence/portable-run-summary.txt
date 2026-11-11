@@ -1,0 +1,12 @@
+    ]
+
+      at Object.<anonymous> (../../docs/audits/phase1-2026-11-12/evidence/phase1-foundation-probes.spec.ts:203:10)
+
+PASS ../../docs/audits/phase1-2026-11-12/evidence/phase1-foundation-probes.spec.ts (11.317 s)
+  ✓ Phase 1 source-pinned foundation observations on fresh PG16/restricted tc_app (3022 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       1 passed, 1 total
+Snapshots:   0 total
+Time:        11.647 s
+Ran all test suites.
