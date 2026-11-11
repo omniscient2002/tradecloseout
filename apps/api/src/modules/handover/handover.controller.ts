@@ -251,7 +251,7 @@ export class HandoverController {
    */
   @Post('projects/:projectId/archive-exports')
   @UseGuards(SessionCsrfGuard, PermissionGuard)
-  @RequirePermission('package.generate')
+  @RequirePermission('export.data')
   @RequireIdempotency()
   async exportProjectArchive(
     @Req() req: any,
