@@ -112,3 +112,29 @@ export async function withDisposableDatabase(work: (db: {
     await control.end();
   }
 }
+
+/** Open a randomly named isolated database for Jest suites with setup/teardown hooks. */
+export async function openDisposableDatabaseForSuite() {
+  type Info = { admin: Pool; app: Pool; url: string; name: string };
+  let finish!: () => void;
+  let ready!: (value: Info) => void;
+  let fail!: (reason: unknown) => void;
+  const gate = new Promise<void>(resolve => { finish = resolve; });
+  const opened = new Promise<Info>((resolve, reject) => { ready = resolve; fail = reject; });
+  const running = withDisposableDatabase(async db => {
+    ready(db);
+    await gate;
+  });
+  void running.catch(fail);
+  const db = await opened;
+  let closed = false;
+  return {
+    ...db,
+    close: async () => {
+      if (closed) return;
+      closed = true;
+      finish();
+      await running;
+    },
+  };
+}

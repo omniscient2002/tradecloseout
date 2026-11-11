@@ -39,7 +39,7 @@ it('G01 actual two-API strict-mode HTTP: shared budgets, MFA, lost response and 
   const apiRoot=resolve(__dirname,'..'),workspace=resolve(apiRoot,'../..');
   // This acceptance test owns its compiled processes. It also works after a
   // clean pnpm test (whose workspace prerequisites build shared/db/pdf only).
-  for(const project of ['packages/shared/tsconfig.json','packages/db/tsconfig.json','apps/api/tsconfig.json','apps/worker/tsconfig.json']){
+  for(const project of ['packages/shared/tsconfig.json','packages/db/tsconfig.json','packages/pdf-engine/tsconfig.json','apps/api/tsconfig.json','apps/worker/tsconfig.json']){
     const build=spawnSync(process.execPath,[require.resolve('typescript/bin/tsc'),'-p',resolve(workspace,project),'--incremental','false'],
       {cwd:workspace,encoding:'utf8',timeout:60000});
     if(build.status!==0)throw new Error('G01_HTTP_PROCESS_BUILD_FAILED: '+build.stdout.slice(-2000));
@@ -199,13 +199,36 @@ it('G01 actual two-API strict-mode HTTP: shared budgets, MFA, lost response and 
       expect((await post(0,'/api/v1/auth/otp/request',{identifier:loseAckFor})).status).toBe(503);
       const lost=submissions.find(s=>s.to===loseAckFor)!;
       await admin.query('UPDATE auth_delivery_attempts SET next_reconcile_at=now() WHERE id=$1',[lost.id]);
-      await start(resolve(workspace,'apps/worker/dist/apps/worker/src/main.js'),{PGAPPNAME:'g01_http_worker'});
+      const receiptWorker=await start(resolve(workspace,'apps/worker/dist/apps/worker/src/main.js'),{PGAPPNAME:'g01_http_worker'});
       let reconciled=false;
       for(let i=0;i<150;i++){
         const status=(await admin.query('SELECT delivery_status FROM otp_challenges WHERE id=$1',[lost.id])).rows[0].delivery_status;
         if(status==='SENT'){reconciled=true;break;}await sleep(100);
       }
-      expect(reconciled).toBe(true);loseAckFor='';
+      if(!reconciled){
+        const challengeState=(await admin.query(
+          `SELECT delivery_status FROM otp_challenges WHERE id=$1`,[lost.id])).rows[0];
+        const attemptState=(await admin.query(
+          `SELECT status,channel,reconcile_count,last_sequence,next_reconcile_at
+             FROM auth_delivery_attempts WHERE id=$1`,[lost.id])).rows[0];
+        // Only coarse process and delivery-state indicators may be printed.
+        // Never include captured gateway traffic, OTP, bearer grants, or logs.
+        throw new Error('G01_DELIVERY_RECONCILE_TIMEOUT '+JSON.stringify({
+          workerExit:receiptWorker.exitCode,
+          workerSignal:receiptWorker.signalCode,
+          challengeStatus:challengeState?.delivery_status,
+          attemptStatus:attemptState?.status,
+          channel:attemptState?.channel,
+          attempts:attemptState?.reconcile_count,
+          sequence:attemptState?.last_sequence,
+          nextDue:attemptState?.next_reconcile_at && new Date(attemptState.next_reconcile_at).getTime()<=Date.now(),
+          workerStarted:logs.includes('Leader-Locked Schedulers are ACTIVE'),
+          workerQpdfDetected:logs.includes('qpdf engine detected'),
+          workerDependencyFailure:logs.includes('BOOT_WORKER_'),
+          schedulerDeliveryFailure:logs.includes('SCHEDULER_AUTH_DELIVERY_FAILED'),
+        }));
+      }
+      loseAckFor='';
 
       // Discard the real HTTP response after COMMIT. Replaying the same OTP
       // on the other API cannot create a second user, membership or session.
