@@ -5,6 +5,7 @@ import { readFile, readdir } from 'fs/promises';
 import path from 'path';
 import { withDisposableDatabase, migrateDatabase } from './helpers/disposable-database';
 import { scoped, seedTenants } from './helpers/fixtures';
+import { reconcileStorageQuotaOnFileStatusChange } from '../src/tenant-tx';
 
 void test('Disposable PostgreSQL migration, isolation and audit regression tests', async t => {
   await withDisposableDatabase(async ({ admin, app, url }) => {
@@ -101,6 +102,23 @@ void test('Disposable PostgreSQL migration, isolation and audit regression tests
         }
       }
       // The adjacent AUDIT-02/03/04 test covers permitted parent insert/read.
+    });
+
+    await t.test('PH1-G26-002/G24-007: quota SQL commits typed bigint changes in real PG16', async () => {
+      await scoped(app, a.orgId, async client => {
+        await reconcileStorageQuotaOnFileStatusChange(client, a.orgId, 1234n, 'MARKED_READY');
+        const read = async () => (await client.query(
+          `SELECT value FROM usage_counters WHERE org_id=$1
+            AND metric='STORAGE_BYTES' AND period='ALL_TIME'`, [a.orgId],
+        )).rows[0].value;
+        assert.equal(BigInt(await read()), 1234n);
+        await reconcileStorageQuotaOnFileStatusChange(client, a.orgId, 234n, 'DELETED_OR_PURGED');
+        assert.equal(BigInt(await read()), 1000n);
+      });
+      await scoped(app, b.orgId, async client => {
+        assert.equal((await client.query(`SELECT value FROM usage_counters
+          WHERE metric='STORAGE_BYTES' AND period='ALL_TIME'`)).rowCount, 0);
+      });
     });
 
     await t.test('DB-08: direct cross-project procurement insert fails the intended composite FK', async () => {
