@@ -14,6 +14,7 @@ import {
 import { PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { STANDARD_COMPANION_RULES } from '@tradecloseout/db';
+import { assertCurrentProjectAuthority } from '@tradecloseout/db/tenant-tx';
 import { TenantDbService, ExecutionContext } from '../../database/tenant-db.service';
 import { ExternalApprovalDto } from './dto/external-approval.dto';
 import { isProductionEnvironment } from '../identity/auth-security';
@@ -602,7 +603,23 @@ export class ReviewsService {
     }
 
     const run = async (client: PoolClient) => {
-      // 1. Fetch review record
+      // PH1-G02-002: route-level authorization may have had no projectId
+      // for bulk decisions. Resolve the actual review project first, then
+      // lock and revalidate current membership before locking the review.
+      // This also avoids review -> membership inverse lock order.
+      const { rows: projectRows } = await client.query(
+        `SELECT project_id FROM reviews WHERE org_id=$1 AND id=$2`,
+        [ctx.orgId, reviewId],
+      );
+      if (!projectRows.length) throw new NotFoundException('REVIEW_NOT_FOUND');
+      const actualProjectId = projectRows[0].project_id as string;
+      if (ctx.projectId && ctx.projectId !== actualProjectId) {
+        throw new NotFoundException('REVIEW_NOT_FOUND');
+      }
+      await assertCurrentProjectAuthority(client, {
+        ...ctx, projectId: actualProjectId,
+      });
+      // 1. Lock the review after validating current authority.
       const reviewRes = await client.query(
         `SELECT * FROM reviews WHERE org_id = $1 AND id = $2 FOR UPDATE`,
         [ctx.orgId, reviewId],
@@ -611,6 +628,9 @@ export class ReviewsService {
         throw new NotFoundException('REVIEW_NOT_FOUND');
       }
       const review = reviewRes.rows[0];
+      if (review.project_id !== actualProjectId) {
+        throw new NotFoundException('REVIEW_NOT_FOUND');
+      }
       if (review.status !== 'IN_REVIEW' && review.status !== 'PENDING') {
         throw new ConflictException(`INVALID_STATE_TRANSITION: Review is already in status ${review.status}`);
       }
