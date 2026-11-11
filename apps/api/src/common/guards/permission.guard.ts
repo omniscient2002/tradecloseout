@@ -56,6 +56,7 @@ const RESOURCE_ROUTES: Array<[string,string,string[]]> = [
   ['/assets/','assets',['assetId','id']],
   ['/reviews/','reviews',['reviewId','id']],
   ['/packages/','handover_packages',['packageId','id']],
+  ['/guest-grants/','guest_grants',['grantId','id']],
   ['/submissions/','submissions',['submissionId','id']],
 ];
 

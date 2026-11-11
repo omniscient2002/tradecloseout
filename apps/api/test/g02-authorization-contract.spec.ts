@@ -47,6 +47,36 @@ describe('G02 executable negative authorization contracts',()=>{
     expect(ORG_ROLE_PERMISSIONS['R-OWNER']['document.reuse']).toBe('A');
   });
 
+  it('PH1-G02-005: grant revocation binds the true tenant-owned project before permission evaluation',async()=>{
+    const orgId=uuidv7(),userId=uuidv7(),projectId=uuidv7(),grantId=uuidv7();
+    const sqlCalls:string[]=[];
+    const client={
+      query:jest.fn(async(sql:string,params:unknown[]=[])=>{
+        sqlCalls.push(sql);
+        if(sql.includes('SELECT project_id FROM guest_grants')){
+          expect(params).toEqual([orgId,grantId]);
+          return {rows:[{project_id:projectId}]};
+        }
+        return {rows:[],rowCount:1};
+      }),
+      release:jest.fn(),
+    };
+    const pool={connect:jest.fn(async()=>client)};
+    const guard=new PermissionGuard(new Reflector(),pool as any);
+    const req:any={method:'POST',path:`/api/v1/guest-grants/${grantId}/revoke`,
+      params:{id:grantId},user:{orgId,userId,orgRole:'R-OWNER'},
+      userContext:{orgId,userId,orgRole:'R-OWNER',actorType:'MEMBER'}};
+    await expect(guard.canActivate({
+      getHandler:()=>PartiesController.prototype.revokeGuestGrant,
+      getClass:()=>PartiesController,
+      switchToHttp:()=>({getRequest:()=>req}),
+    } as any)).resolves.toBe(true);
+    expect(sqlCalls.some(sql=>sql.includes('SELECT project_id FROM guest_grants'))).toBe(true);
+    expect(req.userContext.projectId).toBe(projectId);
+    expect(req.userContext.permission).toBe('party.manage');
+    expect(client.release).toHaveBeenCalledTimes(1);
+  });
+
   it('G02-016: no coercible UUID or array reaches a database lookup',()=>{
     const id=uuidv7();
     for(const v of [null,123,true,[],[id],{toString:()=>id},'',id+'z']){
