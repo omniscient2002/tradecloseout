@@ -394,6 +394,9 @@ describe('Perfect 10 Remediation & Hardening Test Suite', () => {
       const mockPool = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation((sql: string) => {
+            if (sql.includes('SELECT status FROM projects')) {
+              return Promise.resolve({ rows: [{status:'ACTIVE'}] });
+            }
             if (sql.includes('SELECT id, requirement_key')) {
               return Promise.resolve({ rows: [{ id: reqId, requirement_key: 'CHLR-FAT', title: 'FAT' }] });
             }
@@ -411,6 +414,7 @@ describe('Perfect 10 Remediation & Hardening Test Suite', () => {
         orgId,
         userId,
         actorType: 'MEMBER' as const,
+        orgRole: 'R-PROC', // explicitly authorized supplier-link issuer
         ip: '127.0.0.1',
         userAgent: 'test',
         requestId: 'req-link',

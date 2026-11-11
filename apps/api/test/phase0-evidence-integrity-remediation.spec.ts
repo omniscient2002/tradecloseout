@@ -156,6 +156,12 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
         withTenantContext: jest.fn().mockImplementation(async (ctx, fn) => {
           const client = {
             query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
+              if (sql.includes('SELECT project_id FROM reviews')) {
+                return { rows: [{ project_id: projectId }] };
+              }
+              if (sql.includes('SELECT role,scope_json FROM project_members')) {
+                return { rows: [{ role: 'R-QC', scope_json: {} }] };
+              }
               if (sql.includes('SELECT * FROM reviews')) {
                 return {
                   rows: [
@@ -163,6 +169,7 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
                       id: 'rev-1',
                       org_id: orgId,
                       document_version_id: 'ver-unscanned',
+                      project_id: projectId,
                       status: 'IN_REVIEW',
                       reviewer_subject_type: 'USER', reviewer_subject_id: userId,
                     },
@@ -191,7 +198,7 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
 
       const reviewsService = new ReviewsService(mockDb);
       await expect(
-        reviewsService.decideReview(mockCtx, 'rev-1', {
+        reviewsService.decideReview({...mockCtx,projectId,projectRole:'R-QC'}, 'rev-1', {
           decision: 'APPROVE',
           comment: 'Approved by QC',
         }),
@@ -207,6 +214,12 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
           const client = {
             query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
               executedQueries.push({ sql, params });
+              if (sql.includes('SELECT project_id FROM reviews')) {
+                return { rows: [{ project_id: projectId }] };
+              }
+              if (sql.includes('SELECT role,scope_json FROM project_members')) {
+                return { rows: [{ role: 'R-QC', scope_json: {} }] };
+              }
               if (sql.includes('SELECT * FROM reviews')) {
                 return {
                   rows: [
@@ -214,6 +227,7 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
                       id: 'rev-2',
                       org_id: orgId,
                       document_version_id: 'ver-ready',
+                      project_id: projectId,
                       status: 'IN_REVIEW',
                       reviewer_subject_type: 'USER', reviewer_subject_id: userId,
                     },
@@ -255,7 +269,7 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
       } as any;
 
       const reviewsService = new ReviewsService(mockDb);
-      const res = await reviewsService.decideReview(mockCtx, 'rev-2', {
+      const res = await reviewsService.decideReview({...mockCtx,projectId,projectRole:'R-QC'}, 'rev-2', {
         decision: 'APPROVE',
         comment: 'All checks passed',
       });
