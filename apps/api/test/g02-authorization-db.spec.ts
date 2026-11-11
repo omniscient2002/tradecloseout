@@ -59,12 +59,26 @@ async function seed(admin:any):Promise<Seed>{
       [id,org,project,tag,user],
     );
   }
+  // Real requirement rows must be pinned to a genuine, tenant/project-owned
+  // checklist snapshot. The previous fixture omitted this NOT NULL authority.
+  const snapshotId = uuidv7();
+  await admin.query(
+    `INSERT INTO checklist_snapshots
+      (id,org_id,project_id,version_no,status,resolved_payload_json,
+       provenance_json,source_json,checksum,created_by)
+     VALUES($1,$2,$3,1,'ACTIVE',$4::jsonb,$5::jsonb,$6::jsonb,$7,$8)`,
+    [snapshotId,org,projectA,JSON.stringify({requirements:[
+      {requirementKey:'G02-RA',docTypeKey:'DT-001'},
+      {requirementKey:'G02-RB',docTypeKey:'DT-001'},
+    ]}),JSON.stringify({kind:'G02_RESTRICTED_DB_FIXTURE'}),
+    JSON.stringify({kind:'G02_RESTRICTED_DB_FIXTURE'}),'c'.repeat(64),user],
+  );
   for(const [id,key,status] of [[reqA,'G02-RA','NOT_STARTED'],[reqB,'G02-RB','NOT_STARTED']]){
     await admin.query(
       `INSERT INTO requirements
-        (id,org_id,project_id,requirement_key,title,group_key,doc_type_key,mandatory,status)
-       VALUES($1,$2,$3,$4,$4,'HVAC','DT-001',true,$5)`,
-      [id,org,projectA,key,status],
+        (id,org_id,project_id,current_snapshot_id,requirement_key,title,group_key,doc_type_key,mandatory,status)
+       VALUES($1,$2,$3,$4,$5,$5,'HVAC','DT-001',true,$6)`,
+      [id,org,projectA,snapshotId,key,status],
     );
   }
   return {org,user,guest,projectA,projectB,assetA,assetB,reqA,reqB,party};
