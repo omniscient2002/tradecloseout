@@ -10,6 +10,16 @@ import { PoolClient } from 'pg';
  * The only org-wide project exception is a current Owner/Admin or explicitly
  * enabled document controller download (not write), per the policy owner.
  */
+function canonicalScope(value:unknown):string{
+  if(Array.isArray(value))return '['+value.map(canonicalScope).join(',')+']';
+  if(value && typeof value==='object'){
+    const entries=Object.entries(value as Record<string,unknown>)
+      .sort(([a],[b])=>a.localeCompare(b));
+    return '{'+entries.map(([key,val])=>JSON.stringify(key)+':'+canonicalScope(val)).join(',')+'}';
+  }
+  return JSON.stringify(value)??'null';
+}
+
 export type ProjectAuthorityContext = {
   orgId: string;
   userId: string;
@@ -39,7 +49,7 @@ export async function assertCurrentProjectAuthority(
     );
     if (!rows.length) throw new Error('G02_GUEST_AUTHORITY_CHANGED');
     if (ctx.guestScope &&
-        JSON.stringify(rows[0].scope_json) !== JSON.stringify(ctx.guestScope)) {
+        canonicalScope(rows[0].scope_json) !== canonicalScope(ctx.guestScope)) {
       throw new Error('G02_GUEST_SCOPE_CHANGED');
     }
     return;
@@ -58,7 +68,7 @@ export async function assertCurrentProjectAuthority(
     throw new Error('G02_PROJECT_ROLE_CHANGED');
   }
   if (ctx.projectScope &&
-      JSON.stringify(rows[0].scope_json) !== JSON.stringify(ctx.projectScope)) {
+      canonicalScope(rows[0].scope_json) !== canonicalScope(ctx.projectScope)) {
     throw new Error('G02_PROJECT_SCOPE_CHANGED');
   }
 }
