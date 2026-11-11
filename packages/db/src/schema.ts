@@ -63,7 +63,7 @@ export const organisations = pgTable(
     state: text('state').notNull(),
     allowSelfApproval: boolean('allow_self_approval').notNull().default(false),
     allowGenericReview: boolean('allow_generic_review').notNull().default(false),
-    docControllerOrgWideDownload: boolean('document_controller_org_wide_download')
+    docControllerOrgWideDownload: boolean('doc_controller_org_wide_download')
       .notNull()
       .default(false),
     rowVersion: integer('row_version').notNull().default(1),
