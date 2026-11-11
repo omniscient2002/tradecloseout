@@ -60,7 +60,7 @@ function bad(field: string, detail = 'Unsupported or invalid value'): never {
 export function parseOrgProfilePatch(dto: unknown): {rowVersion: number; input: OrgProfilePatch} {
   if (!dto || typeof dto !== 'object' || Array.isArray(dto)) bad('body');
   const raw = dto as Record<string, unknown>;
-  if (!Number.isSafeInteger(raw.rowVersion) || (raw.rowVersion as number) < 1) bad('rowVersion', 'Current positive integer version required');
+  if (typeof raw.rowVersion !== 'number' || !Number.isSafeInteger(raw.rowVersion) || raw.rowVersion < 1) bad('rowVersion', 'Current positive integer version required');
   for (const key of Object.keys(raw)) {
     if (key !== 'rowVersion' && !PROFILE_KEYS.has(key)) bad(key, 'Field is not supported by this endpoint');
   }
@@ -93,7 +93,7 @@ export function parseOrgProfilePatch(dto: unknown): {rowVersion: number; input: 
       result[key] = value;
     } else if (key === 'defaultRetentionMonths') {
       // Cannot shorten the eight-year default retention through branding settings.
-      if (!Number.isSafeInteger(value) || (value as number) < 96 || (value as number) > 600) bad(key, 'Retain for 96–600 months; legal holds prevail');
+      if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 96 || value > 600) bad(key, 'Retain for 96–600 months; legal holds prevail');
       result[key] = value;
     } else if (key === 'gstin') {
       if (value !== null && (typeof value !== 'string' || !isValidIndianGstin(value))) {
@@ -120,7 +120,7 @@ export function parseOrgProfilePatch(dto: unknown): {rowVersion: number; input: 
     } else if (key === 'contactEmail') {
       if (value === null) result[key] = null;
       else {
-        const email = canonicalAuthenticationEmail(value);
+        const email = canonicalAuthenticationEmail(typeof value === 'string' ? value : '');
         if (!email) bad(key);
         result[key] = email;
       }
