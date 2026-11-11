@@ -64,7 +64,8 @@ export function reviewerConnectionConfig(
     throw new Error('G01_REVIEWER_DATABASE_URL_INVALID');
   }
   const user=decodeURIComponent(url.username);
-  if (['postgres','tc_app','tc_migrator','tc_external_authority_reviewer'].includes(user)) {
+  if (['postgres','tc_app','tc_migrator','tc_external_authority_reviewer',
+    'tc_identity_recovery_reviewer','tc_identity_recovery_executor'].includes(user)) {
     throw new Error('G01_REVIEWER_INDIVIDUAL_LOGIN_REQUIRED');
   }
   let ca: string;

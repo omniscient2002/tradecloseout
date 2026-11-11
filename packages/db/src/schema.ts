@@ -27,6 +27,7 @@ export const users = pgTable('users', {
   mfaTotpPendingSecret: text('mfa_totp_pending_secret'),
   mfaEnabledAt: timestamp('mfa_enabled_at', { withTimezone: true }),
   mfaTotpLastStep: bigint('mfa_totp_last_step', { mode: 'number' }).notNull().default(-1),
+  authProofValidAfter: timestamp('auth_proof_valid_after',{withTimezone:true}).notNull().default(sql`'1970-01-01T00:00:00Z'::timestamptz`),
   rowVersion: integer('row_version').notNull().default(1),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

@@ -20,17 +20,19 @@ import { Response } from 'express';
 import { Pool, PoolClient } from 'pg';
 import Redis from 'ioredis';
 import { uuidv7 } from 'uuidv7';
+import type { AuthDeliveryContext } from '@tradecloseout/db';
+import { canonicalAuthenticationEmail, canonicalAuthenticationPhone, isSafeIdentityName } from '@tradecloseout/shared';
 import { AuthenticatedRequest, SessionCsrfGuard } from '../../common/guards/session-csrf.guard';
-import { safeAuthenticationDeviceLabel, safeAuthenticationRequestId } from '../../common/security/audit-metadata';
+import { safeAuthenticationDeviceLabel, requestIdFor } from '../../common/security/audit-metadata';
 import { assertAuthenticationOrigin, assertAuthenticationIntent, AUTH_INTENT_COOKIE, consumeAuthenticationBudget, deriveSessionCsrf, recordAuthenticationEvent, isProductionEnvironment, setAuthenticationIntent } from './auth-security';
 
 export abstract class DltSmsGateway {
-  abstract sendOtpSms(phoneE164: string, otp: string, templateId: string): Promise<{ delivered: boolean }>;
+  abstract sendOtpSms(phoneE164: string, otp: string, templateId: string, context?: AuthDeliveryContext): Promise<{ delivered: boolean }>;
 }
 
 export abstract class TransactionalMailGateway {
-  abstract sendMagicLinkEmail(email: string, magicUrl: string): Promise<void>;
-  abstract sendOtpEmail(email: string, otp: string, purpose: string): Promise<void>;
+  abstract sendMagicLinkEmail(email: string, magicUrl: string, context?: AuthDeliveryContext): Promise<void>;
+  abstract sendOtpEmail(email: string, otp: string, purpose: string, context?: AuthDeliveryContext): Promise<void>;
 }
 
 @Controller('api/v1/auth')
@@ -58,9 +60,9 @@ export class IdentityController {
     if (typeof supplied !== 'string' || supplied.length > 320) {
       throw new UnprocessableEntityException({ code: 'INVALID_IDENTIFIER', detail: 'A valid email or mobile number is required.' });
     }
-    const rawId = supplied.trim().toLowerCase();
-    const isPhone = /^\+91[6-9][0-9]{9}$/.test(rawId);
-    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawId);
+    const phone=canonicalAuthenticationPhone(supplied),email=canonicalAuthenticationEmail(supplied);
+    const rawId=phone||email||'';
+    const isPhone=Boolean(phone),isEmail=Boolean(email);
 
     if (!isPhone && !isEmail) {
       throw new UnprocessableEntityException({
@@ -94,7 +96,8 @@ export class IdentityController {
       1,
       rateKey,
       3600,
-    ));
+    ).catch(()=>{throw new HttpExceptionWithRetry(503,'AUTH_RATE_LIMIT_STORAGE_UNAVAILABLE',
+      'Authentication is temporarily unavailable.',5);}));
     if (count > 5 || !Number.isFinite(count)) {
       throw new HttpExceptionWithRetry(429, 'RATE_LIMITED', 'Too many OTP requests. Try again later.', 300);
     }
@@ -171,7 +174,8 @@ export class IdentityController {
     if (isPhone) {
       const smsFailKey = `sms:fail:${redisContactKey}`;
       try {
-        const res = await this.smsGateway.sendOtpSms(rawId, otp, process.env.DLT_OTP_TEMPLATE_ID || '');
+        const res = await this.smsGateway.sendOtpSms(rawId, otp, process.env.DLT_OTP_TEMPLATE_ID || '',
+          {kind:'LOGIN_OTP',targetId:challengeId});
         if (!res.delivered) throw new Error('DLT_DELIVERY_FAILED');
         if (isProductionEnvironment()) {
           const status = await this.pool.query(
@@ -237,7 +241,8 @@ export class IdentityController {
 
     // Email OTP / Magic Link
     try {
-      await this.mailGateway.sendOtpEmail(rawId, otp, 'SIGN_IN');
+      await this.mailGateway.sendOtpEmail(rawId, otp, 'SIGN_IN',
+        {kind:'LOGIN_OTP',targetId:challengeId});
       if (isProductionEnvironment()) {
         const status = await this.pool.query(
           `UPDATE otp_challenges SET delivery_status='SENT'
@@ -308,23 +313,24 @@ export class IdentityController {
     @Res({ passthrough: true }) res: Response,
   ) {
     assertAuthenticationOrigin(req);
-    if (!body || typeof body !== 'object' ||
-        (body.identifier != null && typeof body.identifier !== 'string') ||
-        (body.challengeId != null && typeof body.challengeId !== 'string') ||
-        (body.invitationToken != null && typeof body.invitationToken !== 'string') ||
-        (body.otp != null && typeof body.otp !== 'string') ||
-        (body.code != null && typeof body.code !== 'string')) {
+    if (!body || typeof body !== 'object' || Array.isArray(body) ||
+        (body.identifier !== undefined && typeof body.identifier !== 'string') ||
+        (body.challengeId !== undefined && typeof body.challengeId !== 'string') ||
+        (body.invitationToken !== undefined && typeof body.invitationToken !== 'string') ||
+        (body.otp !== undefined && typeof body.otp !== 'string') ||
+        (body.code !== undefined && typeof body.code !== 'string')) {
       throw new UnprocessableEntityException({ code: 'INVALID_OTP_INPUT', detail: 'Invalid OTP verification request.' });
     }
     const invitationToken = body.invitationToken || null;
     if (invitationToken && !/^[0-9a-f]{64}$/i.test(invitationToken)) {
       throw new UnprocessableEntityException({ code: 'INVALID_INVITATION_TOKEN' });
     }
-    let rawId = (body.identifier ?? '').trim().toLowerCase();
+    let rawId = body.identifier ? canonicalAuthenticationPhone(body.identifier)||canonicalAuthenticationEmail(body.identifier)||'' : '';
+    if(body.identifier && !rawId)throw new UnprocessableEntityException({code:'INVALID_IDENTIFIER'});
     const candidateCode = (body.otp ?? body.code ?? '').trim();
     const challengeParam = (body.challengeId ?? '').trim();
     if (!/^\d{6}$/.test(candidateCode) ||
-        (challengeParam && !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(challengeParam)) ||
+        (body.challengeId !== undefined && !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(challengeParam)) ||
         rawId.length > 320) {
       throw new UnprocessableEntityException({ code: 'INVALID_OTP_INPUT', detail: 'Verification requires a six-digit code and valid challenge ID.' });
     }
@@ -363,6 +369,7 @@ export class IdentityController {
 
     let verifyOutcome = 'EXPIRED';
     let authDbClient: PoolClient | null = null;
+    let proofCreatedAt:string|undefined;
     if (isProductionEnvironment()) {
       // The PostgreSQL OTP row is authoritative in production. Lock the proof
       // and retain its transaction across identity lookup and session INSERT.
@@ -371,7 +378,7 @@ export class IdentityController {
       try {
         await candidateClient.query('BEGIN');
         const { rows: challengeRows } = await candidateClient.query(
-          `SELECT id, identifier, code_hash, attempts, auth_intent_hash
+          `SELECT id, identifier, code_hash, attempts, auth_intent_hash,created_at::text AS proof_created_at
             FROM otp_challenges
             WHERE id=$1 AND purpose='LOGIN' AND consumed_at IS NULL
               AND delivery_status='SENT' AND expires_at>now()
@@ -384,6 +391,7 @@ export class IdentityController {
           candidateClient.release();
         } else {
           const proof = challengeRows[0];
+          proofCreatedAt=proof.proof_created_at;
           assertAuthenticationIntent(req, proof.auth_intent_hash);
           const computed = createHmac('sha256', process.env.AUTH_OTP_HMAC_KEY!)
             .update(`LOGIN:${proof.id}:${proof.identifier}:${candidateCode}`).digest('hex');
@@ -631,9 +639,13 @@ export class IdentityController {
       if (existingIdentities.length > 0) {
         userId = existingIdentities[0].user_id;
         const { rows: eligibleUsers } = await client.query(
-          `SELECT id FROM users WHERE id = $1 AND status = 'ACTIVE' FOR SHARE`,
-          [userId],
+          `SELECT id,($2::timestamptz IS NULL OR $2::timestamptz>auth_proof_valid_after) AS proof_is_current
+             FROM users WHERE id = $1 AND status = 'ACTIVE' FOR UPDATE`,
+          [userId,proofCreatedAt??null],
         );
+        if (proofCreatedAt && eligibleUsers[0]?.proof_is_current===false) {
+          throw new UnauthorizedException({code:'OTP_REISSUE_REQUIRED_AFTER_RECOVERY'});
+        }
         if (!eligibleUsers.length) {
           throw new UnauthorizedException({ code: 'ACCOUNT_UNAVAILABLE', detail: 'This account is not eligible to sign in.' });
         }
@@ -672,8 +684,7 @@ export class IdentityController {
         activeOrgId = invitation.org_id;
         currentRole = invitation.role;
         const suppliedName = body.signupProfile?.fullName;
-        fullName = typeof suppliedName === 'string' &&
-          suppliedName.trim().length >= 2 && suppliedName.trim().length <= 120
+        fullName = isSafeIdentityName(suppliedName,120)
           ? suppliedName.trim() : 'Invited team member';
         await client.query("SELECT set_config('app.current_user',$1,true)", [userId]);
         await client.query(
@@ -690,10 +701,8 @@ export class IdentityController {
       } else {
         // New Org + Owner Registration (WF-01 / FR-ORG-001)
         const profile = body.signupProfile;
-        if (!profile || typeof profile.fullName !== 'string' ||
-            typeof profile.orgName !== 'string' || typeof profile.state !== 'string' ||
-            profile.fullName.trim().length < 2 || profile.fullName.trim().length > 120 ||
-            profile.orgName.trim().length < 2 || profile.orgName.trim().length > 200 ||
+        if (!profile || !isSafeIdentityName(profile.fullName,120) ||
+            !isSafeIdentityName(profile.orgName,200) || typeof profile.state !== 'string' ||
             !/^[A-Z]{2}$/.test(profile.state.trim().toUpperCase())) {
           throw new UnprocessableEntityException({
             code: 'SIGNUP_PROFILE_REQUIRED',
@@ -768,7 +777,7 @@ export class IdentityController {
           userId,
           req?.ip || '0.0.0.0',
           safeAuthenticationDeviceLabel(req?.headers?.['user-agent']),
-          safeAuthenticationRequestId(req?.headers?.['x-request-id']),
+          requestIdFor(req),
         ],
       );
 
@@ -997,6 +1006,10 @@ export class IdentityController {
           createHash('sha256').update(rawToken).digest('hex'), req.auth.authGeneration],
       );
       if (!rowCount) throw new UnauthorizedException('SESSION_EXPIRED');
+      await client.query(`INSERT INTO auth_security_events
+        (id,actor_user_id,org_id,session_id,event_type,outcome)
+        VALUES(gen_random_uuid(),$1,$2,$3,'SESSION_ORGANISATION_SWITCHED','SUCCESS')`,
+        [req.auth.userId,body.targetOrgId,req.auth.sessionId]);
       await client.query('COMMIT');
       res?.cookie('tc_session', rotatedToken, {
         httpOnly: true, secure: isProductionEnvironment(), sameSite: 'lax',

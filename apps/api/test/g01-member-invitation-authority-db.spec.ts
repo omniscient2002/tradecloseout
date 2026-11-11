@@ -151,7 +151,7 @@ describe('G01 membership privilege escalation and invitation validity', () => {
       )).rows[0].count).toBe(2);
     });
   });
-  it('sends identity-bound link to target email, hides raw token and revokes uncertain delivery',async()=>{
+  it('sends identity-bound link, hides raw token and keeps uncertain delivery nonredeemable',async()=>{
     const oldNodeEnv=process.env.NODE_ENV;
     const oldFrontend=process.env.FRONTEND_URL;
     process.env.NODE_ENV='production';
@@ -280,7 +280,7 @@ describe('G01 membership privilege escalation and invitation validity', () => {
         expect((await admin.query(
           `SELECT status FROM invitations WHERE org_id=$1 AND email=$2`,
           [org,'retry@g01.example'],
-        )).rows[0].status).toBe('REVOKED');
+        )).rows[0].status).toBe('DELIVERY_PENDING');
       });
     }finally{
       if(oldNodeEnv===undefined) delete process.env.NODE_ENV;

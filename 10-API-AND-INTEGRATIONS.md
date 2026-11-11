@@ -161,6 +161,8 @@ GET /api/v1/projects/{projectId}/requirements
 | API-009A | GET `/auth/orgs` | List user's active org memberships and guest grants | Authenticated (`RT-002`) |
 | API-009B | POST `/auth/switch-org` | Set `sessions.active_org_id` server-side (`Idempotency-Key` required) | Authenticated member of target org (`RT-002`) |
 
+The G01 continuation adds a signed gateway receipt endpoint and a proposed operator-only supervised recovery contract. See [G01 implementation continuation](docs/G01_IMPLEMENTATION_CONTINUATION_2026-11-11.md) for exact gateway fields, runtime prerequisites, recovery role/CLI boundaries and outstanding independent acceptance. These features do not implement automatic SMS-to-email fallback or member-login magic links.
+
 ### 7.2 Organisations and members
 
 | ID | Method & path | Purpose | Permission |

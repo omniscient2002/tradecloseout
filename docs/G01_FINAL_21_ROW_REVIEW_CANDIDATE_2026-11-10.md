@@ -1,5 +1,7 @@
 # G01 — 21 original findings: full implementation and independent-acceptance reconciliation
 
+**Continuation:** [2026-11-11 implementation and verification scope](G01_IMPLEMENTATION_CONTINUATION_2026-11-11.md) records the subsequent R6/R7 fixes, delivery receipt/recovery engineering and actual two-API/IndexedDB fixture tests. The older inventory below describes its original candidate; no original release-acceptance gate is waived by the continuation.
+
 **Candidate:** existing draft PR #5, branch fix/g01-identity-authentication-hardening-20261108. Exact **final** SHA and CI runs must be copied from the final REVIEW_READY comment. This document is SOURCE/TEST inventory, not a signed acceptance or merged release.
 **Policy source:** docs/groups/G01/findings.json and docs/groups/G01/acceptance.md on main. This candidate does not change either policy or rewrite dated audits. Original 21 rows remain OPEN/BLOCKED until evidence is independently reviewed.
 **Previously accepted scoped R1–R5:** independently accepted at 4f8a7bb183e892ee4626d9116c00a34dc097f76c (review 5846558186); no previous source acceptance is extended automatically to the original 21 rows.

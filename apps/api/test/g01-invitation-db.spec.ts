@@ -154,6 +154,15 @@ describe('G01 production PostgreSQL OTP transaction', () => {
           'SELECT consumed_at FROM otp_challenges WHERE id=$1',
           [challenge.challengeId])).rows[0].consumed_at).toBeNull();
 
+        for(const signupProfile of [
+          {fullName:'Name\u0000suffix',orgName:'Fixture HVAC',state:'KA'},
+          {fullName:'Fixture User',orgName:'Company\ud800suffix',state:'KA'},
+          {fullName:'Fixture User',orgName:'Fixture HVAC',state:'K\u0000'},
+        ]){
+          await expect(ctrl.verifyOtp({challengeId:challenge.challengeId,code,signupProfile},req,res))
+            .rejects.toMatchObject({status:422});
+        }
+
         const created=await ctrl.verifyOtp({
           challengeId:challenge.challengeId,code,
           signupProfile:{fullName:'G01 Correct User',orgName:'Verified MEP Ltd',state:'KA'},

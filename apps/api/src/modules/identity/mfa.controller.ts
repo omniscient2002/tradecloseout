@@ -85,6 +85,14 @@ export class MfaController {
     try {
       await c.query('BEGIN');
       await c.query("SELECT set_config('app.current_user', $1, true)", [userId]);
+      // All factor operations serialize on the account BEFORE taking session
+      // or recovery-code locks. In particular start and confirm must not take
+      // session->user and user->session in opposite orders (G01-R6).
+      const account = await c.query(
+        "SELECT id FROM users WHERE id=$1 AND status='ACTIVE' FOR UPDATE",
+        [userId],
+      );
+      if (!account.rows.length) throw new UnauthorizedException('ACCOUNT_UNAVAILABLE');
       const value = await fn(c);
       await c.query('COMMIT');
       return value;

@@ -15,7 +15,7 @@ import { Pool, PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { randomBytes, createHash } from 'crypto';
 import { withTenantTransaction, TenantActorContext, DomainOutboxEvent } from '@tradecloseout/db';
-import { hasPermission, isValidIndianGstin, IndianPanSchema } from '@tradecloseout/shared';
+import { hasPermission, isValidIndianGstin, IndianPanSchema, canonicalAuthenticationEmail } from '@tradecloseout/shared';
 import { TransactionalMailGateway } from '../identity/identity.controller';
 import { isProductionEnvironment } from '../identity/auth-security';
 
@@ -434,8 +434,8 @@ export class OrganisationsService {
     dto: { email: string; role: string },
   ) {
     if (orgId !== ctx.orgId) throw new NotFoundException('ORGANISATION_NOT_FOUND');
-    if (!dto || typeof dto.email !== 'string' || typeof dto.role !== 'string' ||
-        dto.email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(dto.email.trim())) {
+    const email=canonicalAuthenticationEmail(dto?.email);
+    if (!email || typeof dto?.role !== 'string') {
       throw new UnprocessableEntityException({code:'INVALID_INVITATION_INPUT'});
     }
     // Owner authority is transferred only through the audited transfer path.
@@ -446,7 +446,6 @@ export class OrganisationsService {
     if (!invitedRoles.has(dto.role)) {
       throw new UnprocessableEntityException({code:'INVALID_INVITATION_ROLE'});
     }
-    const email = dto.email.trim().toLowerCase();
     if (isProductionEnvironment() && !this.mailGateway) {
       throw new ServiceUnavailableException({
         code:'INVITATION_DELIVERY_UNAVAILABLE',
@@ -534,7 +533,8 @@ export class OrganisationsService {
       try {
         const link = new URL('/login',appOrigin);
         link.searchParams.set('invite',issued.invitationToken);
-        await this.mailGateway.sendMagicLinkEmail(email,link.toString());
+        await this.mailGateway.sendMagicLinkEmail(email,link.toString(),
+          {kind:'INVITATION',targetId:issued.id,orgId,actorUserId:ctx.userId});
 
         // This conditional promotion is atomic and protects concurrent
         // invitation supersession: provider acceptance for an old challenge
@@ -566,7 +566,9 @@ export class OrganisationsService {
         // The provider may have accepted and then timed out. The invitation
         // remains non-redeemable unless its accepted state was committed.
         // Retried issuances generate fresh tokens.
-        await failDelivery();
+        // A durable attempt/receipt can reconcile an accepted-but-lost
+        // acknowledgement. Keep the token nonredeemable; supersession, issuer
+        // authority checks and expiry still prevent a late receipt reviving it.
         if (error instanceof ConflictException) throw error;
         throw new ServiceUnavailableException({
           code:'INVITATION_DELIVERY_UNVERIFIED',

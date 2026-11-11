@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import { validateAuthDeliveryConfiguration } from '@tradecloseout/db';
 
 const PROD_MODES=new Set(['production','staging']);
 const KNOWN_MODES=new Set(['production','staging','development','test']);
@@ -42,6 +43,8 @@ export function validateWorkerStartupConfig(env:NodeJS.ProcessEnv=process.env):v
   if(env.ENABLE_DEBUG_OTP==='true'||env.ENABLE_OUTBOX_DELIVERY==='true'){
     throw new Error('BOOT_WORKER_DEBUG_DISABLED');
   }
+  try{validateAuthDeliveryConfiguration(env,false);}
+  catch{throw new Error('BOOT_WORKER_AUTH_DELIVERY_CONFIG_INVALID');}
 }
 
 export async function assertWorkerRuntimeDatabasePrivileges(
@@ -51,13 +54,16 @@ export async function assertWorkerRuntimeDatabasePrivileges(
     `SELECT session_user::text AS login,current_user::text AS role_name,
             r.rolsuper,r.rolbypassrls,r.rolcreatedb,r.rolcreaterole,
             pg_has_role(current_user,'tc_migrator','MEMBER') AS can_migrate,
-            pg_has_role(current_user,'tc_external_authority_reviewer','MEMBER') AS can_review
+            pg_has_role(current_user,'tc_external_authority_reviewer','MEMBER') AS can_review,
+            EXISTS(SELECT 1 FROM pg_roles m WHERE m.rolname IN
+              ('tc_identity_recovery_reviewer','tc_identity_recovery_executor')
+              AND pg_has_role(current_user,m.oid,'MEMBER')) AS can_recover_identity
        FROM pg_roles r WHERE r.rolname=current_user`,
   );
   const r=rows[0];
   if(!r||r.login!=='tc_app'||r.role_name!=='tc_app'||r.rolsuper||
      r.rolbypassrls||r.rolcreatedb||r.rolcreaterole||
-     r.can_migrate||r.can_review){
+     r.can_migrate||r.can_review||r.can_recover_identity){
     throw new Error('BOOT_WORKER_RUNTIME_ROLE_UNSAFE');
   }
 }

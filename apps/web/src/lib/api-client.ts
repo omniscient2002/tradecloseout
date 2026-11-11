@@ -133,7 +133,7 @@ export async function requireAuthenticatedBrowserContext(): Promise<{
 
 export async function apiFetch<T>(
   path: string,
-  options: RequestInit & { rowVersion?: number; idempotencyKey?: string } = {},
+  options: RequestInit & { rowVersion?: number; idempotencyKey?: string; expectedStatus?:number } = {},
 ): Promise<T> {
   const headers = new Headers(options.headers || {});
   headers.set('Accept', 'application/json, application/problem+json');
@@ -176,6 +176,11 @@ export async function apiFetch<T>(
     headers,
     credentials: 'include',
   });
+
+  if(res.ok && options.expectedStatus!==undefined && res.status!==options.expectedStatus) {
+    throw new ApiProblemError({status:502,code:'AUTH_REVOCATION_UNCONFIRMED',
+      detail:'Logout was not confirmed. Please retry.'});
+  }
 
   if (res.status === 204) {
     return undefined as unknown as T;
@@ -254,12 +259,13 @@ export const api = {
     },
     async logout() {
       try {
-        await apiFetch<void>('/api/v1/auth/logout', { method: 'POST' });
+        await apiFetch<void>('/api/v1/auth/logout', { method: 'POST',expectedStatus:204 });
         // Confirmed backend revocation: invalidate both the CSRF and its
         // session-generation binding; notify other tabs and offline workers.
         setCsrfToken(null);
         if (typeof window !== 'undefined') {
           window.localStorage.removeItem('tc_csrf_token');
+          window.localStorage.removeItem('tc_offline_actor_partition');
         }
         return { data: { success: true }, error: null, status: 204 };
       } catch (err: any) {

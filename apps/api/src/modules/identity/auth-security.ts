@@ -4,6 +4,7 @@ import { createHmac, createHash, randomBytes, timingSafeEqual } from 'node:crypt
 import { Pool, PoolClient } from 'pg';
 import { HttpException, HttpStatus } from '@nestjs/common';
 import { isIP } from 'node:net';
+import { validateAuthDeliveryConfiguration } from '@tradecloseout/db';
 
 export const isProductionEnvironment = () =>
   process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging';
@@ -113,6 +114,7 @@ export function validateAuthenticationConfig(env: NodeJS.ProcessEnv = process.en
   if (env.ENABLE_DEBUG_OTP === 'true' || env.ENABLE_OUTBOX_DELIVERY === 'true') {
     throw new Error('BOOT_AUTH_DEBUG_MODE_DISABLED');
   }
+  validateAuthDeliveryConfiguration(env);
 }
 
 /**
@@ -128,7 +130,10 @@ export async function assertRuntimeDatabasePrivileges(pool: Pool): Promise<void>
          FROM pg_roles m WHERE m.rolname='tc_migrator') AS can_assume_migrator,
       (SELECT pg_has_role(current_user, m.oid, 'MEMBER')
          FROM pg_roles m WHERE m.rolname='tc_external_authority_reviewer')
-        AS can_approve_external_authority
+        AS can_approve_external_authority,
+      EXISTS(SELECT 1 FROM pg_roles m WHERE m.rolname IN
+        ('tc_identity_recovery_reviewer','tc_identity_recovery_executor')
+        AND pg_has_role(current_user,m.oid,'MEMBER')) AS can_recover_identity
        FROM pg_roles r WHERE r.rolname=current_user`,
   );
   const role = rows[0];
@@ -137,7 +142,7 @@ export async function assertRuntimeDatabasePrivileges(pool: Pool): Promise<void>
   // Require an actual individually restricted tc_app login, like the worker.
   if (!role || role.login_role !== 'tc_app' || role.role_name !== 'tc_app' ||
       role.rolsuper || role.rolbypassrls || role.rolcreatedb || role.rolcreaterole ||
-      role.can_assume_migrator || role.can_approve_external_authority) {
+      role.can_assume_migrator || role.can_approve_external_authority || role.can_recover_identity) {
     throw new Error('BOOT_AUTH_RUNTIME_ROLE_PRIVILEGED');
   }
 }
@@ -197,7 +202,8 @@ export async function consumeAuthenticationBudget(
              updated_at = now()
       RETURNING count`,
     [budgetKey, ttlSeconds],
-  );
+  ).catch(()=>{throw new HttpException({code:'AUTH_RATE_LIMIT_STORAGE_UNAVAILABLE',
+    detail:'Authentication is temporarily unavailable.',retryAfterSeconds:5},HttpStatus.SERVICE_UNAVAILABLE);});
   const observedCount = rows.length ? Number(rows[0].count) : Number.POSITIVE_INFINITY;
   if (observedCount > limit) {
     // Security-event writes are deliberately sampled under sustained abuse;

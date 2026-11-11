@@ -15,6 +15,7 @@ import {
 import * as crypto from 'node:crypto';
 import { PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
+import { canonicalAuthenticationEmail, canonicalAuthenticationPhone } from '@tradecloseout/shared';
 import { TenantDbService, ExecutionContext } from '../../database/tenant-db.service';
 import { DltSmsGateway, TransactionalMailGateway } from '../identity/identity.controller';
 import { consumeAuthenticationBudget, deriveSessionCsrf, isProductionEnvironment } from '../identity/auth-security';
@@ -175,13 +176,11 @@ export class PartiesService {
         (!Number.isInteger(dto.expiresInDays) || dto.expiresInDays < 1 || dto.expiresInDays > 30)) {
       throw new BadRequestException({ code: 'INVALID_GUEST_GRANT_EXPIRATION' });
     }
-    const providedEmail = typeof dto.email === 'string' ? dto.email.trim().toLowerCase() : '';
-    const providedPhone = typeof dto.phone === 'string' ? dto.phone.trim() : '';
+    const providedEmail = canonicalAuthenticationEmail(dto.email)||'';
+    const providedPhone = canonicalAuthenticationPhone(dto.phone)||'';
     if ((dto.email !== undefined && !providedEmail) ||
         (dto.phone !== undefined && !providedPhone) ||
-        (!providedEmail && !providedPhone) ||
-        (providedEmail && (providedEmail.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(providedEmail))) ||
-        (providedPhone && !/^\+91[6-9][0-9]{9}$/.test(providedPhone))) {
+        (!providedEmail && !providedPhone)) {
       throw new BadRequestException({ code: 'INVALID_GUEST_CONTACT' });
     }
     if (dto.otpRequired === false) {
@@ -359,6 +358,9 @@ export class PartiesService {
         `UPDATE sessions SET revoked_at = now() WHERE active_org_id = $1 AND guest_grant_id = $2`,
         [ctx.orgId, grantId],
       );
+      await client.query(`INSERT INTO auth_security_events(id,actor_user_id,org_id,event_type,outcome,subject_digest)
+        VALUES(gen_random_uuid(),$1,$2,'GUEST_GRANT_REVOKED','SUCCESS',$3)`,
+        [ctx.userId,ctx.orgId,this.hashSecret(grantId)]);
 
       return { grantId, status: 'REVOKED' };
     });
@@ -594,7 +596,7 @@ export class PartiesService {
       const maskedTarget = channel === 'EMAIL'
         ? `${targetIdentifier.slice(0, 1)}***@${targetIdentifier.split('@')[1] || 'hidden'}`
         : targetIdentifier.replace(/^(\+?\d{2,4})\d+(\d{4})$/, '$1******$2');
-      return { challengeId, maskedTarget, channel, targetIdentifier, rawCode, isExplicitDebug };
+      return { challengeId, maskedTarget, channel, targetIdentifier, rawCode, isExplicitDebug, orgId:grant.org_id };
     });
 
     if (!prepared.isExplicitDebug) {
@@ -608,13 +610,16 @@ export class PartiesService {
             prepared.targetIdentifier,
             prepared.rawCode,
             process.env.DLT_GUEST_OTP_TEMPLATE_ID || process.env.DLT_OTP_TEMPLATE_ID || '',
+            {kind:'GUEST_OTP',targetId:prepared.challengeId,orgId:prepared.orgId},
           );
           if (!sent.delivered) throw new ServiceUnavailableException('GUEST_OTP_DELIVERY_FAILED');
         } else {
           if (!this.mailGateway) throw new ServiceUnavailableException('MAIL_GATEWAY_UNAVAILABLE');
-          await this.mailGateway.sendOtpEmail(prepared.targetIdentifier, prepared.rawCode, 'GUEST_ACCESS');
+          await this.mailGateway.sendOtpEmail(prepared.targetIdentifier, prepared.rawCode, 'GUEST_ACCESS',
+            {kind:'GUEST_OTP',targetId:prepared.challengeId,orgId:prepared.orgId});
         }
-      } catch {
+      } catch(error) {
+        if(error instanceof ConflictException)throw new ConflictException({code:'GUEST_OTP_CHALLENGE_SUPERSEDED'});
         await this.db.withTokenContext(tokenHash, async (client) => {
           await client.query(
             `UPDATE otp_challenges SET delivery_status = 'AMBIGUOUS'

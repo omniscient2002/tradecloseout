@@ -8,6 +8,10 @@ const valid={
   NODE_ENV:'production',
   APP_DATABASE_URL:'postgres://tc_app:strong-restricted-secret@db.internal/tradecloseout',
   REDIS_URL:'rediss://cache.internal:6379',
+  DLT_SMS_STATUS_URL:'https://sms.example.test/status',
+  MAIL_STATUS_URL:'https://mail.example.test/status',
+  DLT_SMS_API_KEY:'fixture-only-sms-key',
+  MAIL_API_KEY:'fixture-only-mail-key',
 };
 void test('G01-R4: worker mode/configuration fails closed before background jobs',()=>{
   assert.doesNotThrow(()=>validateWorkerStartupConfig(valid));
@@ -24,6 +28,8 @@ void test('G01-R4: worker mode/configuration fails closed before background jobs
     {...valid,REDIS_URL:'http://cache.internal:6379'},
     {...valid,ENABLE_DEBUG_OTP:'true'},
     {...valid,ENABLE_OUTBOX_DELIVERY:'true'},
+    {...valid,DLT_SMS_STATUS_URL:undefined},
+    {...valid,MAIL_STATUS_URL:'http://mail.example.test/status'},
   ]){
     assert.throws(()=>validateWorkerStartupConfig(env),/BOOT_WORKER_/);
   }
@@ -44,6 +50,7 @@ void test('G01-R4: worker checks connected PostgreSQL session and rejects role e
     {...good,rolcreaterole:true},
     {...good,can_migrate:true},
     {...good,can_review:true},
+    {...good,can_recover_identity:true},
   ]){
     await assert.rejects(assertWorkerRuntimeDatabasePrivileges(db(unsafe)),
       /BOOT_WORKER_RUNTIME_ROLE_UNSAFE/);

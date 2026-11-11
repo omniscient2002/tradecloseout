@@ -21,7 +21,7 @@ import {
   UploadCloud,
   FileSpreadsheet,
 } from "lucide-react";
-import { apiFetch, setCsrfToken, watchAuthChanges } from "../../lib/api-client";
+import { api, apiFetch, setCsrfToken, watchAuthChanges } from "../../lib/api-client";
 import { setOfflineActorPartition } from "../../lib/offline-upload-queue";
 
 const REAL_DECCAN_PERSONAS = [
@@ -115,13 +115,11 @@ export default function ContractorLayout({ children }: { children: React.ReactNo
 
   const handleLogout = async () => {
     setLogoutError(null);
-    try {
-      await apiFetch<void>("/api/v1/auth/logout", { method: "POST" });
-    } catch (err: any) {
-      setLogoutError(err?.message || "Could not confirm logout. Please retry.");
+    const result=await api.auth.logout();
+    if(result.error){
+      setLogoutError(result.error);
       return;
     }
-    setCsrfToken(null);
     setOfflineActorPartition(null);
     window.location.href = "/login";
   };

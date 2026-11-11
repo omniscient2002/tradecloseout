@@ -92,6 +92,9 @@ jobs:
           AUTH_TRUSTED_PROXY_CIDRS: direct
           AUTH_OTP_HMAC_KEY: ci-only-not-for-production-otp-hmac-key-000001
           AUTH_CSRF_KEY: ci-only-not-for-production-csrf-key-000001
+          AUTH_DELIVERY_CALLBACK_KEY: ci-only-callback-signing-key-at-least-32
+          DLT_SMS_STATUS_URL: https://invalid.example.test/sms-status
+          MAIL_STATUS_URL: https://invalid.example.test/mail-status
           DLT_SMS_URL: https://invalid.example.test/otp
           DLT_SMS_API_KEY: 'ci-only-no-real-provider'
           DLT_SENDER_ID: 'TESTG01'

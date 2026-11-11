@@ -29,6 +29,7 @@ export class TenantDbService {
       this.pool = new Pool({
         connectionString: process.env.APP_DATABASE_URL,
         max: 20,
+        connectionTimeoutMillis:5000,
       });
     } else {
       this.pool = new Pool({

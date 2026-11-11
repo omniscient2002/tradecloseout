@@ -9,6 +9,7 @@ export default defineConfig({
   use: { trace: 'retain-on-failure', screenshot: 'only-on-failure' },
   projects: [
     { name: 'archive', testMatch: 'archive-verifier.spec.ts', use: { browserName: 'chromium' } },
+    { name:'auth-storage',testMatch:'g01-offline-context.spec.ts',use:{browserName:'chromium'} },
     // Requires separately running application/API/worker and explicit isolated fixtures.
     { name: 'application', testMatch: 'critical-flows.spec.ts', use: { baseURL: process.env.E2E_BASE_URL || 'http://localhost:3002', browserName: 'chromium' } },
   ],

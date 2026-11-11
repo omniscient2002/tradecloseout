@@ -86,6 +86,9 @@ describe('G01: authentication hardening negative controls', () => {
       AUTH_CSRF_KEY: 'c'.repeat(48),
       AUTH_MFA_ENCRYPTION_KEY: Buffer.alloc(32, 9).toString('base64'),
       AUTH_TRUSTED_PROXY_CIDRS: 'direct',
+      AUTH_DELIVERY_CALLBACK_KEY:'fixture-callback-signing-key-at-least-32',
+      DLT_SMS_STATUS_URL:'https://sms.example.com/status',
+      MAIL_STATUS_URL:'https://mail.example.com/status',
     };
     expect(() => validateAuthenticationConfig(env)).not.toThrow();
     expect(() => validateAuthenticationConfig({ ...env, NODE_ENV: undefined })).toThrow('BOOT_AUTH_ENV_INVALID');
@@ -160,6 +163,7 @@ describe('G01: authentication hardening negative controls', () => {
       {...safeRole,rolcreaterole:true},
       {...safeRole,can_assume_migrator:true},
       {...safeRole,can_approve_external_authority:true},
+      {...safeRole,can_recover_identity:true},
       {...safeRole,role_name:'custom_tc_runtime'},
     ]) {
       await expect(assertRuntimeDatabasePrivileges(make(invalid)))
@@ -401,12 +405,12 @@ describe('G01: authentication hardening negative controls', () => {
     const output:any={setHeader:jest.fn(),status:jest.fn().mockReturnThis(),json:jest.fn()};
     const host:any={switchToHttp:()=>({
       getResponse:()=>output,
-      getRequest:()=>({path:'/api/v1/projects',headers:{'x-request-id':'session-test'}}),
+      getRequest:()=>({path:'/api/v1/projects',headers:{'x-request-id':'019a6f40-e041-7000-8000-000000000001'}}),
     })};
     filter.catch(new Error('AUTH_SESSION_CONTEXT_CHANGED'),host);
     expect(output.status).toHaveBeenCalledWith(409);
     expect(output.json.mock.calls[0][0]).toMatchObject({
-      code:'AUTH_CONTEXT_CHANGED',status:409,requestId:'session-test',
+      code:'AUTH_CONTEXT_CHANGED',status:409,requestId:'019a6f40-e041-7000-8000-000000000001',
     });
   });
 
@@ -428,10 +432,10 @@ describe('G01: authentication hardening negative controls', () => {
     expect(logged).not.toContain('638194');
     expect(logged).not.toContain(invitation);
     expect(logged).not.toContain('header-with');
-    expect(logged).toContain('req_unknown');
+    expect(logged).toMatch(/[0-9a-f]{8}-[0-9a-f-]{27}/);
     expect(output.status).toHaveBeenCalledWith(500);
     expect(output.json.mock.calls[0][0]).toMatchObject({
-      code:'INTERNAL_ERROR',requestId:'req_unknown',
+      code:'INTERNAL_ERROR',requestId:expect.stringMatching(/^[0-9a-f-]{36}$/),
     });
   });
 

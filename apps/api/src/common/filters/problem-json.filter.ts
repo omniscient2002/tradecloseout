@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
+import { requestIdFor } from '../security/audit-metadata';
 
 export interface ProblemDetails {
   type: string;
@@ -28,10 +29,7 @@ export class ProblemJsonExceptionFilter implements ExceptionFilter {
     const ctx = host.switchToHttp();
     const res = ctx.getResponse<Response>();
     const req = ctx.getRequest<Request>();
-    const suppliedRequestId = req.headers['x-request-id'];
-    const requestId = typeof suppliedRequestId === 'string' &&
-      /^[A-Za-z0-9_.:-]{1,128}$/.test(suppliedRequestId)
-      ? suppliedRequestId : 'req_unknown';
+    const requestId = requestIdFor(req);
     const sensitiveRoute = /^\/api\/v1\/(?:auth|guest)(?:\/|$)/.test(req.path || '');
 
     let status = HttpStatus.INTERNAL_SERVER_ERROR;

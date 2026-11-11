@@ -170,6 +170,8 @@ async function bootWorker() {
         },
       );
 
+      await scheduler.reconcileAuthenticationDeliveries();
+
       // Notification delivery cycle honoring IST quiet hours
       const sentNotifications = await scheduler.dispatchQueuedNotifications();
       if (sentNotifications > 0) {

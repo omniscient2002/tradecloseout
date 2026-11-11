@@ -72,6 +72,144 @@ describe('G01 MFA real PostgreSQL control plane', () => {
     else process.env.AUTH_MFA_PREVIOUS_KEY_EXPIRES_AT = previousDeadline;
   });
 
+  it('G01-R6: overlapping start/confirm serialize without reversing user/session locks', async () => {
+    process.env.AUTH_MFA_ENCRYPTION_KEY = Buffer.alloc(32,22).toString('base64');
+    await withDisposableDatabase(async ({admin,app}) => {
+      const {req}=await seed(admin);
+      const initial=await new MfaController(app).beginEnrollment(req);
+      const first=new Pool({...app.options, application_name:'g01_r6_start'});
+      const second=new Pool({...app.options, application_name:'g01_r6_confirm'});
+      first.on('error',()=>{}); second.on('error',()=>{});
+      let locked!:()=>void, resume!:()=>void;
+      const held=new Promise<void>(resolve=>{locked=resolve;});
+      const release=new Promise<void>(resolve=>{resume=resolve;});
+      const instrumented={
+        query:first.query.bind(first),
+        connect:async()=>{
+          const c=await first.connect();
+          return {release:c.release.bind(c),query:async(sql:string,params?:unknown[])=>{
+            const result=await c.query(sql,params);
+            if (/SELECT id FROM sessions/.test(sql)) {locked();await release;}
+            return result;
+          }};
+        },
+      } as unknown as Pool;
+      let starting:Promise<PromiseSettledResult<unknown>>|undefined;
+      let confirming:Promise<PromiseSettledResult<unknown>>|undefined;
+      const capture=(p:Promise<unknown>)=>p.then(
+        value=>({status:'fulfilled',value} as const),
+        reason=>({status:'rejected',reason} as const),
+      );
+      try {
+        starting=capture(new MfaController(instrumented).beginEnrollment(req));
+        await held;
+        confirming=capture(new MfaController(second).confirmEnrollment(req,
+          {code:otp(initial.manualSetupKey,Date.now())},{cookie:jest.fn()} as any));
+        // Observe a real server wait rather than trusting a fixed sleep. With
+        // the old code confirm holds user and waits session; with the fix it
+        // waits for the user before taking any other account locks.
+        let waiting=false;
+        for(let i=0;i<100;i++){
+          const {rows}=await admin.query(`SELECT 1 FROM pg_stat_activity
+            WHERE application_name='g01_r6_confirm' AND wait_event_type='Lock'
+              AND cardinality(pg_blocking_pids(pid))>0`);
+          if(rows.length){waiting=true;break;}
+          await new Promise(resolve=>setTimeout(resolve,10));
+        }
+        expect(waiting).toBe(true);
+        resume();
+        const outcomes=await Promise.all([starting,confirming]);
+        expect(outcomes[0].status).toBe('fulfilled');
+        for(const outcome of outcomes){
+          if(outcome.status==='rejected'){
+            expect(outcome.reason.code).not.toBe('40P01');
+            expect(outcome.reason.getStatus()).toBe(401);
+            expect(outcome.reason.getResponse()).toMatchObject({code:'MFA_CODE_INVALID'});
+          }
+        }
+        const account=(await admin.query(
+          'SELECT mfa_totp_secret,mfa_totp_pending_secret,mfa_enabled_at FROM users WHERE id=$1',
+          [req.auth.userId],
+        )).rows[0];
+        expect(account.mfa_totp_secret).toBeNull();
+        expect(account.mfa_enabled_at).toBeNull();
+        expect(account.mfa_totp_pending_secret).toBeTruthy();
+        expect((await admin.query('SELECT count(*)::int AS n FROM mfa_recovery_codes WHERE user_id=$1',
+          [req.auth.userId])).rows[0].n).toBe(0);
+        await expect(first.query('SELECT 1')).resolves.toBeDefined();
+        await expect(second.query('SELECT 1')).resolves.toBeDefined();
+      } finally {
+        resume();
+        await Promise.all([starting,confirming]);
+        await Promise.all([first.end(),second.end()]);
+      }
+    });
+  });
+
+  it.each(['recovery','reset'] as const)('G01-R6: %s serializes with the other operation and leaves no partial factor writes',async leading=>{
+    process.env.AUTH_MFA_ENCRYPTION_KEY=Buffer.alloc(32,22).toString('base64');
+    await withDisposableDatabase(async({admin,app})=>{
+      const {req,userId,sessionId}=await seed(admin);
+      const controller=new MfaController(app);
+      const res:any={cookie:jest.fn(),clearCookie:jest.fn()};
+      const setup=await controller.beginEnrollment(req);
+      const confirmed=await controller.confirmEnrollment(req,{code:otp(setup.manualSetupKey,Date.now())},res);
+      req.auth.authGeneration=confirmed.authGeneration;req.auth.mfaVerified=true;
+      req.cookies.tc_session=res.cookie.mock.lastCall[1];
+      const first=new Pool({...app.options,application_name:'g01_r6_leading'});
+      const second=new Pool({...app.options,application_name:'g01_r6_waiting'});
+      first.on('error',()=>{});second.on('error',()=>{});
+      let locked!:()=>void,resume!:()=>void;
+      const held=new Promise<void>(resolve=>{locked=resolve;});
+      const release=new Promise<void>(resolve=>{resume=resolve;});
+      const scheduled={query:first.query.bind(first),connect:async()=>{
+        const client=await first.connect();
+        return {release:client.release.bind(client),query:async(sql:string,values?:unknown[])=>{
+          const result=await client.query(sql,values);
+          if(sql.includes("SELECT id FROM users WHERE id=$1 AND status='ACTIVE' FOR UPDATE")){
+            locked();await release;
+          }
+          return result;
+        }};
+      }} as unknown as Pool;
+      const capture=(promise:Promise<unknown>)=>promise.then(
+        value=>({status:'fulfilled',value} as const),reason=>({status:'rejected',reason} as const));
+      const execute=(pool:Pool,kind:'recovery'|'reset')=>kind==='recovery'
+        ?new MfaController(pool).recoverFactor(req,{recoveryCode:confirmed.recoveryCodes[0]},res)
+        :new MfaController(pool).resetEnrollment(req,{recoveryCode:confirmed.recoveryCodes[1]},res);
+      let a:ReturnType<typeof capture>|undefined,b:ReturnType<typeof capture>|undefined;
+      try{
+        a=capture(execute(scheduled,leading));await held;
+        b=capture(execute(second,leading==='recovery'?'reset':'recovery'));
+        let waiting=false;
+        for(let i=0;i<100;i++){
+          if((await admin.query(`SELECT 1 FROM pg_stat_activity WHERE application_name='g01_r6_waiting'
+            AND wait_event_type='Lock' AND cardinality(pg_blocking_pids(pid))>0`)).rows.length){waiting=true;break;}
+          await new Promise(resolve=>setTimeout(resolve,10));
+        }
+        expect(waiting).toBe(true);resume();
+        const [winner,loser]=await Promise.all([a,b]);
+        expect(winner.status).toBe('fulfilled');expect(loser.status).toBe('rejected');
+        if(loser.status==='rejected'){
+          expect(loser.reason.code).not.toBe('40P01');expect(loser.reason.getStatus()).toBe(401);
+        }
+        const account=(await admin.query('SELECT mfa_enabled_at,mfa_totp_pending_secret FROM users WHERE id=$1',[userId])).rows[0];
+        const codes=(await admin.query('SELECT consumed_at FROM mfa_recovery_codes WHERE user_id=$1',[userId])).rows;
+        const session=(await admin.query('SELECT revoked_at FROM sessions WHERE id=$1',[sessionId])).rows[0];
+        expect(account.mfa_totp_pending_secret).toBeNull();
+        if(leading==='reset'){
+          expect(account.mfa_enabled_at).toBeNull();expect(codes).toHaveLength(0);
+          expect(session.revoked_at).toBeInstanceOf(Date);
+        }else{
+          expect(account.mfa_enabled_at).toBeInstanceOf(Date);expect(codes).toHaveLength(8);
+          expect(codes.filter(code=>code.consumed_at)).toHaveLength(1);expect(session.revoked_at).toBeNull();
+        }
+        await expect(first.query('SELECT 1')).resolves.toBeDefined();
+        await expect(second.query('SELECT 1')).resolves.toBeDefined();
+      }finally{resume();await Promise.all([a,b]);await Promise.all([first.end(),second.end()]);}
+    });
+  });
+
   it('G01-014/019: stale session cannot write pending MFA enrollment after logout or role revocation', async () => {
     process.env.AUTH_MFA_ENCRYPTION_KEY = Buffer.alloc(32,22).toString('base64');
     await withDisposableDatabase(async ({admin,app}) => {

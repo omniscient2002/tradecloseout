@@ -13,7 +13,9 @@
     "test:concurrency": "jest test/concurrency.spec.ts",
     "review:external": "tsx scripts/approve-external-authority.ts",
     "review:external-document": "tsx scripts/attest-external-document.ts",
-    "review:revoke-external": "tsx scripts/revoke-external-authority.ts"
+    "review:revoke-external": "tsx scripts/revoke-external-authority.ts",
+    "review:identity-recovery": "tsx scripts/recover-identity.ts",
+    "audit:auth-routes": "tsx scripts/g01-route-inventory.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1161.0",

@@ -4,12 +4,21 @@ import { createHash } from 'crypto';
 import { uuidv7 } from 'uuidv7';
 import { deliverNotification } from './notification-delivery';
 import { isIndiaQuietHour, sumPaise } from '@tradecloseout/shared';
+import { AuthDeliveryLedger } from '@tradecloseout/db';
 
 export class TradeCloseoutScheduler {
   constructor(
     private readonly pool: Pool,
     private readonly redis: Redis,
   ) {}
+
+  async reconcileAuthenticationDeliveries():Promise<void> {
+    await this.runWithLeaderLock('g01-delivery-receipts',90,async()=>{
+      const ledger=new AuthDeliveryLedger(this.pool);
+      await ledger.reconcileDue(20);
+      await ledger.sendRecoveryNotices();
+    });
+  }
 
   /**
    * Acquires a distributed Redis leader lock before executing any scheduled job (15 §2, TC2-026).

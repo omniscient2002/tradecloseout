@@ -121,7 +121,7 @@
 | Admin | MFA required before production access; separate identity provider if possible |
 | Guest | Scoped session; short-lived; OTP where review/acceptance is involved |
 
-**Implemented authentication in this release:** member login is an OTP challenge bound to its identifier and challenge ID. Guest login uses the grant's designated verified email or phone; no automatic SMS-to-email fallback, magic-link login or alternative-contact recovery is implemented. A provider timeout/ambiguous result does not authorize a fallback or an unverified recipient. The magic-link table entry is a future design requirement, **not a deployed security control**.
+**Implemented authentication in this release:** member login is an OTP challenge bound to its identifier and challenge ID. Guest login uses the grant's designated verified email or phone; no automatic SMS-to-email fallback, magic-link login or self-service alternative-contact recovery is implemented. A provider timeout/ambiguous result does not authorize a fallback or an unverified recipient. The magic-link table entry is a future design requirement, **not a deployed security control**. The [G01 continuation](docs/G01_IMPLEMENTATION_CONTINUATION_2026-11-11.md) proposes separately privileged, human-reviewed recovery with notification/cooldown gates; its policy and real IAM/identity evidence still require independent approval before operator provisioning.
 
 ### 6.1 Bounded authentication-denial telemetry (G01-R3)
 
