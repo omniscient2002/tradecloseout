@@ -691,7 +691,19 @@ export class OrganisationsService {
       replacementUserId?: string;
     },
   ) {
+    if (input.replacementUserId === input.targetUserId) {
+      throw new UnprocessableEntityException({code:'SELF_REPLACEMENT_NOT_ALLOWED'});
+    }
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      // Check authority at the current transaction boundary, not the stale
+      // role captured in the pre-transaction HTTP guard.
+      const {rows:actor}=await client.query(
+        `SELECT role FROM memberships WHERE org_id=$1 AND user_id=$2 AND status='ACTIVE' FOR SHARE`,
+        [ctx.orgId,ctx.userId],
+      );
+      if (!['R-OWNER','R-ADMIN'].includes(actor[0]?.role)) {
+        throw new ForbiddenException({code:'OFFBOARDING_NOT_AUTHORIZED'});
+      }
       const { rows: targetMemberRows } = await client.query(
         `SELECT id, role, status FROM memberships
           WHERE org_id = $1 AND user_id = $2
@@ -751,12 +763,94 @@ export class OrganisationsService {
         });
       }
 
-      // 3. Perform Bulk Reassignment if replacementUserId is provided (FR-IAM-008 / SCR-056 / Top 25 Item 19)
+      // 3. A bulk transfer is forbidden for closed projects, external-party
+      // authority, or pending submissions until an explicit allocation /
+      // delegation plan is confirmed. Existing historical principals stay put.
+      if (hasOpenWork || input.replacementUserId || input.action === 'REMOVE') {
+        const {rows:blockedProjects}=await client.query(
+          `SELECT DISTINCT p.id,p.status FROM projects p
+             WHERE p.org_id=$1 AND p.status NOT IN ('DRAFT','ACTIVE','HANDOVER')
+               AND (
+                 EXISTS(SELECT 1 FROM requirements r WHERE r.org_id=p.org_id
+                   AND r.project_id=p.id AND r.owner_user_id=$2 AND
+                   r.status NOT IN ('APPROVED','WAIVED','NOT_APPLICABLE','SUPERSEDED'))
+                 OR EXISTS(SELECT 1 FROM reviews rv WHERE rv.org_id=p.org_id
+                   AND rv.project_id=p.id AND rv.reviewer_user_id=$2
+                   AND rv.status IN ('PENDING','IN_REVIEW'))
+                 OR EXISTS(SELECT 1 FROM handover_packages hp WHERE hp.org_id=p.org_id
+                   AND hp.project_id=p.id AND hp.requested_by=$2
+                   AND hp.status IN ('DRAFT','QUEUED','GENERATING'))
+                 OR EXISTS(SELECT 1 FROM defects d WHERE d.org_id=p.org_id
+                   AND d.project_id=p.id AND d.assigned_user_id=$2
+                   AND d.status IN ('OPEN','IN_PROGRESS'))
+               ) FOR UPDATE OF p`,
+          [ctx.orgId,input.targetUserId],
+        );
+        if (blockedProjects.length && input.action !== 'SUSPEND') {
+          throw new ConflictException({code:'PROJECT_LIFECYCLE_BLOCKS_REASSIGNMENT',
+            detail:'Reopen affected projects through the approved lifecycle before reassigning active work.'});
+        }
+        const {rows:externalReviews}=await client.query(
+          `SELECT id FROM reviews WHERE org_id=$1 AND reviewer_user_id=$2
+             AND status IN ('PENDING','IN_REVIEW') AND reviewer_subject_type<>'USER' LIMIT 1`,
+          [ctx.orgId,input.targetUserId],
+        );
+        if (externalReviews.length && input.action !== 'SUSPEND') {
+          throw new ConflictException({code:'EXTERNAL_REVIEW_AUTHORITY_REQUIRES_REVERIFICATION'});
+        }
+        // submitted_by/created_by are provenance, not mutable responsibility.
+        // Without an operational assignee schema, removal must not silently
+        // strand a sent submission or falsify historical attribution.
+        const {rows:pendingSubmissions}=await client.query(
+          `SELECT id FROM submissions WHERE org_id=$1 AND
+             (submitted_by=$2 OR created_by=$2)
+             AND status IN ('DRAFT','SENT','SUBMITTED','PARTIALLY_ACCEPTED') LIMIT 1`,
+          [ctx.orgId,input.targetUserId],
+        );
+        if (pendingSubmissions.length && input.action === 'REMOVE') {
+          throw new ConflictException({code:'PENDING_SUBMISSION_TRANSFER_REQUIRED'});
+        }
+      }
+      // 4. Validate operational eligibility per project before changing work.
       if (input.replacementUserId) {
         const { rows: repRows } = await client.query(
           `SELECT role, status FROM memberships WHERE org_id = $1 AND user_id = $2`,
           [ctx.orgId, input.replacementUserId],
         );
+        const {rows:eligibleIdentity}=await client.query(
+          `SELECT id FROM users WHERE id=$1 AND status='ACTIVE' FOR SHARE`,[input.replacementUserId],
+        );
+        if (!eligibleIdentity.length) {
+          throw new UnprocessableEntityException({code:'INVALID_REPLACEMENT_IDENTITY'});
+        }
+        // The replacement must have current scope to every affected project.
+        // A single general org role is not proof of project/stage eligibility.
+        const {rows:affected}=await client.query(
+          `SELECT DISTINCT p.id FROM projects p
+            WHERE p.org_id=$1 AND (
+              EXISTS(SELECT 1 FROM requirements r WHERE r.org_id=p.org_id AND r.project_id=p.id
+                AND r.owner_user_id=$2 AND r.status NOT IN ('APPROVED','WAIVED','NOT_APPLICABLE','SUPERSEDED'))
+              OR EXISTS(SELECT 1 FROM reviews rv WHERE rv.org_id=p.org_id AND rv.project_id=p.id
+                AND rv.reviewer_user_id=$2 AND rv.status IN ('PENDING','IN_REVIEW'))
+              OR EXISTS(SELECT 1 FROM handover_packages hp WHERE hp.org_id=p.org_id AND hp.project_id=p.id
+                AND hp.requested_by=$2 AND hp.status IN ('DRAFT','QUEUED','GENERATING'))
+              OR EXISTS(SELECT 1 FROM defects d WHERE d.org_id=p.org_id AND d.project_id=p.id
+                AND d.assigned_user_id=$2 AND d.status IN ('OPEN','IN_PROGRESS'))
+            )`,[ctx.orgId,input.targetUserId],
+        );
+        // Block transfers with incompatible project-specific responsibilities
+        // rather than silently claiming that role eligibility was checked.
+        for (const project of affected) {
+          const {rows:scope}=await client.query(
+            `SELECT role FROM project_members WHERE org_id=$1 AND project_id=$2
+              AND user_id=$3 AND status='ACTIVE' FOR SHARE`,
+            [ctx.orgId,project.id,input.replacementUserId],
+          );
+          if (!scope.length && !['R-OWNER','R-ADMIN'].includes(repRows[0]?.role)) {
+            throw new UnprocessableEntityException({code:'REPLACEMENT_PROJECT_SCOPE_REQUIRED',
+              detail:'Replacement has no active assignment to one or more affected projects.'});
+          }
+        }
         if (repRows.length === 0 || repRows[0].status !== 'ACTIVE') {
           throw new UnprocessableEntityException({
             code: 'INVALID_REPLACEMENT_MEMBER',
@@ -777,7 +871,7 @@ export class OrganisationsService {
               SET reviewer_subject_id = $3, reviewer_user_id = $3,
                   row_version = row_version + 1
             WHERE org_id = $1 AND reviewer_user_id = $2
-              AND status IN ('PENDING', 'IN_REVIEW')`,
+              AND reviewer_subject_type = 'USER' AND status IN ('PENDING', 'IN_REVIEW')`,
           [ctx.orgId, input.targetUserId, input.replacementUserId],
         );
 
@@ -977,11 +1071,12 @@ export class OrganisationsService {
 
     const { rows: revRows } = await client.query(
       `SELECT p.id AS project_id, p.code AS project_code,
-              COUNT(rv.id)::int AS pending_reviews,
+              COUNT(DISTINCT rv.id)::int AS pending_reviews,
               ARRAY_AGG(DISTINCT r.reviewer_role) FILTER (WHERE r.reviewer_role IS NOT NULL) AS needed_roles
          FROM reviews rv
          JOIN projects p ON p.org_id = rv.org_id AND p.id = rv.project_id
-         LEFT JOIN document_requirements dr ON dr.org_id = rv.org_id AND dr.project_id = rv.project_id
+         LEFT JOIN document_versions dv ON dv.org_id = rv.org_id AND dv.project_id = rv.project_id AND dv.id = rv.document_version_id
+         LEFT JOIN document_requirements dr ON dr.org_id = rv.org_id AND dr.project_id = rv.project_id AND dr.document_id = dv.document_id
          LEFT JOIN requirements r ON r.org_id = dr.org_id AND r.project_id = dr.project_id AND r.id = dr.requirement_id
         WHERE rv.org_id = $1 AND rv.reviewer_user_id = $2
           AND rv.status IN ('PENDING','IN_REVIEW')
