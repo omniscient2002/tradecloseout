@@ -45,10 +45,15 @@ export class NotificationsService {
 
       const res = await client.query(
         `INSERT INTO notifications (
-          id, org_id, project_id, recipient_user_id, channel, event_key, payload_json, status, dedup_key, sent_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+          id, org_id, project_id, recipient_user_id, channel, event_key, payload_json, status, dedup_key, sent_at, gateway_state
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         ON CONFLICT (org_id, dedup_key, channel, COALESCE(recipient_user_id, recipient_party_id))
-        DO UPDATE SET payload_json = EXCLUDED.payload_json
+        -- A duplicate producer may not rewrite content already dispatched or
+        -- claimed by a worker. Provider idempotency is bound to the row ID.
+        DO UPDATE SET payload_json = CASE
+          WHEN notifications.status='QUEUED' AND notifications.delivery_attempts=0
+               AND notifications.claim_token IS NULL THEN EXCLUDED.payload_json
+          ELSE notifications.payload_json END
         RETURNING *`,
         [
           notificationId,
@@ -61,6 +66,7 @@ export class NotificationsService {
           status,
           dto.dedupKey,
           sentAt,
+          isExternal ? 'PENDING' : 'DELIVERED',
         ],
       );
 

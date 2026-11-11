@@ -1,9 +1,13 @@
-import { Module, Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { Module, Injectable, Optional, ConflictException, ServiceUnavailableException } from '@nestjs/common';
+import { Pool } from 'pg';
+import { AuthDeliveryLedger, AuthDeliveryContext, validDeliveryMessageId, readBoundedDeliveryJson } from '@tradecloseout/db';
 import { createHash } from 'node:crypto';
 import Redis from 'ioredis';
 import { DatabaseModule } from '../../database/database.module';
 import { IdentityController, DltSmsGateway, TransactionalMailGateway } from './identity.controller';
+import { MfaController } from './mfa.controller';
 import { SessionCsrfGuard } from '../../common/guards/session-csrf.guard';
+import { AuthDeliveryController } from './auth-delivery.controller';
 
 export class InMemoryRedis {
   private store = new Map<string, { value: string; expiresAt?: number }>();
@@ -181,23 +185,71 @@ export class InMemoryRedis {
   }
 }
 
+/**
+ * A generic webhook/gateway HTTP 2xx only proves transport success. OTPs and
+ * invitations must not be activated if the adapter explicitly declined the
+ * message or returned an ambiguous/empty response. The deployment's trusted
+ * SMS/mail adapter must expose this versioned submission-ack contract.
+ */
+async function requireGatewaySubmissionAccepted(response: Response,attemptId?:string): Promise<string|undefined> {
+  if (!response.ok) throw new Error('PROVIDER_SUBMISSION_REJECTED');
+  const contentType=response.headers.get('content-type') || '';
+  if (contentType.split(';',1)[0].trim().toLowerCase() !== 'application/json') {
+    throw new Error('PROVIDER_SUBMISSION_ACK_REQUIRED');
+  }
+  let receipt:unknown;
+  try {receipt=await readBoundedDeliveryJson(response);}
+  catch {throw new Error('PROVIDER_SUBMISSION_ACK_INVALID');}
+  if (!receipt || typeof receipt!=='object' ||
+      (receipt as {accepted?:unknown}).accepted!==true) {
+    throw new Error('PROVIDER_SUBMISSION_NOT_ACCEPTED');
+  }
+  const ack=receipt as {messageId?:unknown;deliveryAttemptId?:unknown};
+  if(attemptId && (ack.deliveryAttemptId!==attemptId || !validDeliveryMessageId(ack.messageId))) {
+    throw new Error('PROVIDER_MESSAGE_CORRELATION_REQUIRED');
+  }
+  return validDeliveryMessageId(ack.messageId)?ack.messageId:undefined;
+}
+
+async function beginGatewayDelivery(pool:Pool|undefined,context:AuthDeliveryContext|undefined,channel:'SMS'|'EMAIL') {
+  if(context && pool){const ledger=new AuthDeliveryLedger(pool);return {ledger,id:await ledger.begin(context,channel)};}
+  if(process.env.NODE_ENV==='production'||process.env.NODE_ENV==='staging') {
+    throw new Error('AUTH_DELIVERY_DURABLE_CONTEXT_REQUIRED');
+  }
+  return undefined;
+}
+
+function rejectSupersededDelivery(error:unknown,context?:AuthDeliveryContext):void {
+  if(error instanceof Error && error.message==='AUTH_DELIVERY_TARGET_UNAVAILABLE') {
+    throw new ConflictException({code:context?.kind==='INVITATION'
+      ?'INVITATION_SUPERSEDED_DURING_DELIVERY':'OTP_CHALLENGE_SUPERSEDED'});
+  }
+}
+
 @Injectable()
 export class DltSmsService implements DltSmsGateway {
-  async sendOtpSms(phoneE164: string, otp: string, templateId: string): Promise<{ delivered: boolean }> {
+  constructor(@Optional() private readonly pool?:Pool) {}
+  async sendOtpSms(phoneE164: string, otp: string, templateId: string,context?:AuthDeliveryContext): Promise<{ delivered: boolean }> {
     const dltUrl = process.env.DLT_SMS_URL || process.env.SMS_GATEWAY_URL;
     const apiKey = process.env.DLT_SMS_API_KEY || process.env.SMS_API_KEY;
     const isProduction = process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging';
     const isOutboxLoopback = (process.env.ENABLE_OUTBOX_DELIVERY === 'true' || process.env.NODE_ENV === 'test') && !isProduction;
 
     if (dltUrl && apiKey) {
+      let attempt:Awaited<ReturnType<typeof beginGatewayDelivery>>;
       try {
+        attempt=await beginGatewayDelivery(this.pool,context,'SMS');
         const response = await fetch(dltUrl, {
           method: 'POST',
+          // OTPs, magic links and provider bearer keys must never follow
+          // 30x redirects to a different origin (or any unapproved endpoint).
+          redirect: 'error',
           signal: AbortSignal.timeout(10_000),
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${apiKey}`,
             'X-DLT-Template-Id': templateId || process.env.DLT_OTP_TEMPLATE_ID || '',
+            ...(attempt?{'Idempotency-Key':attempt.id,'X-Auth-Delivery-Contract':'1'}:{}),
           },
           body: JSON.stringify({
             recipient: phoneE164,
@@ -205,17 +257,19 @@ export class DltSmsService implements DltSmsGateway {
             templateId: templateId || process.env.DLT_OTP_TEMPLATE_ID || '',
             senderId: process.env.DLT_SENDER_ID || 'TRDCLS',
             entityId: process.env.DLT_ENTITY_ID || '',
+            deliveryAttemptId:attempt?.id,idempotencyKey:attempt?.id,
           }),
         });
 
-        if (!response.ok) {
-          throw new Error(`DLT SMS provider responded with status ${response.status}`);
-        }
+        const messageId=await requireGatewaySubmissionAccepted(response,attempt?.id);
+        if(attempt)await attempt.ledger.submitted(attempt.id,messageId);
         return { delivered: true };
       } catch (err: any) {
+        rejectSupersededDelivery(err,context);
+        if(attempt)await attempt.ledger.ambiguous(attempt.id).catch(()=>{});
         throw new ServiceUnavailableException({
           code: 'SMS_GATEWAY_ERROR',
-          detail: `Configured DLT delivery provider failed: ${err.message}`,
+          detail: 'SMS provider did not confirm delivery. Please retry with a new code.',
         });
       }
     }
@@ -235,20 +289,27 @@ export class DltSmsService implements DltSmsGateway {
 
 @Injectable()
 export class TransactionalMailService implements TransactionalMailGateway {
-  async sendOtpEmail(email: string, otp: string, purpose: string): Promise<void> {
+  constructor(@Optional() private readonly pool?:Pool) {}
+  async sendOtpEmail(email: string, otp: string, purpose: string,context?:AuthDeliveryContext): Promise<void> {
     const mailUrl = process.env.MAIL_GATEWAY_URL || process.env.SES_API_URL;
     const apiKey = process.env.MAIL_API_KEY || process.env.SENDGRID_API_KEY;
     const isProduction = process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging';
     const isOutboxLoopback = (process.env.ENABLE_OUTBOX_DELIVERY === 'true' || process.env.NODE_ENV === 'test') && !isProduction;
 
     if (mailUrl) {
+      let attempt:Awaited<ReturnType<typeof beginGatewayDelivery>>;
       try {
+        attempt=await beginGatewayDelivery(this.pool,context,'EMAIL');
         const response = await fetch(mailUrl, {
           method: 'POST',
+          // OTPs, magic links and provider bearer keys must never follow
+          // 30x redirects to a different origin (or any unapproved endpoint).
+          redirect: 'error',
           signal: AbortSignal.timeout(10_000),
           headers: {
             'Content-Type': 'application/json',
             ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+            ...(attempt?{'Idempotency-Key':attempt.id,'X-Auth-Delivery-Contract':'1'}:{}),
           },
           body: JSON.stringify({
             to: email,
@@ -256,16 +317,18 @@ export class TransactionalMailService implements TransactionalMailGateway {
             text: `Your verification code is ${otp}. It expires in 5 minutes.`,
             purpose,
             from: process.env.MAIL_FROM_ADDRESS || 'security@tradecloseout.com',
+            deliveryAttemptId:attempt?.id,idempotencyKey:attempt?.id,
           }),
         });
-        if (!response.ok) {
-          throw new Error(`Mail provider responded with status ${response.status}`);
-        }
+        const messageId=await requireGatewaySubmissionAccepted(response,attempt?.id);
+        if(attempt)await attempt.ledger.submitted(attempt.id,messageId);
         return;
       } catch (err: any) {
+        rejectSupersededDelivery(err,context);
+        if(attempt)await attempt.ledger.ambiguous(attempt.id).catch(()=>{});
         throw new ServiceUnavailableException({
           code: 'MAIL_GATEWAY_ERROR',
-          detail: `Configured mail provider failed: ${err.message}`,
+          detail: 'Mail provider did not confirm delivery. Please retry with a new code.',
         });
       }
     }
@@ -280,36 +343,44 @@ export class TransactionalMailService implements TransactionalMailGateway {
     });
   }
 
-  async sendMagicLinkEmail(email: string, magicUrl: string): Promise<void> {
+  async sendMagicLinkEmail(email: string, magicUrl: string,context?:AuthDeliveryContext): Promise<void> {
     const mailUrl = process.env.MAIL_GATEWAY_URL || process.env.SES_API_URL;
     const apiKey = process.env.MAIL_API_KEY || process.env.SENDGRID_API_KEY;
     const isProduction = process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging';
     const isOutboxLoopback = (process.env.ENABLE_OUTBOX_DELIVERY === 'true' || process.env.NODE_ENV === 'test') && !isProduction;
 
     if (mailUrl) {
+      let attempt:Awaited<ReturnType<typeof beginGatewayDelivery>>;
       try {
+        attempt=await beginGatewayDelivery(this.pool,context,'EMAIL');
         const response = await fetch(mailUrl, {
           method: 'POST',
+          // OTPs, magic links and provider bearer keys must never follow
+          // 30x redirects to a different origin (or any unapproved endpoint).
+          redirect: 'error',
           signal: AbortSignal.timeout(10_000),
           headers: {
             'Content-Type': 'application/json',
             ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+            ...(attempt?{'Idempotency-Key':attempt.id,'X-Auth-Delivery-Contract':'1'}:{}),
           },
           body: JSON.stringify({
             to: email,
             subject: 'TradeCloseout Sign In Link',
             text: `Sign in to your TradeCloseout workspace: ${magicUrl}`,
             from: process.env.MAIL_FROM_ADDRESS || 'security@tradecloseout.com',
+            deliveryAttemptId:attempt?.id,idempotencyKey:attempt?.id,
           }),
         });
-        if (!response.ok) {
-          throw new Error(`Mail provider responded with status ${response.status}`);
-        }
+        const messageId=await requireGatewaySubmissionAccepted(response,attempt?.id);
+        if(attempt)await attempt.ledger.submitted(attempt.id,messageId);
         return;
       } catch (err: any) {
+        rejectSupersededDelivery(err,context);
+        if(attempt)await attempt.ledger.ambiguous(attempt.id).catch(()=>{});
         throw new ServiceUnavailableException({
           code: 'MAIL_GATEWAY_ERROR',
-          detail: `Configured mail provider failed: ${err.message}`,
+          detail: 'Mail provider did not confirm delivery. Please retry with a new code.',
         });
       }
     }
@@ -327,7 +398,7 @@ export class TransactionalMailService implements TransactionalMailGateway {
 
 @Module({
   imports: [DatabaseModule],
-  controllers: [IdentityController],
+  controllers: [IdentityController, MfaController, AuthDeliveryController],
   providers: [
     SessionCsrfGuard,
     {
@@ -347,7 +418,8 @@ export class TransactionalMailService implements TransactionalMailGateway {
         }
         if (process.env.REDIS_URL) {
           try {
-            return new Redis(process.env.REDIS_URL, { maxRetriesPerRequest: 1, lazyConnect: true });
+            return new Redis(process.env.REDIS_URL, { maxRetriesPerRequest: 1, lazyConnect: true,
+              connectTimeout:5000,commandTimeout:5000 });
           } catch (err) {
             if (isProductionLike) throw err;
             return new InMemoryRedis() as unknown as Redis;

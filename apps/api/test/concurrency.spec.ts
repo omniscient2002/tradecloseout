@@ -5,23 +5,24 @@
 import { TenantDbService, ExecutionContext } from '../src/database/tenant-db.service';
 import { uuidv7 } from 'uuidv7';
 import { Pool } from 'pg';
+import { assertTestDatabaseTargetConsistency, openDisposableDatabaseForSuite } from '../../../packages/db/test/helpers/disposable-database';
+
+jest.setTimeout(180_000);
 
 describe('Concurrency Suite: FOR UPDATE Row Locking & Race Condition Prevention', () => {
   let db: TenantDbService;
   let migratorPool: Pool;
+  let fixture: Awaited<ReturnType<typeof openDisposableDatabaseForSuite>>;
   const orgId = uuidv7();
   const userId = uuidv7();
 
   beforeAll(async () => {
-    db = new TenantDbService();
-
-    migratorPool = new Pool({
-      host: process.env.DB_HOST || '127.0.0.1',
-      port: Number(process.env.DB_PORT) || 5432,
-      database: process.env.DB_NAME || 'tradecloseout',
-      user: process.env.DB_MIGRATOR_USER || 'tc_migrator',
-      password: process.env.DB_MIGRATOR_PASSWORD || 'migrator_local_pw',
-    });
+    // Fail before touching a fixture if the legacy DB_PORT path and the
+    // application/migrator DATABASE_URL are not the same PostgreSQL target.
+    assertTestDatabaseTargetConsistency();
+    fixture = await openDisposableDatabaseForSuite();
+    db = new TenantDbService(fixture.app);
+    migratorPool = fixture.admin;
 
     // Seed test organisation
     await migratorPool.query(
@@ -57,21 +58,7 @@ describe('Concurrency Suite: FOR UPDATE Row Locking & Race Condition Prevention'
   });
 
   afterAll(async () => {
-    const client = await migratorPool.connect();
-    try {
-      await client.query('BEGIN');
-      await client.query("SELECT set_config('app.current_org', $1, true)", [orgId]);
-      await client.query(`DELETE FROM projects WHERE org_id = $1`, [orgId]);
-      await client.query(`DELETE FROM usage_counters WHERE org_id = $1`, [orgId]);
-      await client.query('COMMIT');
-    } finally {
-      client.release();
-    }
-
-    await migratorPool.query(`DELETE FROM users WHERE id = $1`, [userId]);
-    await migratorPool.query(`DELETE FROM organisations WHERE id = $1`, [orgId]);
-    await migratorPool.end();
-    await db.getPool().end();
+    await fixture?.close();
   });
 
   it('FOR UPDATE lock serializes concurrent increments and enforces plan limit', async () => {

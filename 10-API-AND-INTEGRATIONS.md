@@ -41,7 +41,7 @@
 5. `POST /auth/switch-org` (authenticated) sets `sessions.active_org_id` server-side and returns `204`. Requires an active membership in the target org.
 6. `POST /auth/logout` revokes the session.
 
-Magic links use a single-use token, 15-minute expiry, bound to the identifier. OTP is 6 digits, 5-minute expiry, max 5 attempts, rate-limited.
+**Implemented authentication contract (G01-R5):** Browser/member login uses `POST /api/v1/auth/otp/request` followed by `POST /api/v1/auth/otp/verify` with the original `challengeId`, identifier and six-digit code. The OTP expires after 5 minutes and is rate-limited. An authenticated browser session uses an opaque HttpOnly cookie plus session-bound CSRF and authentication generation; owner/admin use TOTP or single-use recovery codes. **Member-login magic-link request/consume and automatic SMS-to-email fallback are not implemented and MUST NOT be advertised or called.** Organisation invitation links are a different, single-use claim flow: a recipient authenticates independently as the intended verified identity before accepting membership. Users may independently request an email OTP only if that destination is already a verified identity; no unverified alternate is selected on their behalf.
 
 ### 2.2 CSRF
 
@@ -154,12 +154,14 @@ GET /api/v1/projects/{projectId}/requirements
 | API-002 | POST `/auth/otp/verify` | Create session | Public |
 | API-003 | GET `/auth/me` | Current user + orgs | Authenticated |
 | API-004 | POST `/auth/logout` | Revoke session | Authenticated |
-| API-005 | POST `/auth/magic-link/request` | Email login link | Public |
-| API-006 | POST `/auth/magic-link/consume` | Exchange link | Public |
+| API-005 (withdrawn) | — | Member-login magic-link request is **not implemented**; use API-001 email OTP | — |
+| API-006 (withdrawn) | — | Member-login magic-link consumption is **not implemented**; use API-002 OTP verification | — |
 | API-007 | GET `/users/me` | Profile | Self |
 | API-008 | PATCH `/users/me` | Update name/locale | Self |
 | API-009A | GET `/auth/orgs` | List user's active org memberships and guest grants | Authenticated (`RT-002`) |
 | API-009B | POST `/auth/switch-org` | Set `sessions.active_org_id` server-side (`Idempotency-Key` required) | Authenticated member of target org (`RT-002`) |
+
+The G01 continuation adds a signed gateway receipt endpoint and a proposed operator-only supervised recovery contract. See [G01 implementation continuation](docs/G01_IMPLEMENTATION_CONTINUATION_2026-11-11.md) for exact gateway fields, runtime prerequisites, recovery role/CLI boundaries and outstanding independent acceptance. These features do not implement automatic SMS-to-email fallback or member-login magic links.
 
 ### 7.2 Organisations and members
 
@@ -189,8 +191,10 @@ GET /api/v1/projects/{projectId}/requirements
 | API-026 | DELETE `/guest-grants/{grantId}` | Revoke | `project.manage` |
 | API-027 | POST `/projects/{projectId}/supplier-links` | Create scoped upload link | `party.manage` |
 | API-028 | POST `/guest/{token}/session` | Exchange guest token | Public token |
-| API-028A | POST `/guest/{token}/otp/request` | Send guest OTP (max 3/hr, 10/day per grant; email fallback) | Public token, rate-limited (`RT-010`, `RT-014`) |
+| API-028A | POST `/guest/{token}/otp/request` | Send guest OTP to the grant's currently verified designated contact (max 3/hour, 10/day per grant); no automatic channel switching or guest email fallback | Public token, rate-limited (`RT-010`, `RT-014`) |
 | API-028B | POST `/guest/{token}/otp/verify` | Verify guest OTP (5 attempts then 15-min cooldown) | Public token (`RT-010`, `RT-014`) |
+
+**Current guest OTP delivery:** `POST /guest/{token}/otp/request` uses the already-designated email **or** phone for that verified grant; it does not switch to another channel after provider rejection, timeout or an ambiguous response. An email-only grant is not a fallback from SMS. Any contact change needs independently verified reissuance of the guest grant; never guess a recipient or silently redirect authentication. Provider submission acknowledgement is not final recipient delivery evidence.
 
 ### 7.4 Projects and contracts
 
@@ -452,7 +456,7 @@ Why not proxy through API: memory, timeouts, mobile networks, and horizontal sca
 | Package generation | 5 concurrent/org, 50/day/org |
 | Search | 120/min/user |
 | Public guest endpoints | 60/min/token, 20/hour/IP |
-| Guest OTP request | 3/hour, 10/day per `grant_id` (5 failed attempts trigger 15-min cooldown; email fallback; `RT-014`) |
+| Guest OTP request | 3/hour, 10/day per `grant_id` (5 failed attempts trigger 15-min cooldown; **no automatic email fallback or alternate recipient**; `RT-014`) |
 | API tokens | 600/min/token |
 | Webhooks (inbound) | Provider-specific + signature |
 
@@ -485,8 +489,8 @@ Rules: 5-second timeout, retries with exponential backoff for 24 hours, idempote
 
 | Integration | MVP | V1 | Notes |
 |---|---|---|---|
-| Email (SES/Postmark) | Yes | Yes | Magic links, reminders, invoices; bounce/complaint handling |
-| **SMS (OTP + transactional)** | **Yes** | Yes | DLT-registered sender ID and template; delivery receipts; per-identifier rate limits; fallback to email magic link after 2 failures (`AUD-001`) |
+| Email (SES/Postmark) | Yes | Yes | Implemented email OTP and organisation invitations; reminders/invoices are separate provider workflows. **No member-login magic-link endpoint.** Provider acceptance does not prove recipient delivery; bounce/complaint reconciliation requires separate operational verification. |
+| **SMS (OTP + transactional)** | **Yes** | Yes | DLT-registered sender ID and template; submission acknowledgment and shared rate limits. **No automatic SMS-to-email fallback or email magic-link recovery.** Real delivery receipts and retry/reconciliation remain a release gate. |
 | WhatsApp deep link (`wa.me`) | Yes | Yes | Pre-filled message; manual send; no delivery proof |
 | WhatsApp Business API | No | Yes | Template approval, opt-in, delivery status, cost per message |
 | Razorpay | Yes | Yes | Subscriptions, UPI/cards, webhooks, invoices |

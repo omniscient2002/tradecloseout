@@ -47,14 +47,26 @@ export class CommissioningController {
 
   @Post('inspections/:id/witness-sign')
   @UseGuards(SessionCsrfGuard, PermissionGuard)
-  @RequirePermission('document.upload')
+  @RequirePermission('inspection.witness')
   async signInspectionWitness(
     @Req() req: any,
     @Param('projectId') projectId: string,
     @Param('id') inspectionId: string,
-    @Body() dto: { partyName: string; representativeName: string; role: string; notes?: string },
+    @Body() dto: { partyId: string; partyName: string; representativeName: string; role: string; notes?: string },
   ) {
     return this.commissioningService.signInspectionWitness(req.userContext, projectId, inspectionId, dto);
+  }
+
+  @Post('inspections/:id/witness-attendance')
+  @UseGuards(SessionCsrfGuard, PermissionGuard)
+  @RequirePermission('document.upload')
+  async recordInspectionWitnessAttendance(
+    @Req() req: any,
+    @Param('projectId') projectId: string,
+    @Param('id') inspectionId: string,
+    @Body() dto: { partyId?: string; partyName: string; representativeName: string; role: string; notes?: string },
+  ) {
+    return this.commissioningService.recordInspectionWitnessAttendance(req.userContext, projectId, inspectionId, dto);
   }
 
   @Post('seasonal-schedules')

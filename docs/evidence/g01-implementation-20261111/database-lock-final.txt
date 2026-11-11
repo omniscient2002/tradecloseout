@@ -1,0 +1,72 @@
+$ node --import tsx --test test/db-integration.spec.ts
+TAP version 13
+# Subtest: Disposable PostgreSQL migration, isolation and audit regression tests
+    # Subtest: DB-02: upgrading the 0005 baseline converges to the fresh schema
+    ok 1 - DB-02: upgrading the 0005 baseline converges to the fresh schema
+      ---
+      duration_ms: 4494.158416
+      type: 'test'
+      ...
+    # Subtest: DB-01: fresh ledger matches every actual SQL checksum, reruns and concurrent runners do not change it
+    ok 2 - DB-01: fresh ledger matches every actual SQL checksum, reruns and concurrent runners do not change it
+      ---
+      duration_ms: 438.205948
+      type: 'test'
+      ...
+    # Subtest: DB-03: mismatched and unknown ledger entries reject migration
+    ok 3 - DB-03: mismatched and unknown ledger entries reject migration
+      ---
+      duration_ms: 579.603744
+      type: 'test'
+      ...
+    # Subtest: DB-06/07: real runtime role reads own tenant and rejects an otherwise valid foreign write with RLS SQLSTATE
+    ok 4 - DB-06/07: real runtime role reads own tenant and rejects an otherwise valid foreign write with RLS SQLSTATE
+      ---
+      duration_ms: 23.825536
+      type: 'test'
+      ...
+    # Subtest: DB-10: tenant-table inventory catches disabled RLS as well as unforced RLS
+    ok 5 - DB-10: tenant-table inventory catches disabled RLS as well as unforced RLS
+      ---
+      duration_ms: 9.304865
+      type: 'test'
+      ...
+    # Subtest: DB-08: direct cross-project procurement insert fails the intended composite FK
+    ok 6 - DB-08: direct cross-project procurement insert fails the intended composite FK
+      ---
+      duration_ms: 22.166963
+      type: 'test'
+      ...
+    # Subtest: DB-07: shared catalogue rows are readable, foreign rows and global writes are blocked
+    ok 7 - DB-07: shared catalogue rows are readable, foreign rows and global writes are blocked
+      ---
+      duration_ms: 12.290437
+      type: 'test'
+      ...
+    # Subtest: AUDIT-02/03/04: nonempty chain rejects update/delete and detects privileged payload tampering
+    ok 8 - AUDIT-02/03/04: nonempty chain rejects update/delete and detects privileged payload tampering
+      ---
+      duration_ms: 66.816991
+      type: 'test'
+      ...
+    # Subtest: N30: canonical tenant alias validation rejects conflicting tenant settings
+    ok 9 - N30: canonical tenant alias validation rejects conflicting tenant settings
+      ---
+      duration_ms: 8.722496
+      type: 'test'
+      ...
+    1..9
+ok 1 - Disposable PostgreSQL migration, isolation and audit regression tests
+  ---
+  duration_ms: 9722.499307
+  type: 'test'
+  ...
+1..1
+# tests 10
+# suites 0
+# pass 10
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 9939.951289

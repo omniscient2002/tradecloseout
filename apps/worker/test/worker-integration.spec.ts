@@ -13,6 +13,7 @@ import { canonicalJson } from '@tradecloseout/shared';
 import { withDisposableDatabase } from '../../../packages/db/test/helpers/disposable-database';
 import { scoped, seedTenants } from '../../../packages/db/test/helpers/fixtures';
 import { TradeCloseoutScheduler } from '../src/scheduler';
+import { assertWorkerRuntimeDatabasePrivileges } from '../src/worker-startup-security';
 import { compileAndPersistPortableArchive } from '../src/queues/portable-archive.processor';
 import { BoundedByteStream } from '../src/queues/bounded-stream';
 import { OUTBOX_EVENT_REGISTRY } from '../src/event-registry';
@@ -27,6 +28,11 @@ void test('Isolated worker DB/Redis and storage HTTP contract regressions', asyn
       NOTIFICATION_DELIVERY_TOKEN: process.env.NOTIFICATION_DELIVERY_TOKEN };
     const scheduler = new TradeCloseoutScheduler(app, redis);
     try {
+      // Verify the actual connection identity under the restricted DB role,
+      // not only a mocked pg_roles response.
+      await assert.doesNotReject(assertWorkerRuntimeDatabasePrivileges(app));
+      await assert.rejects(assertWorkerRuntimeDatabasePrivileges(admin),
+        /BOOT_WORKER_RUNTIME_ROLE_UNSAFE/);
       await redis.connect();
       await t.test('SCHED-01/02: real Redis NX excludes concurrent owner and old owner cannot delete replacement lock', async () => {
         const name = randomUUID();
@@ -52,8 +58,66 @@ void test('Isolated worker DB/Redis and storage HTTP contract regressions', asyn
         await assert.rejects(scheduler.runWithPeriodLock(name, done, 30, 30, async () => { throw new Error('injected failure'); }), /injected/);
         assert.equal(await redis.exists(done), 0);
         await run(); assert.equal(effects, 2); await redis.del(done);
+        // Simulate a replacement worker taking over after TTL/lost ownership:
+        // the old callback cannot record a fraudulent completion marker.
+        const takeover = `period-takeover:${randomUUID()}`;
+        const takeoverDone = `test:done:${takeover}`;
+        await assert.rejects(scheduler.runWithPeriodLock(takeover,takeoverDone,30,30,async()=>{
+          await redis.set(`lock:sched:${takeover}`,'replacement-worker','EX',30);
+        }), /SCHEDULER_LEASE_LOST/);
+        assert.equal(await redis.exists(takeoverDone),0);
+        assert.equal(await redis.get(`lock:sched:${takeover}`),'replacement-worker');
+        await redis.del(`lock:sched:${takeover}`);
         const period = scheduler.getIndiaSchedulePeriods(new Date('2027-01-03T18:30:00Z'));
         assert.equal(period.day, '2027-01-04'); assert.equal(period.hour, 0); assert.equal(period.week, '2027-W01');
+      });
+      await t.test('PH1-G24-002: tenant-scoped active owner digests are delivered once and missing owners fail visibly', async () => {
+        for (const orgId of [a.orgId,b.orgId]) {
+          await admin.query(`INSERT INTO memberships
+             (id,org_id,user_id,role,status) VALUES($1,$2,$3,'R-OWNER','ACTIVE')`,
+            [randomUUID(),orgId,userId]);
+        }
+        // The restricted application role cannot scan all memberships
+        // without a tenant context: prove that discovery alone is insufficient.
+        assert.equal((await app.query(
+          `SELECT org_id FROM memberships WHERE role='R-OWNER' AND status='ACTIVE'`
+        )).rows.length,0);
+        await scheduler.runWeeklyOwnerRetentionAtRiskDigest();
+        const delivered = await admin.query(`SELECT org_id,recipient_user_id
+          FROM notifications WHERE event_key='WEEKLY_OWNER_DIGEST' ORDER BY org_id`);
+        assert.equal(delivered.rows.length,2);
+        assert.deepEqual(new Set(delivered.rows.map(row=>row.org_id)),new Set([a.orgId,b.orgId]));
+        assert(delivered.rows.every(row=>row.recipient_user_id===userId));
+        await scheduler.runWeeklyOwnerRetentionAtRiskDigest();
+        assert.equal((await admin.query(`SELECT count(*)::int n FROM notifications
+          WHERE event_key='WEEKLY_OWNER_DIGEST'`)).rows[0].n,2);
+        await admin.query(`UPDATE memberships SET status='REMOVED'
+          WHERE org_id=$1 AND user_id=$2`,[b.orgId,userId]);
+        await assert.rejects(scheduler.runWeeklyOwnerRetentionAtRiskDigest(), /OWNER_DIGEST_INCOMPLETE/);
+      });
+      await t.test('PH1-G27-002: verifier includes genesis and verifies real tenant chains', async () => {
+        for(const tenant of [a,b]) {
+          await scoped(app,tenant.orgId,client=>client.query(`INSERT INTO audit_events
+            (id,org_id,actor_type,action,entity_type,entity_id,request_id)
+            VALUES($1,$2,'SYSTEM','WORKER_VERIFIER_PROBE','PROJECT',$3,'worker-audit-test')`,
+            [randomUUID(),tenant.orgId,tenant.projectIds[0]]));
+        }
+        const verified=await scheduler.verifyAuditHashChainIntegrity();
+        assert.equal(verified.orgCount,2);
+        assert.equal(verified.verifiedEvents,2);
+        // Independent negative contract: do not alter an actual audit trail.
+        const mockClient={
+          query:async(sql:string)=>{
+            if(sql.includes('SELECT id FROM organisations'))return {rows:[{id:a.orgId}]};
+            if(sql.includes('FROM audit_events'))return {rows:[{
+              id:randomUUID(),chain_seq:'1',prev_hash:'FORGED_GENESIS',
+              hash:'a'.repeat(64),computed_hash:'a'.repeat(64),
+            }]};
+            return {rows:[]};
+          },release:()=>{},
+        };
+        const corrupted=new TradeCloseoutScheduler({connect:async()=>mockClient} as any,redis);
+        await assert.rejects(corrupted.verifyAuditHashChainIntegrity(),/AUDIT_HASH_CHAIN_CORRUPT/);
       });
       await t.test('TX-05/06: cleanup retains expired unresolved claims after committed effect', async () => {
         const pending = randomUUID(); const completed = randomUUID();
@@ -66,6 +130,35 @@ void test('Isolated worker DB/Redis and storage HTTP contract regressions', asyn
         assert.equal((await admin.query('SELECT id FROM idempotency_keys WHERE id = $1', [completed])).rowCount, 0);
         // Replay the actual interceptor in API tests; here prove cleanup preserves its durable protection.
       });
+      await t.test('G01-020: abandoned unconfirmed invitations never become redeemable',async()=>{
+        const stale=randomUUID(),expired=randomUUID(),fresh=randomUUID(),other=randomUUID();
+        await admin.query(
+          `INSERT INTO invitations
+             (id,org_id,email,role,token_hash,status,expires_at,invited_by,created_at)
+           VALUES
+             ($1,$5,'stale@g01.test','R-SITE',$8,'DELIVERY_PENDING',now()+interval '2 days',$7,now()-interval '30 minutes'),
+             ($2,$5,'expired@g01.test','R-SITE',$9,'PENDING',now()-interval '1 day',$7,now()-interval '2 days'),
+             ($3,$5,'fresh@g01.test','R-SITE',$10,'DELIVERY_PENDING',now()+interval '1 day',$7,now()),
+             ($4,$6,'other@g01.test','R-SITE',$11,'PENDING',now()+interval '1 day',$7,now())`,
+          [stale,expired,fresh,other,a.orgId,b.orgId,userId,
+            'stale_'+stale,'expired_'+expired,'fresh_'+fresh,'other_'+other],
+        );
+        const first=await scheduler.cleanupStaleInvitations();
+        assert.equal(first.staleDelivery,1);
+        assert.equal(first.expired,1);
+        const {rows}=await admin.query(
+          'SELECT id,status FROM invitations WHERE id=ANY($1::uuid[])',
+          [[stale,expired,fresh,other]],
+        );
+        const status=(id:string)=>rows.find(row=>row.id===id)?.status;
+        assert.equal(status(stale),'REVOKED');
+        assert.equal(status(expired),'EXPIRED');
+        assert.equal(status(fresh),'DELIVERY_PENDING');
+        assert.equal(status(other),'PENDING');
+        const second=await scheduler.cleanupStaleInvitations();
+        assert.equal(second.staleDelivery,0);
+        assert.equal(second.expired,0);
+      });
       await t.test('NOTIF-01/04: no configuration, rejection and invalid ack stay queued; matching capture acknowledgment permits SENT', async () => {
         const id = randomUUID(); const foreignId = randomUUID();
         await admin.query(`INSERT INTO notifications (id, org_id, recipient_user_id, channel, event_key, payload_json, status, dedup_key)
@@ -73,6 +166,12 @@ void test('Isolated worker DB/Redis and storage HTTP contract regressions', asyn
                  ($4::uuid,$5,$3,'EMAIL','TEST','{}','QUEUED',$4::text)`, [id, a.orgId, userId, foreignId, b.orgId]);
         delete process.env.NOTIFICATION_DELIVERY_URL; delete process.env.NOTIFICATION_DELIVERY_TOKEN;
         assert.equal(await scheduler.dispatchQueuedNotifications(), 0);
+        assert.equal((await admin.query('SELECT delivery_attempts FROM notifications WHERE id=$1',[id])).rows[0].delivery_attempts,0);
+        // Explicitly advance the disposable fixture's retry clock, not the
+        // production policy: failures now have durable exponential backoff.
+        const due=()=>admin.query(`UPDATE notifications
+          SET next_attempt_at=now()-interval '1 second' WHERE id=$1`,[id]);
+        await due();
         let mode = 'reject'; const requests: any[] = [];
         const gateway = createServer(async (req, res) => {
           let body = ''; for await (const chunk of req) body += chunk;
@@ -86,7 +185,9 @@ void test('Isolated worker DB/Redis and storage HTTP contract regressions', asyn
         process.env.NOTIFICATION_DELIVERY_TOKEN = 'local-capture-token';
         try {
           assert.equal(await scheduler.dispatchQueuedNotifications(), 0);
+          await due();
           mode = 'bad-ack'; assert.equal(await scheduler.dispatchQueuedNotifications(), 0);
+          await due();
           mode = 'accept'; assert.equal(await scheduler.dispatchQueuedNotifications(), 1);
           const own = (await admin.query('SELECT status, sent_at FROM notifications WHERE id = $1', [id])).rows[0];
           assert.equal(own.status, 'SENT'); assert(own.sent_at instanceof Date);

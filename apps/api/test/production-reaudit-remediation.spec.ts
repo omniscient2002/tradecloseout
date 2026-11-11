@@ -407,6 +407,12 @@ describe('Production Re-Audit Remediation Suite (PROD-001..PROD-018)', () => {
 
       const mockClient: any = {
         query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
+          if (sql.includes('SELECT p.client_party_id,p.consultant_party_id')) {
+            return { rows: [{
+              project_status:'ACTIVE',party_status:'ACTIVE',
+              client_party_id:partyId,consultant_party_id:partyId,
+            }] };
+          }
           if (sql.includes('INSERT INTO guest_grants')) {
             insertedParams = params;
             return {
@@ -433,6 +439,7 @@ describe('Production Re-Audit Remediation Suite (PROD-001..PROD-018)', () => {
 
       const result = await partiesService.createGuestGrant(ctx, projectId, {
         partyId,
+        email: 'supplier@g01.example',
       });
 
       expect(result.grantId).toBeDefined();
@@ -449,6 +456,12 @@ describe('Production Re-Audit Remediation Suite (PROD-001..PROD-018)', () => {
 
       const mockClient: any = {
         query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
+          if (sql.includes('SELECT p.client_party_id,p.consultant_party_id')) {
+            return { rows: [{
+              project_status:'ACTIVE',party_status:'ACTIVE',
+              client_party_id:partyId,consultant_party_id:partyId,
+            }] };
+          }
           if (sql.includes('INSERT INTO guest_grants')) {
             insertedParams = params;
             return {
@@ -476,6 +489,7 @@ describe('Production Re-Audit Remediation Suite (PROD-001..PROD-018)', () => {
       const result = await partiesService.createGuestGrant(ctx, projectId, {
         partyId,
         grantType: 'CONSULTANT',
+        email: 'consultant@g01.example',
       });
 
       expect(insertedParams[4]).toBe('CONSULTANT_REVIEW');
@@ -492,6 +506,7 @@ describe('Production Re-Audit Remediation Suite (PROD-001..PROD-018)', () => {
         partiesService.createGuestGrant(ctx, uuidv7(), {
           partyId: uuidv7(),
           grantType: 'CLIENT',
+          email: 'client@g01.example',
           role: 'R-OWNER',
         }),
       ).rejects.toThrow(BadRequestException);
@@ -506,6 +521,7 @@ describe('Production Re-Audit Remediation Suite (PROD-001..PROD-018)', () => {
         partiesService.createGuestGrant(ctx, uuidv7(), {
           partyId: uuidv7(),
           grantType: 'CLIENT',
+          email: 'client@g01.example',
           capabilities: ['org.manage'],
         }),
       ).rejects.toThrow(BadRequestException);
@@ -520,6 +536,7 @@ describe('Production Re-Audit Remediation Suite (PROD-001..PROD-018)', () => {
         partiesService.createGuestGrant(ctx, uuidv7(), {
           partyId: uuidv7(),
           grantType: 'CLIENT',
+          email: 'client@g01.example',
         }),
       ).rejects.toThrow(ForbiddenException);
     });

@@ -2,14 +2,23 @@ import { Pool } from 'pg';
 import Redis from 'ioredis';
 import { createHash } from 'crypto';
 import { uuidv7 } from 'uuidv7';
-import { deliverNotification } from './notification-delivery';
+import { dispatchDueNotifications } from './notification-dispatch';
 import { isIndiaQuietHour, sumPaise } from '@tradecloseout/shared';
+import { AuthDeliveryLedger } from '@tradecloseout/db';
 
 export class TradeCloseoutScheduler {
   constructor(
     private readonly pool: Pool,
     private readonly redis: Redis,
   ) {}
+
+  async reconcileAuthenticationDeliveries():Promise<void> {
+    await this.runWithLeaderLock('g01-delivery-receipts',90,async()=>{
+      const ledger=new AuthDeliveryLedger(this.pool);
+      await ledger.reconcileDue(20);
+      await ledger.sendRecoveryNotices();
+    });
+  }
 
   /**
    * Acquires a distributed Redis leader lock before executing any scheduled job (15 §2, TC2-026).
@@ -54,7 +63,21 @@ export class TradeCloseoutScheduler {
     try {
       if (await this.redis.exists(completedKey)) return;
       await fn();
-      await this.redis.set(completedKey, '1', 'EX', completedTtlSeconds);
+      // PH1-G24-001: an expired/replaced lease must NEVER be allowed to
+      // manufacture a durable period-complete receipt. Check owner and write
+      // the completion marker atomically, before releasing the lease.
+      const commitLua = `
+        if redis.call("get", KEYS[1]) == ARGV[1] then
+          redis.call("set", KEYS[2], "1", "EX", ARGV[2])
+          redis.call("del", KEYS[1])
+          return 1
+        end
+        return 0
+      `;
+      const committed = await this.redis.eval(
+        commitLua, 2, fullKey, completedKey, ownerToken, String(completedTtlSeconds),
+      );
+      if (committed !== 1) throw new Error('SCHEDULER_LEASE_LOST');
     } finally {
       const releaseLua = `
         if redis.call("get", KEYS[1]) == ARGV[1] then
@@ -99,6 +122,93 @@ export class TradeCloseoutScheduler {
       week: `${isoYear}-W${String(week).padStart(2, '0')}`,
       hourSlot: `${day}-${parts.hour}`,
     };
+  }
+
+  /**
+   * G01: Hourly bounded authentication-ephemeral cleanup. Preserve auth
+   * security events for the configured retention period and never remove
+   * unexpired OTPs or live sessions.
+   */
+  async cleanupAuthenticationEphemera(): Promise<{ budgets: number; challenges: number; sessions: number }> {
+    const [{ rowCount: budgets }, { rowCount: challenges }, { rowCount: sessions }] = await Promise.all([
+      this.pool.query(
+        `DELETE FROM auth_request_budgets
+          WHERE ctid IN (
+            SELECT ctid FROM auth_request_budgets
+            WHERE expires_at < now() - interval '1 day'
+            LIMIT 2000
+          )`,
+      ),
+      this.pool.query(
+        `DELETE FROM otp_challenges
+          WHERE ctid IN (
+            SELECT ctid FROM otp_challenges
+            WHERE expires_at < now() - interval '30 days'
+              AND (consumed_at IS NOT NULL OR expires_at < now())
+            LIMIT 2000
+          )`,
+      ),
+      this.pool.query(
+        `DELETE FROM sessions
+          WHERE ctid IN (
+            SELECT ctid FROM sessions
+            WHERE (revoked_at < now() - interval '365 days'
+               OR absolute_expires_at < now() - interval '365 days')
+            LIMIT 2000
+          )`,
+      ),
+    ]);
+    return { budgets: budgets || 0, challenges: challenges || 0, sessions: sessions || 0 };
+  }
+
+  /**
+   * G01-020: stale invitation delivery records remain nonredeemable until
+   * explicitly reclaimed, and completed invitation tokens cannot survive
+   * their expiry. Bounded tenant-RLS updates are safe across worker replicas.
+   * This never promotes a delivery to a usable invitation.
+   */
+  async cleanupStaleInvitations(): Promise<{staleDelivery:number; expired:number}> {
+    const {rows:orgs}=await this.pool.query(
+      `SELECT id FROM organisations WHERE status='ACTIVE'`,
+    );
+    let staleDelivery=0,expired=0;
+    for(const org of orgs){
+      const client=await this.pool.connect();
+      try{
+        await client.query('BEGIN');
+        await client.query(
+          "SELECT set_config('app.current_org',$1,true),set_config('app.current_org_id',$1,true)",
+          [org.id],
+        );
+        const {rowCount:stale}=await client.query(
+          `UPDATE invitations SET status='REVOKED'
+             WHERE id IN (
+               SELECT id FROM invitations
+                WHERE org_id=$1 AND status='DELIVERY_PENDING'
+                  AND created_at<now()-interval '15 minutes'
+                ORDER BY created_at LIMIT 250 FOR UPDATE SKIP LOCKED
+             )`,
+          [org.id],
+        );
+        const {rowCount:outdated}=await client.query(
+          `UPDATE invitations SET status='EXPIRED'
+             WHERE id IN (
+               SELECT id FROM invitations
+                WHERE org_id=$1 AND status IN ('DELIVERY_PENDING','PENDING')
+                  AND expires_at<=now()
+                ORDER BY expires_at LIMIT 250 FOR UPDATE SKIP LOCKED
+             )`,
+          [org.id],
+        );
+        staleDelivery+=stale||0;
+        expired+=outdated||0;
+        await client.query('COMMIT');
+      }catch(error){
+        await client.query('ROLLBACK').catch(()=>{});
+        throw error;
+      }finally{client.release();}
+    }
+    return {staleDelivery,expired};
   }
 
   /**
@@ -160,21 +270,34 @@ export class TradeCloseoutScheduler {
   async runWeeklyOwnerRetentionAtRiskDigest(): Promise<void> {
     const client = await this.pool.connect();
     try {
+      // PH1-G24-002: membership is tenant-RLS-protected. Cross-tenant
+      // ownership discovery with no app.current_org silently returned zero.
+      // Global organisations is the reviewed discovery surface only.
       const { rows: activeOrgs } = await client.query(
-        `SELECT o.id AS org_id, o.display_name, m.user_id AS owner_user_id
-           FROM organisations o
-           JOIN memberships m ON m.org_id = o.id AND m.role = 'R-OWNER' AND m.status = 'ACTIVE'
-          WHERE o.status = 'ACTIVE'`,
+        `SELECT id AS org_id, display_name FROM organisations
+          WHERE status='ACTIVE' ORDER BY id`,
       );
 
       const weekKey = this.getIndiaSchedulePeriods().week;
-
+      let tenantFailures = 0;
       for (const org of activeOrgs) {
+        try {
         await client.query('BEGIN');
         await client.query(
           `SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`,
           [org.org_id],
         );
+        const { rows: owners } = await client.query(
+          `SELECT m.user_id FROM memberships m
+            JOIN users u ON u.id=m.user_id AND u.status='ACTIVE'
+            WHERE m.org_id=$1 AND m.role='R-OWNER' AND m.status='ACTIVE'
+            ORDER BY m.user_id`,
+          [org.org_id],
+        );
+        // Do not silently accept missing owners or pick an arbitrary owner
+        // when the exactly-one-eligible-owner invariant is violated.
+        if (owners.length !== 1) throw new Error('OWNER_DIGEST_OWNER_INVARIANT');
+        const ownerUserId: string = owners[0].user_id;
 
         // Calculate missing/expired counts and retention money gated per active project (RT-029)
         const { rows: projectRisks } = await client.query(
@@ -212,7 +335,7 @@ export class TradeCloseoutScheduler {
           [
             uuidv7(),
             org.org_id,
-            org.owner_user_id,
+            ownerUserId,
             JSON.stringify({
               orgDisplayName: org.display_name,
               totalRetentionAtRiskPaise: totalRetentionAtRiskPaise.toString(),
@@ -228,10 +351,14 @@ export class TradeCloseoutScheduler {
         );
 
         await client.query('COMMIT');
+        } catch {
+          await client.query('ROLLBACK').catch(() => {});
+          tenantFailures += 1;
+          // No recipient identity, provider detail, SQL or tenant metadata.
+          console.error('OWNER_DIGEST_TENANT_FAILED');
+        }
       }
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
+      if (tenantFailures) throw new Error('OWNER_DIGEST_INCOMPLETE');
     } finally {
       client.release();
     }
@@ -273,23 +400,24 @@ export class TradeCloseoutScheduler {
                   )::text, 'sha256'), 'hex') AS computed_hash
              FROM audit_events
             WHERE org_id = $1
-            ORDER BY chain_seq ASC`,
+            ORDER BY chain_seq ASC, id ASC`,
           [org.id],
         );
 
-        let prevHash: string | null = null;
-        for (let i = 0; i < events.length; i++) {
-          const ev = events[i];
-          if (prevHash !== null && ev.prev_hash !== prevHash) {
-            throw new Error(
-              `AUDIT_HASH_CHAIN_CORRUPT: Tampering detected for org ${org.id} at chain_seq ${ev.chain_seq}. Expected prev_hash ${prevHash}, got ${ev.prev_hash}`,
-            );
+        // PH1-G27-002: verify genesis as well as every link and never skip
+        // a NULL computed digest. Sequence must advance strictly even where
+        // an attacker attempted to insert a duplicate or forged ordering key.
+        let prevHash = 'GENESIS_0000000000000000000000000000000000000000000000000000000000000000';
+        let prevSeq = -1n;
+        for (const ev of events) {
+          const seq = BigInt(ev.chain_seq);
+          if (seq <= prevSeq) throw new Error('AUDIT_CHAIN_ORDER_INVALID');
+          if (ev.prev_hash !== prevHash) throw new Error('AUDIT_HASH_CHAIN_CORRUPT');
+          if (typeof ev.hash !== 'string' || !/^[a-f0-9]{64}$/.test(ev.hash) ||
+              ev.hash !== ev.computed_hash) {
+            throw new Error('AUDIT_CONTENT_TAMPERED');
           }
-          if (ev.computed_hash && ev.hash !== ev.computed_hash) {
-            throw new Error(
-              `AUDIT_CONTENT_TAMPERED: Payload tampering detected for org ${org.id} at chain_seq ${ev.chain_seq} (id: ${ev.id}). Stored hash ${ev.hash} does not match computed hash ${ev.computed_hash}`,
-            );
-          }
+          prevSeq = seq;
           prevHash = ev.hash;
           verifiedEvents++;
         }
@@ -298,7 +426,7 @@ export class TradeCloseoutScheduler {
       }
       return { orgCount: orgs.length, verifiedEvents };
     } catch (err) {
-      await client.query('ROLLBACK');
+      await client.query('ROLLBACK').catch(() => {});
       throw err;
     } finally {
       client.release();
@@ -403,69 +531,11 @@ export class TradeCloseoutScheduler {
     }
   }
 
-  /**
-   * T11: Dispatches queued notifications honoring IST quiet hours (22:00 - 08:00 IST).
-   * External messages stay queued until a deduplicating gateway acknowledges them.
-   */
+  /** Claim/ack outside network I/O; quiet hours are applied before claiming. */
   async dispatchQueuedNotifications(): Promise<number> {
-    const isQuietHour = isIndiaQuietHour();
-    const client = await this.pool.connect();
-    let sentCount = 0;
-
-    try {
-      const { rows: orgs } = await client.query(`SELECT id FROM organisations WHERE status = 'ACTIVE'`);
-
-      for (const org of orgs) {
-        await client.query('BEGIN');
-        await client.query(
-          `SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`,
-          [org.id],
-        );
-
-        // Fetch queued notifications (NP06: filter quiet-hour restricted channels before LIMIT to avoid head-of-line starvation)
-        const { rows: queued } = await client.query(
-          `SELECT id, org_id, channel, event_key, payload_json, recipient_user_id, recipient_party_id
-             FROM notifications
-            WHERE org_id = $1
-              AND status = 'QUEUED'
-              AND ($2::boolean = false OR channel NOT IN ('SMS', 'WHATSAPP'))
-            ORDER BY created_at ASC
-            LIMIT 25
-            FOR UPDATE SKIP LOCKED`,
-          [org.id, isQuietHour],
-        );
-
-        for (const notif of queued) {
-          const isQuietDeferral = (notif.channel === 'SMS' || notif.channel === 'WHATSAPP') && isQuietHour;
-          if (isQuietDeferral) {
-            // Keep in QUEUED until quiet hours conclude at 08:00 IST
-            continue;
-          }
-
-          try {
-            if (!await deliverNotification(notif)) continue;
-          } catch {
-            // Keep retryable delivery queued; do not log provider secrets/payloads.
-            continue;
-          }
-          await client.query(
-            `UPDATE notifications
-                SET status = 'SENT',
-                    sent_at = now()
-              WHERE org_id = $1 AND id = $2`,
-            [org.id, notif.id],
-          );
-          sentCount++;
-        }
-
-        await client.query('COMMIT');
-      }
-      return sentCount;
-    } catch (err) {
-      await client.query('ROLLBACK').catch(() => {});
-      throw err;
-    } finally {
-      client.release();
-    }
+    const result=await dispatchDueNotifications(this.pool,isIndiaQuietHour());
+    if (result.failed) console.error('NOTIFICATION_DELIVERY_RETRY_OR_FAILURE', { count:result.failed });
+    return result.accepted;
   }
+
 }

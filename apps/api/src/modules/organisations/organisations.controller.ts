@@ -108,7 +108,7 @@ export class OrganisationsController {
   }
 
   @Post('transfer-ownership')
-  @RequirePermission('org.manage')
+  @RequirePermission('org.transfer_ownership')
   async transferOwnership(
     @Req() req: any,
     @Param('orgId') orgId: string,

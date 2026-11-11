@@ -5,6 +5,7 @@ import { readFile, readdir } from 'fs/promises';
 import path from 'path';
 import { withDisposableDatabase, migrateDatabase } from './helpers/disposable-database';
 import { scoped, seedTenants } from './helpers/fixtures';
+import { reconcileStorageQuotaOnFileStatusChange } from '../src/tenant-tx';
 
 void test('Disposable PostgreSQL migration, isolation and audit regression tests', async t => {
   await withDisposableDatabase(async ({ admin, app, url }) => {
@@ -71,6 +72,79 @@ void test('Disposable PostgreSQL migration, isolation and audit regression tests
         assert(row.relforcerowsecurity, `${row.relname} has unforced RLS`);
       }
     });
+    await t.test('PH1-G26-001: direct audit partitions deny tc_app and enforce RLS', async () => {
+      const partitions = (await admin.query(`
+        SELECT c.relname, c.relrowsecurity AS rls, c.relforcerowsecurity AS forced,
+               has_table_privilege('tc_app', c.oid, 'SELECT') AS can_select,
+               has_table_privilege('tc_app', c.oid, 'INSERT') AS can_insert,
+               has_table_privilege('tc_app', c.oid, 'UPDATE') AS can_update,
+               has_table_privilege('tc_app', c.oid, 'DELETE') AS can_delete,
+               has_table_privilege('tc_app', c.oid, 'TRUNCATE') AS can_truncate
+          FROM pg_inherits i
+          JOIN pg_class c ON c.oid=i.inhrelid
+         WHERE i.inhparent='public.audit_events'::regclass
+         ORDER BY c.relname`)).rows;
+      assert(partitions.length >= 4, 'Expected the three dated audit partitions and default');
+      for (const child of partitions) {
+        assert(child.rls && child.forced, `No enforced child RLS: ${child.relname}`);
+        for (const privilege of ['can_select','can_insert','can_update','can_delete','can_truncate']) {
+          assert.equal(child[privilege], false, `Direct child privilege: ${child.relname} ${privilege}`);
+        }
+        const childName = '"' + String(child.relname).replace(/"/g, '""') + '"';
+        for (const sql of [
+          `SELECT id FROM public.${childName} LIMIT 1`,
+          `INSERT INTO public.${childName} DEFAULT VALUES`,
+          `UPDATE public.${childName} SET action=action`,
+          `DELETE FROM public.${childName}`,
+          `TRUNCATE TABLE public.${childName}`,
+        ]) {
+          await assert.rejects(app.query(sql), (error: any) => error.code === '42501');
+        }
+      }
+      // The adjacent AUDIT-02/03/04 test covers permitted parent insert/read.
+    });
+
+    await t.test('PH1-G26-002/G24-007: quota SQL commits typed bigint changes in real PG16', async () => {
+      await scoped(app, a.orgId, async client => {
+        await reconcileStorageQuotaOnFileStatusChange(client, a.orgId, 1234n, 'MARKED_READY');
+        const read = async () => (await client.query(
+          `SELECT value FROM usage_counters WHERE org_id=$1
+            AND metric='STORAGE_BYTES' AND period='ALL_TIME'`, [a.orgId],
+        )).rows[0].value;
+        assert.equal(BigInt(await read()), 1234n);
+        await reconcileStorageQuotaOnFileStatusChange(client, a.orgId, 234n, 'DELETED_OR_PURGED');
+        assert.equal(BigInt(await read()), 1000n);
+      });
+      await scoped(app, b.orgId, async client => {
+        assert.equal((await client.query(`SELECT value FROM usage_counters
+          WHERE metric='STORAGE_BYTES' AND period='ALL_TIME'`)).rowCount, 0);
+      });
+    });
+
+    await t.test('PH1-G26-008: forged audit chain_seq is replaced under trusted tenant serialization', async () => {
+      const defaultRow = (await admin.query(`SELECT pg_get_expr(d.adbin,d.adrelid) AS def
+        FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid
+        LEFT JOIN pg_attrdef d ON d.adrelid=c.oid AND d.adnum=a.attnum
+        WHERE c.oid='public.audit_events'::regclass AND a.attname='chain_seq'`)).rows[0];
+      assert.equal(defaultRow.def,null,'Audit position must not be allocated before row lock');
+      await scoped(app,b.orgId,async client=>{
+        const write=async(seq:number)=>{
+          const id=randomUUID();
+          await client.query(`INSERT INTO audit_events
+            (id,org_id,actor_type,action,entity_type,entity_id,chain_seq,prev_hash,hash,request_id)
+            VALUES($1,$2,'SYSTEM','AUDIT_FORGED_SEQUENCE','PROJECT',$3,$4,$5,$6,'audit-sequence-test')`,
+            [id,b.orgId,b.projectIds[0],seq,'CLIENT_FORGED_PREV','CLIENT_FORGED_HASH']);
+          return (await client.query(`SELECT chain_seq,prev_hash,hash FROM audit_events WHERE id=$1`,[id])).rows[0];
+        };
+        const first=await write(999_999);
+        const second=await write(Number(first.chain_seq));
+        assert.notEqual(Number(first.chain_seq),999_999);
+        assert(Number(second.chain_seq)>Number(first.chain_seq));
+        assert.equal(second.prev_hash,first.hash);
+        assert.notEqual(second.hash,'CLIENT_FORGED_HASH');
+      });
+    });
+
     await t.test('DB-08: direct cross-project procurement insert fails the intended composite FK', async () => {
       const partyId = randomUUID();
       await admin.query(`INSERT INTO parties (id, org_id, name, types) VALUES ($1, $2, 'Test supplier', ARRAY['SUPPLIER'])`, [partyId, a.orgId]);
@@ -111,9 +185,15 @@ void test('Disposable PostgreSQL migration, isolation and audit regression tests
       for (const mutation of ['UPDATE audit_events SET action = action', 'DELETE FROM audit_events']) {
         await assert.rejects(scoped(app, a.orgId, client => client.query(mutation)), /AUDIT_IMMUTABLE/);
       }
+      // Simulate a privileged DDL attacker disabling both parent and cloned
+      // child mutation controls. The verifier must still detect hash damage.
       await admin.query('ALTER TABLE audit_events DISABLE TRIGGER trg_audit_events_immutable');
+      await admin.query('ALTER TABLE audit_events DISABLE TRIGGER trg_phase1_audit_immutable');
       try { await admin.query(`UPDATE audit_events SET after_json = '{"tampered":true}' WHERE org_id = $1`, [a.orgId]); }
-      finally { await admin.query('ALTER TABLE audit_events ENABLE TRIGGER trg_audit_events_immutable'); }
+      finally {
+        await admin.query('ALTER TABLE audit_events ENABLE TRIGGER trg_phase1_audit_immutable');
+        await admin.query('ALTER TABLE audit_events ENABLE TRIGGER trg_audit_events_immutable');
+      }
       assert((await check()).every(event => event.hash !== event.computed));
     });
     await t.test('N30: canonical tenant alias validation rejects conflicting tenant settings', async () => {

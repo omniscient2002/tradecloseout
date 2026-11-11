@@ -16,6 +16,7 @@ import {
   TenantActorContext,
   DomainOutboxEvent,
 } from '@tradecloseout/db';
+import { assertMemberResourceScope } from '@tradecloseout/db/tenant-tx';
 import {
   resolveConfigurationHierarchy,
   ConfigLayerInput,
@@ -401,6 +402,79 @@ export class ChecklistsService {
   }
 
   /**
+   * Lists only explicitly published HVAC template packs. This does not create
+   * a fake default HVAC checklist or infer undocumented client obligations.
+   */
+  async listApprovedHvacTemplates(ctx: TenantActorContext, projectId: string) {
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+      const { rows: owned } = await client.query(
+        `SELECT 1 FROM projects WHERE org_id = $1 AND id = $2`,
+        [ctx.orgId, projectId],
+      );
+      if (!owned.length) throw new NotFoundException('PROJECT_NOT_FOUND');
+      const { rows } = await client.query(
+        `SELECT id, code, name, version, schema_version,
+                CASE WHEN jsonb_typeof(payload_json->'requirements') = 'array'
+                     THEN jsonb_array_length(payload_json->'requirements') ELSE 0 END
+                AS requirement_count
+           FROM template_packs
+          WHERE trade = 'HVAC' AND status = 'ACTIVE'
+          ORDER BY code, version DESC`,
+      );
+      return rows;
+    });
+  }
+
+  /** Applies a specific published HVAC template version under the project lock. */
+  async applyApprovedHvacTemplate(
+    ctx: TenantActorContext,
+    projectId: string,
+    templatePackId: string,
+  ) {
+    if (!/^[a-f0-9-]{36}$/i.test(templatePackId)) {
+      throw new UnprocessableEntityException({
+        code: 'INVALID_TEMPLATE_ID',
+        detail: 'Select a valid published HVAC template pack.',
+      });
+    }
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      await this.lockEditableProject(client, ctx.orgId, projectId);
+      const { rows } = await client.query(
+        `SELECT id, code, name, version, schema_version, payload_json
+           FROM template_packs
+          WHERE id = $1 AND trade = 'HVAC' AND status = 'ACTIVE'
+          FOR SHARE`,
+        [templatePackId],
+      );
+      if (!rows.length) {
+        throw new NotFoundException('APPROVED_HVAC_TEMPLATE_NOT_FOUND');
+      }
+      const pack = rows[0];
+      const payload = typeof pack.payload_json === 'string'
+        ? JSON.parse(pack.payload_json) : pack.payload_json;
+      if (pack.schema_version !== 1 ||
+          !Array.isArray(payload?.requirements) || payload.requirements.length === 0) {
+        throw new UnprocessableEntityException({
+          code: 'HVAC_TEMPLATE_NOT_CONFIGURED',
+          detail: 'The selected published template has no valid scoped contractual requirements.',
+        });
+      }
+      const result = await this.createAndApplySnapshot(
+        ctx,
+        projectId,
+        [{ level: 'PROJECT', versionId: pack.id, payload }],
+        undefined,
+        `Published HVAC template ${pack.code} v${pack.version}`,
+        { client, emit },
+      );
+      return {
+        ...result,
+        template: { id: pack.id, code: pack.code, version: pack.version },
+      };
+    });
+  }
+
+  /**
    * Reapply the existing explicit checklist configuration. We intentionally do
    * not substitute a fake one-item handover dossier when no template exists.
    */
@@ -768,6 +842,10 @@ export class ChecklistsService {
    */
   async listRequirements(ctx: TenantActorContext, projectId: string) {
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+      // G02-003: a grant's project_id is not a project-wide read permission.
+      // Scope rows in SQL before any serialization/count/search/pagination.
+      const isGuest = ctx.actorType === 'GUEST' || Boolean(ctx.guestGrantId);
+      if (isGuest && !ctx.guestGrantId) throw new NotFoundException('REQUIREMENTS_NOT_FOUND');
       const res = await client.query(
         `SELECT r.*,
                 dv.id AS latest_version_id,
@@ -786,12 +864,37 @@ export class ChecklistsService {
               LIMIT 1
            ) dv ON true
           WHERE r.org_id = $1 AND r.project_id = $2 AND r.superseded_at IS NULL
+            ${isGuest ? `AND EXISTS (
+                SELECT 1 FROM guest_grants g
+                 WHERE g.org_id=r.org_id AND g.project_id=r.project_id
+                   AND g.id=$3 AND g.status='ACTIVE' AND g.expires_at>now()
+                   AND g.principal_user_id=$4
+                   AND (
+                     (g.grant_type IN ('SUPPLIER_UPLOAD','SUPPLIER_CONTRIBUTOR')
+                       AND g.capabilities && ARRAY['document.upload','document.read']::text[]
+                       AND COALESCE(g.scope_json->'requirementIds','[]'::jsonb) ? r.id::text
+                       AND (r.owner_party_id IS NULL OR r.owner_party_id=g.party_id))
+                     OR
+                     (g.grant_type IN ('CLIENT_VIEW','CONSULTANT_REVIEW','MC_VIEW','AUDITOR_READ')
+                       AND g.capabilities && ARRAY['document.read','project.read','review.read']::text[]
+                       AND (r.status='APPROVED' OR
+                            COALESCE(g.scope_json->'requirementIds','[]'::jsonb) ? r.id::text))
+                   )
+              )` : ''}
           ORDER BY r.milestone_key ASC, r.title ASC`,
-        [ctx.orgId, projectId],
+        isGuest ? [ctx.orgId, projectId, ctx.guestGrantId, ctx.userId] : [ctx.orgId, projectId],
       );
 
       // FR-CHK-010: a requirement with due_at IS NULL is never derived as MISSING
-      return res.rows.map((row) => {
+      return res.rows.filter((row:any)=>{
+        try{
+          assertMemberResourceScope(ctx,'requirement',{
+            id:row.id,groupKey:row.group_key,
+            createdAt:row.created_at?.toISOString?.()||String(row.created_at),
+          },false);
+          return true;
+        }catch{return false;}
+      }).map((row:any) => {
         const item = {
           ...row,
           latestVersionId: row.latest_version_id || null,
