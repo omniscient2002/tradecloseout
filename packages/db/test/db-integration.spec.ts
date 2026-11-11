@@ -100,15 +100,7 @@ void test('Disposable PostgreSQL migration, isolation and audit regression tests
           await assert.rejects(app.query(sql), (error: any) => error.code === '42501');
         }
       }
-      // Parent-side writes remain permitted for a valid tenant context.
-      await scoped(app, a.orgId, async client => {
-        const eventId = randomUUID();
-        await client.query(`INSERT INTO audit_events
-          (id, org_id, actor_type, action, entity_type, entity_id)
-          VALUES ($1, $2, 'SYSTEM', 'PARTITION_REGRESSION', 'PROJECT', $3)`,
-          [eventId, a.orgId, a.projectIds[0]]);
-        assert.equal((await client.query('SELECT id FROM audit_events WHERE id=$1', [eventId])).rowCount, 1);
-      });
+      // The adjacent AUDIT-02/03/04 test covers permitted parent insert/read.
     });
 
     await t.test('DB-08: direct cross-project procurement insert fails the intended composite FK', async () => {
