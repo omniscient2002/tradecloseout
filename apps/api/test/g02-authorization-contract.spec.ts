@@ -10,7 +10,7 @@ import { HandoverService } from '../src/modules/handover/handover.service';
 import { ReviewsController } from '../src/modules/reviews/reviews.controller';
 import { HandoverController } from '../src/modules/handover/handover.controller';
 import { PartiesController } from '../src/modules/parties/parties.controller';
-import { assertMemberResourceScope } from '@tradecloseout/db/tenant-tx';
+import { assertMemberResourceScope, assertValidMemberProjectScope } from '@tradecloseout/db/tenant-tx';
 import { TenantDbService } from '../src/database/tenant-db.service';
 
 describe('G02 executable negative authorization contracts',()=>{
@@ -80,6 +80,27 @@ describe('G02 executable negative authorization contracts',()=>{
       .not.toThrow();
     expect(()=>assertMemberResourceScope(ctx,'requirement',{id:other,groupKey:'HVAC'},false))
       .toThrow('G02_MEMBER_RESOURCE_SCOPE_DENIED');
+  });
+
+  it('PH1-G02-003: invalid restrictive scope never becomes unrestricted', () => {
+    const id=uuidv7();
+    const valid={documentIds:[id],mode:'READ_ONLY',startDate:'2026-11-01'};
+    expect(()=>assertValidMemberProjectScope(valid)).not.toThrow();
+    for(const invalid of [
+      {readOnly:'true'}, {mode:'READ_WRITE_ALL'}, {unknownScope:'hidden'},
+      {documentIds:'all'}, {assetIds:['not-a-uuid']}, {startDate:'2026-02-30'},
+      {requirementIds:[id,id]}, {endDate:{today:true}},
+    ]) {
+      expect(()=>assertValidMemberProjectScope(invalid)).toThrow('G02_MEMBER_SCOPE_INVALID');
+      expect(()=>assertMemberResourceScope({
+        orgId:uuidv7(),userId:uuidv7(),actorType:'USER',
+        orgRole:'R-SITE',projectScope:invalid,
+      }, 'document',{id},false)).toThrow('G02_MEMBER_SCOPE_INVALID');
+    }
+    expect(()=>assertMemberResourceScope({
+      orgId:uuidv7(),userId:uuidv7(),actorType:'USER',
+      orgRole:'R-SITE',projectScope:valid,
+    },'document',{id},true)).toThrow('G02_MEMBER_SCOPE_READ_ONLY');
   });
 
   it('G02-001/015: upload-only guest never gets package metadata or exports before DB reads',async()=>{
