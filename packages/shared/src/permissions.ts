@@ -29,7 +29,7 @@ export const ORG_ROLE_PERMISSIONS: Record<string, Record<string, PermissionScope
     'requirement.waive_second': 'Y', 'package.generate': 'Y', 'package.download': 'Y',
     'package.submit': 'Y', 'package.accept': 'Y', 'warranty.manage': 'Y', 'defect.manage': 'Y',
     'notification.manage': 'Y', 'audit.read': 'Y', 'export.data': 'Y', 'apikey.manage': 'Y',
-    'document.reuse': 'A', 'submission.recipients_manage': 'Y',
+    'submission.recipients_manage': 'Y',
   },
   'R-PM': {
     'org.read': 'Y', 'party.read': 'Y', 'party.manage': 'Y', 'template.read': 'Y',
