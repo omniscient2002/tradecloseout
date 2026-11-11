@@ -37,10 +37,11 @@ describe('review authority and expiry', () => {
     });
     const service = new ReviewsService({ withTenantContext: async (_ctx: unknown, work: any) => work({ query }) } as any);
     const detail = await service.getVersionReviewDetail(actor, 'project-1', 'version-1');
-    expect(detail.reviewId).toBeNull();
-    expect(detail.requirementId).toBeNull();
-    expect(detail.sha256).toBeNull();
-    expect(detail.uploadedByName).toBeNull();
+    // Preserve the exact assertions for this member-only response without
+    // incorrectly treating the intentionally narrower guest DTO as identical.
+    expect(detail).toMatchObject({
+      reviewId: null, requirementId: null, sha256: null, uploadedByName: null,
+    });
     expect(detail.fileStatus).toBe('PROCESSING');
     expect(query.mock.calls.some(([sql]) => sql.includes('INSERT INTO reviews'))).toBe(false);
     expect(query.mock.calls[0][0]).toContain('dv.project_id = $3');
