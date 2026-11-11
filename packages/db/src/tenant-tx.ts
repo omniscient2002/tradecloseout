@@ -241,3 +241,5 @@ export function redactSensitiveFields(obj: Record<string, unknown>): Record<stri
 export function hashRequestPayload(body: unknown): string {
   return createHash('sha256').update(JSON.stringify(body ?? {})).digest('hex');
 }
+
+export { assertCurrentProjectAuthority, assertMemberResourceScope } from './project-authority';
