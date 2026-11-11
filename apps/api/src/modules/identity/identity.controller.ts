@@ -640,7 +640,7 @@ export class IdentityController {
         userId = existingIdentities[0].user_id;
         const { rows: eligibleUsers } = await client.query(
           `SELECT id,($2::timestamptz IS NULL OR $2::timestamptz>auth_proof_valid_after) AS proof_is_current
-             FROM users WHERE id = $1 AND status = 'ACTIVE' FOR UPDATE`,
+             FROM users WHERE id = $1 AND status = 'ACTIVE' FOR NO KEY UPDATE`,
           [userId,proofCreatedAt??null],
         );
         if (proofCreatedAt && eligibleUsers[0]?.proof_is_current===false) {

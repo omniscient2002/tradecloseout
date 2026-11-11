@@ -3,6 +3,7 @@ import { Pool } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { withDisposableDatabase } from '../../../packages/db/test/helpers/disposable-database';
 import { MfaController } from '../src/modules/identity/mfa.controller';
+import { IdentityController } from '../src/modules/identity/identity.controller';
 
 jest.setTimeout(180_000);
 
@@ -146,6 +147,49 @@ describe('G01 MFA real PostgreSQL control plane', () => {
     });
   });
 
+  it('G01-R6: audited device revocation overlaps enrollment without a foreign-key lock cycle',async()=>{
+    process.env.AUTH_MFA_ENCRYPTION_KEY=Buffer.alloc(32,22).toString('base64');
+    await withDisposableDatabase(async({admin,app})=>{
+      const {req,userId,sessionId}=await seed(admin);
+      let lockedSession!:()=>void,lockedUser!:()=>void,resumeAudit!:()=>void;
+      const heldSession=new Promise<void>(resolve=>{lockedSession=resolve;});
+      const heldUser=new Promise<void>(resolve=>{lockedUser=resolve;});
+      const auditAllowed=new Promise<void>(resolve=>{resumeAudit=resolve;});
+      function schedule(kind:'revoke'|'factor'):Pool{
+        return {query:app.query.bind(app),connect:async()=>{
+          const c=await app.connect();return {release:c.release.bind(c),query:async(sql:string,values?:unknown[])=>{
+            const result=await c.query(sql,values);
+            if(typeof sql==='string'&&kind==='revoke'&&sql.includes('UPDATE sessions')){lockedSession();await auditAllowed;}
+            if(typeof sql==='string'&&kind==='factor'&&sql.includes('SELECT id FROM users'))lockedUser();
+            return result;
+          }};
+        }} as unknown as Pool;
+      }
+      const capture=(promise:Promise<unknown>)=>promise.then(
+        value=>({status:'fulfilled',value} as const),reason=>({status:'rejected',reason} as const));
+      let revoking:ReturnType<typeof capture>|undefined,enrolling:ReturnType<typeof capture>|undefined;
+      try{
+        const identity=new IdentityController(schedule('revoke'),{} as any,{} as any,{} as any);
+        revoking=capture(identity.revokeDeviceSession(sessionId,req,{clearCookie:jest.fn()} as any));
+        await heldSession;
+        enrolling=capture(new MfaController(schedule('factor')).beginEnrollment(req));
+        await heldUser;resumeAudit();
+        const [revoke,enroll]=await Promise.all([revoking,enrolling]);
+        expect(revoke.status).toBe('fulfilled');expect(enroll.status).toBe('rejected');
+        if(enroll.status==='rejected'){
+          expect(enroll.reason.code).not.toBe('40P01');
+          expect(enroll.reason.getStatus()).toBe(401);
+          expect(enroll.reason.getResponse()).toMatchObject({code:'SESSION_CONTEXT_CHANGED'});
+        }
+        expect((await admin.query('SELECT mfa_totp_pending_secret FROM users WHERE id=$1',[userId])).rows[0].mfa_totp_pending_secret).toBeNull();
+        expect((await admin.query('SELECT revoked_at FROM sessions WHERE id=$1',[sessionId])).rows[0].revoked_at).toBeInstanceOf(Date);
+        expect((await admin.query("SELECT count(*)::int AS n FROM auth_security_events WHERE session_id=$1 AND event_type='DEVICE_SESSION_REVOKED'",[sessionId])).rows[0].n).toBe(1);
+        expect((await admin.query("SELECT count(*)::int AS n FROM auth_security_events WHERE session_id=$1 AND event_type='MFA_ENROLLMENT_START_DENIED' AND reason_code='SESSION_CONTEXT_CHANGED'",[sessionId])).rows[0].n).toBe(1);
+        await expect(app.query('SELECT 1')).resolves.toBeDefined();
+      }finally{resumeAudit();await Promise.all([revoking,enrolling]);}
+    });
+  });
+
   it.each(['recovery','reset'] as const)('G01-R6: %s serializes with the other operation and leaves no partial factor writes',async leading=>{
     process.env.AUTH_MFA_ENCRYPTION_KEY=Buffer.alloc(32,22).toString('base64');
     await withDisposableDatabase(async({admin,app})=>{
@@ -166,7 +210,7 @@ describe('G01 MFA real PostgreSQL control plane', () => {
         const client=await first.connect();
         return {release:client.release.bind(client),query:async(sql:string,values?:unknown[])=>{
           const result=await client.query(sql,values);
-          if(sql.includes("SELECT id FROM users WHERE id=$1 AND status='ACTIVE' FOR UPDATE")){
+          if(sql.includes('SELECT id FROM users')){
             locked();await release;
           }
           return result;

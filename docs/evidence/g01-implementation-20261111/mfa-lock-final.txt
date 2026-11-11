@@ -1,0 +1,14 @@
+PASS test/g01-mfa-db.spec.ts (28.95 s)
+  G01 MFA real PostgreSQL control plane
+    ✓ G01-R6: overlapping start/confirm serialize without reversing user/session locks (3565 ms)
+    ✓ G01-R6: audited device revocation overlaps enrollment without a foreign-key lock cycle (3707 ms)
+    ✓ G01-R6: recovery serializes with the other operation and leaves no partial factor writes (3572 ms)
+    ✓ G01-R6: reset serializes with the other operation and leaves no partial factor writes (3229 ms)
+    ✓ G01-014/019: stale session cannot write pending MFA enrollment after logout or role revocation (3686 ms)
+    ✓ binds enrollment, factor replay, single-use backup recovery and audited reset (6310 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       6 passed, 6 total
+Snapshots:   0 total
+Time:        29.055 s
+Ran all test suites matching /test\/g01-mfa-db.spec.ts/i.

@@ -1,0 +1,32 @@
+FAIL test/g01-mfa-db.spec.ts (12.302 s)
+  G01 MFA real PostgreSQL control plane
+    ✕ G01-R6: audited device revocation overlaps enrollment without a foreign-key lock cycle (4315 ms)
+    ○ skipped G01-R6: overlapping start/confirm serialize without reversing user/session locks
+    ○ skipped G01-R6: recovery serializes with the other operation and leaves no partial factor writes
+    ○ skipped G01-R6: reset serializes with the other operation and leaves no partial factor writes
+    ○ skipped G01-014/019: stale session cannot write pending MFA enrollment after logout or role revocation
+    ○ skipped binds enrollment, factor replay, single-use backup recovery and audited reset
+
+  ● G01 MFA real PostgreSQL control plane › G01-R6: audited device revocation overlaps enrollment without a foreign-key lock cycle
+
+    expect(received).not.toBe(expected) // Object.is equality
+
+    Expected: not "40P01"
+
+      178 |         expect(revoke.status).toBe('fulfilled');expect(enroll.status).toBe('rejected');
+      179 |         if(enroll.status==='rejected'){
+    > 180 |           expect(enroll.reason.code).not.toBe('40P01');
+          |                                          ^
+      181 |           expect(enroll.reason.getStatus()).toBe(401);
+      182 |           expect(enroll.reason.getResponse()).toMatchObject({code:'SESSION_CONTEXT_CHANGED'});
+      183 |         }
+
+      at test/g01-mfa-db.spec.ts:180:42
+      at async withDisposableDatabase (../../packages/db/test/helpers/disposable-database.ts:107:5)
+      at async Object.<anonymous> (test/g01-mfa-db.spec.ts:152:5)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 5 skipped, 6 total
+Snapshots:   0 total
+Time:        12.389 s
+Ran all test suites matching /test\/g01-mfa-db.spec.ts/i with tests matching "foreign-key lock cycle".

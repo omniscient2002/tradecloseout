@@ -88,8 +88,10 @@ export class MfaController {
       // All factor operations serialize on the account BEFORE taking session
       // or recovery-code locks. In particular start and confirm must not take
       // session->user and user->session in opposite orders (G01-R6).
+      // No account key changes: NO KEY UPDATE still serializes these writers,
+      // while allowing KEY SHARE from revocation audit-event foreign keys.
       const account = await c.query(
-        "SELECT id FROM users WHERE id=$1 AND status='ACTIVE' FOR UPDATE",
+        "SELECT id FROM users WHERE id=$1 AND status='ACTIVE' FOR NO KEY UPDATE",
         [userId],
       );
       if (!account.rows.length) throw new UnauthorizedException('ACCOUNT_UNAVAILABLE');
@@ -193,7 +195,7 @@ export class MfaController {
       // serializes on the same session row, so it cannot race this mutation.
       await this.assertCurrentMemberSession(client, req);
       const { rows } = await client.query(
-        `SELECT id, mfa_enabled_at FROM users WHERE id=$1 AND status='ACTIVE' FOR UPDATE`,
+        `SELECT id, mfa_enabled_at FROM users WHERE id=$1 AND status='ACTIVE' FOR NO KEY UPDATE`,
         [req.auth.userId],
       );
       if (!rows.length) throw new UnauthorizedException('ACCOUNT_UNAVAILABLE');
@@ -227,7 +229,7 @@ export class MfaController {
     const result = await this.transact(req.auth.userId, async client => {
       const { rows } = await client.query(
         `SELECT mfa_totp_pending_secret, mfa_enabled_at, mfa_totp_last_step
-           FROM users WHERE id=$1 AND status='ACTIVE' FOR UPDATE`,
+           FROM users WHERE id=$1 AND status='ACTIVE' FOR NO KEY UPDATE`,
         [req.auth.userId],
       );
       if (!rows.length || !rows[0].mfa_totp_pending_secret || rows[0].mfa_enabled_at) {
@@ -278,7 +280,7 @@ export class MfaController {
     const session = await this.transact(req.auth.userId, async client => {
       const { rows } = await client.query(
         `SELECT mfa_totp_secret,mfa_totp_last_step,mfa_enabled_at
-           FROM users WHERE id=$1 AND status='ACTIVE' FOR UPDATE`,
+           FROM users WHERE id=$1 AND status='ACTIVE' FOR NO KEY UPDATE`,
         [req.auth.userId],
       );
       if (!rows.length || !rows[0].mfa_enabled_at || !rows[0].mfa_totp_secret) {
@@ -354,7 +356,7 @@ export class MfaController {
     const result = await this.transact(req.auth.userId, async client => {
       const { rows } = await client.query(
         `SELECT mfa_enabled_at, mfa_totp_secret, mfa_totp_last_step
-           FROM users WHERE id=$1 AND status='ACTIVE' FOR UPDATE`,
+           FROM users WHERE id=$1 AND status='ACTIVE' FOR NO KEY UPDATE`,
         [req.auth.userId],
       );
       if (!rows.length || !rows[0].mfa_enabled_at) throw new ConflictException('MFA_NOT_ENROLLED');

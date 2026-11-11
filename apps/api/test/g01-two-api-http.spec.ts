@@ -16,9 +16,12 @@ async function port():Promise<number>{
 }
 async function stop(child:ChildProcess):Promise<void>{
   if(child.exitCode!==null||child.signalCode!==null)return;
-  child.kill('SIGTERM');
-  await Promise.race([new Promise<void>(r=>child.once('exit',()=>r())),sleep(2500)]);
-  if(child.exitCode===null&&child.signalCode===null)child.kill('SIGKILL');
+  await new Promise<void>(resolveDone=>{
+    const timeout=setTimeout(()=>child.kill('SIGKILL'),2500);
+    const exited=()=>{clearTimeout(timeout);resolveDone();};
+    child.once('exit',exited);
+    if(!child.kill('SIGTERM')){child.off('exit',exited);exited();}
+  });
 }
 function cookie(response:Response,name:string):string {
   return response.headers.getSetCookie().map(value=>value.split(';')[0]).find(value=>value.startsWith(name+'='))||'';
