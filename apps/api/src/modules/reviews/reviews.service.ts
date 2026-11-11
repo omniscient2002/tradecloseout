@@ -268,7 +268,43 @@ export class ReviewsService {
 
   async getVersionReviewDetail(ctx: ExecutionContext, projectId: string, versionId: string) {
     if (ctx.actorType === 'GUEST' || ctx.guestGrantId) {
-      throw new NotFoundException('DOCUMENT_VERSION_NOT_FOUND');
+      // G02-017: project-authorized client/consultant *read* of a currently
+      // approved verified contractor version. Never expose uploader name,
+      // reviewer identity, private comments or internal companion notes.
+      if(!ctx.guestGrantId)throw new NotFoundException('DOCUMENT_VERSION_NOT_FOUND');
+      return this.db.withTenantContext(ctx,async(client:PoolClient)=>{
+        const {rows}=await client.query(
+          `SELECT dv.id,dv.document_id,dv.revision_code,dv.review_status,
+                  dv.file_status,dv.issue_date,dv.expiry_date,dv.row_version,
+                  d.title AS document_title,d.doc_type_key
+             FROM guest_grants g
+             JOIN document_versions dv
+              ON dv.org_id=g.org_id AND dv.project_id=g.project_id
+              AND dv.id=$3 AND dv.deleted_at IS NULL
+             JOIN documents d
+              ON d.org_id=dv.org_id AND d.project_id=dv.project_id
+              AND d.id=dv.document_id AND d.deleted_at IS NULL
+              AND d.current_approved_version_id=dv.id
+            WHERE g.org_id=$1 AND g.project_id=$2 AND g.id=$4
+              AND g.principal_user_id=$5
+              AND g.status='ACTIVE' AND g.expires_at>now()
+              AND g.grant_type IN ('CLIENT_VIEW','CONSULTANT_REVIEW','MC_VIEW','AUDITOR_READ')
+              AND g.capabilities @> ARRAY['document.read']::text[]
+              AND dv.file_status='READY' AND dv.review_status='APPROVED'
+            LIMIT 1`,
+          [ctx.orgId,projectId,versionId,ctx.guestGrantId,ctx.userId],
+        );
+        if(!rows.length)throw new NotFoundException('DOCUMENT_VERSION_NOT_FOUND');
+        const v=rows[0];
+        return {
+          versionId:v.id,documentId:v.document_id,
+          documentTitle:v.document_title,docTypeKey:v.doc_type_key,
+          revisionCode:v.revision_code,issueDate:v.issue_date,
+          expiryDate:v.expiry_date,fileStatus:'READY',reviewStatus:'APPROVED',
+          rowVersion:v.row_version,comments:[],
+          reviewerIdentityRedacted:true,
+        };
+      });
     }
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
       const verRes = await client.query(
