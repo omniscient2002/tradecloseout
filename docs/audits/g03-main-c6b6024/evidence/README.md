@@ -37,7 +37,7 @@ To reproduce this portable version on the reviewed source plus these audit files
 # Set MIGRATOR_DATABASE_URL and APP_DATABASE_URL to environment-local disposable
 # PostgreSQL 16 services. The administrator must create/drop disposable databases;
 # runtime access must use the restricted application role. Never use production.
-pnpm --filter @tradecloseout/api exec jest --config ../../docs/groups/G03/evidence/jest.config.cjs --runInBand
+pnpm --filter @tradecloseout/api exec jest --config ../../docs/audits/g03-main-c6b6024/evidence/jest.config.cjs --runInBand
 ```
 
 Optionally set `G03_AUDIT_OUTPUT_DIR` to select a writable evidence directory.

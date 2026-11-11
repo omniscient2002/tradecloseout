@@ -6,6 +6,15 @@ merge, provider certification or deployment were performed. G03 is Organisations
 as identified by docs/groups/G01/original-audit.md:693. Older reports use G03 for
 unrelated gap IDs; this report concerns the organisation group.
 
+## Relationship to existing candidate audit
+
+This is the main-source snapshot audit, not the canonical 23-finding G03 candidate
+audit in PR #11 (33d32a55a1286fd2b18e1c083b8a02d88a5244f6), which assesses the
+G01 candidate 863e6e0c56ad4a92af2580fbcbfc179832056b2d. Local G03-001..038 labels
+in this snapshot are source-qualified and must not be substituted for PR #11 IDs.
+This bundle lives outside docs/groups/G03 to preserve that existing inventory.
+Proposed fixes in PR #13 are also unmerged and require their own exact-head review.
+
 ## Evidence and scope
 
 Primary: entire organisations controller/service/module; identity registration,
