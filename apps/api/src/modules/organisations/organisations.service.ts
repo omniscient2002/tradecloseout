@@ -715,6 +715,12 @@ export class OrganisationsService {
         throw new NotFoundException({ code: 'NOT_FOUND', detail: 'Member not found in organisation.' });
       }
       const targetMember = targetMemberRows[0];
+      if (actor[0]?.role !== 'R-OWNER' && targetMember.role === 'R-ADMIN') {
+        throw new ForbiddenException({code:'PROTECTED_MEMBER_TRANSITION'});
+      }
+      if (targetMember.status === 'REMOVED') {
+        throw new ConflictException({code:'MEMBERSHIP_ALREADY_REMOVED'});
+      }
 
       // Guardrail (11 §4.13 & WF-21): Cannot suspend or remove the sole Owner
       if (targetMember.role === 'R-OWNER' && input.action !== 'REASSIGN_ONLY') {
@@ -851,6 +857,32 @@ export class OrganisationsService {
               detail:'Replacement has no active assignment to one or more affected projects.'});
           }
         }
+        const {rows:reviewRoleNeeds}=await client.query(
+          `SELECT DISTINCT rv.project_id,r.reviewer_role
+             FROM reviews rv
+             JOIN document_versions dv ON dv.id=rv.document_version_id
+               AND dv.org_id=rv.org_id AND dv.project_id=rv.project_id
+             JOIN document_requirements dr ON dr.document_id=dv.document_id
+               AND dr.org_id=rv.org_id AND dr.project_id=rv.project_id
+             JOIN requirements r ON r.id=dr.requirement_id
+               AND r.org_id=dr.org_id AND r.project_id=dr.project_id
+            WHERE rv.org_id=$1 AND rv.reviewer_user_id=$2
+              AND rv.status IN ('PENDING','IN_REVIEW')
+              AND r.reviewer_role IS NOT NULL`,
+          [ctx.orgId,input.targetUserId],
+        );
+        for (const required of reviewRoleNeeds) {
+          const {rows:projectRoleRows}=await client.query(
+            `SELECT role FROM project_members WHERE org_id=$1 AND project_id=$2
+               AND user_id=$3 AND status='ACTIVE' FOR SHARE`,
+            [ctx.orgId,required.project_id,input.replacementUserId],
+          );
+          const eligibleRoles=[repRows[0]?.role,...projectRoleRows.map(p=>p.role)];
+          if (!eligibleRoles.includes(required.reviewer_role) &&
+              !eligibleRoles.some(role=>role==='R-OWNER' || role==='R-ADMIN')) {
+            throw new UnprocessableEntityException({code:'REPLACEMENT_REVIEW_ROLE_REQUIRED'});
+          }
+        }
         if (repRows.length === 0 || repRows[0].status !== 'ACTIVE') {
           throw new UnprocessableEntityException({
             code: 'INVALID_REPLACEMENT_MEMBER',
@@ -921,6 +953,13 @@ export class OrganisationsService {
         reassignedTo: input.replacementUserId ?? null,
         gapReport,
       };
+    });
+  }
+
+  async suspendMember(ctx: TenantActorContext, orgId: string, targetUserId: string) {
+    if (orgId !== ctx.orgId) throw new NotFoundException('ORGANISATION_NOT_FOUND');
+    return this.offboardOrReassignMember(ctx,{
+      targetUserId,action:'SUSPEND',
     });
   }
 
