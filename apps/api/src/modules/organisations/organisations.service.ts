@@ -49,7 +49,7 @@ export class OrganisationsService {
    */
   async getDashboard(ctx: TenantActorContext, targetOrgId: string) {
     const orgId = targetOrgId === 'current' ? ctx.orgId : targetOrgId;
-    if (ctx.guestGrantId) throw new NotFoundException('ORGANISATION_NOT_FOUND');
+    if (orgId !== ctx.orgId || ctx.guestGrantId) throw new NotFoundException('ORGANISATION_NOT_FOUND');
     const projectRead = hasPermission({ orgRole: ctx.orgRole, projectRole: ctx.projectRole }, 'project.read');
     if (!projectRead.allowed) throw new NotFoundException('ORGANISATION_NOT_FOUND');
     const projectScopeClause = projectRead.scope === 'S'
@@ -768,7 +768,7 @@ export class OrganisationsService {
       // delegation plan is confirmed. Existing historical principals stay put.
       if (hasOpenWork || input.replacementUserId || input.action === 'REMOVE') {
         const {rows:blockedProjects}=await client.query(
-          `SELECT DISTINCT p.id,p.status FROM projects p
+          `SELECT p.id,p.status FROM projects p
              WHERE p.org_id=$1 AND p.status NOT IN ('DRAFT','ACTIVE','HANDOVER')
                AND (
                  EXISTS(SELECT 1 FROM requirements r WHERE r.org_id=p.org_id
@@ -953,77 +953,13 @@ export class OrganisationsService {
     if (newOwnerUserId === ctx.userId) {
       throw new UnprocessableEntityException({code:'OWNER_TRANSFER_REQUIRES_DIFFERENT_MEMBER'});
     }
-    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
-      const { rows: currentOwnerRows } = await client.query(
-        `SELECT id, role, status FROM memberships WHERE org_id = $1 AND user_id = $2 FOR UPDATE`,
-        [ctx.orgId, ctx.userId],
-      );
-      if (currentOwnerRows[0]?.role !== 'R-OWNER' ||
-          currentOwnerRows[0]?.status !== 'ACTIVE') {
-        throw new ForbiddenException({
-          code: 'FORBIDDEN',
-          detail: 'Only the current Organisation Owner can transfer ownership.',
-        });
-      }
-
-      const { rows: targetRows } = await client.query(
-        `SELECT id, status FROM memberships WHERE org_id = $1 AND user_id = $2 FOR UPDATE`,
-        [ctx.orgId, newOwnerUserId],
-      );
-      if (targetRows.length === 0 || targetRows[0].status !== 'ACTIVE') {
-        throw new UnprocessableEntityException({
-          code: 'INVALID_TARGET_OWNER',
-          detail: 'Target user must be an active member of this organisation.',
-        });
-      }
-
-      await client.query(
-        `UPDATE memberships SET role = 'R-ADMIN', row_version = row_version + 1, updated_at = now()
-          WHERE org_id = $1 AND user_id = $2`,
-        [ctx.orgId, ctx.userId],
-      );
-      await client.query(
-        `UPDATE memberships SET role = 'R-OWNER', row_version = row_version + 1, updated_at = now()
-          WHERE org_id = $1 AND user_id = $2`,
-        [ctx.orgId, newOwnerUserId],
-      );
-
-      // The former owner is now an administrator. Any outstanding R-ADMIN
-      // invitations that relied on owner-only issuance authority are void.
-      await client.query(
-        `UPDATE invitations SET status='REVOKED'
-          WHERE org_id=$1 AND invited_by=$2 AND status IN ('PENDING','DELIVERY_PENDING')
-            AND role='R-ADMIN'`,
-        [ctx.orgId,ctx.userId],
-      );
-
-      // A privilege transfer changes assurance requirements for BOTH parties.
-      // The old and new owners must reauthenticate; stale MFA and CSRF cannot
-      // authorise any action after ownership has changed.
-      await client.query(
-        `WITH revoked AS (
-           UPDATE sessions SET revoked_at=now(),mfa_verified=false,
-                 mfa_verified_at=NULL
-            WHERE active_org_id=$1 AND user_id=ANY($2::uuid[])
-              AND revoked_at IS NULL
-            RETURNING id,user_id,active_org_id
-         )
-         INSERT INTO auth_security_events
-           (id,actor_user_id,org_id,session_id,event_type,outcome)
-         SELECT gen_random_uuid(),user_id,active_org_id,id,
-           'OWNERSHIP_TRANSFER_SESSION_REVOKED','SUCCESS' FROM revoked`,
-        [ctx.orgId,[ctx.userId,newOwnerUserId]],
-      );
-
-      emit({
-        eventType: 'ORG_OWNERSHIP_TRANSFERRED',
-        entityType: 'ORGANISATION',
-        entityId: ctx.orgId,
-        beforeJson: { ownerUserId: ctx.userId },
-        afterJson: { ownerUserId: newOwnerUserId },
-      });
-
-      return { previousOwnerUserId: ctx.userId, newOwnerUserId };
+    // FR-ORG-014 requires an expiring, two-party identity-bound intent with
+    // recipient confirmation and fresh MFA. A one-sided POST must never
+    // transfer sole control. This remains disabled until that contract is
+    // implemented and independently accepted.
+    throw new ConflictException({
+      code:'OWNERSHIP_TWO_PARTY_CONFIRMATION_REQUIRED',
+      detail:'One-sided ownership transfer is disabled until two-party confirmation is available.',
     });
   }
 
