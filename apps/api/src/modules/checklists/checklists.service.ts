@@ -16,6 +16,7 @@ import {
   TenantActorContext,
   DomainOutboxEvent,
 } from '@tradecloseout/db';
+import { assertMemberResourceScope } from '@tradecloseout/db/tenant-tx';
 import {
   resolveConfigurationHierarchy,
   ConfigLayerInput,
@@ -885,7 +886,15 @@ export class ChecklistsService {
       );
 
       // FR-CHK-010: a requirement with due_at IS NULL is never derived as MISSING
-      return res.rows.map((row) => {
+      return res.rows.filter((row:any)=>{
+        try{
+          assertMemberResourceScope(ctx,'requirement',{
+            id:row.id,groupKey:row.group_key,
+            createdAt:row.created_at?.toISOString?.()||String(row.created_at),
+          },false);
+          return true;
+        }catch{return false;}
+      }).map((row:any) => {
         const item = {
           ...row,
           latestVersionId: row.latest_version_id || null,
