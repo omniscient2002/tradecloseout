@@ -10,6 +10,7 @@ import { Reflector } from '@nestjs/core';
 import { Pool } from 'pg';
 import { hasPermission } from '@tradecloseout/shared';
 import { recordDeniedAuthenticationEvent } from '../../modules/identity/auth-security';
+import { assertValidMemberProjectScope } from '@tradecloseout/db/tenant-tx';
 
 export const REQUIRE_PERMISSION_KEY = 'require_permission';
 export const RequirePermission = (permission: string) =>
@@ -181,7 +182,15 @@ export class PermissionGuard implements CanActivate {
            user.docControllerOrgWideDownload===true) && !projectRole){
         throw new NotFoundException({code:'RESOURCE_NOT_FOUND'});
       }
-      if (projectId && projectScope?.readOnly===true &&
+      if (projectId && !isGuest && user.orgRole!=='R-OWNER' && user.orgRole!=='R-ADMIN') {
+        try {
+          assertValidMemberProjectScope(projectScope);
+        } catch {
+          // Do not widen unknown stored restrictions into unrestricted access.
+          throw new ForbiddenException({code:'RESOURCE_SCOPE_INVALID'});
+        }
+      }
+      if (projectId && (projectScope?.readOnly===true || projectScope?.mode==='READ_ONLY') &&
           !['GET','HEAD','OPTIONS'].includes(String(req.method||'').toUpperCase())) {
         throw new ForbiddenException({code:'RESOURCE_SCOPE_READ_ONLY'});
       }
