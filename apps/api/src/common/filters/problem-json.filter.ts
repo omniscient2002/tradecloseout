@@ -90,13 +90,25 @@ export class ProblemJsonExceptionFilter implements ExceptionFilter {
             'Unhandled authentication exception (details redacted)',
           );
         } else {
+          // Provider exceptions, SQL errors and validation library messages can
+          // carry credentials or customer content outside auth routes too.
           this.logger.error(
-            { requestId, err: exception.message, stack: exception.stack },
-            'Unhandled internal exception',
+            { requestId, exceptionType: exception.name, area: 'APPLICATION' },
+            'Unhandled internal exception (details redacted)',
           );
         }
       }
     }
+
+    // Never trust arbitrary internal exception text or caller-supplied
+    // fields as public diagnostic data. Correlation uses only requestId.
+    if (status >= 500) {
+      title = status === HttpStatus.SERVICE_UNAVAILABLE
+        ? 'Service temporarily unavailable' : 'Unexpected server error';
+      detail = 'The service could not complete the request. Quote the requestId if contacting support.';
+      fieldErrors = [];
+    }
+    if (!/^[A-Z][A-Z0-9_]{0,63}$/.test(code)) code = this.defaultCodeForStatus(status);
 
     const slug = code.toLowerCase().replace(/_/g, '-');
     const problem: ProblemDetails = {
