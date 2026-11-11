@@ -128,7 +128,8 @@ export class SessionCsrfGuard implements CanActivate {
               s.mfa_verified_at,
               u.name AS user_name,
               u.status AS user_status,
-              o.status AS org_status
+              o.status AS org_status,
+              o.doc_controller_org_wide_download
          FROM sessions s
          JOIN users u ON u.id = s.user_id
          JOIN organisations o ON o.id = s.active_org_id
@@ -407,7 +408,8 @@ export class SessionCsrfGuard implements CanActivate {
       guestGrantId: session.guest_grant_id,
       guestProjectId: guestProjectId,
       guestAuthorityVerified,
-      docControllerOrgWideDownload: false,
+      docControllerOrgWideDownload: session.guest_grant_id
+        ? false : session.doc_controller_org_wide_download === true,
     };
 
     (req as any).userContext = {
