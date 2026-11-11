@@ -98,6 +98,14 @@ export class OrganisationsController {
     return this.orgsService.getOffboardingGapReport(req.userContext, orgId, requireOrganisationUuid(targetUserId, 'userId'));
   }
 
+  @Post('members/:userId/suspend')
+  @RequirePermission('org.manage_members')
+  async suspendMember(@Req() req: any, @Param('orgId') orgId: string,
+    @Param('userId') targetUserId: string) {
+    return this.orgsService.suspendMember(req.userContext, orgId,
+      requireOrganisationUuid(targetUserId, 'userId'));
+  }
+
   @Delete('members/:userId')
   @RequirePermission('org.manage')
   async removeMember(
