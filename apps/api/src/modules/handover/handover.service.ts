@@ -991,12 +991,42 @@ export class HandoverService {
     projectId: string,
     options?: { purpose?: string; includeArchiveFile?: boolean },
   ) {
+    // G02-014: manifest-only exports still reveal highly sensitive client,
+    // commercial, document and reviewer information.
+    if(ctx.guestGrantId || (ctx.orgRole!=='R-OWNER' && ctx.orgRole!=='R-ADMIN')){
+      throw new ForbiddenException({code:'EXPORT_AUTHORITY_REQUIRED'});
+    }
+    const reason=options?.purpose;
+    if(typeof reason!=='string' || reason.trim().length<10 ||
+       reason.length>500){
+      throw new UnprocessableEntityException({code:'EXPORT_REASON_REQUIRED'});
+    }
     return withTenantTransaction(this.pool, ctx, async (client, emit) => {
-      // 1. Fetch project info
-      const { rows: projRows } = await client.query(
-        `SELECT id, code, name, site_json, created_at FROM projects WHERE org_id = $1 AND id = $2 AND purged_at IS NULL`,
-        [ctx.orgId, projectId],
+      // Serialize hourly quota checks and project closure with the same
+      // project lock. Concurrent export submissions cannot both see empty.
+      const {rows:projRows}=await client.query(
+        `SELECT id,code,name,site_json,created_at FROM projects
+           WHERE org_id=$1 AND id=$2 AND purged_at IS NULL FOR UPDATE`,
+        [ctx.orgId,projectId],
       );
+      if(ctx.sessionId){
+        const {rows:fresh}=await client.query(
+          `SELECT id FROM sessions WHERE id=$1 AND user_id=$2
+             AND active_org_id=$3 AND revoked_at IS NULL
+             AND mfa_verified=true AND mfa_verified_at>now()-interval '10 minutes'
+             FOR SHARE`,
+          [ctx.sessionId,ctx.userId,ctx.orgId],
+        );
+        if(!fresh.length)throw new ForbiddenException({code:'EXPORT_FRESH_MFA_REQUIRED'});
+      }
+      const {rows:recent}=await client.query(
+        `SELECT id FROM archive_exports
+           WHERE org_id=$1 AND project_id=$2
+             AND created_at>now()-interval '1 hour' LIMIT 1`,
+        [ctx.orgId,projectId],
+      );
+      if(recent.length)throw new ConflictException({code:'EXPORT_HOURLY_LIMIT'});
+      // 1. Fetch project info
       if (!projRows.length) {
         throw new NotFoundException('PROJECT_NOT_FOUND');
       }
