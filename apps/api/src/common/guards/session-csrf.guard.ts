@@ -347,6 +347,7 @@ export class SessionCsrfGuard implements CanActivate {
     }
 
     let projectRole: string | undefined = undefined;
+    let projectScope: Record<string,unknown> | undefined = undefined;
     const targetProjectId =
       req.params?.projectId ||
       (req.path?.startsWith('/api/v1/projects/') ? req.params?.id : undefined);
@@ -358,7 +359,7 @@ export class SessionCsrfGuard implements CanActivate {
         await client.query(`SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`, [session.active_org_id]);
         await client.query(`SELECT set_config('app.current_user', $1, true)`, [session.user_id]);
         const pmRes = await client.query(
-          `SELECT pm.role
+          `SELECT pm.role, pm.scope_json
              FROM project_members pm
              JOIN projects p ON p.id = pm.project_id AND p.org_id = pm.org_id
             WHERE pm.org_id = $1 AND pm.project_id = $2 AND pm.user_id = $3
@@ -367,6 +368,7 @@ export class SessionCsrfGuard implements CanActivate {
           [session.active_org_id, targetProjectId, session.user_id],
         );
         projectRole = pmRes.rows[0]?.role;
+        projectScope = pmRes.rows[0]?.scope_json;
         await client.query('COMMIT');
       } catch (err) {
         await client.query('ROLLBACK');
@@ -387,6 +389,8 @@ export class SessionCsrfGuard implements CanActivate {
       activeOrgId: session.active_org_id,
       orgRole: orgRole,
       projectRole: projectRole,
+      projectId: targetProjectId || undefined,
+      projectScope,
       requestId: requestIdFor(req),
       ip: req.ip || '0.0.0.0',
       userAgent: safeAuthenticationDeviceLabel(req.headers['user-agent']),
@@ -403,6 +407,8 @@ export class SessionCsrfGuard implements CanActivate {
       orgId: session.active_org_id,
       orgRole: orgRole,
       projectRole: projectRole,
+      projectId: targetProjectId || undefined,
+      projectScope,
       guestCapabilities: guestCapabilities,
       guestScope: guestScope,
       guestGrantId: session.guest_grant_id,
@@ -421,11 +427,15 @@ export class SessionCsrfGuard implements CanActivate {
       requestId: authData.requestId,
       orgRole,
       projectRole,
+      projectId: targetProjectId || guestProjectId || undefined,
+      projectScope,
       guestGrantId: session.guest_grant_id || undefined,
       guestAuthorityVerified,
       guestProjectId: guestProjectId,
       guestScope,
       guestCapabilities,
+      docControllerOrgWideDownload: session.guest_grant_id
+        ? false : session.doc_controller_org_wide_download === true,
     };
 
     // Sliding expiry is earned ONLY after authentication, CSRF, current
