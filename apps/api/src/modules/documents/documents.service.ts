@@ -78,24 +78,42 @@ export class DocumentsService {
     this.storageAdapter = storageAdapter || new S3StorageService();
   }
 
-  private async assertGuestVersionScope(client: PoolClient, ctx: ExecutionContext, versionId: string, capability: 'document.upload' | 'document.download') {
-    if (ctx.actorType !== 'GUEST' && !ctx.guestGrantId) return;
-    if (!ctx.guestGrantId) throw new NotFoundException('VERSION_NOT_FOUND');
-    const { rows } = await client.query(
-      `SELECT 1
-         FROM guest_grants g
+  private async assertGuestVersionScope(
+    client:PoolClient,ctx:ExecutionContext,versionId:string,
+    capability:'document.upload'|'document.download',
+  ){
+    if(ctx.actorType!=='GUEST'&&!ctx.guestGrantId)return;
+    if(!ctx.guestGrantId)throw new NotFoundException('VERSION_NOT_FOUND');
+    const {rows}=await client.query(
+      `SELECT 1 FROM guest_grants g
          JOIN document_versions dv
-           ON dv.org_id = g.org_id AND dv.project_id = g.project_id
-          AND dv.uploaded_by_grant_id = g.id AND dv.id = $3
-         JOIN document_requirements dr
-           ON dr.org_id = dv.org_id AND dr.project_id = dv.project_id AND dr.document_id = dv.document_id
-        WHERE g.org_id = $1 AND g.id = $2 AND g.status = 'ACTIVE' AND g.expires_at > now()
+           ON dv.org_id=g.org_id AND dv.project_id=g.project_id
+          AND dv.id=$3 AND dv.deleted_at IS NULL
+         JOIN documents d ON d.org_id=dv.org_id AND d.project_id=dv.project_id
+          AND d.id=dv.document_id AND d.deleted_at IS NULL
+        WHERE g.org_id=$1 AND g.id=$2 AND g.status='ACTIVE'
+          AND g.expires_at>now() AND g.principal_user_id=$5
           AND g.capabilities @> ARRAY[$4]::text[]
-          AND COALESCE(g.scope_json->'requirementIds', '[]'::jsonb) ? dr.requirement_id::text
+          AND (
+            (g.grant_type IN ('SUPPLIER_UPLOAD','SUPPLIER_CONTRIBUTOR')
+              AND dv.uploaded_by_grant_id=g.id
+              AND EXISTS(
+                SELECT 1 FROM document_requirements dr
+                 WHERE dr.org_id=d.org_id AND dr.project_id=d.project_id
+                   AND dr.document_id=d.id
+                   AND COALESCE(g.scope_json->'requirementIds','[]'::jsonb)
+                         ? dr.requirement_id::text
+              ))
+            OR
+            (g.grant_type IN ('CLIENT_VIEW','CONSULTANT_REVIEW','MC_VIEW','AUDITOR_READ')
+              AND $4='document.download'
+              AND dv.file_status='READY' AND dv.review_status='APPROVED'
+              AND d.current_approved_version_id=dv.id)
+          )
         LIMIT 1`,
-      [ctx.orgId, ctx.guestGrantId, versionId, capability],
+      [ctx.orgId,ctx.guestGrantId,versionId,capability,ctx.userId],
     );
-    if (!rows.length) throw new NotFoundException('VERSION_NOT_FOUND');
+    if(!rows.length)throw new NotFoundException('VERSION_NOT_FOUND');
   }
 
   /**
@@ -167,21 +185,36 @@ export class DocumentsService {
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
       if (ctx.actorType === 'GUEST' || ctx.guestGrantId) {
         if (!ctx.guestGrantId) throw new NotFoundException('DOCUMENT_NOT_FOUND');
-        const { rows } = await client.query(
-          `SELECT DISTINCT dv.id, dv.version_no, dv.revision_code, dv.file_status, dv.review_status,
-                  dv.issue_date, dv.expiry_date, dv.created_at
+        const {rows}=await client.query(
+          `SELECT DISTINCT dv.id,dv.version_no,dv.revision_code,dv.file_status,
+                  dv.review_status,dv.issue_date,dv.expiry_date,dv.created_at
              FROM guest_grants g
-             JOIN documents d ON d.org_id = g.org_id AND d.project_id = g.project_id AND d.id = $3
+             JOIN documents d ON d.org_id=g.org_id AND d.project_id=g.project_id
+              AND d.id=$3 AND d.deleted_at IS NULL
              JOIN document_versions dv
-               ON dv.org_id = d.org_id AND dv.project_id = d.project_id AND dv.document_id = d.id
-              AND dv.uploaded_by_grant_id = g.id AND dv.deleted_at IS NULL
-             JOIN document_requirements dr
-               ON dr.org_id = d.org_id AND dr.project_id = d.project_id AND dr.document_id = d.id
-            WHERE g.org_id = $1 AND g.id = $2 AND g.status = 'ACTIVE' AND g.expires_at > now()
-              AND g.capabilities @> ARRAY['document.upload']::text[] AND d.deleted_at IS NULL
-              AND COALESCE(g.scope_json->'requirementIds', '[]'::jsonb) ? dr.requirement_id::text
+              ON dv.org_id=d.org_id AND dv.project_id=d.project_id
+              AND dv.document_id=d.id AND dv.deleted_at IS NULL
+            WHERE g.org_id=$1 AND g.id=$2 AND g.status='ACTIVE'
+              AND g.expires_at>now() AND g.principal_user_id=$4
+              AND (
+                (g.grant_type IN ('SUPPLIER_UPLOAD','SUPPLIER_CONTRIBUTOR')
+                 AND g.capabilities && ARRAY['document.upload','document.read']::text[]
+                 AND dv.uploaded_by_grant_id=g.id
+                 AND EXISTS(
+                   SELECT 1 FROM document_requirements dr
+                    WHERE dr.org_id=d.org_id AND dr.project_id=d.project_id
+                      AND dr.document_id=d.id
+                      AND COALESCE(g.scope_json->'requirementIds','[]'::jsonb)
+                             ? dr.requirement_id::text
+                 ))
+                OR
+                (g.grant_type IN ('CLIENT_VIEW','CONSULTANT_REVIEW','MC_VIEW','AUDITOR_READ')
+                 AND g.capabilities @> ARRAY['document.read']::text[]
+                 AND dv.file_status='READY' AND dv.review_status='APPROVED'
+                 AND d.current_approved_version_id=dv.id)
+              )
             ORDER BY dv.version_no DESC`,
-          [ctx.orgId, ctx.guestGrantId, documentId],
+          [ctx.orgId,ctx.guestGrantId,documentId,ctx.userId],
         );
         if (!rows.length) throw new NotFoundException('DOCUMENT_NOT_FOUND');
         return { id: documentId, versions: rows };
