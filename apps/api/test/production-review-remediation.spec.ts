@@ -59,7 +59,7 @@ describe('Production Review Remediation Suite (NP01..NP06, NP09, NP10)', () => {
       };
 
       const commissioningService = new CommissioningService(mockPool);
-      const res = await commissioningService.signInspectionWitness(ctx, projectId, inspectionId, {
+      const res = await commissioningService.recordInspectionWitnessAttendance(ctx, projectId, inspectionId, {
         partyName: 'Unverified Consultant Pvt Ltd',
         representativeName: 'Jane Doe',
         role: 'CONSULTANT',
@@ -88,7 +88,7 @@ describe('Production Review Remediation Suite (NP01..NP06, NP09, NP10)', () => {
 
       const commissioningService = new CommissioningService(mockPool);
       await expect(
-        commissioningService.signInspectionWitness(ctx, projectId, inspectionId, {
+        commissioningService.recordInspectionWitnessAttendance(ctx, projectId, inspectionId, {
           partyName: 'Fake Corp',
           representativeName: 'Jane Doe',
           role: 'CONSULTANT',

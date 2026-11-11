@@ -309,12 +309,15 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
             executedQueries.push({ sql, params });
             if (sql.includes('FROM submissions')) {
               return {
-                rows: [{ id: 'sub-1', project_id: projectId, status: 'SUBMITTED', package_id: 'pkg-1' }],
+                rows: [{ id: 'sub-1', project_id: projectId, status: 'SUBMITTED', package_id: 'pkg-1', package_purpose: 'FULL_HANDOVER' }],
               };
             }
             if (sql.includes('FROM submission_recipients')) {
               return {
-                rows: [{ id: 'sr-1', status: 'SENT', recipient_party_id: 'party-consultant', decided_at: null }],
+                rows: [{ id: 'sr-1', status: 'SENT', recipient_party_id: 'party-consultant', decided_at: null,
+                  grant_status: 'ACTIVE', grant_expires_at: new Date(Date.now() + 60_000),
+                  grant_project_id: projectId, grant_party_id: 'party-consultant',
+                  grant_capabilities: ['package.accept'], grant_independent_authority_verified_at: new Date() }],
               };
             }
             if (sql.includes('UPDATE submission_recipients')) {
@@ -328,7 +331,7 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
 
       const handoverService = new HandoverService(mockPool, {} as any);
       const res = await handoverService.recordRecipientSubmissionDecision(
-        mockTenantActorCtx,
+        { ...mockTenantActorCtx, actorType: 'GUEST', guestGrantId: 'grant-test', guestCapabilities: ['package.accept'] },
         projectId,
         'sub-1',
         {

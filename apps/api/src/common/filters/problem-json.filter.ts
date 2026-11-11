@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
+import { requestIdFor } from '../security/audit-metadata';
 
 export interface ProblemDetails {
   type: string;
@@ -28,7 +29,8 @@ export class ProblemJsonExceptionFilter implements ExceptionFilter {
     const ctx = host.switchToHttp();
     const res = ctx.getResponse<Response>();
     const req = ctx.getRequest<Request>();
-    const requestId = (req.headers['x-request-id'] as string) || 'req_unknown';
+    const requestId = requestIdFor(req);
+    const sensitiveRoute = /^\/api\/v1\/(?:auth|guest)(?:\/|$)/.test(req.path || '');
 
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let code = 'INTERNAL_ERROR';
@@ -65,16 +67,34 @@ export class ProblemJsonExceptionFilter implements ExceptionFilter {
     } else if (exception instanceof Error) {
       // Map known domain / database error codes without leaking SQL details (10 §4)
       const anyErr = exception as any;
-      if (anyErr.code === 'PLAN_LIMIT_EXCEEDED') {
+      if (exception.message === 'AUTH_SESSION_CONTEXT_CHANGED') {
+        // A session changed between the request guard and the transactional
+        // write lock (logout, org switch, MFA rotation or member offboarding).
+        // This is an expected safe rejection, not an internal server error.
+        status = HttpStatus.CONFLICT;
+        code = 'AUTH_CONTEXT_CHANGED';
+        title = 'Authentication context changed';
+        detail = 'Your session or organisation changed. Reauthenticate before changing data.';
+      } else if (anyErr.code === 'PLAN_LIMIT_EXCEEDED') {
         status = HttpStatus.CONFLICT;
         code = 'PLAN_LIMIT_EXCEEDED';
         title = 'Plan limit reached';
         detail = exception.message;
       } else {
-        this.logger.error(
-          { requestId, err: exception.message, stack: exception.stack },
-          'Unhandled internal exception',
-        );
+        // Guest invitation tokens occur in URL paths and some upstream
+        // provider failures include destination/OTP information in their
+        // message or stack. Never log those untrusted values for auth routes.
+        if (sensitiveRoute) {
+          this.logger.error(
+            { requestId, exceptionType: exception.name, area: 'AUTH' },
+            'Unhandled authentication exception (details redacted)',
+          );
+        } else {
+          this.logger.error(
+            { requestId, err: exception.message, stack: exception.stack },
+            'Unhandled internal exception',
+          );
+        }
       }
     }
 

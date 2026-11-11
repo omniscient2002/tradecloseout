@@ -4,12 +4,21 @@ import { createHash } from 'crypto';
 import { uuidv7 } from 'uuidv7';
 import { deliverNotification } from './notification-delivery';
 import { isIndiaQuietHour, sumPaise } from '@tradecloseout/shared';
+import { AuthDeliveryLedger } from '@tradecloseout/db';
 
 export class TradeCloseoutScheduler {
   constructor(
     private readonly pool: Pool,
     private readonly redis: Redis,
   ) {}
+
+  async reconcileAuthenticationDeliveries():Promise<void> {
+    await this.runWithLeaderLock('g01-delivery-receipts',90,async()=>{
+      const ledger=new AuthDeliveryLedger(this.pool);
+      await ledger.reconcileDue(20);
+      await ledger.sendRecoveryNotices();
+    });
+  }
 
   /**
    * Acquires a distributed Redis leader lock before executing any scheduled job (15 §2, TC2-026).
@@ -99,6 +108,93 @@ export class TradeCloseoutScheduler {
       week: `${isoYear}-W${String(week).padStart(2, '0')}`,
       hourSlot: `${day}-${parts.hour}`,
     };
+  }
+
+  /**
+   * G01: Hourly bounded authentication-ephemeral cleanup. Preserve auth
+   * security events for the configured retention period and never remove
+   * unexpired OTPs or live sessions.
+   */
+  async cleanupAuthenticationEphemera(): Promise<{ budgets: number; challenges: number; sessions: number }> {
+    const [{ rowCount: budgets }, { rowCount: challenges }, { rowCount: sessions }] = await Promise.all([
+      this.pool.query(
+        `DELETE FROM auth_request_budgets
+          WHERE ctid IN (
+            SELECT ctid FROM auth_request_budgets
+            WHERE expires_at < now() - interval '1 day'
+            LIMIT 2000
+          )`,
+      ),
+      this.pool.query(
+        `DELETE FROM otp_challenges
+          WHERE ctid IN (
+            SELECT ctid FROM otp_challenges
+            WHERE expires_at < now() - interval '30 days'
+              AND (consumed_at IS NOT NULL OR expires_at < now())
+            LIMIT 2000
+          )`,
+      ),
+      this.pool.query(
+        `DELETE FROM sessions
+          WHERE ctid IN (
+            SELECT ctid FROM sessions
+            WHERE (revoked_at < now() - interval '365 days'
+               OR absolute_expires_at < now() - interval '365 days')
+            LIMIT 2000
+          )`,
+      ),
+    ]);
+    return { budgets: budgets || 0, challenges: challenges || 0, sessions: sessions || 0 };
+  }
+
+  /**
+   * G01-020: stale invitation delivery records remain nonredeemable until
+   * explicitly reclaimed, and completed invitation tokens cannot survive
+   * their expiry. Bounded tenant-RLS updates are safe across worker replicas.
+   * This never promotes a delivery to a usable invitation.
+   */
+  async cleanupStaleInvitations(): Promise<{staleDelivery:number; expired:number}> {
+    const {rows:orgs}=await this.pool.query(
+      `SELECT id FROM organisations WHERE status='ACTIVE'`,
+    );
+    let staleDelivery=0,expired=0;
+    for(const org of orgs){
+      const client=await this.pool.connect();
+      try{
+        await client.query('BEGIN');
+        await client.query(
+          "SELECT set_config('app.current_org',$1,true),set_config('app.current_org_id',$1,true)",
+          [org.id],
+        );
+        const {rowCount:stale}=await client.query(
+          `UPDATE invitations SET status='REVOKED'
+             WHERE id IN (
+               SELECT id FROM invitations
+                WHERE org_id=$1 AND status='DELIVERY_PENDING'
+                  AND created_at<now()-interval '15 minutes'
+                ORDER BY created_at LIMIT 250 FOR UPDATE SKIP LOCKED
+             )`,
+          [org.id],
+        );
+        const {rowCount:outdated}=await client.query(
+          `UPDATE invitations SET status='EXPIRED'
+             WHERE id IN (
+               SELECT id FROM invitations
+                WHERE org_id=$1 AND status IN ('DELIVERY_PENDING','PENDING')
+                  AND expires_at<=now()
+                ORDER BY expires_at LIMIT 250 FOR UPDATE SKIP LOCKED
+             )`,
+          [org.id],
+        );
+        staleDelivery+=stale||0;
+        expired+=outdated||0;
+        await client.query('COMMIT');
+      }catch(error){
+        await client.query('ROLLBACK').catch(()=>{});
+        throw error;
+      }finally{client.release();}
+    }
+    return {staleDelivery,expired};
   }
 
   /**

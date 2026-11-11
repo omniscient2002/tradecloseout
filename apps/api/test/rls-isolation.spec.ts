@@ -5,6 +5,7 @@
 import { TenantDbService, ExecutionContext } from '../src/database/tenant-db.service';
 import { uuidv7 } from 'uuidv7';
 import { Pool } from 'pg';
+import { assertTestDatabaseTargetConsistency } from '../../../packages/db/test/helpers/disposable-database';
 
 describe('Spike 1: RLS Tenant Isolation Acceptance Suite', () => {
   let db: TenantDbService;
@@ -18,6 +19,9 @@ describe('Spike 1: RLS Tenant Isolation Acceptance Suite', () => {
   const projectBId = uuidv7();
 
   beforeAll(async () => {
+    // Fail before touching a fixture if the legacy DB_PORT path and the
+    // application/migrator DATABASE_URL are not the same PostgreSQL target.
+    assertTestDatabaseTargetConsistency();
     db = new TenantDbService();
 
     // Use tc_migrator connection to set up initial seed data

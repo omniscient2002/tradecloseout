@@ -42,7 +42,7 @@ export class ReviewsController {
   }
 
   @Get('projects/:projectId/reviews')
-  @RequirePermission('review.decide')
+  @RequirePermission('review.read')
   async listReviews(
     @Req() req: any,
     @Param('projectId') projectId: string,
@@ -52,7 +52,7 @@ export class ReviewsController {
   }
 
   @Get('reviews/:id')
-  @RequirePermission('review.decide')
+  @RequirePermission('review.read')
   async getReview(@Req() req: any, @Param('id') id: string) {
     return this.reviewsService.getReview(req.userContext, id);
   }

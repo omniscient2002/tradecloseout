@@ -18,17 +18,22 @@ import { compileAndPersistHandoverPackage, markHandoverPackageFailed } from './q
 import { compileAndPersistPortableArchive } from './queues/portable-archive.processor';
 import { BoundedByteStream } from './queues/bounded-stream';
 import { OUTBOX_EVENT_REGISTRY } from './event-registry';
+import { validateWorkerStartupConfig, assertWorkerRuntimeDatabasePrivileges } from './worker-startup-security';
 
 const execFileAsync = promisify(execFile);
 
+// In production/staging no development fallback may be selected. Connection
+// setup is lazy; bootWorker validates configuration and actual DB identity
+// before scheduling, polling or consuming a single tenant job.
+const nonProd = ['development','test'].includes(process.env.NODE_ENV || '');
 const pool = new Pool({
-  connectionString:
-    process.env.APP_DATABASE_URL ||
-    'postgres://tc_app:tc_app_pass@127.0.0.1:5432/tradecloseout',
+  connectionString: process.env.APP_DATABASE_URL ||
+    (nonProd ? 'postgres://tc_app:tc_app_pass@127.0.0.1:5432/tradecloseout' : ''),
 });
-
-const redis = new Redis(process.env.REDIS_URL || 'redis://127.0.0.1:6379', {
+const redis = new Redis(process.env.REDIS_URL ||
+  (nonProd ? 'redis://127.0.0.1:6379' : 'redis://invalid.invalid:6379'), {
   maxRetriesPerRequest: null,
+  lazyConnect: true,
 });
 
 const scheduler = new TradeCloseoutScheduler(pool, redis);
@@ -59,7 +64,17 @@ async function bootWorker() {
   console.log('TradeCloseout Background Worker & Leader-Locked Scheduler Booting...');
   console.log('======================================================================');
 
+  validateWorkerStartupConfig();
+  if (['staging','production'].includes(process.env.NODE_ENV || '')) {
+    await assertWorkerRuntimeDatabasePrivileges(pool);
+  }
+  // A successful TCP connection alone is not proof the queue is available.
+  await redis.connect();
+  await redis.ping();
   await checkDependencies();
+  if (['staging','production'].includes(process.env.NODE_ENV || '') && !qpdfAvailable) {
+    throw new Error('BOOT_WORKER_QPDF_REQUIRED');
+  }
 
   // 1. Scheduled Background Tasks
   const runScheduledCycles = async () => {
@@ -128,6 +143,34 @@ async function bootWorker() {
           }
         },
       );
+
+      await scheduler.runWithPeriodLock(
+        `auth-ephemera:${periods.hourSlot}`,
+        `sched:done:auth-ephemera:${periods.hourSlot}`,
+        300, 2 * 60 * 60,
+        async () => {
+          const removed = await scheduler.cleanupAuthenticationEphemera();
+          if (removed.budgets || removed.challenges || removed.sessions) {
+            console.log(`[Scheduler] Purged ${removed.budgets} expired auth budgets, ${removed.challenges} old OTPs and ${removed.sessions} old sessions.`);
+          }
+        },
+      );
+
+      await scheduler.runWithPeriodLock(
+        `g01-invitation-reconciliation:${periods.hourSlot}`,
+        `sched:done:g01-invitation-reconciliation:${periods.hourSlot}`,
+        300,2*60*60,
+        async()=>{
+          const outcome=await scheduler.cleanupStaleInvitations();
+          if(outcome.staleDelivery||outcome.expired){
+            console.log(
+              `[Scheduler] G01 invalidated ${outcome.staleDelivery} stale unconfirmed invitations and ${outcome.expired} expired invitation links.`,
+            );
+          }
+        },
+      );
+
+      await scheduler.reconcileAuthenticationDeliveries();
 
       // Notification delivery cycle honoring IST quiet hours
       const sentNotifications = await scheduler.dispatchQueuedNotifications();

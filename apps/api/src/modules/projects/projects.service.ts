@@ -392,15 +392,31 @@ export class ProjectsService {
             AND cs.checksum = hp.snapshot_checksum
           WHERE s.org_id = $1 AND s.project_id = $2
             AND s.status = 'ACCEPTED' AND hp.status = 'ACCEPTED'
+            AND hp.package_purpose = 'FULL_HANDOVER'
             AND hp.version_no = (
               SELECT MAX(p.version_no) FROM handover_packages p
                WHERE p.org_id = $1 AND p.project_id = $2
+                 AND p.package_purpose = 'FULL_HANDOVER'
             )
             AND s.id = (
               SELECT s2.id FROM submissions s2
                WHERE s2.org_id = s.org_id AND s2.project_id = s.project_id
                  AND s2.package_id = hp.id
                ORDER BY s2.submitted_at DESC, s2.id DESC LIMIT 1
+            )
+            -- The accepted dossier must carry the manifest of EVERY current
+            -- contractual obligation, not merely a milestone payment subset.
+            AND NOT EXISTS (
+              SELECT 1 FROM requirements required
+               WHERE required.org_id = hp.org_id AND required.project_id = hp.project_id
+                 AND required.superseded_at IS NULL
+                 AND NOT EXISTS (
+                   SELECT 1 FROM package_requirements pr
+                    WHERE pr.org_id = required.org_id
+                      AND pr.project_id = required.project_id
+                      AND pr.package_id = hp.id
+                      AND pr.requirement_id = required.id
+                 )
             )
             AND EXISTS (
               SELECT 1 FROM submission_recipients sr
@@ -815,6 +831,9 @@ export class ProjectsService {
    * GET /projects/:id/members
    */
   async listProjectMembers(ctx: TenantActorContext, projectId: string) {
+    // G02-007: external guests may view scoped project details, never the
+    // internal user identity roster or login identifiers.
+    if (ctx.actorType === 'GUEST' || ctx.guestGrantId) throw new NotFoundException('PROJECT_NOT_FOUND');
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
       const res = await client.query(
         `SELECT pm.*, u.name,

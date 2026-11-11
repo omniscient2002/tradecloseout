@@ -1,6 +1,7 @@
 import { Pool, PoolClient } from 'pg';
 import { createHash } from 'crypto';
 import { uuidv7 } from 'uuidv7';
+import { assertCurrentProjectAuthority } from './project-authority';
 
 export interface TenantActorContext {
   orgId: string;       // Must come exclusively from session.active_org_id (AUD-014)
@@ -11,10 +12,18 @@ export interface TenantActorContext {
   requestId: string;
   orgRole?: string;
   projectRole?: string;
+  projectId?: string;
+  projectScope?: Record<string, unknown>;
+  permission?: string;
+  docControllerOrgWideDownload?: boolean;
   guestGrantId?: string;
   guestProjectId?: string;
   guestCapabilities?: string[];
   guestScope?: Record<string, any>;
+  // Populated exclusively by SessionCsrfGuard for authenticated HTTP work.
+  // Optional for controlled migrations, background jobs and offline fixtures.
+  sessionId?: string;
+  authGeneration?: string;
 }
 
 export interface DomainOutboxEvent {
@@ -71,6 +80,29 @@ export async function withTenantTransaction<T>(
     // Bind transaction-local settings for PostgreSQL RLS policies (08 §5.2)
     await client.query(`SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`, [ctx.orgId]);
     await client.query(`SELECT set_config('app.current_user', $1, true)`, [ctx.userId]);
+
+    if (ctx.sessionId || ctx.authGeneration) {
+      // Lock the actual authenticated session for the full mutation.
+      // A concurrent role change / org switch / logout must serialize with
+      // this operation, rather than revoking the browser after a stale guard
+      // allowed a privileged write to proceed.
+      if (!ctx.sessionId || !ctx.authGeneration) {
+        throw new Error('AUTH_SESSION_CONTEXT_INCOMPLETE');
+      }
+      const { rows: validSession } = await client.query(
+        `SELECT id FROM sessions
+           WHERE id=$1 AND user_id=$2 AND active_org_id=$3
+             AND auth_generation=$4 AND revoked_at IS NULL
+             AND expires_at>now() AND absolute_expires_at>now()
+           FOR SHARE`,
+        [ctx.sessionId,ctx.userId,ctx.orgId,ctx.authGeneration],
+      );
+      if (!validSession.length) {
+        throw new Error('AUTH_SESSION_CONTEXT_CHANGED');
+      }
+    }
+
+    await assertCurrentProjectAuthority(client, ctx);
 
     const result = await work(client, (ev) => stagedEvents.push(ev));
 
@@ -209,3 +241,5 @@ export function redactSensitiveFields(obj: Record<string, unknown>): Record<stri
 export function hashRequestPayload(body: unknown): string {
   return createHash('sha256').update(JSON.stringify(body ?? {})).digest('hex');
 }
+
+export { assertCurrentProjectAuthority, assertMemberResourceScope } from './project-authority';

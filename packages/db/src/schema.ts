@@ -23,6 +23,11 @@ export const users = pgTable('users', {
   name: text('name').notNull(),
   status: text('status').notNull().default('ACTIVE'), // ACTIVE | SUSPENDED | DELETED
   lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
+  mfaTotpSecret: text('mfa_totp_secret'),
+  mfaTotpPendingSecret: text('mfa_totp_pending_secret'),
+  mfaEnabledAt: timestamp('mfa_enabled_at', { withTimezone: true }),
+  mfaTotpLastStep: bigint('mfa_totp_last_step', { mode: 'number' }).notNull().default(-1),
+  authProofValidAfter: timestamp('auth_proof_valid_after',{withTimezone:true}).notNull().default(sql`'1970-01-01T00:00:00Z'::timestamptz`),
   rowVersion: integer('row_version').notNull().default(1),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -58,7 +63,7 @@ export const organisations = pgTable(
     state: text('state').notNull(),
     allowSelfApproval: boolean('allow_self_approval').notNull().default(false),
     allowGenericReview: boolean('allow_generic_review').notNull().default(false),
-    docControllerOrgWideDownload: boolean('document_controller_org_wide_download')
+    docControllerOrgWideDownload: boolean('doc_controller_org_wide_download')
       .notNull()
       .default(false),
     rowVersion: integer('row_version').notNull().default(1),
@@ -93,6 +98,14 @@ export const sessions = pgTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     tokenHash: text('token_hash').notNull(),
     csrfTokenHash: text('csrf_token_hash').notNull(),
+    authGeneration: uuid('auth_generation').notNull().default(sql`gen_random_uuid()`),
+    guestGrantId: uuid('guest_grant_id'),
+    mfaVerified: boolean('mfa_verified').notNull().default(false),
+    mfaVerifiedAt: timestamp('mfa_verified_at', { withTimezone: true }),
+    authenticatedAt: timestamp('authenticated_at', { withTimezone: true }).notNull().defaultNow(),
+    lastActivityAt: timestamp('last_activity_at', { withTimezone: true }).notNull().defaultNow(),
+    absoluteExpiresAt: timestamp('absolute_expires_at', { withTimezone: true })
+      .notNull().default(sql`now() + interval '90 days'`),
     activeOrgId: uuid('active_org_id')
       .notNull()
       .references(() => organisations.id, { onDelete: 'cascade' }),
@@ -107,6 +120,54 @@ export const sessions = pgTable(
     userActiveIdx: index('sessions_user_active_idx').on(t.userId, t.activeOrgId),
   }),
 );
+
+/** G01 one-use verification proofs. SQL maintains the generation/replay checks. */
+export const otpChallenges = pgTable('otp_challenges', {
+  id: uuid('id').primaryKey(),
+  channel: text('channel').notNull(),
+  identifier: text('identifier').notNull(),
+  purpose: text('purpose').notNull(),
+  guestGrantId: uuid('guest_grant_id'),
+  codeHash: text('code_hash').notNull(),
+  attempts: integer('attempts').notNull().default(0),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  consumedAt: timestamp('consumed_at', { withTimezone: true }),
+  deliveryStatus: text('delivery_status').notNull().default('SENT'),
+  otpGeneration: uuid('otp_generation'),
+  authIntentHash: text('auth_intent_hash'),
+  ip: inet('ip'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Shared, pseudonymous abuse budgets; no tenant identity before login. */
+export const authRequestBudgets = pgTable('auth_request_budgets', {
+  budgetKey: text('budget_key').primaryKey(),
+  count: integer('count').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Append-only security outcomes; runtime UPDATE/DELETE is not granted. */
+export const authSecurityEvents = pgTable('auth_security_events', {
+  id: uuid('id').primaryKey(),
+  actorUserId: uuid('actor_user_id').references(() => users.id, { onDelete: 'set null' }),
+  orgId: uuid('org_id').references(() => organisations.id, { onDelete: 'set null' }),
+  sessionId: uuid('session_id').references(() => sessions.id, { onDelete: 'set null' }),
+  eventType: text('event_type').notNull(),
+  outcome: text('outcome').notNull(),
+  subjectDigest: text('subject_digest'),
+  reasonCode: text('reason_code'),
+  sourceDigest: text('source_digest'),
+  occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const mfaRecoveryCodes = pgTable('mfa_recovery_codes', {
+  id: uuid('id').primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  codeHash: text('code_hash').notNull(),
+  consumedAt: timestamp('consumed_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
 
 export const memberships = pgTable(
   'memberships',
@@ -275,6 +336,13 @@ export const guestGrants = pgTable(
     partyId: uuid('party_id')
       .notNull()
       .references(() => parties.id),
+    targetEmail: text('target_email'),
+    targetPhoneE164: text('target_phone_e164'),
+    principalUserId: uuid('principal_user_id').references(() => users.id),
+    independentAuthorityVerifiedAt: timestamp('independent_authority_verified_at', { withTimezone: true }),
+    independentAuthorityEvidenceRef: text('independent_authority_evidence_ref'),
+    failedOtpCount: integer('failed_otp_count').notNull().default(0),
+    cooldownUntil: timestamp('cooldown_until', { withTimezone: true }),
     userId: uuid('user_id').references(() => users.id),
     role: text('role').notNull(), // R-CONSULT | R-CLIENT | R-MC | R-SUPPLIER-OEM | R-SUBCONTRACTOR | R-SUPPLIER-UP | R-LAB | R-OEM-SERVICE
     grantType: text('grant_type').notNull(), // SUPPLIER_UPLOAD | SUPPLIER_CONTRIBUTOR | CONSULTANT_REVIEW | CLIENT_VIEW | MC_VIEW | AUDITOR_READ
