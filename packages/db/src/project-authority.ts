@@ -20,6 +20,55 @@ function canonicalScope(value:unknown):string{
   return JSON.stringify(value)??'null';
 }
 
+/**
+ * PH1-G02-003: Never interpret malformed/unknown stored member scope as
+ * unrestricted. Older ambiguous scopes require explicit data reconciliation.
+ * This schema covers the currently implemented member resource dimensions.
+ */
+export function assertValidMemberProjectScope(scope: unknown): asserts scope is Record<string, unknown> {
+  if (scope === null || scope === undefined) return;
+  if (typeof scope !== 'object' || Array.isArray(scope)) {
+    throw new Error('G02_MEMBER_SCOPE_INVALID');
+  }
+  const known = new Set([
+    'assetIds', 'requirementIds', 'documentIds',
+    'assetCategories', 'requirementGroups', 'documentTypes',
+    'readOnly', 'mode', 'startDate', 'endDate',
+  ]);
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  for (const [key, value] of Object.entries(scope)) {
+    if (!known.has(key)) throw new Error('G02_MEMBER_SCOPE_INVALID');
+    if (['assetIds', 'requirementIds', 'documentIds'].includes(key)) {
+      if (!Array.isArray(value) || value.length > 1000 ||
+          value.some((item) => typeof item !== 'string' || !uuid.test(item)) ||
+          new Set(value).size !== value.length) {
+        throw new Error('G02_MEMBER_SCOPE_INVALID');
+      }
+    } else if (['assetCategories', 'requirementGroups', 'documentTypes'].includes(key)) {
+      if (!Array.isArray(value) || value.length > 100 ||
+          value.some((item) => typeof item !== 'string' ||
+            !/^[A-Za-z0-9_.:-]{1,80}$/.test(item))) {
+        throw new Error('G02_MEMBER_SCOPE_INVALID');
+      }
+    } else if (key === 'readOnly') {
+      if (typeof value !== 'boolean') throw new Error('G02_MEMBER_SCOPE_INVALID');
+    } else if (key === 'mode') {
+      if (value !== 'READ_ONLY' && value !== 'READ_WRITE') {
+        throw new Error('G02_MEMBER_SCOPE_INVALID');
+      }
+    } else if (key === 'startDate' || key === 'endDate') {
+      if (typeof value !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/.test(value) ||
+          Number.isNaN(Date.parse(value)) ||
+          new Date(value).toISOString().slice(0, 10) !== value) {
+        throw new Error('G02_MEMBER_SCOPE_INVALID');
+      }
+    }
+  }
+  const v = scope as Record<string, unknown>;
+  if (typeof v.startDate === 'string' && typeof v.endDate === 'string' &&
+      v.startDate > v.endDate) throw new Error('G02_MEMBER_SCOPE_INVALID');
+}
+
 export type ProjectAuthorityContext = {
   orgId: string;
   userId: string;
@@ -64,6 +113,8 @@ export async function assertCurrentProjectAuthority(
     [ctx.orgId,ctx.projectId,ctx.userId],
   );
   if (!rows.length) throw new Error('G02_PROJECT_AUTHORITY_CHANGED');
+  assertValidMemberProjectScope(rows[0].scope_json);
+  assertValidMemberProjectScope(ctx.projectScope);
   if (ctx.projectRole && rows[0].role !== ctx.projectRole) {
     throw new Error('G02_PROJECT_ROLE_CHANGED');
   }
@@ -82,8 +133,9 @@ export function assertMemberResourceScope(
 ): void {
   if (ctx.actorType === 'GUEST' || ctx.guestGrantId) return;
   const s = ctx.projectScope;
-  if (!s || Object.keys(s).length===0 ||
-      ctx.orgRole==='R-OWNER'||ctx.orgRole==='R-ADMIN') return;
+  if (ctx.orgRole==='R-OWNER'||ctx.orgRole==='R-ADMIN') return;
+  assertValidMemberProjectScope(s);
+  if (!s || Object.keys(s).length===0) return;
   const lists:Record<string,string>={
     asset:'assetIds',requirement:'requirementIds',document:'documentIds',
   };
