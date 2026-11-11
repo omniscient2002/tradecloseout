@@ -2,6 +2,7 @@ import { Pool, PoolClient } from 'pg';
 import { createHash } from 'crypto';
 import { uuidv7 } from 'uuidv7';
 import { assertCurrentProjectAuthority } from './project-authority';
+import { assertCurrentSessionEligibility } from './live-session-authority';
 
 export interface TenantActorContext {
   orgId: string;       // Must come exclusively from session.active_org_id (AUD-014)
@@ -87,26 +88,7 @@ export async function withTenantTransaction<T>(
     await client.query(`SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`, [ctx.orgId]);
     await client.query(`SELECT set_config('app.current_user', $1, true)`, [ctx.userId]);
 
-    if (ctx.sessionId || ctx.authGeneration) {
-      // Lock the actual authenticated session for the full mutation.
-      // A concurrent role change / org switch / logout must serialize with
-      // this operation, rather than revoking the browser after a stale guard
-      // allowed a privileged write to proceed.
-      if (!ctx.sessionId || !ctx.authGeneration) {
-        throw new Error('AUTH_SESSION_CONTEXT_INCOMPLETE');
-      }
-      const { rows: validSession } = await client.query(
-        `SELECT id FROM sessions
-           WHERE id=$1 AND user_id=$2 AND active_org_id=$3
-             AND auth_generation=$4 AND revoked_at IS NULL
-             AND expires_at>now() AND absolute_expires_at>now()
-           FOR SHARE`,
-        [ctx.sessionId,ctx.userId,ctx.orgId,ctx.authGeneration],
-      );
-      if (!validSession.length) {
-        throw new Error('AUTH_SESSION_CONTEXT_CHANGED');
-      }
-    }
+    await assertCurrentSessionEligibility(client, ctx);
 
     await assertCurrentProjectAuthority(client, ctx);
 
@@ -272,3 +254,4 @@ export function hashRequestPayload(body: unknown): string {
 }
 
 export { assertCurrentProjectAuthority, assertMemberResourceScope, assertValidMemberProjectScope } from './project-authority';
+export { assertCurrentSessionEligibility } from './live-session-authority';

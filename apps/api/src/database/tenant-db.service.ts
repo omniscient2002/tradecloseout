@@ -3,7 +3,7 @@
 
 import { Injectable, Optional, ForbiddenException } from '@nestjs/common';
 import { Pool, PoolClient } from 'pg';
-import { assertCurrentProjectAuthority } from '@tradecloseout/db/tenant-tx';
+import { assertCurrentProjectAuthority, assertCurrentSessionEligibility } from '@tradecloseout/db/tenant-tx';
 
 export interface ExecutionContext {
   orgId: string;
@@ -78,23 +78,7 @@ export class TenantDbService {
       await client.query("SELECT set_config('app.current_user', $1, true)", [ctx.userId]);
       await client.query("SELECT set_config('app.actor_type', $1, true)", [ctx.actorType]);
 
-      if (ctx.sessionId || ctx.authGeneration) {
-        // Keep the live browser authentication generation locked throughout
-        // guest/tenant mutation. A concurrent logout, role change, guest
-        // revocation or org switch must not overtake the authorised request.
-        if (!ctx.sessionId || !ctx.authGeneration) {
-          throw new Error('AUTH_SESSION_CONTEXT_INCOMPLETE');
-        }
-        const {rows:live} = await client.query(
-          `SELECT id FROM sessions
-             WHERE id=$1 AND user_id=$2 AND active_org_id=$3
-               AND auth_generation=$4 AND revoked_at IS NULL
-               AND expires_at>now() AND absolute_expires_at>now()
-             FOR SHARE`,
-          [ctx.sessionId,ctx.userId,ctx.orgId,ctx.authGeneration],
-        );
-        if (!live.length) throw new Error('AUTH_SESSION_CONTEXT_CHANGED');
-      }
+      await assertCurrentSessionEligibility(client, ctx);
 
       await assertCurrentProjectAuthority(client, {...ctx, actorType:ctx.actorType});
 
