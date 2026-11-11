@@ -9,7 +9,7 @@ import {
   KeyRound,
   Download,
 } from "lucide-react";
-import { apiFetch, ApiProblemError, setCsrfToken } from "../../../../lib/api-client";
+import { apiFetch, ApiProblemError, setCsrfToken, watchAuthChanges } from "../../../../lib/api-client";
 import { enqueueFieldUpload, setOfflineActorPartition } from "../../../../lib/offline-upload-queue";
 
 interface GuestPortalContextDto {
@@ -109,6 +109,13 @@ export default function StandaloneGuestPortalPage() {
 
   useEffect(() => {
     loadGuestContext();
+    return watchAuthChanges(() => {
+      setOfflineActorPartition(null);
+      setCtx(null);
+      setOtpSent(false);
+      setOtpChallengeId(null);
+      setError('Your session changed in another tab. Verify your identity again.');
+    });
   }, [loadGuestContext]);
 
   const handleRequestGuestOtp = async () => {
@@ -132,7 +139,7 @@ export default function StandaloneGuestPortalPage() {
     }
     setError(null);
     try {
-      const res = await apiFetch<{ csrfToken: string }>(
+      const res = await apiFetch<{ csrfToken: string; authGeneration: string }>(
         `/api/v1/guest/${encodeURIComponent(token)}/otp/verify`,
         {
           method: "POST",
@@ -140,7 +147,7 @@ export default function StandaloneGuestPortalPage() {
         },
       );
       if (res?.csrfToken) {
-        setCsrfToken(res.csrfToken);
+        setCsrfToken(res.csrfToken, res.authGeneration);
       }
       await loadGuestContext();
     } catch (err: any) {

@@ -7,6 +7,7 @@ import {
   ForbiddenException,
   UnauthorizedException,
   BadRequestException,
+  ConflictException,
   Optional,
   ServiceUnavailableException,
   UnprocessableEntityException,
@@ -14,8 +15,10 @@ import {
 import * as crypto from 'node:crypto';
 import { PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
+import { canonicalAuthenticationEmail, canonicalAuthenticationPhone } from '@tradecloseout/shared';
 import { TenantDbService, ExecutionContext } from '../../database/tenant-db.service';
 import { DltSmsGateway, TransactionalMailGateway } from '../identity/identity.controller';
+import { consumeAuthenticationBudget, deriveSessionCsrf, isProductionEnvironment } from '../identity/auth-security';
 
 export interface CreatePartyDto {
   name: string;
@@ -45,12 +48,12 @@ export const GUEST_GRANT_PROFILES: Record<string, GuestGrantProfile> = {
   CONSULTANT_REVIEW: {
     grantType: 'CONSULTANT_REVIEW',
     role: 'R-CONSULTANT',
-    capabilities: ['project.read', 'asset.read', 'document.read', 'document.download', 'review.read', 'review.decide', 'package.download'],
+    capabilities: ['project.read', 'asset.read', 'document.read', 'document.download', 'review.read', 'review.decide', 'package.download', 'inspection.witness'],
   },
   CLIENT_VIEW: {
     grantType: 'CLIENT_VIEW',
     role: 'R-CLIENT',
-    capabilities: ['project.read', 'document.read', 'document.download', 'package.download', 'package.accept'],
+    capabilities: ['project.read', 'document.read', 'document.download', 'package.download', 'package.accept', 'inspection.witness'],
   },
   MC_VIEW: {
     grantType: 'MC_VIEW',
@@ -86,6 +89,34 @@ export class PartiesService {
 
   private hashSecret(secret: string): string {
     return crypto.createHash('sha256').update(secret).digest('hex');
+  }
+
+  // Sensitive guest grants are NEVER interchangeable with an arbitrary party
+  // record in the contractor's organisation. Re-evaluate the project link
+  // even for old grants created before this invariant was introduced.
+  private async assertSensitiveGrantCounterparty(
+    client: PoolClient,
+    grant: {org_id:string;project_id:string;party_id:string;grant_type:string},
+  ): Promise<void> {
+    if (!['CLIENT_VIEW','CONSULTANT_REVIEW'].includes(grant.grant_type)) return;
+    const { rows } = await client.query(
+      `SELECT p.client_party_id,p.consultant_party_id,
+              p.status AS project_status,pt.status AS party_status
+         FROM projects p
+         JOIN parties pt ON pt.org_id=p.org_id AND pt.id=$3
+        WHERE p.org_id=$1 AND p.id=$2
+        FOR SHARE OF p,pt`,
+      [grant.org_id,grant.project_id,grant.party_id],
+    );
+    const linked = rows[0];
+    if (!linked || linked.party_status !== 'ACTIVE' ||
+        ['CANCELLED','ARCHIVED'].includes(linked.project_status) ||
+        (grant.grant_type === 'CLIENT_VIEW' &&
+          linked.client_party_id !== grant.party_id) ||
+        (grant.grant_type === 'CONSULTANT_REVIEW' &&
+          linked.consultant_party_id !== grant.party_id)) {
+      throw new NotFoundException('GUEST_GRANT_NOT_FOUND_OR_EXPIRED');
+    }
   }
 
   /**
@@ -137,8 +168,38 @@ export class PartiesService {
    * Issues a scoped guest grant with a raw secret token (hash stored in DB).
    */
   async createGuestGrant(ctx: ExecutionContext, projectId: string, dto: CreateGuestGrantDto) {
-    if (!dto.partyId) {
-      throw new BadRequestException('PARTY_REQUIRED: partyId is required to create a guest grant');
+    if (!dto || typeof dto.partyId !== 'string' ||
+        !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(dto.partyId)) {
+      throw new BadRequestException({ code: 'PARTY_ID_REQUIRED' });
+    }
+    if (dto.expiresInDays !== undefined &&
+        (!Number.isInteger(dto.expiresInDays) || dto.expiresInDays < 1 || dto.expiresInDays > 30)) {
+      throw new BadRequestException({ code: 'INVALID_GUEST_GRANT_EXPIRATION' });
+    }
+    const providedEmail = canonicalAuthenticationEmail(dto.email)||'';
+    const providedPhone = canonicalAuthenticationPhone(dto.phone)||'';
+    if ((dto.email !== undefined && !providedEmail) ||
+        (dto.phone !== undefined && !providedPhone) ||
+        (!providedEmail && !providedPhone)) {
+      throw new BadRequestException({ code: 'INVALID_GUEST_CONTACT' });
+    }
+    if (dto.otpRequired === false) {
+      throw new BadRequestException({ code: 'GUEST_OTP_CANNOT_BE_DISABLED' });
+    }
+    if (dto.grantType !== undefined &&
+        (typeof dto.grantType !== 'string' || dto.grantType.length > 40)) {
+      throw new BadRequestException({ code: 'INVALID_GUEST_GRANT_TYPE' });
+    }
+    if (dto.scopeJson !== undefined &&
+        (!dto.scopeJson || typeof dto.scopeJson !== 'object' ||
+         Array.isArray(dto.scopeJson) ||
+         JSON.stringify(dto.scopeJson).length > 16_384)) {
+      throw new BadRequestException({ code: 'INVALID_GUEST_SCOPE' });
+    }
+    if (dto.capabilities !== undefined &&
+        (!Array.isArray(dto.capabilities) || dto.capabilities.length > 50 ||
+         dto.capabilities.some(cap => typeof cap !== 'string'))) {
+      throw new BadRequestException({ code: 'INVALID_GUEST_CAPABILITIES' });
     }
 
     if (ctx.actorType === 'GUEST') {
@@ -209,6 +270,28 @@ export class PartiesService {
     }
 
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+      const { rows: scopedParty } = await client.query(
+        `SELECT p.client_party_id,p.consultant_party_id,p.status AS project_status,
+                party.status AS party_status
+           FROM projects p
+           JOIN parties party ON party.org_id=p.org_id AND party.id=$3
+          WHERE p.org_id=$1 AND p.id=$2
+          FOR SHARE OF p,party`,
+        [ctx.orgId, projectId, dto.partyId],
+      );
+      if (!scopedParty.length || scopedParty[0].party_status !== 'ACTIVE' ||
+          ['CLOSED','CANCELLED','ARCHIVED'].includes(scopedParty[0].project_status)) {
+        throw new NotFoundException({ code:'GUEST_GRANT_PROJECT_PARTY_INACTIVE' });
+      }
+      if ((profileKey === 'CLIENT_VIEW' &&
+            scopedParty[0].client_party_id !== dto.partyId) ||
+          (profileKey === 'CONSULTANT_REVIEW' &&
+            scopedParty[0].consultant_party_id !== dto.partyId)) {
+        throw new ForbiddenException({
+          code: 'GUEST_PARTY_NOT_PROJECT_COUNTERPARTY',
+          detail: 'Sensitive guest authority requires the project-designated counterparty.',
+        });
+      }
       const rawToken = crypto.randomBytes(32).toString('hex');
       const tokenHash = this.hashSecret(rawToken);
       const grantId = uuidv7();
@@ -233,8 +316,8 @@ export class PartiesService {
           capabilities,
           JSON.stringify(dto.scopeJson || {}),
           dto.otpRequired ?? true,
-          dto.phone || null,
-          dto.email || null,
+          providedPhone || null,
+          providedEmail || null,
           tokenHash,
           expiresAt,
           ctx.userId,
@@ -275,6 +358,9 @@ export class PartiesService {
         `UPDATE sessions SET revoked_at = now() WHERE active_org_id = $1 AND guest_grant_id = $2`,
         [ctx.orgId, grantId],
       );
+      await client.query(`INSERT INTO auth_security_events(id,actor_user_id,org_id,event_type,outcome,subject_digest)
+        VALUES(gen_random_uuid(),$1,$2,'GUEST_GRANT_REVOKED','SUCCESS',$3)`,
+        [ctx.userId,ctx.orgId,this.hashSecret(grantId)]);
 
       return { grantId, status: 'REVOKED' };
     });
@@ -335,6 +421,9 @@ export class PartiesService {
    * API-028 GET /guest/:token (RT-014)
    */
   async getGuestGrant(token: string) {
+    if (typeof token !== 'string' || !/^[0-9a-f]{64}$/i.test(token)) {
+      throw new NotFoundException('GUEST_GRANT_NOT_FOUND_OR_EXPIRED');
+    }
     const tokenHash = this.hashSecret(token);
     return await this.db.withTokenContext(tokenHash, async (client) => {
       const res = await client.query(
@@ -348,6 +437,7 @@ export class PartiesService {
       }
       const grant = res.rows[0];
       await client.query(`SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`, [grant.org_id]);
+      await this.assertSensitiveGrantCounterparty(client,grant);
       if (grant.cooldown_until && new Date(grant.cooldown_until) > new Date()) {
         throw new ForbiddenException(`RATE_LIMIT_COOLDOWN_ACTIVE: Try again after ${grant.cooldown_until}`);
       }
@@ -410,9 +500,17 @@ export class PartiesService {
   /**
    * API-028A POST /guest/:token/otp/request (RT-014, CB-007, CB-011)
    */
-  async requestGuestOtp(token: string): Promise<{ success: boolean; challengeId: string; maskedTarget: string; channel: string; debugOtp?: string }> {
+  async requestGuestOtp(token: string, sourceIp = 'unknown', authIntentHash: string | null = null): Promise<{ success: boolean; challengeId: string; maskedTarget: string; channel: string; debugOtp?: string }> {
+    if (typeof token !== 'string' || !/^[0-9a-f]{64}$/i.test(token)) {
+      throw new NotFoundException('GUEST_GRANT_NOT_FOUND_OR_EXPIRED');
+    }
     const tokenHash = this.hashSecret(token);
-    return await this.db.withTokenContext(tokenHash, async (client) => {
+    if (isProductionEnvironment()) {
+      await consumeAuthenticationBudget(this.db.getPool(), 'guest-otp:ip:hour', sourceIp, 20, 3600);
+      await consumeAuthenticationBudget(this.db.getPool(), 'guest-otp:grant:hour', tokenHash, 3, 3600);
+      await consumeAuthenticationBudget(this.db.getPool(), 'guest-otp:global:hour', 'all', 6000, 3600);
+    }
+    const prepared = await this.db.withTokenContext(tokenHash, async (client) => {
       const grants = (
         await client.query(
         `SELECT * FROM guest_grants
@@ -433,6 +531,7 @@ export class PartiesService {
       );
       if (!locked.rows.length) throw new NotFoundException('GUEST_GRANT_NOT_FOUND_OR_EXPIRED');
       const grant = locked.rows[0];
+      await this.assertSensitiveGrantCounterparty(client,grant);
 
       // Check 15-minute cooldown
       if (grant.cooldown_until && new Date(grant.cooldown_until) > new Date()) {
@@ -463,42 +562,100 @@ export class PartiesService {
       }
 
       const rawCode = crypto.randomInt(100000, 999999).toString();
-      const codeHash = this.hashSecret(rawCode);
       const challengeId = uuidv7();
+      const otpSecret = process.env.AUTH_OTP_HMAC_KEY;
+      const codeHash = isProductionEnvironment()
+        ? crypto.createHmac('sha256', otpSecret!)
+          .update(`GUEST_ACCESS:${challengeId}:${grant.id}:${grant.target_phone_e164 || grant.target_email}:${rawCode}`)
+          .digest('hex')
+        : this.hashSecret(rawCode);
       const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
       const targetIdentifier = grant.target_phone_e164 || grant.target_email;
       if (!targetIdentifier) throw new UnprocessableEntityException('GUEST_CONTACT_REQUIRED');
       const channel = grant.target_phone_e164 ? 'SMS' : 'EMAIL';
 
+      // One active proof generation per grant: resending invalidates every
+      // prior unconsumed OTP, while preserving the historical attempt records.
       await client.query(
-        `INSERT INTO otp_challenges (id, channel, identifier, purpose, guest_grant_id, code_hash, expires_at)
-         VALUES ($1, $2, $3, 'GUEST_ACCESS', $4, $5, $6)`,
-        [challengeId, channel, targetIdentifier, grant.id, codeHash, expiresAt],
+        `UPDATE otp_challenges SET consumed_at = now()
+          WHERE guest_grant_id = $1 AND purpose = 'GUEST_ACCESS'
+            AND consumed_at IS NULL`,
+        [grant.id],
       );
 
-      const isProductionLike = process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging';
-      const isExplicitDebug = process.env.ENABLE_DEBUG_OTP === 'true' && !isProductionLike;
-      if (!isExplicitDebug) {
-        if (channel === 'SMS') {
-          if (!this.smsGateway) throw new ServiceUnavailableException('SMS_GATEWAY_UNAVAILABLE');
-          const sent = await this.smsGateway.sendOtpSms(
-            targetIdentifier,
-            rawCode,
-            process.env.DLT_GUEST_OTP_TEMPLATE_ID || process.env.DLT_OTP_TEMPLATE_ID || '',
-          );
-          if (!sent.delivered) throw new Error('GUEST_OTP_DELIVERY_FAILED');
-        } else {
-          if (!this.mailGateway) throw new ServiceUnavailableException('MAIL_GATEWAY_UNAVAILABLE');
-          await this.mailGateway.sendOtpEmail(targetIdentifier, rawCode, 'GUEST_ACCESS');
-        }
-      }
+      await client.query(
+        `INSERT INTO otp_challenges (id, channel, identifier, purpose, guest_grant_id, code_hash, expires_at, delivery_status, auth_intent_hash)
+         VALUES ($1, $2, $3, 'GUEST_ACCESS', $4, $5, $6, $7, $8)`,
+        [challengeId, channel, targetIdentifier, grant.id, codeHash, expiresAt,
+          process.env.ENABLE_DEBUG_OTP === 'true' && !isProductionEnvironment() ? 'SENT' : 'PENDING',
+          authIntentHash],
+      );
 
+      const isExplicitDebug = process.env.ENABLE_DEBUG_OTP === 'true' && !isProductionEnvironment();
       const maskedTarget = channel === 'EMAIL'
         ? `${targetIdentifier.slice(0, 1)}***@${targetIdentifier.split('@')[1] || 'hidden'}`
         : targetIdentifier.replace(/^(\+?\d{2,4})\d+(\d{4})$/, '$1******$2');
-      return { success: true, challengeId, maskedTarget, channel: isExplicitDebug ? 'DEBUG' : channel, debugOtp: isExplicitDebug ? rawCode : undefined };
+      return { challengeId, maskedTarget, channel, targetIdentifier, rawCode, isExplicitDebug, orgId:grant.org_id };
     });
+
+    if (!prepared.isExplicitDebug) {
+      // Never hold a database grant lock while talking to an external provider.
+      // A timeout after provider acceptance is ambiguous and the proof remains
+      // non-usable until SENT is committed in its own short transaction.
+      try {
+        if (prepared.channel === 'SMS') {
+          if (!this.smsGateway) throw new ServiceUnavailableException('SMS_GATEWAY_UNAVAILABLE');
+          const sent = await this.smsGateway.sendOtpSms(
+            prepared.targetIdentifier,
+            prepared.rawCode,
+            process.env.DLT_GUEST_OTP_TEMPLATE_ID || process.env.DLT_OTP_TEMPLATE_ID || '',
+            {kind:'GUEST_OTP',targetId:prepared.challengeId,orgId:prepared.orgId},
+          );
+          if (!sent.delivered) throw new ServiceUnavailableException('GUEST_OTP_DELIVERY_FAILED');
+        } else {
+          if (!this.mailGateway) throw new ServiceUnavailableException('MAIL_GATEWAY_UNAVAILABLE');
+          await this.mailGateway.sendOtpEmail(prepared.targetIdentifier, prepared.rawCode, 'GUEST_ACCESS',
+            {kind:'GUEST_OTP',targetId:prepared.challengeId,orgId:prepared.orgId});
+        }
+      } catch(error) {
+        if(error instanceof ConflictException)throw new ConflictException({code:'GUEST_OTP_CHALLENGE_SUPERSEDED'});
+        await this.db.withTokenContext(tokenHash, async (client) => {
+          await client.query(
+            `UPDATE otp_challenges SET delivery_status = 'AMBIGUOUS'
+              WHERE id = $1 AND consumed_at IS NULL`,
+            [prepared.challengeId],
+          );
+        }).catch(() => {});
+        throw new ServiceUnavailableException({
+          code: 'GUEST_OTP_DELIVERY_UNVERIFIED',
+          detail: 'The verification code could not be confirmed delivered. Request a new code.',
+        });
+      }
+      const { rowCount } = await this.db.withTokenContext(tokenHash, async (client) =>
+        client.query(
+          `UPDATE otp_challenges SET delivery_status = 'SENT'
+            WHERE id = $1 AND consumed_at IS NULL AND expires_at > now()
+              AND delivery_status = 'PENDING'`,
+          [prepared.challengeId],
+        ),
+      );
+      if (!rowCount) {
+        // A second request can supersede this proof while its provider call
+        // is still pending. Reporting success would send the user a dead code.
+        throw new ConflictException({
+          code: 'GUEST_OTP_CHALLENGE_SUPERSEDED',
+          detail: 'This code was replaced or expired. Use the newest OTP.',
+        });
+      }
+    }
+    return {
+      success: true,
+      challengeId: prepared.challengeId,
+      maskedTarget: prepared.maskedTarget,
+      channel: prepared.isExplicitDebug ? 'DEBUG' : prepared.channel,
+      debugOtp: prepared.isExplicitDebug ? prepared.rawCode : undefined,
+    };
   }
 
   /**
@@ -508,8 +665,12 @@ export class PartiesService {
     token: string,
     code: string,
     challengeId: string,
-  ): Promise<{ sessionToken: string; activeOrgId: string; grantId: string; csrfToken: string }> {
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(challengeId) || !/^\d{6}$/.test(code)) {
+    authIntentHash: string | null = null,
+  ): Promise<{ sessionToken: string; activeOrgId: string; grantId: string; csrfToken: string; authGeneration: string }> {
+    if (typeof token !== 'string' || !/^[0-9a-f]{64}$/i.test(token) ||
+        typeof challengeId !== 'string' ||
+        !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(challengeId) ||
+        typeof code !== 'string' || !/^\d{6}$/.test(code)) {
       throw new BadRequestException('INVALID_CHALLENGE_OR_CODE');
     }
     const tokenHash = this.hashSecret(token);
@@ -534,6 +695,7 @@ export class PartiesService {
       );
       if (!locked.rows.length) throw new NotFoundException('GUEST_GRANT_NOT_FOUND_OR_EXPIRED');
       const grant = locked.rows[0];
+      await this.assertSensitiveGrantCounterparty(client,grant);
 
       // Check cooldown
       if (grant.cooldown_until && new Date(grant.cooldown_until) > new Date()) {
@@ -543,7 +705,9 @@ export class PartiesService {
       const challenges = (
         await client.query(
           `SELECT * FROM otp_challenges
-           WHERE guest_grant_id = $1 AND id = $2 AND purpose = 'GUEST_ACCESS' AND consumed_at IS NULL AND expires_at > now()
+           WHERE guest_grant_id = $1 AND id = $2 AND purpose = 'GUEST_ACCESS'
+             AND consumed_at IS NULL AND expires_at > now()
+             AND delivery_status = 'SENT'
            LIMIT 1 FOR UPDATE`,
           [grant.id, challengeId],
         )
@@ -554,7 +718,16 @@ export class PartiesService {
       }
 
       const challenge = challenges[0];
-      const incomingHash = this.hashSecret(code);
+      if (isProductionEnvironment() &&
+          (!authIntentHash || !challenge.auth_intent_hash ||
+           authIntentHash !== challenge.auth_intent_hash)) {
+        throw new ForbiddenException({ code: 'LOGIN_INTENT_MISMATCH' });
+      }
+      const incomingHash = isProductionEnvironment()
+        ? crypto.createHmac('sha256', process.env.AUTH_OTP_HMAC_KEY!)
+          .update(`GUEST_ACCESS:${challenge.id}:${grant.id}:${challenge.identifier}:${code}`)
+          .digest('hex')
+        : this.hashSecret(code);
 
       if (challenge.code_hash !== incomingHash) {
         const newAttempts = (grant.failed_otp_count || 0) + 1;
@@ -565,11 +738,23 @@ export class PartiesService {
             `UPDATE guest_grants SET failed_otp_count = 0, cooldown_until = $1 WHERE id = $2`,
             [cooldownUntil, grant.id],
           );
+          await client.query(
+            `INSERT INTO auth_security_events(id,org_id,event_type,outcome,subject_digest)
+              VALUES(gen_random_uuid(),$1,$2,$3,$4)`,
+            [grant.org_id, 'GUEST_OTP_VERIFICATION',
+             'THROTTLED', tokenHash],
+          );
           return { failure: 'TOO_MANY_FAILED_ATTEMPTS' as const };
         } else {
           await client.query(
             `UPDATE guest_grants SET failed_otp_count = $1 WHERE id = $2`,
             [newAttempts, grant.id],
+          );
+          await client.query(
+            `INSERT INTO auth_security_events(id,org_id,event_type,outcome,subject_digest)
+              VALUES(gen_random_uuid(),$1,$2,$3,$4)`,
+            [grant.org_id, 'GUEST_OTP_VERIFICATION',
+             'DENIED', tokenHash],
           );
           return { failure: 'INVALID_OTP_CODE' as const };
         }
@@ -587,17 +772,41 @@ export class PartiesService {
 
       // Create Guest Session
       const sessionToken = crypto.randomBytes(32).toString('hex');
-      const csrfToken = crypto.randomBytes(32).toString('hex');
+      const authGeneration = uuidv7();
+      const csrfToken = deriveSessionCsrf(sessionToken, authGeneration);
       const sessionId = uuidv7();
       const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours for guest
 
+      // A guest is a distinct authenticated principal, NOT the employee who
+      // issued the invitation. Keep created_by on the grant only as provenance.
+      let principalUserId: string = grant.principal_user_id;
+      if (!principalUserId) {
+        principalUserId = uuidv7();
+        await client.query(
+          `INSERT INTO users (id, name, status)
+           VALUES ($1, 'Verified external guest contact', 'ACTIVE')`,
+          [principalUserId],
+        );
+        await client.query(
+          `UPDATE guest_grants SET principal_user_id = $2
+            WHERE id = $1 AND principal_user_id IS NULL`,
+          [grant.id, principalUserId],
+        );
+      }
+
       await client.query(
-        `INSERT INTO sessions (id, user_id, token_hash, csrf_token_hash, active_org_id, guest_grant_id, expires_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [sessionId, grant.created_by, this.hashSecret(sessionToken), this.hashSecret(csrfToken), grant.org_id, grant.id, expiresAt],
+        `INSERT INTO sessions (id, user_id, token_hash, csrf_token_hash, active_org_id, guest_grant_id, expires_at, auth_generation)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [sessionId, principalUserId, this.hashSecret(sessionToken), this.hashSecret(csrfToken), grant.org_id, grant.id, expiresAt, authGeneration],
       );
 
-      return { sessionToken, activeOrgId: grant.org_id, grantId: grant.id, csrfToken };
+      await client.query(
+        `INSERT INTO auth_security_events
+           (id,actor_user_id,org_id,session_id,event_type,outcome)
+         VALUES(gen_random_uuid(),$1,$2,$3,'GUEST_OTP_LOGIN','SUCCESS')`,
+        [principalUserId,grant.org_id,sessionId],
+      );
+      return { sessionToken, activeOrgId: grant.org_id, grantId: grant.id, csrfToken, authGeneration };
     });
 
     if ('failure' in result) {

@@ -13,6 +13,7 @@ import { canonicalJson } from '@tradecloseout/shared';
 import { withDisposableDatabase } from '../../../packages/db/test/helpers/disposable-database';
 import { scoped, seedTenants } from '../../../packages/db/test/helpers/fixtures';
 import { TradeCloseoutScheduler } from '../src/scheduler';
+import { assertWorkerRuntimeDatabasePrivileges } from '../src/worker-startup-security';
 import { compileAndPersistPortableArchive } from '../src/queues/portable-archive.processor';
 import { BoundedByteStream } from '../src/queues/bounded-stream';
 import { OUTBOX_EVENT_REGISTRY } from '../src/event-registry';
@@ -27,6 +28,11 @@ void test('Isolated worker DB/Redis and storage HTTP contract regressions', asyn
       NOTIFICATION_DELIVERY_TOKEN: process.env.NOTIFICATION_DELIVERY_TOKEN };
     const scheduler = new TradeCloseoutScheduler(app, redis);
     try {
+      // Verify the actual connection identity under the restricted DB role,
+      // not only a mocked pg_roles response.
+      await assert.doesNotReject(assertWorkerRuntimeDatabasePrivileges(app));
+      await assert.rejects(assertWorkerRuntimeDatabasePrivileges(admin),
+        /BOOT_WORKER_RUNTIME_ROLE_UNSAFE/);
       await redis.connect();
       await t.test('SCHED-01/02: real Redis NX excludes concurrent owner and old owner cannot delete replacement lock', async () => {
         const name = randomUUID();
@@ -65,6 +71,35 @@ void test('Isolated worker DB/Redis and storage HTTP contract regressions', asyn
         assert.equal((await admin.query('SELECT id FROM idempotency_keys WHERE id = $1', [pending])).rowCount, 1);
         assert.equal((await admin.query('SELECT id FROM idempotency_keys WHERE id = $1', [completed])).rowCount, 0);
         // Replay the actual interceptor in API tests; here prove cleanup preserves its durable protection.
+      });
+      await t.test('G01-020: abandoned unconfirmed invitations never become redeemable',async()=>{
+        const stale=randomUUID(),expired=randomUUID(),fresh=randomUUID(),other=randomUUID();
+        await admin.query(
+          `INSERT INTO invitations
+             (id,org_id,email,role,token_hash,status,expires_at,invited_by,created_at)
+           VALUES
+             ($1,$5,'stale@g01.test','R-SITE',$8,'DELIVERY_PENDING',now()+interval '2 days',$7,now()-interval '30 minutes'),
+             ($2,$5,'expired@g01.test','R-SITE',$9,'PENDING',now()-interval '1 day',$7,now()-interval '2 days'),
+             ($3,$5,'fresh@g01.test','R-SITE',$10,'DELIVERY_PENDING',now()+interval '1 day',$7,now()),
+             ($4,$6,'other@g01.test','R-SITE',$11,'PENDING',now()+interval '1 day',$7,now())`,
+          [stale,expired,fresh,other,a.orgId,b.orgId,userId,
+            'stale_'+stale,'expired_'+expired,'fresh_'+fresh,'other_'+other],
+        );
+        const first=await scheduler.cleanupStaleInvitations();
+        assert.equal(first.staleDelivery,1);
+        assert.equal(first.expired,1);
+        const {rows}=await admin.query(
+          'SELECT id,status FROM invitations WHERE id=ANY($1::uuid[])',
+          [[stale,expired,fresh,other]],
+        );
+        const status=(id:string)=>rows.find(row=>row.id===id)?.status;
+        assert.equal(status(stale),'REVOKED');
+        assert.equal(status(expired),'EXPIRED');
+        assert.equal(status(fresh),'DELIVERY_PENDING');
+        assert.equal(status(other),'PENDING');
+        const second=await scheduler.cleanupStaleInvitations();
+        assert.equal(second.staleDelivery,0);
+        assert.equal(second.expired,0);
       });
       await t.test('NOTIF-01/04: no configuration, rejection and invalid ack stay queued; matching capture acknowledgment permits SENT', async () => {
         const id = randomUUID(); const foreignId = randomUUID();
