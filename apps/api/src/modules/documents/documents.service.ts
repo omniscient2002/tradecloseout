@@ -19,6 +19,7 @@ import { PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { TenantDbService, ExecutionContext } from '../../database/tenant-db.service';
 import { BulkImportStatus, FileVersionStatus } from '@tradecloseout/shared';
+import { assertMemberResourceScope } from '@tradecloseout/db/tenant-tx';
 
 import { Pool } from 'pg';
 import { S3StorageService } from './s3-storage.service';
@@ -1224,38 +1225,131 @@ export class DocumentsService {
     assetIds: string[],
     requirementIds: string[],
   ) {
+    const isUuid=(id:unknown):id is string=>
+      typeof id==='string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+    if(!isUuid(projectId)||!isUuid(documentId)||
+       !Array.isArray(assetIds)||!Array.isArray(requirementIds)||
+       assetIds.length+requirementIds.length===0||
+       assetIds.length>100||requirementIds.length>100||
+       !assetIds.every(isUuid)||!requirementIds.every(isUuid)||
+       new Set(assetIds).size!==assetIds.length||
+       new Set(requirementIds).size!==requirementIds.length){
+      throw new UnprocessableEntityException({code:'INVALID_EVIDENCE_LINKS'});
+    }
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
-      // Re-use transaction logic from perfect-10-patches
-      for (let i = 0; i < assetIds.length; i++) {
+      // All linked records and the active authority are checked and locked
+      // BEFORE the first insert/update. An A-only supplier cannot attach B.
+      const {rows:project}=await client.query(
+        `SELECT status FROM projects WHERE org_id=$1 AND id=$2 FOR UPDATE`,
+        [ctx.orgId,projectId],
+      );
+      if(!project.length||!['DRAFT','ACTIVE','HANDOVER'].includes(project[0].status)){
+        throw new NotFoundException('PROJECT_NOT_FOUND');
+      }
+      const {rows:docs}=await client.query(
+        `SELECT d.id,d.doc_type_key,d.created_at,
+                dv.file_status,dv.uploaded_by_grant_id
+           FROM documents d
+           JOIN document_versions dv
+             ON dv.org_id=d.org_id AND dv.project_id=d.project_id
+            AND dv.id=d.latest_version_id AND dv.deleted_at IS NULL
+          WHERE d.org_id=$1 AND d.project_id=$2 AND d.id=$3
+            AND d.deleted_at IS NULL FOR SHARE OF d,dv`,
+        [ctx.orgId,projectId,documentId],
+      );
+      if(!docs.length) throw new NotFoundException('DOCUMENT_NOT_FOUND');
+      const doc=docs[0];
+      assertMemberResourceScope(ctx,'document',{
+        id:documentId,docTypeKey:doc.doc_type_key,
+        createdAt:doc.created_at?.toISOString?.()||String(doc.created_at),
+      },true);
+
+      let grant:any;
+      if(ctx.actorType==='GUEST'||ctx.guestGrantId){
+        if(!ctx.guestGrantId)throw new NotFoundException('DOCUMENT_NOT_FOUND');
+        const {rows}=await client.query(
+          `SELECT party_id,scope_json,project_id,principal_user_id
+             FROM guest_grants WHERE org_id=$1 AND id=$2 AND project_id=$3
+               AND status='ACTIVE' AND expires_at>now()
+               AND capabilities @> ARRAY['document.upload']::text[]
+             FOR SHARE`,
+          [ctx.orgId,ctx.guestGrantId,projectId],
+        );
+        grant=rows[0];
+        if(!grant || grant.principal_user_id!==ctx.userId ||
+           doc.uploaded_by_grant_id!==ctx.guestGrantId){
+          throw new NotFoundException('DOCUMENT_NOT_FOUND');
+        }
+        const assigned=grant.scope_json||{};
+        if(requirementIds.some(id=>!Array.isArray(assigned.requirementIds)||
+           !assigned.requirementIds.includes(id))||
+           assetIds.some(id=>!Array.isArray(assigned.assetIds)||
+             !assigned.assetIds.includes(id))){
+          throw new NotFoundException('EVIDENCE_SCOPE_NOT_FOUND');
+        }
+      }
+      const {rows:assets}=assetIds.length ? await client.query(
+        `SELECT id,category_key,created_at FROM assets
+           WHERE org_id=$1 AND project_id=$2 AND id=ANY($3::uuid[])
+             AND deleted_at IS NULL FOR SHARE`,
+        [ctx.orgId,projectId,assetIds],
+      ) : {rows:[]};
+      if(assets.length!==assetIds.length)throw new NotFoundException('ASSET_NOT_FOUND');
+      const {rows:reqs}=requirementIds.length ? await client.query(
+        `SELECT id,owner_party_id,group_key,doc_type_key,created_at
+           FROM requirements
+          WHERE org_id=$1 AND project_id=$2 AND id=ANY($3::uuid[])
+            AND superseded_at IS NULL FOR SHARE`,
+        [ctx.orgId,projectId,requirementIds],
+      ) : {rows:[]};
+      if(reqs.length!==requirementIds.length)throw new NotFoundException('REQUIREMENT_NOT_FOUND');
+      for(const row of assets){
+        assertMemberResourceScope(ctx,'asset',{
+          id:row.id,categoryKey:row.category_key,
+          createdAt:row.created_at?.toISOString?.()||String(row.created_at),
+        },true);
+      }
+      for(const row of reqs){
+        if(grant && row.owner_party_id && row.owner_party_id!==grant.party_id){
+          throw new NotFoundException('REQUIREMENT_NOT_FOUND');
+        }
+        assertMemberResourceScope(ctx,'requirement',{
+          id:row.id,groupKey:row.group_key,
+          createdAt:row.created_at?.toISOString?.()||String(row.created_at),
+        },true);
+      }
+      for(let i=0;i<assetIds.length;i++){
         await client.query(
-          `INSERT INTO document_assets (id, org_id, project_id, document_id, asset_id, is_primary)
-           VALUES ($1, $2, $3, $4, $5, $6)
-           ON CONFLICT (document_id, asset_id) DO NOTHING`,
-          [uuidv7(), ctx.orgId, projectId, documentId, assetIds[i], i === 0],
+          `INSERT INTO document_assets
+             (id,org_id,project_id,document_id,asset_id,is_primary)
+           VALUES($1,$2,$3,$4,$5,$6)
+           ON CONFLICT(document_id,asset_id) DO NOTHING`,
+          [uuidv7(),ctx.orgId,projectId,documentId,assetIds[i],i===0],
         );
       }
-
-      for (const reqId of requirementIds) {
+      for(const id of requirementIds){
         await client.query(
-          `INSERT INTO document_requirements (id, org_id, project_id, document_id, requirement_id)
-           VALUES ($1, $2, $3, $4, $5)
-           ON CONFLICT (document_id, requirement_id) DO NOTHING`,
-          [uuidv7(), ctx.orgId, projectId, documentId, reqId],
+          `INSERT INTO document_requirements
+             (id,org_id,project_id,document_id,requirement_id)
+           VALUES($1,$2,$3,$4,$5)
+           ON CONFLICT(document_id,requirement_id) DO NOTHING`,
+          [uuidv7(),ctx.orgId,projectId,documentId,id],
         );
       }
-
-      if (requirementIds.length > 0) {
+      // PROCESSING or PENDING uploads can have a link, but cannot claim the
+      // requirement has a completed uploaded artifact before verified bytes.
+      if(requirementIds.length && doc.file_status==='READY'){
         await client.query(
           `UPDATE requirements
-              SET status = 'UPLOADED', row_version = row_version + 1, updated_at = now()
-            WHERE org_id = $1 AND project_id = $2
-              AND id = ANY($3::uuid[])
-              AND status IN ('NOT_STARTED', 'REQUESTED', 'CHANGES_REQUESTED', 'REJECTED')`,
-          [ctx.orgId, projectId, requirementIds],
+              SET status='UPLOADED',row_version=row_version+1,updated_at=now()
+            WHERE org_id=$1 AND project_id=$2 AND id=ANY($3::uuid[])
+              AND status IN ('NOT_STARTED','REQUESTED','CHANGES_REQUESTED','REJECTED')`,
+          [ctx.orgId,projectId,requirementIds],
         );
       }
-
-      return { documentId, linkedAssetsCount: assetIds.length, linkedRequirementsCount: requirementIds.length };
+      return {documentId,linkedAssetsCount:assetIds.length,
+        linkedRequirementsCount:requirementIds.length,
+        verifiedEvidence:doc.file_status==='READY'};
     });
   }
 
