@@ -8,6 +8,9 @@ describe('review authority and expiry', () => {
 
   it('does not allow an owner to decide another user’s assigned review', async () => {
     const query = jest.fn(async (sql: string) => {
+      if (sql.includes('SELECT project_id FROM reviews')) {
+        return { rows: [{ project_id: 'project-1' }] };
+      }
       if (sql.includes('SELECT * FROM reviews')) {
         return { rows: [{ id: 'review-1', status: 'IN_REVIEW', reviewer_subject_type: 'USER', reviewer_subject_id: 'other-user' }] };
       }
@@ -57,6 +60,9 @@ describe('review authority and expiry', () => {
 
   it('does not approve a READY label without a verified storage object', async () => {
     const query = jest.fn(async (sql: string) => {
+      if (sql.includes('SELECT project_id FROM reviews')) {
+        return { rows: [{ project_id: 'project-1' }] };
+      }
       if (sql.includes('SELECT * FROM reviews')) {
         return { rows: [{ id: 'review-1', status: 'IN_REVIEW', reviewer_subject_type: 'USER',
           reviewer_subject_id: actor.userId, document_version_id: 'version-1' }] };
