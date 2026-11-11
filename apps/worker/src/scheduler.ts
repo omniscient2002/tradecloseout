@@ -256,21 +256,34 @@ export class TradeCloseoutScheduler {
   async runWeeklyOwnerRetentionAtRiskDigest(): Promise<void> {
     const client = await this.pool.connect();
     try {
+      // PH1-G24-002: membership is tenant-RLS-protected. Cross-tenant
+      // ownership discovery with no app.current_org silently returned zero.
+      // Global organisations is the reviewed discovery surface only.
       const { rows: activeOrgs } = await client.query(
-        `SELECT o.id AS org_id, o.display_name, m.user_id AS owner_user_id
-           FROM organisations o
-           JOIN memberships m ON m.org_id = o.id AND m.role = 'R-OWNER' AND m.status = 'ACTIVE'
-          WHERE o.status = 'ACTIVE'`,
+        `SELECT id AS org_id, display_name FROM organisations
+          WHERE status='ACTIVE' ORDER BY id`,
       );
 
       const weekKey = this.getIndiaSchedulePeriods().week;
-
+      let tenantFailures = 0;
       for (const org of activeOrgs) {
+        try {
         await client.query('BEGIN');
         await client.query(
           `SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`,
           [org.org_id],
         );
+        const { rows: owners } = await client.query(
+          `SELECT m.user_id FROM memberships m
+            JOIN users u ON u.id=m.user_id AND u.status='ACTIVE'
+            WHERE m.org_id=$1 AND m.role='R-OWNER' AND m.status='ACTIVE'
+            ORDER BY m.user_id`,
+          [org.org_id],
+        );
+        // Do not silently accept missing owners or pick an arbitrary owner
+        // when the exactly-one-eligible-owner invariant is violated.
+        if (owners.length !== 1) throw new Error('OWNER_DIGEST_OWNER_INVARIANT');
+        const ownerUserId: string = owners[0].user_id;
 
         // Calculate missing/expired counts and retention money gated per active project (RT-029)
         const { rows: projectRisks } = await client.query(
@@ -308,7 +321,7 @@ export class TradeCloseoutScheduler {
           [
             uuidv7(),
             org.org_id,
-            org.owner_user_id,
+            ownerUserId,
             JSON.stringify({
               orgDisplayName: org.display_name,
               totalRetentionAtRiskPaise: totalRetentionAtRiskPaise.toString(),
@@ -324,10 +337,14 @@ export class TradeCloseoutScheduler {
         );
 
         await client.query('COMMIT');
+        } catch {
+          await client.query('ROLLBACK').catch(() => {});
+          tenantFailures += 1;
+          // No recipient identity, provider detail, SQL or tenant metadata.
+          console.error('OWNER_DIGEST_TENANT_FAILED');
+        }
       }
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
+      if (tenantFailures) throw new Error('OWNER_DIGEST_INCOMPLETE');
     } finally {
       client.release();
     }
@@ -369,23 +386,24 @@ export class TradeCloseoutScheduler {
                   )::text, 'sha256'), 'hex') AS computed_hash
              FROM audit_events
             WHERE org_id = $1
-            ORDER BY chain_seq ASC`,
+            ORDER BY chain_seq ASC, id ASC`,
           [org.id],
         );
 
-        let prevHash: string | null = null;
-        for (let i = 0; i < events.length; i++) {
-          const ev = events[i];
-          if (prevHash !== null && ev.prev_hash !== prevHash) {
-            throw new Error(
-              `AUDIT_HASH_CHAIN_CORRUPT: Tampering detected for org ${org.id} at chain_seq ${ev.chain_seq}. Expected prev_hash ${prevHash}, got ${ev.prev_hash}`,
-            );
+        // PH1-G27-002: verify genesis as well as every link and never skip
+        // a NULL computed digest. Sequence must advance strictly even where
+        // an attacker attempted to insert a duplicate or forged ordering key.
+        let prevHash = 'GENESIS_0000000000000000000000000000000000000000000000000000000000000000';
+        let prevSeq = -1n;
+        for (const ev of events) {
+          const seq = BigInt(ev.chain_seq);
+          if (seq <= prevSeq) throw new Error('AUDIT_CHAIN_ORDER_INVALID');
+          if (ev.prev_hash !== prevHash) throw new Error('AUDIT_HASH_CHAIN_CORRUPT');
+          if (typeof ev.hash !== 'string' || !/^[a-f0-9]{64}$/.test(ev.hash) ||
+              ev.hash !== ev.computed_hash) {
+            throw new Error('AUDIT_CONTENT_TAMPERED');
           }
-          if (ev.computed_hash && ev.hash !== ev.computed_hash) {
-            throw new Error(
-              `AUDIT_CONTENT_TAMPERED: Payload tampering detected for org ${org.id} at chain_seq ${ev.chain_seq} (id: ${ev.id}). Stored hash ${ev.hash} does not match computed hash ${ev.computed_hash}`,
-            );
-          }
+          prevSeq = seq;
           prevHash = ev.hash;
           verifiedEvents++;
         }
@@ -394,7 +412,7 @@ export class TradeCloseoutScheduler {
       }
       return { orgCount: orgs.length, verifiedEvents };
     } catch (err) {
-      await client.query('ROLLBACK');
+      await client.query('ROLLBACK').catch(() => {});
       throw err;
     } finally {
       client.release();

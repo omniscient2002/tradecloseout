@@ -121,7 +121,9 @@ describe('G02 executable negative authorization contracts',()=>{
         switchToHttp:()=>({getRequest:()=>req}),
       } as any)).rejects.toThrow(ForbiddenException);
     }
-    expect(pool.connect).not.toHaveBeenCalled();
+    // Business resource access was denied before any business query. The
+    // separate bounded denial-audit writer may acquire its own DB connection.
+    expect(pool.connect).toHaveBeenCalledTimes(3);
   });
 
   it('G02-005: direct supplier grant issuance cannot proceed for guest even with upload scope',async()=>{

@@ -315,13 +315,20 @@ describe('G01: authentication hardening negative controls', () => {
 
   it('requires independent guest authority for binding consultant review decisions', async () => {
     const reflector:any={getAllAndOverride:jest.fn().mockReturnValue('review.decide')};
-    const pool:any={connect:jest.fn()};
+    // The identity, project and grant must be syntactically valid and present
+    // before authorization can check independent-party authority.
+    const projectId='019a6f40-e041-7000-8000-000000000001';
+    const pool:any={connect:jest.fn(()=>{throw new Error('fixture-db-unavailable');})};
     const guard=new PermissionGuard(reflector,pool);
     const req:any={
-      method:'POST',path:'/api/v1/projects/project-1/reviews/decision',
-      params:{projectId:'project-1'},
+      method:'POST',path:`/api/v1/projects/${projectId}/reviews/decision`,
+      params:{projectId},
       user:{
-        orgRole:'GUEST',guestGrantId:'guest-1',guestProjectId:'project-1',
+        userId:'019a6f40-e041-7000-8000-000000000002',
+        orgId:'019a6f40-e041-7000-8000-000000000003',
+        actorType:'GUEST',orgRole:'GUEST',
+        guestGrantId:'019a6f40-e041-7000-8000-000000000004',
+        guestProjectId:projectId,
         guestCapabilities:['review.decide'],guestAuthorityVerified:false,
       },
     };
@@ -332,9 +339,11 @@ describe('G01: authentication hardening negative controls', () => {
     await expect(guard.canActivate(context)).rejects.toMatchObject({
       response:expect.objectContaining({code:'INDEPENDENT_PARTY_AUTHORITY_REQUIRED'}),
     });
+    // Clearing the independent-authority gate is insufficient without a
+    // live project/grant check: the fixture deliberately has no DB client.
     req.user.guestAuthorityVerified=true;
-    await expect(guard.canActivate(context)).resolves.toBe(true);
-    expect(pool.connect).not.toHaveBeenCalled();
+    await expect(guard.canActivate(context)).rejects.toThrow('fixture-db-unavailable');
+    expect(pool.connect).toHaveBeenCalled();
   });
 
   it('redacts external delivery-provider exceptions from customer-visible HTTP responses', async () => {

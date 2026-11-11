@@ -12,13 +12,13 @@ describe('review authority and expiry', () => {
         return { rows: [{ project_id: 'project-1' }] };
       }
       if (sql.includes('SELECT * FROM reviews')) {
-        return { rows: [{ id: 'review-1', status: 'IN_REVIEW', reviewer_subject_type: 'USER', reviewer_subject_id: 'other-user' }] };
+        return { rows: [{ id: 'review-1', project_id: 'project-1', status: 'IN_REVIEW', reviewer_subject_type: 'USER', reviewer_subject_id: 'other-user' }] };
       }
       return { rows: [] };
     });
     const service = new ReviewsService({ withTenantContext: async (_ctx: unknown, work: any) => work({ query }) } as any);
     await expect(service.decideReview(actor, 'review-1', { decision: 'APPROVE' })).rejects.toThrow('REVIEW_ASSIGNMENT_REQUIRED');
-    expect(query).toHaveBeenCalledTimes(1);
+    expect(query).toHaveBeenCalledTimes(2);
   });
 
   it('does not create an assignment as a side effect of deciding', async () => {
@@ -64,7 +64,7 @@ describe('review authority and expiry', () => {
         return { rows: [{ project_id: 'project-1' }] };
       }
       if (sql.includes('SELECT * FROM reviews')) {
-        return { rows: [{ id: 'review-1', status: 'IN_REVIEW', reviewer_subject_type: 'USER',
+        return { rows: [{ id: 'review-1', project_id: 'project-1', status: 'IN_REVIEW', reviewer_subject_type: 'USER',
           reviewer_subject_id: actor.userId, document_version_id: 'version-1' }] };
       }
       if (sql.includes('SELECT * FROM document_versions')) {

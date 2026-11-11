@@ -121,6 +121,30 @@ void test('Disposable PostgreSQL migration, isolation and audit regression tests
       });
     });
 
+    await t.test('PH1-G26-008: forged audit chain_seq is replaced under trusted tenant serialization', async () => {
+      const defaultRow = (await admin.query(`SELECT pg_get_expr(d.adbin,d.adrelid) AS def
+        FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid
+        LEFT JOIN pg_attrdef d ON d.adrelid=c.oid AND d.adnum=a.attnum
+        WHERE c.oid='public.audit_events'::regclass AND a.attname='chain_seq'`)).rows[0];
+      assert.equal(defaultRow.def,null,'Audit position must not be allocated before row lock');
+      await scoped(app,b.orgId,async client=>{
+        const write=async(seq:number)=>{
+          const id=randomUUID();
+          await client.query(`INSERT INTO audit_events
+            (id,org_id,actor_type,action,entity_type,entity_id,chain_seq,prev_hash,hash,request_id)
+            VALUES($1,$2,'SYSTEM','AUDIT_FORGED_SEQUENCE','PROJECT',$3,$4,$5,$6,'audit-sequence-test')`,
+            [id,b.orgId,b.projectIds[0],seq,'CLIENT_FORGED_PREV','CLIENT_FORGED_HASH']);
+          return (await client.query(`SELECT chain_seq,prev_hash,hash FROM audit_events WHERE id=$1`,[id])).rows[0];
+        };
+        const first=await write(999_999);
+        const second=await write(Number(first.chain_seq));
+        assert.notEqual(Number(first.chain_seq),999_999);
+        assert(Number(second.chain_seq)>Number(first.chain_seq));
+        assert.equal(second.prev_hash,first.hash);
+        assert.notEqual(second.hash,'CLIENT_FORGED_HASH');
+      });
+    });
+
     await t.test('DB-08: direct cross-project procurement insert fails the intended composite FK', async () => {
       const partyId = randomUUID();
       await admin.query(`INSERT INTO parties (id, org_id, name, types) VALUES ($1, $2, 'Test supplier', ARRAY['SUPPLIER'])`, [partyId, a.orgId]);

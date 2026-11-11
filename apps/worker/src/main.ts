@@ -76,11 +76,28 @@ async function bootWorker() {
     throw new Error('BOOT_WORKER_QPDF_REQUIRED');
   }
 
+  // PH1-G24-006/010: the cycle and the outbox poller must never overlap
+  // with themselves; shutdown stops new admission and drains known in-flight work.
+  let shuttingDown = false;
+  let scheduledInFlight: Promise<void> | null = null;
+  let outboxInFlight: Promise<void> | null = null;
+  const runWithSafePeriodLock = async (
+    ...args: Parameters<typeof scheduler.runWithPeriodLock>
+  ): Promise<void> => {
+    try {
+      await scheduler.runWithPeriodLock(...args);
+    } catch {
+      // Each task retains its own durable period lock / retry opportunity.
+      // Failure of one task must not starve another task on the same tick.
+      console.error('SCHEDULER_PERIOD_TASK_FAILED');
+    }
+  };
+
   // 1. Scheduled Background Tasks
   const runScheduledCycles = async () => {
     try {
       const periods = scheduler.getIndiaSchedulePeriods();
-      await scheduler.runWithPeriodLock(
+      await runWithSafePeriodLock(
         `daily-expiry:${periods.day}`,
         `sched:done:daily-expiry:${periods.day}`,
         300,
@@ -94,7 +111,7 @@ async function bootWorker() {
       );
 
       if (periods.weekday === 'Mon') {
-        await scheduler.runWithPeriodLock(
+        await runWithSafePeriodLock(
           `weekly-owner-digest:${periods.week}`,
           `sched:done:weekly-owner-digest:${periods.week}`,
           600,
@@ -103,7 +120,7 @@ async function bootWorker() {
         );
       }
 
-      await scheduler.runWithPeriodLock(
+      await runWithSafePeriodLock(
         `audit-hash-chain:${periods.day}`,
         `sched:done:audit-hash-chain:${periods.day}`,
         600,
@@ -116,7 +133,7 @@ async function bootWorker() {
         },
       );
 
-      await scheduler.runWithPeriodLock(
+      await runWithSafePeriodLock(
         `storage-lifecycle-cleanup:${periods.hourSlot}`,
         `sched:done:storage-lifecycle-cleanup:${periods.hourSlot}`,
         300,
@@ -131,7 +148,7 @@ async function bootWorker() {
         },
       );
 
-      await scheduler.runWithPeriodLock(
+      await runWithSafePeriodLock(
         `idempotency-reconciliation:${periods.hourSlot}`,
         `sched:done:idempotency-reconciliation:${periods.hourSlot}`,
         300,
@@ -144,7 +161,7 @@ async function bootWorker() {
         },
       );
 
-      await scheduler.runWithPeriodLock(
+      await runWithSafePeriodLock(
         `auth-ephemera:${periods.hourSlot}`,
         `sched:done:auth-ephemera:${periods.hourSlot}`,
         300, 2 * 60 * 60,
@@ -156,7 +173,7 @@ async function bootWorker() {
         },
       );
 
-      await scheduler.runWithPeriodLock(
+      await runWithSafePeriodLock(
         `g01-invitation-reconciliation:${periods.hourSlot}`,
         `sched:done:g01-invitation-reconciliation:${periods.hourSlot}`,
         300,2*60*60,
@@ -170,12 +187,21 @@ async function bootWorker() {
         },
       );
 
-      await scheduler.reconcileAuthenticationDeliveries();
+      try {
+        await scheduler.reconcileAuthenticationDeliveries();
+      } catch {
+        console.error('SCHEDULER_AUTH_DELIVERY_FAILED');
+      }
 
-      // Notification delivery cycle honoring IST quiet hours
-      const sentNotifications = await scheduler.dispatchQueuedNotifications();
-      if (sentNotifications > 0) {
-        console.log(`[Scheduler] Dispatched ${sentNotifications} queued notifications.`);
+      // Notification delivery is independently scheduled: delivery ledger
+      // outage must not block queued notifications or vice versa.
+      try {
+        const sentNotifications = await scheduler.dispatchQueuedNotifications();
+        if (sentNotifications > 0) {
+          console.log(`[Scheduler] Dispatched ${sentNotifications} queued notifications.`);
+        }
+      } catch {
+        console.error('SCHEDULER_NOTIFICATION_DELIVERY_FAILED');
       }
     } catch (err) {
       console.error('[Scheduler Error]:', err);
@@ -183,7 +209,13 @@ async function bootWorker() {
   };
 
   await runScheduledCycles();
-  const cycleInterval = setInterval(runScheduledCycles, 60 * 1000);
+  const scheduleTick = () => {
+    if (shuttingDown || scheduledInFlight) return;
+    scheduledInFlight = runScheduledCycles().finally(() => {
+      scheduledInFlight = null;
+    });
+  };
+  const cycleInterval = setInterval(scheduleTick, 60 * 1000);
 
   // 2. BullMQ Queues
   const fileQueue = new Queue('file-processing', { connection: redis });
@@ -528,14 +560,39 @@ async function bootWorker() {
     }
   };
 
-  const outboxInterval = setInterval(pollOutbox, 2000);
+  const outboxTick = () => {
+    if (shuttingDown || outboxInFlight) return;
+    outboxInFlight = pollOutbox().finally(() => {
+      outboxInFlight = null;
+    });
+  };
+  const outboxInterval = setInterval(outboxTick, 2000);
 
   console.log('✓ TradeCloseout Worker, BullMQ Queues & Leader-Locked Schedulers are ACTIVE.');
 
   const shutdown = async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     console.log('Shutting down TradeCloseout Worker...');
     clearInterval(cycleInterval);
     clearInterval(outboxInterval);
+    const pending = [scheduledInFlight, outboxInFlight].filter(
+      (task): task is Promise<void> => task !== null,
+    );
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    const drained = await Promise.race([
+      Promise.allSettled(pending).then(() => true),
+      new Promise<boolean>(resolve => {
+        deadline = setTimeout(() => resolve(false), 30_000);
+      }),
+    ]);
+    if (deadline) clearTimeout(deadline);
+    if (!drained) {
+      // An uncertain in-flight outcome must not be announced as a clean exit.
+      // Durable claims are left for recovery; the supervisor observes failure.
+      console.error('WORKER_INFLIGHT_DRAIN_TIMEOUT');
+      process.exit(1);
+    }
     await Promise.all([fileWorker.close(), pdfWorker.close(), formatWorker.close(), archiveWorker.close()]);
     await Promise.all([fileQueue.close(), pdfQueue.close(), formatQueue.close(), archiveQueue.close()]);
     await pool.end();

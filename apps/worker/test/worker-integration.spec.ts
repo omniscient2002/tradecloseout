@@ -61,6 +61,54 @@ void test('Isolated worker DB/Redis and storage HTTP contract regressions', asyn
         const period = scheduler.getIndiaSchedulePeriods(new Date('2027-01-03T18:30:00Z'));
         assert.equal(period.day, '2027-01-04'); assert.equal(period.hour, 0); assert.equal(period.week, '2027-W01');
       });
+      await t.test('PH1-G24-002: tenant-scoped active owner digests are delivered once and missing owners fail visibly', async () => {
+        for (const orgId of [a.orgId,b.orgId]) {
+          await admin.query(`INSERT INTO memberships
+             (id,org_id,user_id,role,status) VALUES($1,$2,$3,'R-OWNER','ACTIVE')`,
+            [randomUUID(),orgId,userId]);
+        }
+        // The restricted application role cannot scan all memberships
+        // without a tenant context: prove that discovery alone is insufficient.
+        assert.equal((await app.query(
+          `SELECT org_id FROM memberships WHERE role='R-OWNER' AND status='ACTIVE'`
+        )).rows.length,0);
+        await scheduler.runWeeklyOwnerRetentionAtRiskDigest();
+        const delivered = await admin.query(`SELECT org_id,recipient_user_id
+          FROM notifications WHERE event_key='WEEKLY_OWNER_DIGEST' ORDER BY org_id`);
+        assert.equal(delivered.rows.length,2);
+        assert.deepEqual(new Set(delivered.rows.map(row=>row.org_id)),new Set([a.orgId,b.orgId]));
+        assert(delivered.rows.every(row=>row.recipient_user_id===userId));
+        await scheduler.runWeeklyOwnerRetentionAtRiskDigest();
+        assert.equal((await admin.query(`SELECT count(*)::int n FROM notifications
+          WHERE event_key='WEEKLY_OWNER_DIGEST'`)).rows[0].n,2);
+        await admin.query(`UPDATE memberships SET status='REMOVED'
+          WHERE org_id=$1 AND user_id=$2`,[b.orgId,userId]);
+        await assert.rejects(scheduler.runWeeklyOwnerRetentionAtRiskDigest(), /OWNER_DIGEST_INCOMPLETE/);
+      });
+      await t.test('PH1-G27-002: verifier includes genesis and verifies real tenant chains', async () => {
+        for(const tenant of [a,b]) {
+          await scoped(app,tenant.orgId,client=>client.query(`INSERT INTO audit_events
+            (id,org_id,actor_type,action,entity_type,entity_id,request_id)
+            VALUES($1,$2,'SYSTEM','WORKER_VERIFIER_PROBE','PROJECT',$3,'worker-audit-test')`,
+            [randomUUID(),tenant.orgId,tenant.projectIds[0]]));
+        }
+        const verified=await scheduler.verifyAuditHashChainIntegrity();
+        assert.equal(verified.orgCount,2);
+        assert.equal(verified.verifiedEvents,2);
+        // Independent negative contract: do not alter an actual audit trail.
+        const mockClient={
+          query:async(sql:string)=>{
+            if(sql.includes('SELECT id FROM organisations'))return {rows:[{id:a.orgId}]};
+            if(sql.includes('FROM audit_events'))return {rows:[{
+              id:randomUUID(),chain_seq:'1',prev_hash:'FORGED_GENESIS',
+              hash:'a'.repeat(64),computed_hash:'a'.repeat(64),
+            }]};
+            return {rows:[]};
+          },release:()=>{},
+        };
+        const corrupted=new TradeCloseoutScheduler({connect:async()=>mockClient} as any,redis);
+        await assert.rejects(corrupted.verifyAuditHashChainIntegrity(),/AUDIT_HASH_CHAIN_CORRUPT/);
+      });
       await t.test('TX-05/06: cleanup retains expired unresolved claims after committed effect', async () => {
         const pending = randomUUID(); const completed = randomUUID();
         await admin.query(`INSERT INTO idempotency_keys (id,org_id,key,endpoint,request_hash,response_status,response_json,expires_at,created_at)
