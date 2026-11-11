@@ -129,7 +129,7 @@ export async function withTenantTransaction<T>(
             // The trusted context must win over all caller-provided fields.
             // Preserve legacy consumer payloads but never let a domain event
             // impersonate a different tenant, actor or resource identity.
-            ...(ev.afterJson || {}),
+            ...(ev.afterJson ? redactSensitiveFields(ev.afterJson) : {}),
             eventId,
             orgId: ctx.orgId,
             projectId: ev.projectId ?? null,
@@ -240,13 +240,30 @@ export async function reconcileStorageQuotaOnFileStatusChange(
   );
 }
 
+/**
+ * Defense in depth for structured event data before it reaches either the
+ * immutable audit ledger or the worker outbox. This is not a substitute for
+ * schema-level event allowlists or secret-free producer contracts.
+ */
 export function redactSensitiveFields(obj: Record<string, unknown>): Record<string, unknown> {
-  const REDACTED_KEYS = new Set(['token', 'token_hash', 'otp', 'password', 'secret', 'qr_payload']);
-  const clone: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(obj)) {
-    clone[k] = REDACTED_KEYS.has(k.toLowerCase()) ? '[REDACTED]' : v;
-  }
-  return clone;
+  const secretKey = /(?:^|_)(?:token|secret|password|otp|pin|api_key|access_key|private_key|recovery_code|backup_code|authorization|cookie|qr_payload|client_secret)(?:_|$)/i;
+  const isSecretKey = (key: string) => secretKey.test(
+    key.replace(/([a-z0-9])([A-Z])/g, '$1_$2').replace(/[.\-]/g, '_').toLowerCase(),
+  );
+  const signedUrl = /(?:[?&](?:X-Amz-(?:Signature|Credential|Security-Token)|Signature|token|access_token|sig)=)/i;
+  const sanitize = (value: unknown, depth: number): unknown => {
+    if (depth > 32) return '[REDACTED]';
+    if (typeof value === 'string') {
+      return signedUrl.test(value) ? '[REDACTED]' : value;
+    }
+    if (Array.isArray(value)) return value.map((item) => sanitize(item, depth + 1));
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(Object.entries(value).map(([key, entry]) =>
+        [key, isSecretKey(key) ? '[REDACTED]' : sanitize(entry, depth + 1)]));
+    }
+    return value;
+  };
+  return sanitize(obj, 0) as Record<string, unknown>;
 }
 
 export function hashRequestPayload(body: unknown): string {
