@@ -71,6 +71,46 @@ void test('Disposable PostgreSQL migration, isolation and audit regression tests
         assert(row.relforcerowsecurity, `${row.relname} has unforced RLS`);
       }
     });
+    await t.test('PH1-G26-001: direct audit partitions deny tc_app and enforce RLS', async () => {
+      const partitions = (await admin.query(`
+        SELECT c.relname, c.relrowsecurity AS rls, c.relforcerowsecurity AS forced,
+               has_table_privilege('tc_app', c.oid, 'SELECT') AS can_select,
+               has_table_privilege('tc_app', c.oid, 'INSERT') AS can_insert,
+               has_table_privilege('tc_app', c.oid, 'UPDATE') AS can_update,
+               has_table_privilege('tc_app', c.oid, 'DELETE') AS can_delete,
+               has_table_privilege('tc_app', c.oid, 'TRUNCATE') AS can_truncate
+          FROM pg_inherits i
+          JOIN pg_class c ON c.oid=i.inhrelid
+         WHERE i.inhparent='public.audit_events'::regclass
+         ORDER BY c.relname`)).rows;
+      assert(partitions.length >= 4, 'Expected the three dated audit partitions and default');
+      for (const child of partitions) {
+        assert(child.rls && child.forced, `No enforced child RLS: ${child.relname}`);
+        for (const privilege of ['can_select','can_insert','can_update','can_delete','can_truncate']) {
+          assert.equal(child[privilege], false, `Direct child privilege: ${child.relname} ${privilege}`);
+        }
+        const childName = '"' + String(child.relname).replace(/"/g, '""') + '"';
+        for (const sql of [
+          `SELECT id FROM public.${childName} LIMIT 1`,
+          `INSERT INTO public.${childName} DEFAULT VALUES`,
+          `UPDATE public.${childName} SET action=action`,
+          `DELETE FROM public.${childName}`,
+          `TRUNCATE TABLE public.${childName}`,
+        ]) {
+          await assert.rejects(app.query(sql), (error: any) => error.code === '42501');
+        }
+      }
+      // Parent-side writes remain permitted for a valid tenant context.
+      await scoped(app, a.orgId, async client => {
+        const eventId = randomUUID();
+        await client.query(`INSERT INTO audit_events
+          (id, org_id, actor_type, action, entity_type, entity_id)
+          VALUES ($1, $2, 'SYSTEM', 'PARTITION_REGRESSION', 'PROJECT', $3)`,
+          [eventId, a.orgId, a.projectIds[0]]);
+        assert.equal((await client.query('SELECT id FROM audit_events WHERE id=$1', [eventId])).rowCount, 1);
+      });
+    });
+
     await t.test('DB-08: direct cross-project procurement insert fails the intended composite FK', async () => {
       const partyId = randomUUID();
       await admin.query(`INSERT INTO parties (id, org_id, name, types) VALUES ($1, $2, 'Test supplier', ARRAY['SUPPLIER'])`, [partyId, a.orgId]);
@@ -111,9 +151,15 @@ void test('Disposable PostgreSQL migration, isolation and audit regression tests
       for (const mutation of ['UPDATE audit_events SET action = action', 'DELETE FROM audit_events']) {
         await assert.rejects(scoped(app, a.orgId, client => client.query(mutation)), /AUDIT_IMMUTABLE/);
       }
+      // Simulate a privileged DDL attacker disabling both parent and cloned
+      // child mutation controls. The verifier must still detect hash damage.
       await admin.query('ALTER TABLE audit_events DISABLE TRIGGER trg_audit_events_immutable');
+      await admin.query('ALTER TABLE audit_events DISABLE TRIGGER trg_phase1_audit_immutable');
       try { await admin.query(`UPDATE audit_events SET after_json = '{"tampered":true}' WHERE org_id = $1`, [a.orgId]); }
-      finally { await admin.query('ALTER TABLE audit_events ENABLE TRIGGER trg_audit_events_immutable'); }
+      finally {
+        await admin.query('ALTER TABLE audit_events ENABLE TRIGGER trg_phase1_audit_immutable');
+        await admin.query('ALTER TABLE audit_events ENABLE TRIGGER trg_audit_events_immutable');
+      }
       assert((await check()).every(event => event.hash !== event.computed));
     });
     await t.test('N30: canonical tenant alias validation rejects conflicting tenant settings', async () => {
