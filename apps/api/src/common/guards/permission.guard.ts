@@ -84,6 +84,17 @@ export class PermissionGuard implements CanActivate {
       if (!user || !user.orgId || !user.userId) {
         throw new ForbiddenException({code:'UNAUTHENTICATED'});
       }
+      // Guest capability denial is possible *without* database acquisition.
+      // Preserve the PR4 guarantee that an upload-only bearer cannot even
+      // enumerate package/download resources via authorization metadata.
+      if(isGuest){
+        const preflight=hasPermission({
+          guestCapabilities:user.guestCapabilities||[],
+        },permission);
+        if(!preflight.allowed){
+          throw new ForbiddenException({code:'PERMISSION_DENIED'});
+        }
+      }
       assertAuthorizationInputShape(req.params,req.body);
       if (isGuest && ['package.accept','inspection.witness','review.decide'].includes(permission) &&
           user.guestAuthorityVerified!==true) {
