@@ -416,7 +416,8 @@ export class OrganisationsService {
       });
     }
 
-    const issued = await withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+    const issued = await withTenantTransaction(this.pool, ctx,
+      async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
       const { rows: issuer } = await client.query(
         `SELECT role FROM memberships
          WHERE org_id=$1 AND user_id=$2 AND status='ACTIVE' FOR SHARE`,
@@ -470,6 +471,10 @@ export class OrganisationsService {
         [invId, orgId, email, dto.role, tokenHash, initialStatus, ctx.userId],
       );
 
+      emit({
+        eventType:'ORG_INVITATION_ISSUED',entityType:'INVITATION',entityId:invId,
+        afterJson:{invitedBy:ctx.userId,role:dto.role,deliveryStatus:initialStatus},
+      });
       return {
         ...inv[0],
         invitationToken: rawToken,
@@ -552,7 +557,7 @@ export class OrganisationsService {
   async revokeInvitation(ctx: TenantActorContext, orgId: string, invitationId: string) {
     if (orgId !== ctx.orgId) throw new NotFoundException('ORGANISATION_NOT_FOUND');
 
-    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
       const { rows } = await client.query(
         `UPDATE invitations
             SET status = 'REVOKED'
@@ -564,7 +569,8 @@ export class OrganisationsService {
       if (rows.length === 0) {
         throw new NotFoundException('INVITATION_NOT_FOUND');
       }
-
+      emit({eventType:'ORG_INVITATION_REVOKED',entityType:'INVITATION',
+        entityId:invitationId,afterJson:{revokedBy:ctx.userId,status:'REVOKED'}});
       return rows[0];
     });
   }
