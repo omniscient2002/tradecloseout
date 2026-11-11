@@ -101,7 +101,10 @@ export function validateAuthenticationConfig(env: NodeJS.ProcessEnv = process.en
     const expires = env.AUTH_MFA_PREVIOUS_KEY_EXPIRES_AT || '';
     const validTimestamp = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(expires);
     const deadline = validTimestamp ? Date.parse(expires) : NaN;
-    if (!Number.isFinite(deadline) || deadline <= Date.now() ||
+    // A previously configured key may remain after its retirement deadline:
+    // it must no longer decrypt or verify anything, but current factors must
+    // continue working. Reject malformed/unbounded future deadlines.
+    if (!Number.isFinite(deadline) ||
         deadline > Date.now() + 30 * 24 * 60 * 60 * 1000) {
       throw new Error('BOOT_AUTH_MFA_PREVIOUS_KEY_EXPIRED_OR_UNBOUNDED');
     }
