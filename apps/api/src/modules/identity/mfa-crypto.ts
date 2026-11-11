@@ -79,8 +79,9 @@ export function decryptFactor(envelope: string): string {
   };
   // Always try the current key first. A malformed or retired fallback key
   // must not prevent authentication with valid current-key material.
+  const primary = encryptionKey(); // Invalid primary configuration must fail closed.
   try {
-    return decryptWithKey(encryptionKey());
+    return decryptWithKey(primary);
   } catch {
     // The GCM tag may belong to a permitted previous rotation key.
   }
