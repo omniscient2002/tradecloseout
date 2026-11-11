@@ -118,17 +118,8 @@ export async function withTenantTransaction<T>(
           ev.projectId ?? null,
           ev.eventType,
           JSON.stringify({
-            eventId,
-            orgId: ctx.orgId,
-            projectId: ev.projectId ?? null,
-            entityType: ev.entityType,
-            entityId: ev.entityId,
-            packageId: ev.entityType === 'HANDOVER_PACKAGE' ? ev.entityId : undefined,
-            actorUserId: ctx.userId,
-            requestId: ctx.requestId,
-            // The trusted context must win over all caller-provided fields.
-            // Preserve legacy consumer payloads but never let a domain event
-            // impersonate a different tenant, actor or resource identity.
+            // Preserve legacy payload contracts, but reserved identity fields
+            // may only come from the trusted transaction context.
             ...(ev.afterJson ? redactSensitiveFields(ev.afterJson) : {}),
             eventId,
             orgId: ctx.orgId,
