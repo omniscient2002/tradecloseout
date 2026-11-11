@@ -6,7 +6,7 @@ The primary source is `e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4` (PR16). G03-onl
 
 All local service data is synthetic, on loopback PostgreSQL16/Redis with the repository's randomly named disposable database helper. Migrations run on the disposable DB with the migrator; service methods run as restricted `tc_app` (no SUPERUSER/BYPASSRLS). The helper refuses target mismatch and removes only its created random database. Do not point these probes at production or import real customer/environment secrets.
 
-Node22 and package-manager version from package.json (pnpm12.4.1) were used, with qpdf/unzip and Playwright Chromium. Each frozen checkout used `pnpm install --frozen-lockfile`. The clean primary typecheck/build/workspace suite completed before audit probes were added. Full results are in typecheck.log, build.log, test.log, security.log and rbac.log. Test counts reflect the pinned candidate, not historical main or earlier PR12.
+Node22 and package-manager version from package.json (pnpm12.4.1) were used, with qpdf/unzip and Playwright Chromium. Each frozen checkout used `pnpm install --frozen-lockfile`. The clean primary typecheck/build/workspace suite completed before audit probes were added. Full results are in typecheck.log, build.log, test.log, security.log and rbac.log. Published logs remove terminal ANSI escapes and trailing whitespace; command outcomes and diagnostic text are retained. Test counts reflect the pinned candidate, not historical main or earlier PR12.
 
 Primary commands, from repository root:
 
