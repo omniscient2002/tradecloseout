@@ -1,0 +1,10 @@
+$ pnpm --filter @tradecloseout/api exec jest --runInBand test/rls-and-integrity.spec.ts test/rls-isolation.spec.ts test/security-invariants.e2e-spec.ts
+PASS test/rls-isolation.spec.ts
+PASS test/rls-and-integrity.spec.ts
+PASS test/security-invariants.e2e-spec.ts
+
+Test Suites: 3 passed, 3 total
+Tests:       15 passed, 15 total
+Snapshots:   0 total
+Time:        4.519 s
+Ran all test suites matching /test\/rls-and-integrity.spec.ts|test\/rls-isolation.spec.ts|test\/security-invariants.e2e-spec.ts/i.

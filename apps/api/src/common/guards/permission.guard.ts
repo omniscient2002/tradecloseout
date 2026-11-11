@@ -37,6 +37,13 @@ export class PermissionGuard implements CanActivate {
 
     const isGuest = Boolean(user.guestGrantId || user.actorType === 'GUEST');
 
+    if (isGuest && ['package.accept', 'inspection.witness', 'review.decide'].includes(requiredPermission) &&
+        user.guestAuthorityVerified !== true) {
+      throw new ForbiddenException({
+        code: 'INDEPENDENT_PARTY_AUTHORITY_REQUIRED',
+        detail: 'Independent counterparty authority is required before externally binding reviews, witness attestations or package acceptance.',
+      });
+    }
     if (isGuest) {
       // FV01: Strictly deny organisation administration to ordinary project guests
       const FORBIDDEN_GUEST_PERMISSIONS = new Set([

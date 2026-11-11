@@ -1,0 +1,21 @@
+Scope: all 7 workspace projects
+✓ Lockfile passes supply-chain policies (verified 3d ago)
+Lockfile is up to date, resolution step is skipped
+Already up to date
+.../node_modules/msgpackr-extract install$ node-gyp-build-optional-packages
+.../esbuild@0.28.2/node_modules/esbuild postinstall$ node install.js
+.../node_modules/@parcel/watcher install$ node scripts/build-from-source.js
+.../node_modules/@parcel/watcher install: Done
+.../esbuild@0.28.2/node_modules/esbuild postinstall: Done
+.../node_modules/msgpackr-extract install: Done
+Done in 363ms using pnpm v12.4.1
+$ pnpm --filter @tradecloseout/api exec jest --runInBand test/rls-and-integrity.spec.ts test/rls-isolation.spec.ts test/security-invariants.e2e-spec.ts
+PASS test/rls-isolation.spec.ts
+PASS test/rls-and-integrity.spec.ts
+PASS test/security-invariants.e2e-spec.ts
+
+Test Suites: 3 passed, 3 total
+Tests:       15 passed, 15 total
+Snapshots:   0 total
+Time:        4.723 s, estimated 5 s
+Ran all test suites matching /test\/rls-and-integrity.spec.ts|test\/rls-isolation.spec.ts|test\/security-invariants.e2e-spec.ts/i.

@@ -16,6 +16,7 @@ import { uuidv7 } from 'uuidv7';
 import { STANDARD_COMPANION_RULES } from '@tradecloseout/db';
 import { TenantDbService, ExecutionContext } from '../../database/tenant-db.service';
 import { ExternalApprovalDto } from './dto/external-approval.dto';
+import { isProductionEnvironment } from '../identity/auth-security';
 
 export function isExpiredOnIndiaDate(expiryDate: string | Date, now = new Date()): boolean {
   const expiry = expiryDate instanceof Date ? expiryDate.toISOString().slice(0, 10) : String(expiryDate).slice(0, 10);
@@ -921,6 +922,26 @@ export class ReviewsService {
         throw new UnprocessableEntityException('EXTERNAL_PROOF_NOT_VERIFIED_IN_PROJECT');
       }
       if (proofRes.rows.length > 1) throw new UnprocessableEntityException('EXTERNAL_PROOF_VERSION_AMBIGUOUS');
+
+      // G01-001: an issuer-selected PDF, email screenshot or claimed party
+      // name is not itself an authorised external acceptance. Two different
+      // platform reviewers must attest to the identical, scanned READY proof
+      // bytes, exact target revision and designated counterparty before a
+      // contractor can record an offline external approval. This trusted SQL
+      // function exposes only a boolean; the API cannot forge review records.
+      if (isProductionEnvironment()) {
+        const {rows:verified} = await client.query(
+          `SELECT has_verified_external_document_approval($1,$2,$3,$4) AS valid`,
+          [ctx.orgId,version.id,proofRes.rows[0].proof_version_id,
+           dto.externalPartyId],
+        );
+        if (verified[0]?.valid !== true) {
+          throw new ForbiddenException({
+            code:'INDEPENDENT_EXTERNAL_PROOF_REQUIRED',
+            detail:'External approval requires independent verification of this exact document revision and the external decision evidence.',
+          });
+        }
+      }
 
       // Security Invariant (TC2-003): External approval requires verified READY file_status
       if (version.file_status !== 'READY') {
