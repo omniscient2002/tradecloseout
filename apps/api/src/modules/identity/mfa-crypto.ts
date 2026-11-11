@@ -19,9 +19,12 @@ function previousEncryptionKey(): Buffer | null {
   if (!previous) return null;
   const expires = process.env.AUTH_MFA_PREVIOUS_KEY_EXPIRES_AT;
   if (!expires || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(expires) ||
-      !Number.isFinite(Date.parse(expires)) || Date.parse(expires) <= Date.now()) {
+      !Number.isFinite(Date.parse(expires))) {
     throw new Error('BOOT_AUTH_MFA_PREVIOUS_KEY_EXPIRED_OR_UNBOUNDED');
   }
+  // An expired prior key is retired, not a reason to reject factors
+  // encrypted with the current key or current-key recovery codes.
+  if (Date.parse(expires) <= Date.now()) return null;
   const key = Buffer.from(previous, 'base64');
   if (key.length !== 32) throw new Error('BOOT_AUTH_MFA_PREVIOUS_ENCRYPTION_KEY_INVALID');
   return key;
