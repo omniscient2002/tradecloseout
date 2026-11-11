@@ -1,0 +1,298 @@
+{
+  "schema_version": 1,
+  "group": "G02",
+  "original_finding_count": 17,
+  "reviewed_sha": "863e6e0c56ad4a92af2580fbcbfc179832056b2d",
+  "assessment_date": "2026-11-11",
+  "assessment_kind": "Fresh targeted assessment; no earlier G02 output recovered",
+  "tracking_issue": null,
+  "coordinator_registered": false,
+  "release_decision": "NO_GO",
+  "provenance": "Assessor also implemented preceding G01 source changes; no independent acceptance asserted. Assessment documents published on docs/g02-authorization-audit-20261111 through a draft documentation PR; no application fixes, separate tracking issue or coordination policy created.",
+  "findings": [
+    {
+      "id": "G02-001",
+      "requirement": "Reconcile runtime policy and enforce reviewer project/resource scope",
+      "priority": "P1",
+      "acceptance": "Unassigned reviewer list/detail/package metadata and artifact routes deny without existence disclosure; assigned, applicable reviewer access succeeds; other tenants remain inaccessible. Cover all org/project role combinations and capability-presence disagreements, including document.reuse and submission.recipients_manage. Resolve documented policy ambiguity through accountable review. The demonstrated exposure is package metadata; no signed download or ready artifact was tested.",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION; see report for HTTP versus guard/service limits; not independent acceptance",
+      "evidence": [],
+      "review_reference": "docs/G02_AUTHORIZATION_RBAC_AUDIT_2026-11-11.md",
+      "local_evidence_refs": [
+        "docs/evidence/g02-audit-863e6e0/results.json"
+      ],
+      "probe_names": [
+        "dual_permission_evaluators",
+        "reviewer_reads_unassigned_project_package",
+        "actual_production_mode_http_routes"
+      ]
+    },
+    {
+      "id": "G02-002",
+      "requirement": "Enforce internal project_members.scope_json",
+      "priority": "P1",
+      "acceptance": "Allowed asset/requirement succeeds; another asset/requirement, mixed bulk request and indirect document links deny atomically. Exercise read-only/date/type/category scopes and update/removal races. This probe used real guards/services and PostgreSQL, not an HTTP PATCH.",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION; see report for HTTP versus guard/service limits; not independent acceptance",
+      "evidence": [],
+      "review_reference": "docs/G02_AUTHORIZATION_RBAC_AUDIT_2026-11-11.md",
+      "local_evidence_refs": [
+        "docs/evidence/g02-audit-863e6e0/results.json"
+      ],
+      "probe_names": [
+        "internal_scope_json_read",
+        "internal_scope_json_write"
+      ]
+    },
+    {
+      "id": "G02-003",
+      "requirement": "Filter guest requirement rows before serialization",
+      "priority": "P1",
+      "acceptance": "A-only supplier sees only A, including totals, pagination, filters and search; B, other suppliers and another tenant never appear. Empty scope and revoked/expired grants deny. Include upload-only and contributor profiles without making them project browsers.",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION; see report for HTTP versus guard/service limits; not independent acceptance",
+      "evidence": [],
+      "review_reference": "docs/G02_AUTHORIZATION_RBAC_AUDIT_2026-11-11.md",
+      "local_evidence_refs": [
+        "docs/evidence/g02-audit-863e6e0/results.json"
+      ],
+      "probe_names": [
+        "supplier_reads_unassigned_requirement",
+        "actual_production_mode_http_routes"
+      ]
+    },
+    {
+      "id": "G02-004",
+      "requirement": "Authorize every batch evidence link",
+      "priority": "P1",
+      "acceptance": "Allowed linkage succeeds; unassigned, non-owned, cross-project and cross-tenant inputs deny without partial writes. Mixed arrays, duplicate IDs, empty scope, revocation and concurrent changes retain atomicity. UPLOADED is not verified/approved evidence; no readiness claim is made by this reproduction.",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION; see report for HTTP versus guard/service limits; not independent acceptance",
+      "evidence": [],
+      "review_reference": "docs/G02_AUTHORIZATION_RBAC_AUDIT_2026-11-11.md",
+      "local_evidence_refs": [
+        "docs/evidence/g02-audit-863e6e0/results.json"
+      ],
+      "probe_names": [
+        "supplier_links_document_to_unassigned_requirement",
+        "actual_production_mode_http_routes"
+      ]
+    },
+    {
+      "id": "G02-005",
+      "requirement": "Separate grant issuance from supplier upload",
+      "priority": "P1",
+      "acceptance": "Authorized contractor issuance works. Suppliers cannot mint scope B, choose another party, prolong authority or reassign obligations. Denied issuance writes no grant/assignment/outbox event. Include revocation and closed-project races. No external invitation was sent in this audit.",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION; see report for HTTP versus guard/service limits; not independent acceptance",
+      "evidence": [],
+      "review_reference": "docs/G02_AUTHORIZATION_RBAC_AUDIT_2026-11-11.md",
+      "local_evidence_refs": [
+        "docs/evidence/g02-audit-863e6e0/results.json"
+      ],
+      "probe_names": [
+        "supplier_mints_new_grant_and_reassigns_requirement",
+        "actual_production_mode_http_routes"
+      ]
+    },
+    {
+      "id": "G02-006",
+      "requirement": "Protect contractor intake and evidence eligibility",
+      "priority": "P1",
+      "acceptance": "Supplier self-intake, unassigned/mismatched versions, null evidence, PROCESSING/quarantined/deleted versions and stale state deny. A properly authorized contractor accepts a legitimately submitted eligible version. Rejection, retries, concurrency and invalidation preserve correct status and history. Coordinate evidence semantics with the relevant document/procurement group; do not silently declare acceptance from this fixture.",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION; see report for HTTP versus guard/service limits; not independent acceptance",
+      "evidence": [],
+      "review_reference": "docs/G02_AUTHORIZATION_RBAC_AUDIT_2026-11-11.md",
+      "local_evidence_refs": [
+        "docs/evidence/g02-audit-863e6e0/results.json"
+      ],
+      "probe_names": [
+        "supplier_accepts_unassigned_pending_obligation_without_evidence",
+        "actual_production_mode_http_routes"
+      ]
+    },
+    {
+      "id": "G02-007",
+      "requirement": "Stop guest enumeration of internal members",
+      "priority": "P1",
+      "acceptance": "Internal authorized roster workflow remains useful; client, supplier and other external profiles cannot enumerate internal identities or unrelated contacts. Cover aliases, nested objects, unknown payloads, counts and projection context. Do not infer that every commercial-field projection has failed; the demonstrated leak is the member roster.",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION; see report for HTTP versus guard/service limits; not independent acceptance",
+      "evidence": [],
+      "review_reference": "docs/G02_AUTHORIZATION_RBAC_AUDIT_2026-11-11.md",
+      "local_evidence_refs": [
+        "docs/evidence/g02-audit-863e6e0/results.json"
+      ],
+      "probe_names": [
+        "client_reads_internal_member_identifiers_after_projection",
+        "actual_production_mode_http_routes"
+      ]
+    },
+    {
+      "id": "G02-008",
+      "requirement": "Bind nested upload completion to the actual resource project",
+      "priority": "P1",
+      "acceptance": "Authorized A/A completion succeeds; A/B and foreign-tenant tuples deny identically on all aliases. Exercise PENDING completion with actual isolated object fixtures, as well as PROCESSING/replay paths. This finding reproduced metadata exposure through the PROCESSING idempotent path; pending-upload storage mutation was not tested.",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION; see report for HTTP versus guard/service limits; not independent acceptance",
+      "evidence": [],
+      "review_reference": "docs/G02_AUTHORIZATION_RBAC_AUDIT_2026-11-11.md",
+      "local_evidence_refs": [
+        "docs/evidence/g02-audit-863e6e0/results.json"
+      ],
+      "probe_names": [
+        "nested_upload_completion_uses_foreign_project_version",
+        "direct_upload_completion_foreign_project_negative",
+        "actual_production_mode_http_routes"
+      ]
+    },
+    {
+      "id": "G02-009",
+      "requirement": "Recheck current project authority under the mutation lock",
+      "priority": "P1",
+      "acceptance": "A removal or demotion committed before the authoritative transaction check prevents the write. A write already inside the documented protected boundary either serializes before removal or fails consistently. Test real concurrent connections/API instances, role changes, scope changes, grant revocation, rollback and pool cleanup. Current evidence is deterministic service/guard scheduling, not a concurrent HTTP race test. Project removal need not revoke every unrelated org session if current authority is safely fenced otherwise.",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION; see report for HTTP versus guard/service limits; not independent acceptance",
+      "evidence": [],
+      "review_reference": "docs/G02_AUTHORIZATION_RBAC_AUDIT_2026-11-11.md",
+      "local_evidence_refs": [
+        "docs/evidence/g02-audit-863e6e0/results.json"
+      ],
+      "probe_names": [
+        "project_removal_after_guard_does_not_fence_write"
+      ]
+    },
+    {
+      "id": "G02-010",
+      "requirement": "Complete and validate the project-role catalogue",
+      "priority": "P2",
+      "acceptance": "Each approved project role contributes its intended capability only within its project and narrower resource scope. Org SITE/project QC can perform an eligible QC review but cannot decide unrelated requirements. Cover aliases, unknown/malformed roles, reviewer-role matching, assignment, self-approval and multi-project role changes. The read-route permission defect in 012 is related but does not supply the missing QC decision capability.",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION; see report for HTTP versus guard/service limits; not independent acceptance",
+      "evidence": [],
+      "review_reference": "docs/G02_AUTHORIZATION_RBAC_AUDIT_2026-11-11.md",
+      "local_evidence_refs": [
+        "docs/evidence/g02-audit-863e6e0/results.json"
+      ],
+      "probe_names": [
+        "project_qc_role_not_supported",
+        "actual_production_mode_http_routes"
+      ]
+    },
+    {
+      "id": "G02-011",
+      "requirement": "Resolve indirect resources before evaluating project capabilities",
+      "priority": "P2",
+      "acceptance": "Equivalent nested/direct routes agree for legitimate and forbidden actors. Test review, document/version, asset, requirement, package and submission aliases; forged project IDs; mixed bulk IDs; and concurrent role changes. Fixing a GET decorator alone does not repair other direct actions that depend on a project-derived capability.",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION; see report for HTTP versus guard/service limits; not independent acceptance",
+      "evidence": [],
+      "review_reference": "docs/G02_AUTHORIZATION_RBAC_AUDIT_2026-11-11.md",
+      "local_evidence_refs": [
+        "docs/evidence/g02-audit-863e6e0/results.json"
+      ],
+      "probe_names": [
+        "project_role_read_decision_nested",
+        "project_role_read_decision_direct",
+        "actual_production_mode_http_routes"
+      ]
+    },
+    {
+      "id": "G02-012",
+      "requirement": "Require read permission for review reads",
+      "priority": "P2",
+      "acceptance": "Scoped auditor and applicable external read workflows succeed without write/decision capability; unassigned reviewers and external parties cannot read unrelated/internal review data. Decision, self-approval, generic-review and legal-authority negatives remain enforced.",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION; see report for HTTP versus guard/service limits; not independent acceptance",
+      "evidence": [],
+      "review_reference": "docs/G02_AUTHORIZATION_RBAC_AUDIT_2026-11-11.md",
+      "local_evidence_refs": [
+        "docs/evidence/g02-audit-863e6e0/results.json"
+      ],
+      "probe_names": [
+        "auditor_review_read_denied_by_decision_permission",
+        "actual_production_mode_http_routes"
+      ]
+    },
+    {
+      "id": "G02-013",
+      "requirement": "Load the document-controller setting from a consistent schema",
+      "priority": "P2",
+      "acceptance": "Toggle false/true and cross-org switching affect actual authorized download behavior as specified, with audit. A document controller's legitimate org-wide download succeeds only when eligible; guests and other roles do not inherit it. Fresh and upgraded schema match. This audit proves configuration loading/naming failure, not a positive ready-object download.",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION; see report for HTTP versus guard/service limits; not independent acceptance",
+      "evidence": [],
+      "review_reference": "docs/G02_AUTHORIZATION_RBAC_AUDIT_2026-11-11.md",
+      "local_evidence_refs": [
+        "docs/evidence/g02-audit-863e6e0/results.json"
+      ],
+      "probe_names": [
+        "document_download_toggle_true_not_loaded"
+      ]
+    },
+    {
+      "id": "G02-014",
+      "requirement": "Gate archive creation with export authority",
+      "priority": "P1",
+      "acceptance": "Doc controller and guests cannot export through creation/alias/download paths. Authorized Owner/Admin succeeds with valid reason and fresh authentication; absent reason, repeated export and cross-project/tenant inputs reject as specified. Include concurrent hourly-budget checks. This was a manifest-only export; ZIP generation and S3 delivery are untested.",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION; see report for HTTP versus guard/service limits; not independent acceptance",
+      "evidence": [],
+      "review_reference": "docs/G02_AUTHORIZATION_RBAC_AUDIT_2026-11-11.md",
+      "local_evidence_refs": [
+        "docs/evidence/g02-audit-863e6e0/results.json"
+      ],
+      "probe_names": [
+        "doc_controller_creates_export_without_export_permission",
+        "actual_production_mode_http_routes"
+      ]
+    },
+    {
+      "id": "G02-015",
+      "requirement": "Audit business authorization denials",
+      "priority": "P2",
+      "acceptance": "Real protected-route denials create the intended durable/operational event even after rollback, with correlation and safe identifiers; no raw session, invitation, OTP, provider secret, request body or forged metadata appears. Audit failures do not grant access. Test load and retention behavior. Zero application rows does not establish what an external gateway logs; that deployment acceptance remains separate. Cross-reference G01-015 without changing its acceptance claim.",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION; see report for HTTP versus guard/service limits; not independent acceptance",
+      "evidence": [],
+      "review_reference": "docs/G02_AUTHORIZATION_RBAC_AUDIT_2026-11-11.md",
+      "local_evidence_refs": [
+        "docs/evidence/g02-audit-863e6e0/results.json"
+      ],
+      "probe_names": [
+        "actual_production_mode_http_routes"
+      ]
+    },
+    {
+      "id": "G02-016",
+      "requirement": "Validate IDs and collections before database use",
+      "priority": "P2",
+      "acceptance": "Invalid strings, arrays, objects, numbers, nulls, duplicates, oversized collections and mixed invalid IDs produce controlled 4xx with no DB resource lookup/write. Valid IDs retain scope and pool cleanup; direct/nested routes agree. Cover relevant guest and member routes. Cross-reference original G01-016; this report does not mark it accepted.",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION; see report for HTTP versus guard/service limits; not independent acceptance",
+      "evidence": [],
+      "review_reference": "docs/G02_AUTHORIZATION_RBAC_AUDIT_2026-11-11.md",
+      "local_evidence_refs": [
+        "docs/evidence/g02-audit-863e6e0/results.json"
+      ],
+      "probe_names": [
+        "actual_production_mode_http_routes"
+      ]
+    },
+    {
+      "id": "G02-017",
+      "requirement": "Restore a safe legitimate external evidence-read workflow",
+      "priority": "P2",
+      "acceptance": "A legitimately authorized client/consultant can inspect the exact eligible contractor version and its permitted review data. Unapproved drafts, superseded versions, another supplier/project/tenant, expired/revoked grants and missing independent authority for decisions remain blocked. No upload capability workaround. This audit did not seed a fake approved engineering document or legal delegation to manufacture a positive integration result. Positive storage/browser/external acceptance remains unperformed and must be supplied honestly with the relevant groups.",
+      "status": "OPEN",
+      "evidence_level": "SOURCE_CONFIRMED; legitimate positive integration unperformed",
+      "evidence": [],
+      "review_reference": "docs/G02_AUTHORIZATION_RBAC_AUDIT_2026-11-11.md",
+      "local_evidence_refs": [],
+      "probe_names": []
+    }
+  ],
+  "publication_branch": "docs/g02-authorization-audit-20261111"
+}

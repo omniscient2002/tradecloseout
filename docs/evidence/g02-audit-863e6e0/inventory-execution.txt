@@ -1,0 +1,119 @@
+{
+  "route_count": 196,
+  "explicit_public_count": 12,
+  "protected_business_routes_without_permission": [],
+  "runtime_org_role_count": 11,
+  "runtime_project_roles": [
+    "R-PM",
+    "R-SITE",
+    "R-DOC",
+    "R-CONSULTANT",
+    "R-CLIENT",
+    "R-SUBCONTRACTOR"
+  ],
+  "org_matrix_grant_disagreements": [
+    {
+      "role": "R-OWNER",
+      "permission": "document.reuse",
+      "runtime_granted": false,
+      "alternate_granted": true
+    },
+    {
+      "role": "R-OWNER",
+      "permission": "submission.recipients_manage",
+      "runtime_granted": false,
+      "alternate_granted": true
+    },
+    {
+      "role": "R-ADMIN",
+      "permission": "document.reuse",
+      "runtime_granted": false,
+      "alternate_granted": true
+    },
+    {
+      "role": "R-ADMIN",
+      "permission": "submission.recipients_manage",
+      "runtime_granted": false,
+      "alternate_granted": true
+    },
+    {
+      "role": "R-PM",
+      "permission": "document.reuse",
+      "runtime_granted": false,
+      "alternate_granted": true
+    },
+    {
+      "role": "R-PM",
+      "permission": "submission.recipients_manage",
+      "runtime_granted": false,
+      "alternate_granted": true
+    },
+    {
+      "role": "R-DOC",
+      "permission": "document.reuse",
+      "runtime_granted": false,
+      "alternate_granted": true
+    },
+    {
+      "role": "R-SAFETY",
+      "permission": "party.read",
+      "runtime_granted": true,
+      "alternate_granted": false
+    },
+    {
+      "role": "R-SAFETY",
+      "permission": "asset.read",
+      "runtime_granted": true,
+      "alternate_granted": false
+    },
+    {
+      "role": "R-SAFETY",
+      "permission": "review.submit",
+      "runtime_granted": true,
+      "alternate_granted": false
+    }
+  ],
+  "runtime_permission_vocabulary": [
+    "apikey.manage",
+    "asset.manage",
+    "asset.read",
+    "audit.read",
+    "billing.manage",
+    "billing.read",
+    "checklist.manage",
+    "contract.manage",
+    "defect.manage",
+    "document.bulk_import",
+    "document.delete",
+    "document.download",
+    "document.metadata_edit",
+    "document.read",
+    "document.upload",
+    "export.data",
+    "notification.manage",
+    "org.delete",
+    "org.manage",
+    "org.manage_members",
+    "org.read",
+    "org.transfer_ownership",
+    "package.accept",
+    "package.download",
+    "package.generate",
+    "package.submit",
+    "party.manage",
+    "party.read",
+    "project.close",
+    "project.create",
+    "project.manage",
+    "project.read",
+    "requirement.waive",
+    "requirement.waive_second",
+    "review.decide",
+    "review.read",
+    "review.record_external",
+    "review.submit",
+    "template.manage",
+    "template.read",
+    "warranty.manage"
+  ]
+}

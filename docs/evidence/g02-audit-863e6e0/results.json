@@ -1,0 +1,420 @@
+{
+  "started_at": "2026-11-11T05:04:18.662Z",
+  "source_sha": "863e6e0c56ad4a92af2580fbcbfc179832056b2d",
+  "source_checkout_status": "",
+  "node": "v22.23.2",
+  "method": "actual source guards/controllers/services plus strict-production loopback HTTP; restricted PostgreSQL and seeded authentication fixtures, no real provider",
+  "fixtures_only": true,
+  "probes": [
+    {
+      "name": "dual_permission_evaluators",
+      "status": "COMPLETED",
+      "result": {
+        "runtime": {
+          "allowed": true,
+          "scope": "Y"
+        },
+        "alternate": {
+          "allowed": false,
+          "reason": "NOT_PROJECT_MEMBER"
+        },
+        "additive_scope": {
+          "allowed": true,
+          "scope": "S"
+        }
+      }
+    },
+    {
+      "name": "internal_scope_json_read",
+      "status": "COMPLETED",
+      "result": {
+        "read_outside_scope": true
+      }
+    },
+    {
+      "name": "internal_scope_json_write",
+      "status": "COMPLETED",
+      "result": {
+        "persisted": "G02 modified outside assigned asset scope"
+      }
+    },
+    {
+      "name": "supplier_reads_unassigned_requirement",
+      "status": "COMPLETED",
+      "result": {
+        "count": 2,
+        "unassigned_visible": true
+      }
+    },
+    {
+      "name": "supplier_links_document_to_unassigned_requirement",
+      "status": "COMPLETED",
+      "result": {
+        "link_count": 1,
+        "requirement_status": "UPLOADED"
+      }
+    },
+    {
+      "name": "supplier_mints_new_grant_and_reassigns_requirement",
+      "status": "COMPLETED",
+      "result": {
+        "new_grant_created_by_guest": true,
+        "new_grant_includes_unassigned_requirement": true
+      }
+    },
+    {
+      "name": "supplier_accepts_unassigned_pending_obligation_without_evidence",
+      "status": "COMPLETED",
+      "result": {
+        "status": "ACCEPTED",
+        "document_version_id": null
+      }
+    },
+    {
+      "name": "client_reads_internal_member_identifiers_after_projection",
+      "status": "COMPLETED",
+      "result": {
+        "identifiers": [
+          "site@g02-fixture.example.test",
+          "reviewer@g02-fixture.example.test",
+          "doc@g02-fixture.example.test",
+          "hybrid@g02-fixture.example.test",
+          "projectpm@g02-fixture.example.test"
+        ],
+        "contains_internal_contact": true
+      }
+    },
+    {
+      "name": "reviewer_reads_unassigned_project_package",
+      "status": "COMPLETED",
+      "result": {
+        "foreign_project_package_visible": true,
+        "has_project_membership": false
+      }
+    },
+    {
+      "name": "nested_upload_completion_uses_foreign_project_version",
+      "status": "COMPLETED",
+      "result": {
+        "returned_foreign_version": true,
+        "returned_foreign_document": true
+      }
+    },
+    {
+      "name": "direct_upload_completion_foreign_project_negative",
+      "status": "REJECTED",
+      "http_status": 403,
+      "code": "PROJECT_ACCESS_DENIED",
+      "message": "Forbidden Exception"
+    },
+    {
+      "name": "project_role_read_decision_nested",
+      "status": "COMPLETED",
+      "result": {
+        "allowed": true,
+        "project_role": "R-PM"
+      }
+    },
+    {
+      "name": "project_role_read_decision_direct",
+      "status": "REJECTED",
+      "http_status": 403,
+      "code": null,
+      "message": "PERMISSION_DENIED: Requires review.decide"
+    },
+    {
+      "name": "project_qc_role_not_supported",
+      "status": "REJECTED",
+      "http_status": 403,
+      "code": null,
+      "message": "PERMISSION_DENIED: Requires review.decide"
+    },
+    {
+      "name": "auditor_review_read_denied_by_decision_permission",
+      "status": "REJECTED",
+      "http_status": 403,
+      "code": null,
+      "message": "PERMISSION_DENIED: Requires review.decide"
+    },
+    {
+      "name": "document_download_toggle_true_not_loaded",
+      "status": "COMPLETED",
+      "result": {
+        "database_setting": true,
+        "guard_setting": false
+      }
+    },
+    {
+      "name": "doc_controller_creates_export_without_export_permission",
+      "status": "COMPLETED",
+      "result": {
+        "export_permission": false,
+        "export_created": true,
+        "status": "MANIFEST_ONLY",
+        "purpose_absent": true
+      }
+    },
+    {
+      "name": "admin_enters_billing_management",
+      "status": "REJECTED",
+      "http_status": 403,
+      "code": null,
+      "message": "PERMISSION_DENIED: Requires billing.manage"
+    },
+    {
+      "name": "actual_production_mode_http_routes",
+      "status": "COMPLETED",
+      "result": {
+        "guest_unassigned_requirements": {
+          "status": 200,
+          "unassigned_visible": true
+        },
+        "guest_unassigned_batch_link": {
+          "status": 201,
+          "linked_count": 1
+        },
+        "guest_mints_new_link": {
+          "status": 201,
+          "new_grant_returned": true
+        },
+        "guest_accepts_unassigned_obligation": {
+          "status": 201,
+          "obligation_status": "ACCEPTED",
+          "version": null
+        },
+        "client_member_contacts": {
+          "status": 200,
+          "private_contact_visible": true
+        },
+        "reviewer_unassigned_package": {
+          "status": 200,
+          "package_returned": true
+        },
+        "nested_foreign_version_complete": {
+          "status": 201,
+          "foreign_document_returned": true
+        },
+        "direct_foreign_version_complete": {
+          "status": 403,
+          "code": "PROJECT_ACCESS_DENIED"
+        },
+        "doc_export_without_permission": {
+          "status": 201,
+          "export_returned": true,
+          "export_status": "MANIFEST_ONLY"
+        },
+        "auditor_review_read": {
+          "status": 403,
+          "security_events_added": 0,
+          "business_audit_events_added": 0
+        },
+        "project_qc_read": {
+          "status": 403
+        },
+        "project_pm_nested_vs_direct": {
+          "nested_status": 200,
+          "direct_status": 403,
+          "existing_review_id": "77de5342-c2e8-490f-896a-c53af008df02"
+        },
+        "malformed_project_path": {
+          "status": 403,
+          "code": "PROJECT_AUTHORITY_LOOKUP_FAILED"
+        },
+        "malformed_package_id": {
+          "status": 500,
+          "code": "INTERNAL_ERROR"
+        }
+      }
+    },
+    {
+      "name": "project_removal_after_guard_does_not_fence_write",
+      "status": "COMPLETED",
+      "result": {
+        "membership_status": "REMOVED",
+        "persisted_name": "G02 changed after project membership removal",
+        "session_revoked": false
+      }
+    },
+    {
+      "name": "foreign_tenant_project_negative",
+      "status": "REJECTED",
+      "http_status": 404,
+      "code": null,
+      "message": "PROJECT_NOT_FOUND"
+    }
+  ],
+  "postgres": "16.15",
+  "migrations": [
+    {
+      "name": "0000_complete_v021_schema_and_rls.sql",
+      "checksum": "0704f4f1c5abea5eaa1c6663646c1abe58a793a23440c3293a6d238fa9a9ca8b"
+    },
+    {
+      "name": "0001_rls_and_constraints.sql",
+      "checksum": "c97db02697a7f917c6d986d26835fef67e806be4c2e7b0dd0b3499ab04e084a0"
+    },
+    {
+      "name": "0002_create_missing_tables.sql",
+      "checksum": "b65394e19b000a4a77731f8a1547d6f539ca4cdca4c712859c2a69bf9d4e75a8"
+    },
+    {
+      "name": "0003_v021_redteam_patches.sql",
+      "checksum": "e5ce1df0ac8e1e04e45cf545695b87935857cb1724b3ce0614f4c4a3b1ec8d13"
+    },
+    {
+      "name": "0004_perfect_10_hardening.sql",
+      "checksum": "c313443ae6a5bf69cdc2990e1c6f9c87a05f55f5b3e019623269d206013b2c4a"
+    },
+    {
+      "name": "0005_add_project_contract_columns.sql",
+      "checksum": "7afb3ac25668681346e17f19841c1fdca7458705ebd3e72bf1a74fc3b708c54f"
+    },
+    {
+      "name": "0006_discovery_and_lifecycle_foundations.sql",
+      "checksum": "d52651be44878f923c33b3074848312cd24e9615678cf9c2a349ba367ab60017"
+    },
+    {
+      "name": "0007_procurement_and_vendor_obligations.sql",
+      "checksum": "0947b4638d13568ae6fa1b51a25cb01611b4e43955762d39a37939b1ea79d258"
+    },
+    {
+      "name": "0008_external_review_authority.sql",
+      "checksum": "6e6e281d5884df86311a59404736a9b4d5128aab5068ee08bbb6d15af56469c7"
+    },
+    {
+      "name": "0009_storage_object_verification.sql",
+      "checksum": "61042f0d5dc9212cf3030a01ba5f668b768bd7a7d1ed7a58d999961f85bff5e5"
+    },
+    {
+      "name": "0010_transmittal_records.sql",
+      "checksum": "cbd31cc27bcc544b3c4fad655eba063a824c2775a50ac95c746b5f5c2a0c6784"
+    },
+    {
+      "name": "0011_guest_grant_token_lookup.sql",
+      "checksum": "b07d0b0dd4936c4607702f1620ebf6b152e2b6e3898a9d85392c6982ef5dcebe"
+    },
+    {
+      "name": "0012_external_review_proof_version.sql",
+      "checksum": "a73565d7af2c6006418467a3117fb1f77150df95f545af97e549889a6f1293a2"
+    },
+    {
+      "name": "0013_reconcile_tenant_policies_and_composite_constraints.sql",
+      "checksum": "fe535d07e71fceed8551f9f2ea1e06b0e6b00fd9ba185b8c8a5c3cc13063584c"
+    },
+    {
+      "name": "0014_protect_remaining_tenant_tables.sql",
+      "checksum": "2a9bb0c9221ab6c1c947ae554263c0b2e45f07f64dff5f7d11567362a4f4fff3"
+    },
+    {
+      "name": "0015_document_versions_updated_at.sql",
+      "checksum": "f5d57f25ec2f7e7099c7da67a10f26786ffd581adcdb54be578b582eda3a88ab"
+    },
+    {
+      "name": "0016_canonical_tenant_alias_validation.sql",
+      "checksum": "8083cdda5033e28886692bcf719bfb93dc59b1e2c8f1d61d5a8001d900e41d06"
+    },
+    {
+      "name": "0017_hvac_commissioning_tab_and_inspections.sql",
+      "checksum": "acd36e6893f903124c4e8b37e77d43b6277e64c4507204314d1f0b9523836929"
+    },
+    {
+      "name": "0018_revalidation_concurrency_and_commissioning_composite_fks.sql",
+      "checksum": "4792ca71873cb23b71b84b12561037ef6b688e0d00876eb3310de90ec9d6292e"
+    },
+    {
+      "name": "0019_defect_remedy_lifecycle.sql",
+      "checksum": "6b285cfd3427bf7c761f2162ae6ce5fbbc738bb60067d09ecf5d9bfa2fd14783"
+    },
+    {
+      "name": "0020_project_type_domain_alignment.sql",
+      "checksum": "3532300f6687423f298924cca481730446042bcaa98b0175f33d6601779b4396"
+    },
+    {
+      "name": "0021_razorpay_verified_webhook_inbox.sql",
+      "checksum": "cdaa1b27d7e6aec10458988251b46f5434c84d88661539951562081a3f5b5910"
+    },
+    {
+      "name": "0022_handover_package_purpose.sql",
+      "checksum": "371e38fab3dad9f42686bc6bb0b12e65f71ae8475543344d2f9beae9a0f0bdcd"
+    },
+    {
+      "name": "0023_g01_auth_principals_and_challenge_lifecycle.sql",
+      "checksum": "8f3af1d5f8547ae20276c7d0deb37ccb3c0f6a01e952e06e8965936c151a3735"
+    },
+    {
+      "name": "0024_g01_external_authority_approval_boundary.sql",
+      "checksum": "0d724c06e25ace12c79085f4d96688b1df5aeba20c36cc7253da994655c0e69a"
+    },
+    {
+      "name": "0025_g01_guest_grant_immutable_identity.sql",
+      "checksum": "9e727eb1548276cfe0743054a90229ae9b2049c07e60c6023d00f97518c0c4df"
+    },
+    {
+      "name": "0026_g01_two_reviewer_external_authority.sql",
+      "checksum": "ff4f8392f87eb0da61e5da4a6d4c15299238a7ab75eac6e713f7c0f7f0580374"
+    },
+    {
+      "name": "0027_g01_external_authority_review_rls.sql",
+      "checksum": "d32e8e760fe2a9674bb1f07214ebe6c3d795876c71761118c38fcecda34de867"
+    },
+    {
+      "name": "0028_g01_approved_guest_project_binding.sql",
+      "checksum": "dbb221d4187984faa013f7cb17c5bb72d53b22d7b9c081113d1526cc8f3abd05"
+    },
+    {
+      "name": "0029_g01_project_signatory_guard_tenant_scope.sql",
+      "checksum": "8b2e1898d81991e776404c4273e87bda683bfde8a5898fad8102a66d484b7387"
+    },
+    {
+      "name": "0030_g01_external_review_immutable_lifecycle.sql",
+      "checksum": "1f5264e1f1e647414158f664e4f7694721a4550ad251820228270192230eba6e"
+    },
+    {
+      "name": "0031_g01_invitation_delivery_pending.sql",
+      "checksum": "8b0bd967dbb1d4312c004c74244479cfdf909645e1d54ac6db70342b18eee62c"
+    },
+    {
+      "name": "0032_g01_independently_attested_external_document_approval.sql",
+      "checksum": "d20932837748bea9964e476006c4e90ec6a19e1d61b16544b4a5bf6a92d74e81"
+    },
+    {
+      "name": "0033_g01_independent_authority_emergency_revocation.sql",
+      "checksum": "5db9e01684b866040eb5067ba7c3a331cb512d970df6c5efe01ece6e480ea934"
+    },
+    {
+      "name": "0034_g01_revoked_external_decision_invalidates_current_approval.sql",
+      "checksum": "d146fe408b004e88cbf0c436ba5436eeb97a5c3d67aa3f8e0b596f3d5e52ebdd"
+    },
+    {
+      "name": "0035_g01_auth_denial_metadata.sql",
+      "checksum": "2f7313d7a1d86e2d3a0ed15963cb6c3311f9d725ce854bb80875d196e723438f"
+    },
+    {
+      "name": "0036_g01_quarantine_unverified_legacy_external_approvals.sql",
+      "checksum": "b8c78988e051e2c6d8f430888bf9547bf6e538ba6493c43f03b820e660f69545"
+    },
+    {
+      "name": "0037_g01_legacy_external_reconciliation_all_tenants.sql",
+      "checksum": "35d1698d0109bb04ba7b2bb924b68a4d13f440d57aaef7f02dc5a856f0a52d86"
+    },
+    {
+      "name": "0038_g01_auth_delivery_receipts.sql",
+      "checksum": "d5885b20f32da7463eb14b975b008b83163027dc1ecfd2690ce431b563897781"
+    },
+    {
+      "name": "0039_g01_independent_identity_recovery.sql",
+      "checksum": "c28136959ac76bed47cf4b29293dc0f1f65315bf49ec387560b0c2810e7957ff"
+    },
+    {
+      "name": "0040_g01_account_lock_fk_compatibility.sql",
+      "checksum": "520fb0c84853fefa59c821525e446a2acf6001c57522a7bae5255be853710677"
+    }
+  ],
+  "runtime": {
+    "current_user": "tc_app",
+    "rolsuper": false,
+    "rolbypassrls": false
+  },
+  "pool_reusable": true,
+  "finished_at": "2026-11-11T05:04:22.306Z"
+}
