@@ -73,6 +73,40 @@ describe('G01 MFA real PostgreSQL control plane', () => {
     else process.env.AUTH_MFA_PREVIOUS_KEY_EXPIRES_AT = previousDeadline;
   });
 
+  it('PH1-G01-003: unbound, expired and other-generation MFA proposals cannot enroll', async () => {
+    process.env.AUTH_MFA_ENCRYPTION_KEY = Buffer.alloc(32,22).toString('base64');
+    await withDisposableDatabase(async ({admin,app})=>{
+      const {userId,sessionId,req}=await seed(admin);
+      const controller=new MfaController(app);
+      const response:any={cookie:jest.fn(),clearCookie:jest.fn()};
+      const first=await controller.beginEnrollment(req);
+      expect(first.expiresInSeconds).toBe(600);
+      const row=(await admin.query(`SELECT mfa_pending_session_id,
+        mfa_pending_auth_generation,mfa_pending_expires_at
+        FROM users WHERE id=$1`,[userId])).rows[0];
+      expect(row.mfa_pending_session_id).toBe(sessionId);
+      expect(row.mfa_pending_auth_generation).toBe(req.auth.authGeneration);
+      expect(row.mfa_pending_expires_at.getTime()).toBeGreaterThan(Date.now());
+      await admin.query(`UPDATE users SET mfa_pending_expires_at=now()-interval '1 second'
+        WHERE id=$1`,[userId]);
+      await expect(controller.confirmEnrollment(req,{code:otp(first.manualSetupKey,Date.now())},response))
+        .rejects.toMatchObject({response:expect.objectContaining({code:'MFA_ENROLLMENT_NOT_PENDING'})});
+      const second=await controller.beginEnrollment(req);
+      await admin.query(`UPDATE users SET mfa_pending_auth_generation=$2 WHERE id=$1`,
+        [userId,uuidv7()]);
+      await expect(controller.confirmEnrollment(req,{code:otp(second.manualSetupKey,Date.now())},response))
+        .rejects.toMatchObject({response:expect.objectContaining({code:'MFA_ENROLLMENT_NOT_PENDING'})});
+      const current=await controller.beginEnrollment(req);
+      const confirmed=await controller.confirmEnrollment(req,
+        {code:otp(current.manualSetupKey,Date.now())},response);
+      expect(confirmed.mfaVerified).toBe(true);
+      const after=(await admin.query(`SELECT mfa_totp_pending_secret,
+        mfa_pending_session_id,mfa_pending_auth_generation,mfa_pending_expires_at
+        FROM users WHERE id=$1`,[userId])).rows[0];
+      expect(Object.values(after).every(v=>v===null)).toBe(true);
+    });
+  });
+
   it('G01-R6: overlapping start/confirm serialize without reversing user/session locks', async () => {
     process.env.AUTH_MFA_ENCRYPTION_KEY = Buffer.alloc(32,22).toString('base64');
     await withDisposableDatabase(async ({admin,app}) => {

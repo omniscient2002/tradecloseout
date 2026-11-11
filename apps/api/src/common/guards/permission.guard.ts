@@ -117,6 +117,12 @@ export class PermissionGuard implements CanActivate {
          (route.startsWith('/api/v1/projects/') && !req.params?.projectId)
           ? req.params?.id : undefined);
       const resource=targetResource(route,req.params);
+      // A guest cannot enumerate an organisation-wide route without a
+      // concrete project/resource binding. Reject before business DB access;
+      // an independently sampled denial event may still be emitted.
+      if (isGuest && !projectId && !resource) {
+        throw new ForbiddenException({code:'GUEST_PROJECT_SCOPE_REQUIRED'});
+      }
       let projectRole:string|undefined=user.projectRole;
       let projectScope:Record<string,unknown>|undefined=user.projectScope;
       const client=await this.pool.connect();

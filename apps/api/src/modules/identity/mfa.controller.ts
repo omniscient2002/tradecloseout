@@ -204,13 +204,17 @@ export class MfaController {
         detail: 'Use factor verification or an authenticated recovery procedure.',
       });
       await client.query(
-        `UPDATE users SET mfa_totp_pending_secret=$2 WHERE id=$1`,
-        [req.auth.userId, encryptFactor(secret)],
+        `UPDATE users SET mfa_totp_pending_secret=$2,
+           mfa_pending_session_id=$3,mfa_pending_auth_generation=$4,
+           mfa_pending_expires_at=now()+interval '10 minutes' WHERE id=$1`,
+        [req.auth.userId, encryptFactor(secret),
+          req.auth.sessionId,req.auth.authGeneration],
       );
     });
     // The secret is returned once over HTTPS. It must never be placed in logs
     // or an untrusted QR generator URL.
-    return { manualSetupKey: secret, algorithm: 'SHA1', digits: 6, periodSeconds: 30 };
+    return { manualSetupKey: secret, algorithm: 'SHA1', digits: 6, periodSeconds: 30,
+      expiresInSeconds: 600 };
     });
   }
 
@@ -227,12 +231,21 @@ export class MfaController {
     }
     await this.enforceMfaAttemptBudget(req, 'verify');
     const result = await this.transact(req.auth.userId, async client => {
+      // Check exact live token/generation after obtaining the user lock.
+      // Expired, legacy or other-session pending factors are not redeemable.
+      await this.assertCurrentMemberSession(client,req);
       const { rows } = await client.query(
-        `SELECT mfa_totp_pending_secret, mfa_enabled_at, mfa_totp_last_step
+        `SELECT mfa_totp_pending_secret, mfa_enabled_at, mfa_totp_last_step,
+                mfa_pending_session_id,mfa_pending_auth_generation,
+                mfa_pending_expires_at
            FROM users WHERE id=$1 AND status='ACTIVE' FOR NO KEY UPDATE`,
         [req.auth.userId],
       );
-      if (!rows.length || !rows[0].mfa_totp_pending_secret || rows[0].mfa_enabled_at) {
+      if (!rows.length || !rows[0].mfa_totp_pending_secret || rows[0].mfa_enabled_at ||
+          rows[0].mfa_pending_session_id !== req.auth.sessionId ||
+          rows[0].mfa_pending_auth_generation !== req.auth.authGeneration ||
+          !rows[0].mfa_pending_expires_at ||
+          new Date(rows[0].mfa_pending_expires_at).getTime() <= Date.now()) {
         throw new ConflictException({ code: 'MFA_ENROLLMENT_NOT_PENDING' });
       }
       const pendingSecret = decryptFactor(rows[0].mfa_totp_pending_secret);
@@ -242,8 +255,9 @@ export class MfaController {
       if (step === null) throw new UnauthorizedException({ code: 'MFA_CODE_INVALID' });
       await client.query(
         `UPDATE users SET mfa_totp_secret=$3,
-         mfa_totp_pending_secret=NULL, mfa_enabled_at=now(),
-         mfa_totp_last_step=$2 WHERE id=$1`,
+         mfa_totp_pending_secret=NULL, mfa_pending_session_id=NULL,
+         mfa_pending_auth_generation=NULL, mfa_pending_expires_at=NULL,
+         mfa_enabled_at=now(),mfa_totp_last_step=$2 WHERE id=$1`,
         [req.auth.userId, step,encryptFactor(pendingSecret)],
       );
       await client.query(
@@ -385,7 +399,9 @@ export class MfaController {
       }
       await client.query(
         `UPDATE users SET mfa_totp_secret=NULL, mfa_totp_pending_secret=NULL,
-         mfa_enabled_at=NULL, mfa_totp_last_step=-1 WHERE id=$1`,
+         mfa_pending_session_id=NULL,mfa_pending_auth_generation=NULL,
+         mfa_pending_expires_at=NULL,mfa_enabled_at=NULL,
+         mfa_totp_last_step=-1 WHERE id=$1`,
         [req.auth.userId],
       );
       await client.query(
