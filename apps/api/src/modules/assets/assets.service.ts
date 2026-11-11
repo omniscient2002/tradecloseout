@@ -12,6 +12,7 @@ import { createHash } from 'node:crypto';
 import { Pool, PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { withTenantTransaction, TenantActorContext, DomainOutboxEvent } from '@tradecloseout/db';
+import { assertMemberResourceScope } from '@tradecloseout/db/tenant-tx';
 import { AssetTagSchema } from '@tradecloseout/shared';
 import { ResolvedRequirementSpec } from '../checklists/checklists.service';
 
@@ -96,6 +97,7 @@ export class AssetsService {
       }
 
       const assetId = uuidv7();
+      assertMemberResourceScope(ctx,'asset',{id:assetId,categoryKey:input.categoryKey},true);
       const { rows: insertedRows } = await client.query(
         `INSERT INTO assets
           (id, org_id, project_id, tag, name, category_key, make, model, serial_no,
@@ -229,7 +231,17 @@ export class AssetsService {
          ORDER BY tag ASC`,
         [ctx.orgId, projectId],
       );
-      return res.rows;
+      // Scope is enforced on the rows *before* counts/lists leave the
+      // transaction. No API-side projection can repair a leaked list.
+      return res.rows.filter((row:any)=>{
+        try {
+          assertMemberResourceScope(ctx,'asset',{
+            id:row.id,categoryKey:row.category_key,
+            createdAt:row.created_at?.toISOString?.()||String(row.created_at),
+          },false);
+          return true;
+        }catch{return false;}
+      });
     });
   }
 
@@ -244,7 +256,14 @@ export class AssetsService {
         [ctx.orgId, projectId, assetId],
       );
       if (!res.rows.length) throw new NotFoundException('ASSET_NOT_FOUND');
-      return res.rows[0];
+      const row=res.rows[0];
+      try {
+        assertMemberResourceScope(ctx,'asset',{
+          id:row.id,categoryKey:row.category_key,
+          createdAt:row.created_at?.toISOString?.()||String(row.created_at),
+        },false);
+      }catch{throw new NotFoundException('ASSET_NOT_FOUND');}
+      return row;
     });
   }
 
@@ -279,6 +298,12 @@ export class AssetsService {
       );
       if (!curRes.rows.length) throw new NotFoundException('ASSET_NOT_FOUND');
       const current = curRes.rows[0];
+      try {
+        assertMemberResourceScope(ctx,'asset',{
+          id:current.id,categoryKey:current.category_key,
+          createdAt:current.created_at?.toISOString?.()||String(current.created_at),
+        },true);
+      }catch{throw new NotFoundException('ASSET_NOT_FOUND');}
 
       // 2. Detect identity attribute modifications
       const tagChanged = dto.tag !== undefined && dto.tag.trim().toUpperCase() !== current.tag;
