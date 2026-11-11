@@ -461,6 +461,33 @@ describe('G01: authentication hardening negative controls', () => {
     expect(hashRecoveryCodeCandidates(backup)).not.toContain(oldBackupHash);
   });
 
+  it('PH1-G01-002: retiring the previous key preserves current factors and denies old material', () => {
+    const retired = Buffer.alloc(32, 31).toString('base64');
+    const current = Buffer.alloc(32, 32).toString('base64');
+    process.env.AUTH_MFA_ENCRYPTION_KEY = retired;
+    delete process.env.AUTH_MFA_ENCRYPTION_KEY_PREVIOUS;
+    const oldFactor = encryptFactor(newTotpSecret());
+    const oldCode = hashRecoveryCode('A'.repeat(24));
+
+    process.env.AUTH_MFA_ENCRYPTION_KEY = current;
+    const currentSecret = newTotpSecret();
+    const currentFactor = encryptFactor(currentSecret);
+    const currentCode = hashRecoveryCode('A'.repeat(24));
+    process.env.AUTH_MFA_ENCRYPTION_KEY_PREVIOUS = retired;
+    process.env.AUTH_MFA_PREVIOUS_KEY_EXPIRES_AT = new Date(Date.now() - 60_000).toISOString();
+
+    expect(decryptFactor(currentFactor)).toBe(currentSecret);
+    expect(hashRecoveryCodeCandidates('A'.repeat(24))).toEqual([currentCode]);
+    expect(hashRecoveryCodeCandidates('A'.repeat(24))).not.toContain(oldCode);
+    expect(() => decryptFactor(oldFactor)).toThrow('MFA_FACTOR_DECRYPT_FAILED');
+
+    // Expired previous-key configuration must not make the current factor
+    // unavailable, but a malformed deadline is still rejected.
+    process.env.AUTH_MFA_PREVIOUS_KEY_EXPIRES_AT = 'invalid';
+    expect(decryptFactor(currentFactor)).toBe(currentSecret);
+    expect(() => decryptFactor(oldFactor)).toThrow('BOOT_AUTH_MFA_PREVIOUS_KEY_EXPIRED_OR_UNBOUNDED');
+  });
+
   it('issues distinct high-entropy recovery codes and stores only keyed hashes', () => {
     process.env.AUTH_MFA_ENCRYPTION_KEY = Buffer.alloc(32, 13).toString('base64');
     const codes = newRecoveryCodes();
