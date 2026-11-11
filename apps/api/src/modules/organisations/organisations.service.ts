@@ -18,6 +18,7 @@ import { withTenantTransaction, TenantActorContext, DomainOutboxEvent } from '@t
 import { hasPermission, isValidIndianGstin, IndianPanSchema, canonicalAuthenticationEmail } from '@tradecloseout/shared';
 import { TransactionalMailGateway } from '../identity/identity.controller';
 import { isProductionEnvironment } from '../identity/auth-security';
+import { OrgProfilePatch } from './organisation-validation';
 
 export interface OffboardingGapReport {
   targetUserId: string;
@@ -108,7 +109,7 @@ export class OrganisationsService {
             p.id, p.code, p.name, p.status, p.target_handover_date,
             p.site_json->>'city' as city,
             COALESCE(cs.total_contract_value_paise, p.contract_value_paise, 0)::text as contract_value_paise,
-            COALESCE(cs.total_retention_at_risk_paise, p.retention_at_risk_paise, 0)::text as retention_at_risk_paise,
+            COALESCE(cs.total_retention_at_risk_paise, 0)::text as retention_at_risk_paise,
             p_client.name as client_name,
             p_mc.name as mc_name,
             p_pmc.name as pmc_name,
@@ -124,7 +125,7 @@ export class OrganisationsService {
           LEFT JOIN parties p_pmc ON p_pmc.id = p.consultant_party_id
          WHERE p.org_id = $1 ${projectScopeClause}
          ORDER BY p.created_at DESC`,
-        [orgId, ctx.userId],
+        projectRead.scope === 'S' ? [orgId,ctx.userId] : [orgId],
       );
 
       const projects = projRows.map((p) => ({
@@ -169,7 +170,7 @@ export class OrganisationsService {
             AND dv.expiry_date IS NOT NULL
             AND dv.expiry_date BETWEEN (now() AT TIME ZONE 'Asia/Kolkata')::date
                                    AND ((now() AT TIME ZONE 'Asia/Kolkata') + interval '30 days')::date`,
-        [orgId, ctx.userId],
+        projectRead.scope === 'S' ? [orgId,ctx.userId] : [orgId],
       );
       const expiringSoonCount = Number(expiringRows[0]?.count || 0);
 
@@ -188,7 +189,7 @@ export class OrganisationsService {
             AND r.superseded_at IS NULL
           ORDER BY r.due_at ASC NULLS LAST, r.created_at DESC
           LIMIT 5`,
-        [orgId, ctx.userId],
+        projectRead.scope === 'S' ? [orgId,ctx.userId] : [orgId],
       );
 
       const needsAttention = attentionRows.map((r) => ({
@@ -254,7 +255,7 @@ export class OrganisationsService {
       }
 
       const { rows: profileRows } = await client.query(
-        `SELECT gstin, pan, brand_color, signatory_name, signatory_designation, logo_url, accent_color, watermark_enabled, allow_self_approval, default_retention_months
+        `SELECT gstin, pan, brand_color, signatory_name, signatory_designation, logo_object_id, accent_color, watermark_enabled, allow_self_approval, default_retention_months, address_json, contact_email, contact_phone, footer_text, row_version
            FROM org_profiles WHERE org_id = $1 LIMIT 1`,
         [orgId],
       );
@@ -273,117 +274,78 @@ export class OrganisationsService {
   async updateOrgProfile(
     ctx: TenantActorContext,
     expectedRowVersion: number,
-    input: {
-      legalName?: string;
-      displayName?: string;
-      entityType?: string;
-      state?: string;
-      gstin?: string | null;
-      pan?: string | null;
-      brandColor?: string;
-      signatoryName?: string;
-      signatoryDesignation?: string;
-      logoUrl?: string;
-      accentColor?: string;
-      watermarkEnabled?: boolean;
-      allowSelfApproval?: boolean;
-      defaultRetentionMonths?: number;
-    },
+    input: OrgProfilePatch,
   ) {
-    if (input.gstin && !isValidIndianGstin(input.gstin)) {
-      throw new UnprocessableEntityException({
-        code: 'INVALID_GSTIN',
-        title: 'Invalid GSTIN checksum or structure',
-        detail: 'Enter a valid 15-character Indian GSTIN (FR-ORG-005).',
-        fieldErrors: [{ field: 'gstin', message: 'Checksum or state code invalid' }],
-      });
-    }
-
-    if (input.pan) {
-      const panCheck = IndianPanSchema.safeParse(input.pan);
-      if (!panCheck.success) {
-        throw new UnprocessableEntityException({
-          code: 'INVALID_PAN',
-          title: 'Invalid PAN structure',
-          detail: 'Enter a valid 10-character Indian PAN (FR-ORG-006).',
-          fieldErrors: [{ field: 'pan', message: 'Expected format AAAAA9999A' }],
-        });
-      }
-    }
-
+    const orgColumns: Record<string, string> = {
+      legalName:'legal_name', displayName:'display_name', entityType:'entity_type',
+      state:'state', timeZone:'timezone',
+    };
+    const profileColumns: Record<string, string> = {
+      gstin:'gstin', pan:'pan', brandColor:'brand_color',
+      signatoryName:'signatory_name', signatoryDesignation:'signatory_designation',
+      logoObjectId:'logo_object_id', accentColor:'accent_color',
+      watermarkEnabled:'watermark_enabled', allowSelfApproval:'allow_self_approval',
+      defaultRetentionMonths:'default_retention_months', addressJson:'address_json',
+      contactEmail:'contact_email', contactPhone:'contact_phone', footerText:'footer_text',
+    };
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
-      const { rows: orgRows } = await client.query(
-        `SELECT id, legal_name, display_name, entity_type, state, row_version
-           FROM organisations
-          WHERE id = $1
-          FOR UPDATE`,
-        [ctx.orgId],
+      const {rows:orgRows}=await client.query(
+        `SELECT id,legal_name,display_name,entity_type,state,row_version FROM organisations
+          WHERE id=$1 FOR UPDATE`,[ctx.orgId],
       );
-
-      if (orgRows.length === 0) {
-        throw new NotFoundException({ code: 'NOT_FOUND', detail: 'Organisation not found.' });
-      }
-      const org = orgRows[0];
-
-      if (expectedRowVersion !== undefined && expectedRowVersion !== null && org.row_version !== expectedRowVersion) {
-        throw new ConflictException({
-          code: 'PRECONDITION_FAILED',
-          detail: 'Organisation profile was updated by another user. Reload and retry.',
-        });
+      if (!orgRows.length) throw new NotFoundException({code:'NOT_FOUND'});
+      const org=orgRows[0];
+      if (org.row_version !== expectedRowVersion) {
+        throw new ConflictException({code:'PRECONDITION_FAILED',detail:'Reload the organisation profile before retrying.'});
       }
 
-      await client.query(
-        `UPDATE organisations
-            SET legal_name = COALESCE($2, legal_name),
-                display_name = COALESCE($3, display_name),
-                entity_type = COALESCE($4, entity_type),
-                state = COALESCE($5, state),
-                row_version = row_version + 1,
-                updated_at = now()
-          WHERE id = $1`,
-        [ctx.orgId, input.legalName, input.displayName, input.entityType, input.state],
-      );
+      // The object must already be READY, virus-scanned and owned by the same
+      // tenant. This endpoint never accepts arbitrary URL/SVG branding.
+      if (input.logoObjectId) {
+        const {rows:logo}=await client.query(
+          `SELECT id FROM storage_objects
+             WHERE org_id=$1 AND id=$2 AND status='READY'
+               AND av_scanned_at IS NOT NULL
+               AND mime IN ('image/png','image/jpeg','image/webp')
+               AND sha256 IS NOT NULL AND size_bytes>0
+             FOR SHARE`,[ctx.orgId,input.logoObjectId],
+        );
+        if (!logo.length) throw new UnprocessableEntityException({code:'INVALID_BRANDING_OBJECT'});
+      }
 
-      await client.query(
-        `INSERT INTO org_profiles (org_id, gstin, pan, brand_color, signatory_name, signatory_designation, logo_url, accent_color, watermark_enabled, allow_self_approval, default_retention_months)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-         ON CONFLICT (org_id) DO UPDATE SET
-            gstin = COALESCE($2, org_profiles.gstin),
-            pan = COALESCE($3, org_profiles.pan),
-            brand_color = COALESCE($4, org_profiles.brand_color),
-            signatory_name = COALESCE($5, org_profiles.signatory_name),
-            signatory_designation = COALESCE($6, org_profiles.signatory_designation),
-            logo_url = COALESCE($7, org_profiles.logo_url),
-            accent_color = COALESCE($8, org_profiles.accent_color),
-            watermark_enabled = COALESCE($9, org_profiles.watermark_enabled),
-            allow_self_approval = COALESCE($10, org_profiles.allow_self_approval),
-            default_retention_months = COALESCE($11, org_profiles.default_retention_months),
-            row_version = org_profiles.row_version + 1,
-            updated_at = now()`,
-        [
-          ctx.orgId,
-          input.gstin?.toUpperCase() ?? null,
-          input.pan?.toUpperCase() ?? null,
-          input.brandColor ?? null,
-          input.signatoryName ?? null,
-          input.signatoryDesignation ?? null,
-          input.logoUrl ?? null,
-          input.accentColor ?? null,
-          input.watermarkEnabled ?? null,
-          input.allowSelfApproval ?? null,
-          input.defaultRetentionMonths ?? null,
-        ],
-      );
+      const orgFields=Object.entries(input).filter(([key])=>key in orgColumns);
+      if (orgFields.length) {
+        const args=[ctx.orgId,...orgFields.map(([,value])=>value)];
+        const setters=orgFields.map(([key],index)=>`${orgColumns[key]}=$${index+2}`);
+        await client.query(
+          `UPDATE organisations SET ${setters.join(',')},row_version=row_version+1,updated_at=now()
+            WHERE id=$1`,args,
+        );
+      } else {
+        await client.query(`UPDATE organisations SET row_version=row_version+1,updated_at=now()
+          WHERE id=$1`,[ctx.orgId]);
+      }
 
+      const profileFields=Object.entries(input).filter(([key])=>key in profileColumns);
+      if (profileFields.length) {
+        // Explicitly inserting only org_id ensures database defaults are used;
+        // UPDATE only supplied columns permits nullable fields to be cleared.
+        await client.query(
+          `INSERT INTO org_profiles(org_id) VALUES($1)
+            ON CONFLICT(org_id) DO NOTHING`,[ctx.orgId],
+        );
+        const args=[ctx.orgId,...profileFields.map(([,value])=>value)];
+        const setters=profileFields.map(([key],index)=>`${profileColumns[key]}=$${index+2}`);
+        await client.query(
+          `UPDATE org_profiles SET ${setters.join(',')},
+             row_version=row_version+1,updated_at=now() WHERE org_id=$1`,args,
+        );
+      }
       emit({
-        eventType: 'ORG_PROFILE_UPDATED',
-        entityType: 'ORGANISATION',
-        entityId: ctx.orgId,
-        beforeJson: org,
-        afterJson: input,
+        eventType:'ORG_PROFILE_UPDATED',entityType:'ORGANISATION',entityId:ctx.orgId,
+        beforeJson:{rowVersion:org.row_version},afterJson:{changedFields:Object.keys(input),rowVersion:org.row_version+1},
       });
-
-      return { orgId: ctx.orgId, rowVersion: org.row_version + 1 };
+      return {orgId:ctx.orgId,rowVersion:org.row_version+1};
     });
   }
 
@@ -391,8 +353,9 @@ export class OrganisationsService {
    * API-011: Backward-compatible wrapper for controller
    */
   async updateOrganisation(ctx: TenantActorContext, orgId: string, dto: any) {
-    const rowVersion = dto.rowVersion ?? 1;
-    return this.updateOrgProfile(ctx, rowVersion, dto);
+    const {parseOrgProfilePatch} = await import('./organisation-validation');
+    const patch = parseOrgProfilePatch(dto);
+    return this.updateOrgProfile(ctx, patch.rowVersion, patch.input);
   }
 
   /**
@@ -1134,17 +1097,23 @@ export class OrganisationsService {
   }
 
   async getAuditLog(ctx: TenantActorContext, orgId: string) {
-    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
-      const { rows } = await client.query(
-        `SELECT a.id, a.org_id, a.project_id, a.actor_type, a.actor_user_id, a.action, a.entity_type, a.entity_id,
-                a.before_json, a.after_json, a.ip, a.user_agent, a.request_id, a.prev_hash, a.hash, a.chain_seq, a.created_at,
-                u.name AS actor_name
-           FROM audit_events a
-           LEFT JOIN users u ON u.id = a.actor_user_id
-          WHERE a.org_id = $1
-          ORDER BY a.chain_seq DESC
-          LIMIT 100`,
-        [ctx.orgId],
+    if (ctx.guestGrantId || (orgId !== 'current' && orgId !== ctx.orgId) ||
+        !hasPermission({orgRole:ctx.orgRole,projectRole:ctx.projectRole},'audit.read').allowed) {
+      throw new NotFoundException('AUDIT_NOT_FOUND');
+    }
+    // For G03, only unrestricted organisation auditors may use this endpoint.
+    // Project-scoped activity requires a distinct safe scoped DTO, not a raw
+    // audit_events JSON dump; fail closed instead of leaking hidden projects.
+    const fullTenantRoles=new Set(['R-OWNER','R-ADMIN','R-AUDITOR']);
+    if (!ctx.orgRole || !fullTenantRoles.has(ctx.orgRole)) {
+      throw new ForbiddenException({code:'SCOPED_AUDIT_FEED_NOT_AVAILABLE'});
+    }
+    return withTenantTransaction(this.pool,ctx,async(client:PoolClient)=>{
+      const {rows}=await client.query(
+        `SELECT a.id,a.project_id,a.actor_type,a.actor_user_id,
+                a.action,a.entity_type,a.entity_id,a.chain_seq,a.created_at
+           FROM audit_events a WHERE a.org_id=$1
+          ORDER BY a.chain_seq DESC LIMIT 100`,[ctx.orgId],
       );
       return rows;
     });
