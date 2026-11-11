@@ -84,7 +84,7 @@ export class SessionCsrfGuard implements CanActivate {
           'GUEST_PRINCIPAL_INVALID','GUEST_PARTY_RELATIONSHIP_INVALID',
           'AUTH_CONTEXT_CHANGED','CSRF_TOKEN_MISSING','CSRF_TOKEN_INVALID',
           'MFA_STEP_UP_REQUIRED','PROJECT_AUTHORITY_LOOKUP_FAILED',
-          'SESSION_REAUTHENTICATION_REQUIRED',
+          'SESSION_REAUTHENTICATION_REQUIRED','ORG_ACCESS_SUSPENDED',
         ]);
         const reasonCode = typeof code === 'string' && allowed.has(code)
           ? code : 'AUTH_SESSION_REJECTED';
@@ -255,19 +255,42 @@ export class SessionCsrfGuard implements CanActivate {
       }
     }
 
-    if (
+    const method = req.method.toUpperCase();
+    const pathname = String(req.path || '').split('?')[0];
+    const switchingOrganisation = (method === 'POST' &&
+      pathname === '/api/v1/auth/switch-org') ||
+      (method === 'GET' && (
+        pathname === '/api/v1/auth/orgs' ||
+        pathname === '/api/v1/auth/session/bootstrap'
+      ));
+    const emergencySessionControl = method === 'POST' && (
+      pathname === '/api/v1/auth/logout' ||
+      pathname === '/api/v1/auth/sessions/revoke-all' ||
+      isPreMfaAuthRoute(method, pathname) &&
+        /^\/api\/v1\/auth\/sessions\/[0-9a-f-]{36}\/revoke$/i.test(pathname)
+    );
+    // Account suspension permits only emergency token revocation. A current
+    // organisation/membership suspension additionally permits a constrained
+    // switch to ANOTHER active membership, which the switch command locks
+    // and verifies before rotating the cookie and authentication generation.
+    const sessionExpired =
       new Date(session.expires_at).getTime() <= Date.now() ||
       new Date(session.absolute_expires_at).getTime() <= Date.now() ||
       (!session.guest_grant_id &&
-        new Date(session.last_activity_at).getTime() <= Date.now() - 30 * 24 * 3600 * 1000) ||
-      session.user_status !== 'ACTIVE' ||
-      membershipStatus !== 'ACTIVE' ||
-      session.org_status !== 'ACTIVE'
-    ) {
+        new Date(session.last_activity_at).getTime() <= Date.now() - 30 * 24 * 3600 * 1000);
+    if (sessionExpired || (session.user_status !== 'ACTIVE' && !emergencySessionControl)) {
       throw new UnauthorizedException({
         code: 'SESSION_EXPIRED',
-        title: 'Session expired or membership suspended',
-        detail: 'Your session has expired or your organisation access has changed.',
+        title: 'Session expired or account inaccessible',
+        detail: 'Sign in again or contact your organisation administrator.',
+      });
+    }
+    if ((membershipStatus !== 'ACTIVE' || session.org_status !== 'ACTIVE') &&
+        !switchingOrganisation && !emergencySessionControl) {
+      throw new ForbiddenException({
+        code: 'ORG_ACCESS_SUSPENDED',
+        title: 'Current organisation access suspended',
+        detail: 'Choose another eligible organisation or contact your administrator.',
       });
     }
 

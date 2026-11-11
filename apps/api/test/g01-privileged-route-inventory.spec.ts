@@ -56,4 +56,46 @@ describe('G01-019 complete registered HTTP route/MFA inventory',()=>{
       }
     }finally{if(old===undefined)delete process.env.NODE_ENV;else process.env.NODE_ENV=old;}
   });
+  it('PH1-G01-004: suspended current org permits only secure switch/logout, not business access',async()=>{
+    const csrf='suspended-org-csrf';
+    const generation='019a6f40-e041-7000-8000-000000000001';
+    const session:any={session_id:'s1',user_id:'u1',active_org_id:'o1',
+      user_name:'Suspended Org Fixture',csrf_token_hash:createHash('sha256').update(csrf).digest('hex'),
+      auth_generation:generation,expires_at:new Date(Date.now()+3600000),
+      absolute_expires_at:new Date(Date.now()+3600000),last_activity_at:new Date(),
+      user_status:'ACTIVE',org_status:'SUSPENDED',guest_grant_id:null,
+      mfa_verified:true,mfa_verified_at:new Date()};
+    const member:any={org_role:'R-OWNER',membership_status:'ACTIVE'};
+    const client={query:jest.fn(async(sql:string)=>({
+      rows:sql.includes('FROM memberships')?[member]:[],
+    })),release:jest.fn()};
+    const pool:any={query:jest.fn(async()=>({rows:[session]})),
+      connect:jest.fn(async()=>client)};
+    const guard=new SessionCsrfGuard(pool);
+    const attempt=(method:string,path:string,providedCsrf=csrf)=>{
+      const req:any={method,path,params:{},cookies:{tc_session:'fixture-cookie'},
+        headers:{'x-csrf-token':providedCsrf,'x-auth-generation':generation},ip:'192.0.2.40'};
+      return guard.canActivate({switchToHttp:()=>({getRequest:()=>req})} as any);
+    };
+    await expect(attempt('GET','/api/v1/projects'))
+      .rejects.toMatchObject({response:expect.objectContaining({code:'ORG_ACCESS_SUSPENDED'})});
+    await expect(attempt('POST','/api/v1/auth/switch-org')).resolves.toBe(true);
+    await expect(attempt('GET','/api/v1/auth/orgs')).resolves.toBe(true);
+    await expect(attempt('GET','/api/v1/auth/session/bootstrap')).resolves.toBe(true);
+    await expect(attempt('GET','/api/v1/auth/me'))
+      .rejects.toMatchObject({response:expect.objectContaining({code:'ORG_ACCESS_SUSPENDED'})});
+    await expect(attempt('POST','/api/v1/auth/logout')).resolves.toBe(true);
+    await expect(attempt('POST','/api/v1/auth/sessions/revoke-all')).resolves.toBe(true);
+    await expect(attempt('POST','/api/v1/auth/switch-org','wrong-csrf'))
+      .rejects.toMatchObject({response:expect.objectContaining({code:'CSRF_TOKEN_INVALID'})});
+    member.membership_status='SUSPENDED';
+    await expect(attempt('POST','/api/v1/auth/switch-org')).resolves.toBe(true);
+    await expect(attempt('GET','/api/v1/projects'))
+      .rejects.toMatchObject({response:expect.objectContaining({code:'ORG_ACCESS_SUSPENDED'})});
+    session.user_status='SUSPENDED';
+    await expect(attempt('POST','/api/v1/auth/switch-org'))
+      .rejects.toMatchObject({response:expect.objectContaining({code:'SESSION_EXPIRED'})});
+    await expect(attempt('POST','/api/v1/auth/logout')).resolves.toBe(true);
+  });
+
 });

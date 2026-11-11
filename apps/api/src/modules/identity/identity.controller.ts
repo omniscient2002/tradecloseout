@@ -919,7 +919,7 @@ export class IdentityController {
       const { rows } = await client.query(
         `SELECT o.id, o.legal_name, o.display_name, m.role
            FROM memberships m
-           JOIN organisations o ON o.id = m.org_id
+           JOIN organisations o ON o.id = m.org_id AND o.status = 'ACTIVE'
           WHERE m.user_id = $1 AND m.status = 'ACTIVE'`,
         [req.auth.userId],
       );
