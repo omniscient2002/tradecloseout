@@ -8,6 +8,7 @@ describe('Phase 1 audit/outbox tenant and secret boundaries', () => {
       action: 'ISSUED',
       nested: {
         authToken: 'canary-auth',
+        manualSetupKey: 'canary-factor',
         recoveryCodes: ['canary-recovery'],
         credentials: [{ apiKey: 'canary-provider' }],
         detail: 'safe business detail',
@@ -18,7 +19,7 @@ describe('Phase 1 audit/outbox tenant and secret boundaries', () => {
     };
     const scrubbed = redactSensitiveFields(raw) as any;
     expect(JSON.stringify(scrubbed)).not.toMatch(
-      /canary-auth|canary-recovery|canary-provider|123456|X-Amz-Signature/,
+      /canary-auth|canary-factor|canary-recovery|canary-provider|123456|X-Amz-Signature/,
     );
     expect(scrubbed.nested.detail).toBe('safe business detail');
     expect(scrubbed.publicUrl).toBe(raw.publicUrl);
