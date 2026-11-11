@@ -841,6 +841,10 @@ export class ChecklistsService {
    */
   async listRequirements(ctx: TenantActorContext, projectId: string) {
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+      // G02-003: a grant's project_id is not a project-wide read permission.
+      // Scope rows in SQL before any serialization/count/search/pagination.
+      const isGuest = ctx.actorType === 'GUEST' || Boolean(ctx.guestGrantId);
+      if (isGuest && !ctx.guestGrantId) throw new NotFoundException('REQUIREMENTS_NOT_FOUND');
       const res = await client.query(
         `SELECT r.*,
                 dv.id AS latest_version_id,
@@ -859,8 +863,25 @@ export class ChecklistsService {
               LIMIT 1
            ) dv ON true
           WHERE r.org_id = $1 AND r.project_id = $2 AND r.superseded_at IS NULL
+            ${isGuest ? `AND EXISTS (
+                SELECT 1 FROM guest_grants g
+                 WHERE g.org_id=r.org_id AND g.project_id=r.project_id
+                   AND g.id=$3 AND g.status='ACTIVE' AND g.expires_at>now()
+                   AND g.principal_user_id=$4
+                   AND (
+                     (g.grant_type IN ('SUPPLIER_UPLOAD','SUPPLIER_CONTRIBUTOR')
+                       AND g.capabilities && ARRAY['document.upload','document.read']::text[]
+                       AND COALESCE(g.scope_json->'requirementIds','[]'::jsonb) ? r.id::text
+                       AND (r.owner_party_id IS NULL OR r.owner_party_id=g.party_id))
+                     OR
+                     (g.grant_type IN ('CLIENT_VIEW','CONSULTANT_REVIEW','MC_VIEW','AUDITOR_READ')
+                       AND g.capabilities && ARRAY['document.read','project.read','review.read']::text[]
+                       AND (r.status='APPROVED' OR
+                            COALESCE(g.scope_json->'requirementIds','[]'::jsonb) ? r.id::text))
+                   )
+              )` : ''}
           ORDER BY r.milestone_key ASC, r.title ASC`,
-        [ctx.orgId, projectId],
+        isGuest ? [ctx.orgId, projectId, ctx.guestGrantId, ctx.userId] : [ctx.orgId, projectId],
       );
 
       // FR-CHK-010: a requirement with due_at IS NULL is never derived as MISSING
