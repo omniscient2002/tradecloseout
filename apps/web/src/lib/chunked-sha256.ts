@@ -124,17 +124,35 @@ export class Sha256Incremental {
   }
 }
 
-export async function sha256BlobChunked(file: Blob, chunkBytes = 1024 * 1024): Promise<string> {
+/**
+ * The optional signal cancels hashing before the original is saved. It does
+ * not cancel a remote upload after a durable draft has been committed.
+ */
+export async function sha256BlobChunked(
+  file: Blob,
+  chunkBytes = 1024 * 1024,
+  signal?: AbortSignal,
+): Promise<string> {
   if (!Number.isSafeInteger(chunkBytes) || chunkBytes < 64 || chunkBytes > 8 * 1024 * 1024) {
     throw new Error('SHA256_CHUNK_SIZE_INVALID');
   }
+  const throwIfCancelled = () => {
+    if (signal?.aborted) throw new DOMException('Evidence capture was cancelled.', 'AbortError');
+  };
+  throwIfCancelled();
   const digest = new Sha256Incremental();
   let chunkNo = 0;
   for (let offset = 0; offset < file.size; offset += chunkBytes) {
+    throwIfCancelled();
     const bytes = new Uint8Array(await file.slice(offset, offset + chunkBytes).arrayBuffer());
+    throwIfCancelled();
     digest.update(bytes);
     // Yield to input/painting; never hold a whole 100 MiB original in memory.
-    if (++chunkNo % 4 === 0) await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    if (++chunkNo % 4 === 0) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      throwIfCancelled();
+    }
   }
+  throwIfCancelled();
   return digest.digestHex();
 }
