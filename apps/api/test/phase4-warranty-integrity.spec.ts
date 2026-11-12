@@ -54,6 +54,16 @@ describe('PH4-G16-001/002: warranty assertions are not OEM confirmation', () => 
     expect(queries.some(q => q.sql.includes('UPDATE assets'))).toBe(false);
   });
 
+  it('compares date-typed PostgreSQL coverage values without misclassifying a matching assertion', async () => {
+    const { service } = fixture({
+      warranty_start: new Date('2026-11-10T00:00:00.000Z'),
+      warranty_end: new Date('2027-11-10T00:00:00.000Z'),
+    });
+    const result = await service.recordWarrantyEvent(ctx, projectId, event());
+    expect(result.status).toBe('RECORDED');
+    expect(result.hasDateConflict).toBe(false);
+  });
+
   it('records extension requests without changing effective end date', async () => {
     const { service, queries } = fixture({});
     const result = await service.recordWarrantyEvent(ctx, projectId, {
