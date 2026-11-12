@@ -569,13 +569,13 @@ export class WarrantyAndBillingService {
           status: 'INACTIVE',
           seatLimit: 0,
           storageQuotaBytes: 0,
-          pricePaise: 0,
+          pricePaise: null,
           limitsJson: { maxActiveProjects: 0, maxSeats: 0, maxStorageBytes: 0, maxPackageGenerationsPerMonth: 0 },
           plan_name: 'No Subscription',
           plan_tier: 'NONE',
           seat_limit: 0,
           storage_quota_bytes: 0,
-          price_paise: 0,
+          price_paise: null,
         };
       }
       const sub = rows[0];
@@ -615,7 +615,8 @@ export class WarrantyAndBillingService {
         updatedAt: sub.updated_at,
         planName: sub.plan_name,
         planTier: sub.plan_tier,
-        pricePaise: Number(sub.price_paise),
+        // PostgreSQL BIGINT must not be converted to an unsafe JS number.
+        pricePaise: String(sub.price_paise),
         interval: sub.interval,
         limitsJson: limits,
         seatLimit,
@@ -623,7 +624,7 @@ export class WarrantyAndBillingService {
         maxActiveProjects,
         plan_name: sub.plan_name,
         plan_tier: sub.plan_tier,
-        price_paise: Number(sub.price_paise),
+        price_paise: String(sub.price_paise),
         seat_limit: seatLimit,
         storage_quota_bytes: storageQuotaBytes,
       };
