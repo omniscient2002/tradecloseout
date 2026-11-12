@@ -9,6 +9,13 @@ BEGIN
       PASSWORD NULL NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION
       NOINHERIT NOBYPASSRLS;
   END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_roles WHERE rolname = 'tc_incident_operator'
+      AND (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication
+           OR rolbypassrls OR rolinherit)
+  ) THEN
+    RAISE EXCEPTION 'INCIDENT_ROLE_UNSAFE: existing role is not least privileged';
+  END IF;
 END
 $role$;
 
