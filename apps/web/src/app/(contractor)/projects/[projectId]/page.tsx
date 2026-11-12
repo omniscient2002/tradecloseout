@@ -49,6 +49,7 @@ import { downloadCsv } from "@/lib/csv-export";
 import { getMemberOfflineActorPartition, setOfflineActorPartition } from "@/lib/offline-upload-queue";
 import { parseProjectRequirementResponse, type ProjectRequirementRow, type RequirementStatus } from "@/lib/project-requirements";
 import { formatInrPaiseExact } from "@/lib/format-money";
+import { requireApiList } from "@/lib/api-list";
 
 /* -------------------------------------------------------------------------- */
 /* TYPES & CONSTANTS                                                          */
@@ -361,10 +362,7 @@ export default function ProjectWorkspacePage() {
     try {
       const data = await apiFetch<unknown>(`/api/v1/projects/${encodeURIComponent(projectId)}/assets`);
       if (generation !== requestGeneration.current.assets || viewedProjectRef.current !== projectId) return;
-      const rows = Array.isArray(data) ? data :
-        (data && typeof data === "object" && "data" in data ? (data as { data: unknown }).data : null);
-      if (!Array.isArray(rows)) throw new Error("ASSET_RESPONSE_INVALID: Equipment list was not returned.");
-      setAssets(rows);
+      setAssets(requireApiList(data, "ASSET"));
     } catch (err) {
       if (generation !== requestGeneration.current.assets || viewedProjectRef.current !== projectId) return;
       setErrorAssets(err instanceof Error ? err.message : "Equipment list unavailable.");
@@ -384,10 +382,7 @@ export default function ProjectWorkspacePage() {
     try {
       const data = await apiFetch<unknown>(`/api/v1/projects/${encodeURIComponent(projectId)}/reviews`);
       if (generation !== requestGeneration.current.reviews || viewedProjectRef.current !== projectId) return;
-      const rows = Array.isArray(data) ? data :
-        (data && typeof data === "object" && "data" in data ? (data as { data: unknown }).data : null);
-      if (!Array.isArray(rows)) throw new Error("REVIEW_RESPONSE_INVALID: Review list was not returned.");
-      setReviews(rows);
+      setReviews(requireApiList(data, "REVIEW"));
     } catch (err) {
       if (generation !== requestGeneration.current.reviews || viewedProjectRef.current !== projectId) return;
       setErrorReviews(err instanceof Error ? err.message : "Review list unavailable.");
@@ -407,10 +402,7 @@ export default function ProjectWorkspacePage() {
     try {
       const data = await apiFetch<unknown>(`/api/v1/projects/${encodeURIComponent(projectId)}/packages`);
       if (generation !== requestGeneration.current.packages || viewedProjectRef.current !== projectId) return;
-      const rows = Array.isArray(data) ? data :
-        (data && typeof data === "object" && "data" in data ? (data as { data: unknown }).data : null);
-      if (!Array.isArray(rows)) throw new Error("PACKAGE_RESPONSE_INVALID: Handover package list was not returned.");
-      setPackages(rows);
+      setPackages(requireApiList(data, "PACKAGE"));
     } catch (err) {
       if (generation !== requestGeneration.current.packages || viewedProjectRef.current !== projectId) return;
       setErrorPackages(err instanceof Error ? err.message : "Handover dossiers unavailable.");
