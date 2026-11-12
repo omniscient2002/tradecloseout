@@ -479,6 +479,11 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
           if (sql.includes('SELECT scope_json, capabilities FROM guest_grants')) {
             return { rows: [{ scope_json: { requirementIds: ['0192e3a0-req-allowed-1'] }, capabilities: ['document.upload'] }] };
           }
+          // A legitimate guest issuance test needs an active project; denied
+          // or closed projects are covered by the Phase 1 lifecycle tests.
+          if (sql.includes('SELECT status FROM projects')) {
+            return { rows: [{ status: 'ACTIVE' }] };
+          }
           if (sql.includes('SELECT id, doc_type_key FROM requirements')) {
             return { rows: [{ id: '0192e3a0-req-allowed-1', doc_type_key: 'DT-043' }] };
           }
