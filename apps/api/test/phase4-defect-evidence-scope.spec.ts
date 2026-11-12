@@ -31,12 +31,12 @@ describe('PH4-G17-002 exact remedy scope qualification', () => {
           return { rows: [{
             id: objectId, status: 'READY', sha256: 'a'.repeat(64),
             size_bytes: 1024, observed_size_bytes: 1024,
-            provider_version_id: 'v1', object_key: `orgs/${orgId}/projects/${projectId}/defects/${defectId}/source`,
+            provider_version_id: 'v1', av_scanned_at: '2026-11-12T10:00:00Z', object_key: `orgs/${orgId}/projects/${projectId}/defects/${defectId}/source`,
             ...binding,
           }] };
         }
         if (sql.includes('FROM document_versions dv')) return { rows: [{ id: versionId, document_id: randomUUID() }] };
-        if (sql.includes('SELECT id FROM document_assets')) return { rows: [{ id: randomUUID() }] };
+        if (sql.includes('FROM document_assets da')) return { rows: [{ asset_id: assetId, status: 'ACTIVE', deleted_at: null }] };
         if (sql.includes("UPDATE defects")) return { rowCount: 1 };
         return { rows: [] };
       }),
@@ -103,15 +103,18 @@ describe('PH4-G17-002 exact remedy scope qualification', () => {
           id: defectId, org_id: orgId, project_id: projectId, asset_id: assetId,
           status: 'RECTIFIED', row_version: 2, remedied_by: randomUUID(),
           closure_evidence_object_id: objectId, remedy_document_version_id: original,
+          remedy_sha256: 'a'.repeat(64), remedy_provider_version_id: 'v1',
+          remedy_size_bytes: 1024, remedy_scanned_at: '2026-11-12T10:00:00Z',
+          remedy_asset_scope_ids: [assetId],
         }] };
         if (sql.includes('FROM storage_objects so')) return { rows: [{
           id: objectId, status: 'READY', sha256: 'a'.repeat(64),
           size_bytes: 1024, observed_size_bytes: 1024,
-          provider_version_id: 'v1', linked_in_project: true,
+          provider_version_id: 'v1', av_scanned_at: '2026-11-12T10:00:00Z', linked_in_project: true,
           linked_to_defect_asset: true,
         }] };
         if (sql.includes('FROM document_versions dv')) return { rows: [{ id: newer, document_id: randomUUID() }] };
-        if (sql.includes('SELECT id FROM document_assets')) return { rows: [{ id: randomUUID() }] };
+        if (sql.includes('FROM document_assets da')) return { rows: [{ asset_id: assetId, status: 'ACTIVE', deleted_at: null }] };
         return { rows: [], rowCount: 0 };
       }),
       release: jest.fn(),
