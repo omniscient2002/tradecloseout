@@ -124,7 +124,7 @@ export async function compileAndPersistPortableArchive(pool: Pool, s3: S3Client,
     const objectKey = `archives/${orgId}/${projectId}/${exportId}/${uuidv7()}.zip`;
     const put = await s3.send(new PutObjectCommand({ Bucket: bucket, Key: objectKey, ContentType: 'application/zip',
       ContentLength: outputBytes, ChecksumSHA256: Buffer.from(archiveSha256, 'hex').toString('base64'), Body: createReadStream(zipPath) }));
-    if (!put.VersionId || put.VersionId === 'null') throw new Error('ARCHIVE_VERSIONING_REQUIRED');
+    if (!isImmutableStorageVersion(put.VersionId)) throw new Error('ARCHIVE_VERSIONING_REQUIRED');
     const head = await s3.send(new HeadObjectCommand({ Bucket: bucket, Key: objectKey, VersionId: put.VersionId }));
     if (head.ContentLength !== outputBytes || head.VersionId !== put.VersionId) throw new Error('ARCHIVE_OUTPUT_RECEIPT_MISMATCH');
     const readback = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: objectKey, VersionId: put.VersionId }));
