@@ -3,6 +3,7 @@ import Redis from 'ioredis';
 import { createHash } from 'crypto';
 import { uuidv7 } from 'uuidv7';
 import { deliverNotification } from './notification-delivery';
+import { reportWorkerFailure } from './safe-worker-errors';
 import { isIndiaQuietHour, sumPaise } from '@tradecloseout/shared';
 
 export class TradeCloseoutScheduler {
@@ -33,7 +34,7 @@ export class TradeCloseoutScheduler {
       try {
         await this.redis.eval(releaseLua, 1, fullKey, ownerToken);
       } catch (err) {
-        console.error(`[Scheduler Lock Release Error] Key ${fullKey}:`, err);
+        reportWorkerFailure('SCHEDULER_LOCK_RELEASE_FAILED', err);
       }
     }
   }
@@ -79,7 +80,7 @@ export class TradeCloseoutScheduler {
       try {
         await this.redis.eval(releaseLua, 1, fullKey, ownerToken);
       } catch (err) {
-        console.error(`[Scheduler Lock Release Error] Key ${fullKey}:`, err);
+        reportWorkerFailure('SCHEDULER_LOCK_RELEASE_FAILED', err);
       }
     }
   }
