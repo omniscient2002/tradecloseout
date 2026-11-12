@@ -148,6 +148,9 @@ export class BillingController {
       assetId?: string;
       severity?: 'MINOR' | 'MAJOR' | 'CRITICAL';
       location?: string;
+      caseType?: 'CLOSEOUT' | 'AFTERCARE';
+      postHandoverReason?: string;
+      aftercareReference?: string;
     },
   ) {
     return this.warrantyAndBillingService.createDefect(req.userContext, projectId, dto);
