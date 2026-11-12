@@ -9,6 +9,8 @@ import {
 import { createHash, timingSafeEqual } from 'crypto';
 import { Pool } from 'pg';
 import { Request } from 'express';
+import { requestCorrelationId } from '../middleware/request-correlation.middleware';
+import { validateRouteIdentifiers } from './route-identifiers';
 
 export interface AuthenticatedRequest extends Request {
   auth: {
@@ -48,6 +50,8 @@ export class SessionCsrfGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest<AuthenticatedRequest>();
+    const requestId = requestCorrelationId(req);
+    validateRouteIdentifiers(req.params);
     const rawSessionToken =
       req.cookies?.['tc_session'] ||
       req.headers['authorization']?.replace(/^Bearer\s+/i, '');
@@ -74,7 +78,8 @@ export class SessionCsrfGuard implements CanActivate {
               u.name AS user_name,
               u.status AS user_status,
               u.mfa_enabled_at,
-              o.status AS org_status
+              o.status AS org_status,
+              o.doc_controller_org_wide_download
          FROM sessions s
          JOIN users u ON u.id = s.user_id
          JOIN organisations o ON o.id = s.active_org_id
@@ -286,7 +291,7 @@ export class SessionCsrfGuard implements CanActivate {
       activeOrgId: session.active_org_id,
       orgRole: orgRole,
       projectRole: projectRole,
-      requestId: (req.headers['x-request-id'] as string) || 'req_unknown',
+      requestId,
       ip: req.ip || '0.0.0.0',
       userAgent: (req.headers['user-agent'] as string) || 'unknown',
       mfaVerified: session.mfa_verified === true && Boolean(session.mfa_enabled_at),
@@ -304,7 +309,8 @@ export class SessionCsrfGuard implements CanActivate {
       guestScope: guestScope,
       guestGrantId: session.guest_grant_id,
       guestProjectId: guestProjectId,
-      docControllerOrgWideDownload: false,
+      docControllerOrgWideDownload: !session.guest_grant_id &&
+        session.doc_controller_org_wide_download === true,
     };
 
     (req as any).userContext = {

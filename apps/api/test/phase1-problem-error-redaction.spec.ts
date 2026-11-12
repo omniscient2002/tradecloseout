@@ -5,7 +5,7 @@ describe('PH1-G27-005 problem response and logging secrecy', () => {
   const secret = 'postgres://operator:plaintext-secret@internal-db/private';
   const filter = new ProblemJsonExceptionFilter();
 
-  const capture = (exception: unknown, inputRequestId: unknown = 'safe_request_123') => {
+  const capture = (exception: unknown, inputRequestId: unknown = '98a0ca31-385c-4077-a762-a4b4cadf0774') => {
     const res: any = {
       setHeader: jest.fn(),
       status: jest.fn().mockReturnThis(),
@@ -25,7 +25,7 @@ describe('PH1-G27-005 problem response and logging secrecy', () => {
       const exception = new Error(secret);
       exception.stack = `Error: ${secret}\n at secretInternalOperation`;
       const { body, res } = capture(exception);
-      expect(body).toMatchObject({ status: 500, code: 'INTERNAL_ERROR', requestId: 'safe_request_123' });
+      expect(body).toMatchObject({ status: 500, code: 'INTERNAL_ERROR', requestId: '98a0ca31-385c-4077-a762-a4b4cadf0774' });
       expect(JSON.stringify(body)).not.toContain(secret);
       expect(JSON.stringify(spy.mock.calls)).not.toContain(secret);
       expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
@@ -36,8 +36,9 @@ describe('PH1-G27-005 problem response and logging secrecy', () => {
     const spy = jest.spyOn((filter as any).logger, 'error').mockImplementation(() => undefined);
     try {
       const { body, res } = capture(new Error('oops'), `bad\r\nX-Secret: ${secret}`);
-      expect(body.requestId).toBe('req_unknown');
-      expect(res.setHeader).toHaveBeenCalledWith('X-Request-Id', 'req_unknown');
+      expect(body.requestId).toMatch(/^[0-9a-f-]{36}$/);
+      expect(body.requestId).not.toContain(secret);
+      expect(res.setHeader).toHaveBeenCalledWith('X-Request-Id', body.requestId);
       expect(JSON.stringify(spy.mock.calls)).not.toContain(secret);
     } finally { spy.mockRestore(); }
   });

@@ -8,7 +8,7 @@ import { TenantDbService } from '../../database/tenant-db.service';
 import { SessionCsrfGuard, AuthenticatedRequest } from '../../common/guards/session-csrf.guard';
 import { NoGenericIdempotencyReceipt } from '../../common/decorators/no-generic-idempotency-receipt.decorator';
 import { MfaAttemptBudget } from './mfa-attempt-budget';
-import { MfaEnrollmentStore, MfaEnrollmentSession } from './mfa-enrollment-store';
+import { MfaEnrollmentStore, MfaEnrollmentSession, isMfaProposalId } from './mfa-enrollment-store';
 
 type MfaRequest = AuthenticatedRequest & {
   userContext?: { actorType?: string };
@@ -103,7 +103,8 @@ export class MfaController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const ctx = this.session(req);
-    if (typeof body?.proposalId !== 'string' || typeof body?.code !== 'string') {
+    if (!isMfaProposalId(body?.proposalId) || typeof body?.code !== 'string' ||
+        !/^[0-9]{6}$/.test(body.code)) {
       throw new BadRequestException({ code: 'MFA_ENROLLMENT_INPUT_INVALID' });
     }
     await this.budget.reserve(ctx.userId, 'ENROLL_CONFIRM');
@@ -114,7 +115,7 @@ export class MfaController {
   @Post('enroll/cancel')
   async cancel(@Req() req: MfaRequest, @Body() body: { proposalId?: string }) {
     const ctx = this.session(req);
-    if (typeof body?.proposalId !== 'string') {
+    if (!isMfaProposalId(body?.proposalId)) {
       throw new BadRequestException({ code: 'MFA_ENROLLMENT_INPUT_INVALID' });
     }
     await this.budget.reserve(ctx.userId, 'CANCEL');

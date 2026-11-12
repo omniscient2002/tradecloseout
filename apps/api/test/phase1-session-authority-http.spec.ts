@@ -8,7 +8,7 @@ describe('PH1-G01-004: session authority denial HTTP contract', () => {
       status: jest.fn().mockReturnThis(),
       json: jest.fn(),
     };
-    const request = { headers: { 'x-request-id': 'auth-fence-regression' } };
+    const request = { headers: { 'x-request-id': '98a0ca31-385c-4077-a762-a4b4cadf0774' } };
     const host = {
       switchToHttp: () => ({
         getResponse: () => response,
@@ -23,7 +23,7 @@ describe('PH1-G01-004: session authority denial HTTP contract', () => {
     expect(response.json).toHaveBeenCalledWith(expect.objectContaining({
       status: 403,
       code: 'AUTH_SESSION_CONTEXT_CHANGED',
-      requestId: 'auth-fence-regression',
+      requestId: '98a0ca31-385c-4077-a762-a4b4cadf0774',
       retryable: false,
     }));
     const body = response.json.mock.calls[0][0];

@@ -57,8 +57,7 @@ export const organisations = pgTable(
     country: text('country').notNull().default('IN'),
     state: text('state').notNull(),
     allowSelfApproval: boolean('allow_self_approval').notNull().default(false),
-    allowGenericReview: boolean('allow_generic_review').notNull().default(false),
-    docControllerOrgWideDownload: boolean('document_controller_org_wide_download')
+    docControllerOrgWideDownload: boolean('doc_controller_org_wide_download')
       .notNull()
       .default(false),
     rowVersion: integer('row_version').notNull().default(1),
@@ -78,8 +77,6 @@ export const orgProfiles = pgTable('org_profiles', {
   signatoryName: text('signatory_name'),
   signatoryDesignation: text('signatory_designation'),
   brandColor: text('brand_color').notNull().default('#0F2942'),
-  defaultTimezone: text('default_timezone').notNull().default('Asia/Kolkata'),
-  defaultLocale: text('default_locale').notNull().default('en-IN'),
   rowVersion: integer('row_version').notNull().default(1),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

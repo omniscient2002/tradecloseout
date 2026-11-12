@@ -25,6 +25,11 @@ export interface MfaEnrollmentProposal {
   manualSetupKey: string; // One-time secret, NEVER log or persist plaintext.
   expiresAt: string;
 }
+
+export function isMfaProposalId(value: unknown): value is string {
+  return typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
 export interface MfaConfirmedEnrollment {
   recoveryCodes: string[]; // Shown exactly once; never written to a receipt.
   newSessionToken: string; // Must become a Secure, HttpOnly session cookie.
@@ -181,8 +186,7 @@ export class MfaEnrollmentStore {
     code: string,
   ): Promise<MfaConfirmedEnrollment> {
     this.assertContext(ctx);
-    if (!/^[0-9]{6}$/.test(code) ||
-        typeof proposalId !== 'string' || !/^[0-9a-f-]{36}$/i.test(proposalId)) {
+    if (!/^[0-9]{6}$/.test(code) || !isMfaProposalId(proposalId)) {
       throw new ForbiddenException({ code: 'MFA_CODE_INVALID' });
     }
     return this.db.withUserContext(ctx.userId, async client => {
@@ -315,6 +319,7 @@ export class MfaEnrollmentStore {
 
   async cancel(ctx: MfaEnrollmentSession, proposalId: string): Promise<void> {
     this.assertContext(ctx);
+    if (!isMfaProposalId(proposalId)) proposalDenied();
     return this.db.withUserContext(ctx.userId, async client => {
       await this.lockAccountAndSession(client, ctx);
       const update = await client.query(

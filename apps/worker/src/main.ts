@@ -1,7 +1,5 @@
 import { Pool, PoolClient } from 'pg';
 import Redis from 'ioredis';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
 import { Worker, Queue } from 'bullmq';
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { createWriteStream } from 'fs';
@@ -22,8 +20,7 @@ import { BoundedByteStream } from './queues/bounded-stream';
 import { OUTBOX_EVENT_REGISTRY } from './event-registry';
 import { authorizeOutboxDispatch } from './outbox-identity';
 import { jobFingerprint, reportWorkerFailure, protectQueueJob } from './safe-worker-errors';
-
-const execFileAsync = promisify(execFile);
+import { checkWorkerPdfDependency } from './pdf-dependency';
 
 const pool = new Pool({
   connectionString:
@@ -48,13 +45,11 @@ const s3 = new S3Client({
 });
 
 async function checkDependencies() {
-  try {
-    await execFileAsync('qpdf', ['--version']);
+  qpdfAvailable = await checkWorkerPdfDependency();
+  if (qpdfAvailable) {
     console.log('✓ qpdf engine detected');
-    qpdfAvailable = true;
-  } catch {
+  } else {
     console.warn('! qpdf binary not found in PATH; install qpdf for out-of-process PDF linearization.');
-    qpdfAvailable = false;
   }
 }
 

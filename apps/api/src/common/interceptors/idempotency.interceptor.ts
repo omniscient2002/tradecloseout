@@ -7,8 +7,8 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { from, Observable, of, throwError } from 'rxjs';
-import { catchError, mergeMap } from 'rxjs/operators';
+import { Observable, of } from 'rxjs';
+import { mergeMap } from 'rxjs/operators';
 import { Pool, PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { AuthenticatedRequest } from '../guards/session-csrf.guard';
@@ -153,7 +153,6 @@ export class IdempotencyInterceptor implements NestInterceptor {
 
     // Concurrency-safe atomic claim (TC2-010)
     let claimed = false;
-    let persistingReceipt = false;
     const keyId = uuidv7();
 
     try {
@@ -216,7 +215,6 @@ export class IdempotencyInterceptor implements NestInterceptor {
         if (!claimed) return responseBody;
         const statusCode = res.statusCode || 200;
         if (statusCode >= 200 && statusCode < 300) {
-          persistingReceipt = true;
           // Inspect the actual serialized receipt as well as the source body.
           // Nest responses may contain custom toJSON() methods or getters whose
           // serialized fields are not visible to Object.entries(responseBody).
@@ -251,24 +249,12 @@ export class IdempotencyInterceptor implements NestInterceptor {
           if (saved.rowCount !== 1) {
             throw new Error('IDEMPOTENCY_RECEIPT_WRITE_LOST');
           }
-          persistingReceipt = false;
-        } else {
-          await withTenantClient((client) => client.query(
-            `DELETE FROM idempotency_keys WHERE org_id = $1 AND key = $2 AND endpoint = $3`,
-            [orgId, idempotencyKey, endpoint],
-          ));
         }
+        // A handler error or non-success response cannot prove its business
+        // transaction rolled back. Keep the claim unresolved until an explicit
+        // outcome-reconciliation contract can establish that safely. In
+        // particular, never re-admit a command after a lost COMMIT acknowledgement.
         return responseBody;
-      }),
-      catchError((err) => {
-        if (!claimed || persistingReceipt) return throwError(() => err);
-        return from(withTenantClient((client) => client.query(
-          `DELETE FROM idempotency_keys WHERE org_id = $1 AND key = $2 AND endpoint = $3 AND response_status = 0`,
-          [orgId, idempotencyKey, endpoint],
-        ))).pipe(
-          catchError(() => of(undefined)),
-          mergeMap(() => throwError(() => err)),
-        );
       }),
     );
   }

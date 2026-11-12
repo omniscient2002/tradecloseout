@@ -122,6 +122,7 @@ export class TradeCloseoutScheduler {
    */
   async runDailyExpiryJob(): Promise<number> {
     const client = await this.pool.connect();
+    let discardConnection = false;
     try {
       const { rows: orgs } = await client.query(
         `SELECT id FROM organisations WHERE status = 'ACTIVE'`,
@@ -129,7 +130,9 @@ export class TradeCloseoutScheduler {
       let totalExpired = 0;
 
       for (const org of orgs) {
+        discardConnection = true;
         await client.query('BEGIN');
+        discardConnection = false;
         await client.query(
           `SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`,
           [org.id],
@@ -155,14 +158,17 @@ export class TradeCloseoutScheduler {
         );
 
         totalExpired += rowCount ?? 0;
+        discardConnection = true;
         await client.query('COMMIT');
+        discardConnection = false;
       }
       return totalExpired;
     } catch (err) {
-      await client.query('ROLLBACK');
+      try { await client.query('ROLLBACK'); }
+      catch { discardConnection = true; }
       throw err;
     } finally {
-      client.release();
+      client.release(discardConnection);
     }
   }
 
@@ -187,7 +193,9 @@ export class TradeCloseoutScheduler {
       let tenantFailures = 0;
       for (const org of activeOrgs) {
         try {
+          discardConnection = true;
           await client.query('BEGIN');
+          discardConnection = false;
           await client.query("SET LOCAL lock_timeout = '5s'");
           await client.query("SET LOCAL statement_timeout = '60s'");
           await client.query("SET LOCAL idle_in_transaction_session_timeout = '60s'");
@@ -258,7 +266,9 @@ export class TradeCloseoutScheduler {
           ],
         );
 
+        discardConnection = true;
         await client.query('COMMIT');
+        discardConnection = false;
         } catch {
           tenantFailures += 1;
           try {
@@ -269,6 +279,7 @@ export class TradeCloseoutScheduler {
             console.error('OWNER_DIGEST_CONNECTION_UNSAFE');
             break;
           }
+          if (discardConnection) break;
           // Keep any tenant identifiers and SQL errors out of operational logs.
           console.error('OWNER_DIGEST_TENANT_FAILED');
         }
@@ -286,6 +297,7 @@ export class TradeCloseoutScheduler {
    */
   async verifyAuditHashChainIntegrity(): Promise<{ orgCount: number; verifiedEvents: number }> {
     const client = await this.pool.connect();
+    let discardConnection = false;
     try {
       const { rows: orgs } = await client.query(`SELECT id FROM organisations`);
       let verifiedEvents = 0;
@@ -293,7 +305,9 @@ export class TradeCloseoutScheduler {
       for (const org of orgs) {
         // Read chain and registry under one snapshot, avoiding false alarms from
         // a legitimate concurrent append between the two SELECTs.
+        discardConnection = true;
         await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+        discardConnection = false;
         await client.query(
           `SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`,
           [org.id],
@@ -357,14 +371,17 @@ export class TradeCloseoutScheduler {
           throw new Error('AUDIT_CHAIN_HEAD_MISMATCH');
         }
 
+        discardConnection = true;
         await client.query('COMMIT');
+        discardConnection = false;
       }
       return { orgCount: orgs.length, verifiedEvents };
     } catch (err) {
-      await client.query('ROLLBACK');
+      try { await client.query('ROLLBACK'); }
+      catch { discardConnection = true; }
       throw err;
     } finally {
-      client.release();
+      client.release(discardConnection);
     }
   }
 
@@ -384,13 +401,16 @@ export class TradeCloseoutScheduler {
    */
   async runStorageLifecycleCleanup(): Promise<{ purgedPendingVersions: number; purgedPendingObjects: number }> {
     const client = await this.pool.connect();
+    let discardConnection = false;
     try {
       const { rows: orgs } = await client.query(`SELECT id FROM organisations WHERE status = 'ACTIVE'`);
       let purgedPendingVersions = 0;
       let purgedPendingObjects = 0;
 
       for (const org of orgs) {
+        discardConnection = true;
         await client.query('BEGIN');
+        discardConnection = false;
         await client.query(
           `SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`,
           [org.id],
@@ -419,15 +439,18 @@ export class TradeCloseoutScheduler {
         );
         purgedPendingObjects += oCount ?? 0;
 
+        discardConnection = true;
         await client.query('COMMIT');
+        discardConnection = false;
       }
 
       return { purgedPendingVersions, purgedPendingObjects };
     } catch (err) {
-      await client.query('ROLLBACK');
+      try { await client.query('ROLLBACK'); }
+      catch { discardConnection = true; }
       throw err;
     } finally {
-      client.release();
+      client.release(discardConnection);
     }
   }
 
@@ -437,12 +460,15 @@ export class TradeCloseoutScheduler {
    */
   async reconcileIdempotencyClaims(): Promise<number> {
     const client = await this.pool.connect();
+    let discardConnection = false;
     try {
       const { rows: orgs } = await client.query(`SELECT id FROM organisations WHERE status = 'ACTIVE'`);
       let reconciled = 0;
 
       for (const org of orgs) {
+        discardConnection = true;
         await client.query('BEGIN');
+        discardConnection = false;
         await client.query(
           `SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`,
           [org.id],
@@ -455,14 +481,17 @@ export class TradeCloseoutScheduler {
           [org.id],
         );
         reconciled += rowCount ?? 0;
+        discardConnection = true;
         await client.query('COMMIT');
+        discardConnection = false;
       }
       return reconciled;
     } catch (err) {
-      await client.query('ROLLBACK').catch(() => {});
+      try { await client.query('ROLLBACK'); }
+      catch { discardConnection = true; }
       throw err;
     } finally {
-      client.release();
+      client.release(discardConnection);
     }
   }
 
@@ -473,13 +502,16 @@ export class TradeCloseoutScheduler {
   async dispatchQueuedNotifications(): Promise<number> {
     const isQuietHour = isIndiaQuietHour();
     const client = await this.pool.connect();
+    let discardConnection = false;
     let sentCount = 0;
 
     try {
       const { rows: orgs } = await client.query(`SELECT id FROM organisations WHERE status = 'ACTIVE'`);
 
       for (const org of orgs) {
+        discardConnection = true;
         await client.query('BEGIN');
+        discardConnection = false;
         await client.query(
           `SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`,
           [org.id],
@@ -521,14 +553,17 @@ export class TradeCloseoutScheduler {
           sentCount++;
         }
 
+        discardConnection = true;
         await client.query('COMMIT');
+        discardConnection = false;
       }
       return sentCount;
     } catch (err) {
-      await client.query('ROLLBACK').catch(() => {});
+      try { await client.query('ROLLBACK'); }
+      catch { discardConnection = true; }
       throw err;
     } finally {
-      client.release();
+      client.release(discardConnection);
     }
   }
 }

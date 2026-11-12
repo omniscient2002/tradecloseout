@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
+import { requestCorrelationId } from '../middleware/request-correlation.middleware';
 
 export interface ProblemDetails {
   type: string;
@@ -28,12 +29,7 @@ export class ProblemJsonExceptionFilter implements ExceptionFilter {
     const ctx = host.switchToHttp();
     const res = ctx.getResponse<Response>();
     const req = ctx.getRequest<Request>();
-    // The header is caller-controlled. Never reflect arbitrary bytes into logs
-    // or the response header (including control characters or secret URLs).
-    const headerRequestId = req.headers['x-request-id'];
-    const requestId = typeof headerRequestId === 'string' &&
-      /^[A-Za-z0-9_-]{1,128}$/.test(headerRequestId)
-      ? headerRequestId : 'req_unknown';
+    const requestId = requestCorrelationId(req);
 
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let code = 'INTERNAL_ERROR';

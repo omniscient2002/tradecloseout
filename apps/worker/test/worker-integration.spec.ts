@@ -264,6 +264,8 @@ void test('Isolated worker DB/Redis and storage HTTP contract regressions', asyn
         gateway.listen(0, '127.0.0.1'); await once(gateway, 'listening');
         process.env.NOTIFICATION_DELIVERY_URL = `http://127.0.0.1:${(gateway.address() as any).port}`;
         process.env.NOTIFICATION_DELIVERY_TOKEN = 'local-capture-token';
+        const previousMode = process.env.NODE_ENV;
+        process.env.NODE_ENV = 'test';
         try {
           assert.equal(await scheduler.dispatchQueuedNotifications(), 0);
           mode = 'bad-ack'; assert.equal(await scheduler.dispatchQueuedNotifications(), 0);
@@ -272,7 +274,12 @@ void test('Isolated worker DB/Redis and storage HTTP contract regressions', asyn
           assert.equal(own.status, 'SENT'); assert(own.sent_at instanceof Date);
           assert.equal((await admin.query('SELECT status FROM notifications WHERE id = $1', [foreignId])).rows[0].status, 'QUEUED');
           assert(requests.some(request => request.key === id && request.payload.org_id === a.orgId && request.payload.recipient_user_id === userId));
-        } finally { gateway.closeAllConnections(); await new Promise<void>(resolve => gateway.close(() => resolve())); }
+        } finally {
+          if (previousMode === undefined) delete process.env.NODE_ENV;
+          else process.env.NODE_ENV = previousMode;
+          gateway.closeAllConnections();
+          await new Promise<void>(resolve => gateway.close(() => resolve()));
+        }
       });
       const storage = await storageServer();
       try {

@@ -11,6 +11,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import { Pool } from 'pg';
 import { hasPermission } from '@tradecloseout/shared';
+import { validateRouteIdentifiers } from './route-identifiers';
 
 export const REQUIRE_PERMISSION_KEY = 'require_permission';
 export const RequirePermission = (permission: string) => SetMetadata(REQUIRE_PERMISSION_KEY, permission);
@@ -26,10 +27,11 @@ export class PermissionGuard implements CanActivate {
     );
 
     if (!requiredPermission) {
-      return true; // No permission required
+      throw new ForbiddenException({ code: 'PERMISSION_POLICY_REQUIRED' });
     }
 
     const request = context.switchToHttp().getRequest();
+    validateRouteIdentifiers(request.params);
     const user = request.user;
     if (!user) {
       throw new ForbiddenException('UNAUTHENTICATED');

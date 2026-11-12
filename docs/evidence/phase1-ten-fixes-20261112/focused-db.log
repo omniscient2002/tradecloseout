@@ -1,0 +1,10 @@
+PASS test/g01-mfa-enrollment-proposals-db.spec.ts (8.152 s)
+PASS test/g01-mfa-http-contract-db.spec.ts
+PASS test/phase1-easy-database.spec.ts (5.037 s)
+PASS test/idempotency-cleanup-replay.spec.ts
+
+Test Suites: 4 passed, 4 total
+Tests:       8 passed, 8 total
+Snapshots:   0 total
+Time:        18.007 s
+Ran all test suites matching /test\/phase1-easy-database.spec.ts|test\/idempotency-cleanup-replay.spec.ts|test\/g01-mfa-enrollment-proposals-db.spec.ts|test\/g01-mfa-http-contract-db.spec.ts/i.

@@ -1,0 +1,20 @@
+[
+  {
+    "path": "/api/v1/health",
+    "status": 200,
+    "safeRequestId": "156965bb-087f-4416-b2e4-199c566876e3",
+    "rawCanaryAbsent": true
+  },
+  {
+    "path": "/api/v1/auth/me",
+    "status": 401,
+    "safeRequestId": "902d3f87-6c7b-4549-b4dc-0b4190cdda5c",
+    "rawCanaryAbsent": true
+  },
+  {
+    "path": "/api/v1/projects/not-a-uuid",
+    "status": 400,
+    "safeRequestId": "41683a58-f49d-4ee6-bd6b-84a230ad1a4a",
+    "rawCanaryAbsent": true
+  }
+]
