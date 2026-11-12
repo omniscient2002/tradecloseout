@@ -106,6 +106,43 @@ describe('G01 secret-bearing idempotency contract', () => {
     expect(queries.some(sql => sql.includes('DELETE FROM idempotency_keys'))).toBe(false);
   });
 
+  it('inspects the exact serialized body, not only enumerable response fields', async () => {
+    const statements: string[] = [];
+    const client = {
+      query: jest.fn(async (sql: string) => {
+        statements.push(sql);
+        if (sql.includes('INSERT INTO idempotency_keys')) return { rows: [{ id: 'claimed' }] };
+        return { rows: [], rowCount: 1 };
+      }),
+      release: jest.fn(),
+    };
+    const pool = { connect: jest.fn().mockResolvedValue(client) };
+    const interceptor = new IdempotencyInterceptor(pool as any, new Reflector());
+    class UnsafeController { action() { return null; } }
+    const context = {
+      getClass: () => UnsafeController,
+      getHandler: () => UnsafeController.prototype.action,
+      switchToHttp: () => ({
+        getRequest: () => request,
+        getResponse: () => ({ statusCode: 200 }),
+      }),
+    };
+    const body = {
+      toJSON: () => ({ value: 'otpauth://totp/product:user?secret=TOTPCODE' }),
+    };
+    // The source object has no credential-shaped data properties. Only the
+    // serialized receipt exposes a factor provisioning URI.
+    expect(containsCredentialReceiptData(body)).toBe(false);
+    const next = { handle: jest.fn(() => of(body)) };
+    const response = await interceptor.intercept(context as any, next as any);
+    await expect(firstValueFrom(response)).rejects.toMatchObject({
+      response: { code: 'SENSITIVE_RESPONSE_RECEIPT_BLOCKED' },
+    });
+    expect(statements.some(sql => sql.includes('INSERT INTO idempotency_keys'))).toBe(true);
+    expect(statements.some(sql => sql.includes('UPDATE idempotency_keys'))).toBe(false);
+    expect(statements.some(sql => sql.includes('DELETE FROM idempotency_keys'))).toBe(false);
+  });
+
   it('destroys an uncertain receipt-store connection when rollback also fails', async () => {
     const client = {
       query: jest.fn(async (sql: string) => {
