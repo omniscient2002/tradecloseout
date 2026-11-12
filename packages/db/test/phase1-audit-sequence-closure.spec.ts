@@ -179,3 +179,27 @@ test('PH1-G26-008: legacy upgrade preserves original hashes and adds positions w
     },
   });
 });
+
+test('PH1-G26-008: forward migration refuses a historically altered hash instead of silently backfilling', async () => {
+  await assert.rejects(withDisposableDatabase(async () => {
+    assert.fail('corrupt pre-upgrade audit chain must not migrate');
+  }, {
+    baselineThrough: '0043_phase1_future_audit_partition_provision.sql',
+    beforeUpgrade: async baseline => {
+      const { tenants: [a] } = await seedTenants(baseline);
+      const eventId = randomUUID();
+      await baseline.query(
+        `INSERT INTO audit_events(id,org_id,project_id,actor_type,action,entity_type,entity_id,request_id)
+         VALUES ($1,$2,$3,'SYSTEM','BEFORE_CORRUPTION','PROJECT',$3,'g26-corrupt')`,
+        [eventId, a.orgId, a.projectIds[0]],
+      );
+      await baseline.query('ALTER TABLE audit_events DISABLE TRIGGER USER');
+      try {
+        await baseline.query('UPDATE audit_events SET after_json=$2 WHERE id=$1',
+          [eventId, JSON.stringify({ tampered: true })]);
+      } finally {
+        await baseline.query('ALTER TABLE audit_events ENABLE TRIGGER USER');
+      }
+    },
+  }), /AUDIT_CHAIN_LEGACY_RECONCILIATION_REQUIRED/);
+});
