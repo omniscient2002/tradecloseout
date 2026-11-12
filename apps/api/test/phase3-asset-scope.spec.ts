@@ -92,7 +92,7 @@ describe('PH3-G08-002 — live asset visibility and mutation scope', () => {
       .find((statement) => statement.includes('SELECT * FROM assets')) || '';
     expect(listSql).toContain('assets.id = ANY($3::uuid[])');
     expect(query.mock.calls.some(([statement, values]) =>
-      statement.includes('SELECT * FROM assets') && values?.[2]?.[0] === allowedId,
+      statement.includes('SELECT * FROM assets') && (values?.[2] as string[] | undefined)?.[0] === allowedId,
     )).toBe(true);
   });
 
