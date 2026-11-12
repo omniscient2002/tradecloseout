@@ -19,6 +19,17 @@ ALTER TABLE handover_packages
     metadata_snapshot_json ?& ARRAY['orgName', 'projectCode', 'projectName', 'clientName', 'contractRef']
   ));
 
+-- A cancellation is a terminal, non-publishable state. It is not a
+-- simulated delivery and no worker is allowed to resurrect it.
+ALTER TABLE handover_packages
+  DROP CONSTRAINT IF EXISTS handover_packages_status_check;
+ALTER TABLE handover_packages
+  ADD CONSTRAINT handover_packages_status_check
+  CHECK (status IN (
+    'DRAFT', 'QUEUED', 'GENERATING', 'READY', 'FAILED', 'CANCELLED',
+    'SUBMITTED', 'PARTIALLY_ACCEPTED', 'ACCEPTED', 'REJECTED', 'SUPERSEDED'
+  ));
+
 ALTER TABLE package_items
   ADD COLUMN source_document_id UUID,
   ADD COLUMN source_object_id UUID,
