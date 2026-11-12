@@ -1,4 +1,5 @@
 import { ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import { createHash, randomBytes } from 'node:crypto';
 import { PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { TenantDbService } from '../../database/tenant-db.service';
@@ -26,6 +27,8 @@ export interface MfaEnrollmentProposal {
 }
 export interface MfaConfirmedEnrollment {
   recoveryCodes: string[]; // Shown exactly once; never written to a receipt.
+  newSessionToken: string; // Must become a Secure, HttpOnly session cookie.
+  csrfToken: string; // Must replace the old CSRF token in the browser.
   confirmed: true;
 }
 
@@ -101,6 +104,37 @@ export class MfaEnrollmentStore {
       throw new UnauthorizedException({ code: 'SESSION_CONTEXT_CHANGED' });
     }
     return accounts[0];
+  }
+
+  private async rotateCurrentSession(
+    client: PoolClient,
+    ctx: MfaEnrollmentSession,
+  ): Promise<{ newSessionToken: string; csrfToken: string }> {
+    const newSessionToken = randomBytes(32).toString('hex');
+    const csrfToken = randomBytes(24).toString('hex');
+    const replaced = await client.query(
+      `UPDATE sessions
+          SET token_hash=$4, csrf_token_hash=$5, mfa_verified=true
+        WHERE id=$1 AND user_id=$2 AND token_hash=$3 AND active_org_id=$6
+          AND guest_grant_id IS NULL AND revoked_at IS NULL AND expires_at>now()`,
+      [
+        ctx.sessionId, ctx.userId, ctx.sessionTokenHash,
+        createHash('sha256').update(newSessionToken).digest('hex'),
+        createHash('sha256').update(csrfToken).digest('hex'),
+        ctx.activeOrgId,
+      ],
+    );
+    if (replaced.rowCount !== 1) {
+      throw new UnauthorizedException({ code: 'SESSION_CONTEXT_CHANGED' });
+    }
+    // A verified first-factor enrollment must not leave older non-MFA
+    // device sessions able to use the newly protected account.
+    await client.query(
+      `UPDATE sessions SET revoked_at=now(), mfa_verified=false
+        WHERE user_id=$1 AND id<>$2 AND revoked_at IS NULL`,
+      [ctx.userId, ctx.sessionId],
+    );
+    return { newSessionToken, csrfToken };
   }
 
   async begin(ctx: MfaEnrollmentSession): Promise<MfaEnrollmentProposal> {
@@ -191,10 +225,11 @@ export class MfaEnrollmentStore {
       );
       if (marked.rowCount !== 1) proposalDenied();
 
-      // The HTTP integration must rotate the opaque session token and CSRF
-      // before returning recovery codes. This low-level store cannot set
-      // cookies, and must not be exposed as a generic API operation.
-      return { confirmed: true as const, recoveryCodes };
+      // Rotate token and CSRF in the SAME transaction as factor activation.
+      // The HTTP integration must atomically set the returned HttpOnly cookie
+      // and deliver the new CSRF token, without generic idempotency receipts.
+      const newSession = await this.rotateCurrentSession(client, ctx);
+      return { confirmed: true as const, recoveryCodes, ...newSession };
     });
   }
 
