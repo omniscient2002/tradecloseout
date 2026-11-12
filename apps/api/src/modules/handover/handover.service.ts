@@ -763,64 +763,81 @@ export class HandoverService {
   }
 
   async getPackageDownloadUrl(ctx: TenantActorContext, projectId: string, packageId: string) {
-    const artifact = await withTenantTransaction(this.pool, ctx, async (client) => {
+    // Hold row locks across the signing call: a concurrent RB09/RB12 update
+    // must not make the source untrusted in the gap between validation and
+    // issuing a fresh provider URL.
+    return withTenantTransaction(this.pool, ctx, async (client) => {
       const { rows } = await client.query(
         `SELECT hp.status, hp.version_no, hp.checksum,
                 so.object_key, so.original_filename, so.mime, so.size_bytes,
                 so.sha256, so.status AS object_status, so.provider_version_id,
-                so.observed_size_bytes,
-                (SELECT count(*)
-                   FROM package_items pi
-                   JOIN document_versions dv
-                     ON dv.org_id = pi.org_id AND dv.project_id = pi.project_id
-                    AND dv.id = pi.document_version_id
-                   JOIN storage_objects evidence
-                     ON evidence.org_id = dv.org_id AND evidence.id = dv.object_id
-                  WHERE pi.org_id = hp.org_id AND pi.project_id = hp.project_id
-                    AND pi.package_id = hp.id AND pi.included = true
-                    AND (dv.file_status <> 'READY' OR evidence.status <> 'READY')
-                ) AS untrusted_evidence_count
+                so.observed_size_bytes
            FROM handover_packages hp
            JOIN storage_objects so
              ON so.org_id = hp.org_id AND so.id = hp.pdf_object_id
-          WHERE hp.org_id = $1 AND hp.project_id = $2 AND hp.id = $3`,
+          WHERE hp.org_id = $1 AND hp.project_id = $2 AND hp.id = $3
+          FOR SHARE OF hp, so`,
         [ctx.orgId, projectId, packageId],
       );
-      if (!rows.length) throw new NotFoundException({ code: 'PACKAGE_NOT_FOUND', detail: 'Handover package not found.' });
-      const row = rows[0];
-      // Emergency quarantine of a source object must invalidate all *future*
-      // package downloads without rewriting the historical reviewer verdict.
-      // Previously issued provider URLs require provider-side revocation.
-      if (Number(row.untrusted_evidence_count) > 0) {
-        throw new UnprocessableEntityException({
-          code: 'PACKAGE_EVIDENCE_QUARANTINED',
-          detail: 'Package contains evidence that is no longer authorized for distribution.',
+      if (!rows.length) {
+        throw new NotFoundException({
+          code: 'PACKAGE_NOT_FOUND', detail: 'Handover package not found.',
         });
       }
-      if (row.status !== 'READY' || row.object_status !== 'READY' ||
-          !row.provider_version_id || !row.sha256 || row.sha256 !== row.checksum ||
-          Number(row.observed_size_bytes) !== Number(row.size_bytes)) {
+      const artifact = rows[0];
+      if (artifact.status !== 'READY' || artifact.object_status !== 'READY' ||
+          !artifact.provider_version_id || !artifact.sha256 ||
+          artifact.sha256 !== artifact.checksum ||
+          Number(artifact.observed_size_bytes) !== Number(artifact.size_bytes)) {
         throw new UnprocessableEntityException({
           code: 'PACKAGE_ARTIFACT_NOT_VERIFIED',
           detail: 'The handover package does not have a verified, ready artifact available for download.',
         });
       }
-      return row;
+
+      // Read and lock included versions and backing objects before signing.
+      // LEFT JOIN means missing/soft-deleted references cannot be mistaken for
+      // clean evidence. The snapshot's included rows are immutable.
+      const { rows: included } = await client.query(
+        `SELECT pi.id AS item_id, dv.id AS version_id, dv.file_status,
+                dv.deleted_at AS version_deleted_at,
+                evidence.id AS storage_id, evidence.status AS storage_status
+           FROM package_items pi
+           LEFT JOIN document_versions dv
+             ON dv.org_id = pi.org_id AND dv.project_id = pi.project_id
+            AND dv.id = pi.document_version_id
+           LEFT JOIN storage_objects evidence
+             ON evidence.org_id = dv.org_id AND evidence.id = dv.object_id
+          WHERE pi.org_id = $1 AND pi.project_id = $2
+            AND pi.package_id = $3 AND pi.included = true
+          ORDER BY pi.id
+          FOR SHARE OF dv, evidence`,
+        [ctx.orgId, projectId, packageId],
+      );
+      if (included.some((row) =>
+        !row.version_id || !row.storage_id || row.version_deleted_at ||
+        row.file_status !== 'READY' || row.storage_status !== 'READY'
+      )) {
+        throw new UnprocessableEntityException({
+          code: 'PACKAGE_EVIDENCE_QUARANTINED',
+          detail: 'Package contains evidence that is no longer authorized for distribution.',
+        });
+      }
+      const downloadUrl = await this.storage.createSignedDownloadUrl({
+        objectKey: artifact.object_key,
+        versionId: artifact.provider_version_id,
+        filename: `handover-v${artifact.version_no}.pdf`,
+      });
+      return {
+        packageId,
+        status: 'READY',
+        downloadUrl,
+        expiresInSeconds: 900,
+        checksum: artifact.checksum,
+        sizeBytes: artifact.size_bytes,
+        mime: artifact.mime,
+      };
     });
-    const downloadUrl = await this.storage.createSignedDownloadUrl({
-      objectKey: artifact.object_key,
-      versionId: artifact.provider_version_id,
-      filename: `handover-v${artifact.version_no}.pdf`,
-    });
-    return {
-      packageId,
-      status: 'READY',
-      downloadUrl,
-      expiresInSeconds: 900,
-      checksum: artifact.checksum,
-      sizeBytes: artifact.size_bytes,
-      mime: artifact.mime,
-    };
   }
 
   async createSubmission(
