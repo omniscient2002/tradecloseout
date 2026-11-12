@@ -127,14 +127,14 @@ describe('PH3-G04-004 — real PostgreSQL supplier intake authority and durabili
       // A durable event dispatch failure must roll back the status,
       // decision history and audit together. Never acknowledge partial work.
       await admin.query(`
-        CREATE FUNCTION phase3_fail_supplier_intake_outbox() RETURNS trigger AS $
+        CREATE FUNCTION phase3_fail_supplier_intake_outbox() RETURNS trigger AS $phase3$
         BEGIN
           IF NEW.event_type = 'SUPPLIER_INTAKE_REJECTED' THEN
             RAISE EXCEPTION 'TEST_INTAKE_OUTBOX_FAILURE';
           END IF;
           RETURN NEW;
         END;
-        $ LANGUAGE plpgsql
+        $phase3$ LANGUAGE plpgsql
       `);
       await admin.query(`
         CREATE TRIGGER phase3_fail_supplier_intake_outbox
