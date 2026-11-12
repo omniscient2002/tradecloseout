@@ -157,13 +157,15 @@ test('PH1-G26-001: future direct partitions and ATTACH are protected by defaults
       await assertRuntimeCannotUseChild(app, name, a.orgId);
     }
 
-    // Newly created/attached monthly children remain usable *only through
-    // the parent* by an authorised tenant, with the original hash metadata.
+    // Parent writes remain authorised for the active calendar partition.
+    // The trusted audit trigger stamps created_at at the database clock, so
+    // artificially inserting into a future month would be invalid test data.
     const eventId = randomUUID();
     await scoped(app, a.orgId, async client => {
       await client.query(`
-        INSERT INTO audit_events (id,org_id,actor_type,action,entity_type,entity_id,request_id,created_at)
-        VALUES ($1,$2,'SYSTEM','FUTURE_PARTITION','PROJECT',$3,'g26-future','2031-02-12T00:00:00Z')
+        INSERT INTO audit_events
+          (id,org_id,actor_type,action,entity_type,entity_id,request_id)
+        VALUES ($1,$2,'SYSTEM','AFTER_PARTITION_PROVISION','PROJECT',$3,'g26-future')
       `, [eventId, a.orgId, a.projectIds[0]]);
       assert.equal((await client.query('SELECT id FROM audit_events WHERE id=$1', [eventId])).rowCount, 1);
     });
