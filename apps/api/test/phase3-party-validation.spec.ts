@@ -92,6 +92,56 @@ describe('PH3-G04-001: counterparty validation', () => {
     });
   });
 
+  it('PH3-G04-003: creates exactly one valid scoped PO and qualified obligations', async () => {
+    await withDisposableDatabase(async ({ admin, app }) => {
+      const fixture = await seedTenants(admin);
+      const orgId = fixture.tenants[0].orgId;
+      const projectId = fixture.tenants[0].projectIds[0];
+      const otherProject = fixture.tenants[0].projectIds[1];
+      const supplierId = uuidv7();
+      const otherAssetId = uuidv7();
+      await admin.query(
+        `INSERT INTO parties (id, org_id, name, types, status, created_by)
+          VALUES ($1, $2, 'Qualified Supplier', ARRAY['SUPPLIER_OEM']::text[], 'ACTIVE', $3)`,
+        [supplierId, orgId, fixture.userId],
+      );
+      await admin.query(
+        `INSERT INTO assets (id, org_id, project_id, tag, name, category_key, created_by)
+          VALUES ($1, $2, $3, 'AHU-WRONG-PROJECT', 'Another project', 'AHU', $4)`,
+        [otherAssetId, orgId, otherProject, fixture.userId],
+      );
+      const service = new PartiesService(new TenantDbService(app));
+      const actor: any = { orgId, userId: fixture.userId, actorType: 'USER', requestId: 'phase3-po-valid' };
+      const base = {
+        poNumber: 'PO-PH3-001', supplierPartyId: supplierId,
+        totalAmountPaise: 100_000,
+        lines: [{ lineNo: 1, assetCategoryKey: 'AHU', description: 'Air handling unit',
+          quantity: 2, obligations: [{ docTypeKey: 'DT-001', stageKey: 'FAT', title: 'Factory inspection' }] }],
+      };
+      await expect(service.createProcurementOrder(actor, projectId, {
+        ...base, lines: [{ ...base.lines[0], assetId: otherAssetId }],
+      })).rejects.toThrow('PROCUREMENT_ASSET_NOT_FOUND');
+      const countAfterInvalid = await admin.query(
+        'SELECT count(*)::int AS total FROM procurement_orders WHERE org_id = $1 AND project_id = $2',
+        [orgId, projectId],
+      );
+      expect(countAfterInvalid.rows[0].total).toBe(0);
+
+      const created = await service.createProcurementOrder(actor, projectId, base);
+      expect(created.status).toBe('ISSUED');
+      expect(created.linesCount).toBe(1);
+      expect(created.obligationsCount).toBe(1);
+      const count = await admin.query(
+        `SELECT (SELECT count(*)::int FROM procurement_orders WHERE id = $1) AS orders,
+                (SELECT count(*)::int FROM procurement_order_lines WHERE po_id = $1) AS lines,
+                (SELECT count(*)::int FROM supplier_document_obligations sdo
+                  JOIN procurement_order_lines l ON l.id = sdo.po_line_id WHERE l.po_id = $1) AS obligations`,
+        [created.poId],
+      );
+      expect(count.rows[0]).toMatchObject({ orders: 1, lines: 1, obligations: 1 });
+    });
+  });
+
   it('rejects invalid content before any database operation', async () => {
     const db = { withTenantContext: jest.fn() } as any;
     const service = new PartiesService(db);
