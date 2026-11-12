@@ -132,6 +132,32 @@ void test('Disposable PostgreSQL migration, isolation and audit regression tests
       });
     });
 
+    await t.test('PH1-G26-011: actual PostgreSQL rejects invalid package usage and persists only bounded counters', async () => {
+      const { consumePlanQuota } = await import('../src/tenant-tx');
+      const period = '2026-11-quota-regression';
+      const read = async () => scoped(app, a.orgId, async client => {
+        const result = await client.query(
+          "SELECT value FROM usage_counters WHERE org_id=$1 AND metric='PACKAGES_MONTH' AND period=$2",
+          [a.orgId, period],
+        );
+        return result.rows.length ? BigInt(result.rows[0].value) : null;
+      });
+      await scoped(app, a.orgId, client => consumePlanQuota(client, a.orgId, 'PACKAGES_MONTH', period, 1n, 2n));
+      assert.equal(await read(), 1n);
+      await scoped(app, a.orgId, client => consumePlanQuota(client, a.orgId, 'PACKAGES_MONTH', period, 1n, 2n));
+      assert.equal(await read(), 2n);
+      await assert.rejects(scoped(app, a.orgId, client =>
+        consumePlanQuota(client, a.orgId, 'PACKAGES_MONTH', period, 1n, 2n)),
+      (error: any) => error.code === 'PLAN_LIMIT_EXCEEDED');
+      assert.equal(await read(), 2n);
+      await assert.rejects(scoped(app, a.orgId, client =>
+        consumePlanQuota(client, a.orgId, 'PACKAGES_MONTH', period, -3n, 2n)),
+      /PLAN_COUNTER_OUT_OF_RANGE/);
+      assert.equal(await read(), 2n);
+      await scoped(app, a.orgId, client => consumePlanQuota(client, a.orgId, 'PACKAGES_MONTH', period, -2n, 2n));
+      assert.equal(await read(), 0n);
+    });
+
     await t.test('PH1-G26-002: storage reconciliation rejects underflow and overflow without corrupting the counter', async () => {
       const { reconcileStorageQuotaOnFileStatusChange } = await import('../src/tenant-tx');
       // A previous test leaves tenant A at exactly 1000 bytes.
