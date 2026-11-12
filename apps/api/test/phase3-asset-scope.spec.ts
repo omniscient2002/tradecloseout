@@ -76,7 +76,7 @@ describe('PH3-G08-002 — live asset visibility and mutation scope', () => {
   });
 
   it('filters hidden rows before returning list results', async () => {
-    const query = jest.fn(async (sql: string) => {
+    const query = jest.fn(async (sql: string, _values?: unknown[]) => {
       if (sql.includes('FROM memberships')) return { rows: [{ role: 'R-SITE' }] };
       if (sql.includes('FROM project_members')) return { rows: [{ scope_json: { assetIds: [allowedId] } }] };
       if (sql.includes('SELECT * FROM assets')) return { rows: [
