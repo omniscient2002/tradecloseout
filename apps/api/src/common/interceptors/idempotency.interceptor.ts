@@ -16,6 +16,34 @@ import { hashRequestPayload } from '@tradecloseout/db';
 import { REQUIRE_IDEMPOTENCY_KEY } from '../decorators/idempotency.decorator';
 import { OMIT_GENERIC_IDEMPOTENCY_RECEIPT } from '../decorators/no-generic-idempotency-receipt.decorator';
 
+/**
+ * A general-purpose receipt is not an approved credential vault. Catch nested
+ * secret material even when a controller has not opted out explicitly. Fail
+ * closed on cyclic/deep responses because JSON serialisation is not reliable.
+ */
+export function containsCredentialReceiptData(value: unknown): boolean {
+  const seen = new WeakSet<object>();
+  const secretKey = /(?:password|secret|token|otp|recoverycode|csrf|cookie|privatekey|manualsetupkey|qrcode|qrpayload|magiclink|signedurl|presignedurl|uploadurl|downloadurl|sessionkey)/i;
+  const visit = (node: unknown, depth: number): boolean => {
+    if (depth > 32) return true;
+    if (typeof node === 'string') {
+      return /[?&](?:X-Amz-Signature|X-Goog-Signature|signature|access_token|token)=/i.test(node);
+    }
+    if (node === null || typeof node !== 'object') return false;
+    if (seen.has(node)) return true;
+    seen.add(node);
+    try {
+      if (Array.isArray(node)) return node.some(item => visit(item, depth + 1));
+      return Object.entries(node).some(([key, child]) =>
+        secretKey.test(key.replace(/[^A-Za-z0-9]/g, '')) || visit(child, depth + 1),
+      );
+    } finally {
+      seen.delete(node);
+    }
+  };
+  return visit(value, 0);
+}
+
 @Injectable()
 export class IdempotencyInterceptor implements NestInterceptor {
   constructor(
@@ -170,6 +198,15 @@ export class IdempotencyInterceptor implements NestInterceptor {
         const statusCode = res.statusCode || 200;
         if (statusCode >= 200 && statusCode < 300) {
           persistingReceipt = true;
+          if (containsCredentialReceiptData(responseBody)) {
+            // Leave the claim unresolved so a retry cannot re-run a possibly
+            // committed operation. A privileged reconciliation path must
+            // resolve the outcome; never write plaintext or invent an ACK.
+            throw new ConflictException({
+              code: 'SENSITIVE_RESPONSE_RECEIPT_BLOCKED',
+              detail: 'A protected operation requires a dedicated retry and recovery contract.',
+            });
+          }
           const saved = await withTenantClient((client) => client.query(
             `UPDATE idempotency_keys
                 SET response_status = $1, response_json = $2
