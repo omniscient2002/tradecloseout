@@ -51,17 +51,22 @@ describe('PH3-G08-002 HTTP routes — asset scope and live revocation', () => {
         controllers: [AssetsController],
         providers: [
           { provide: AssetsService, useValue: new AssetsService(app) },
-          { provide: SessionCsrfGuard, useValue: {
-            canActivate: (context: ExecutionContext) => {
-              context.switchToHttp().getRequest().userContext = actor;
-              return true;
-            },
-          } },
-          // Simulate an earlier successful guard decision. The service MUST
-          // still fail closed after the underlying membership changes.
-          { provide: PermissionGuard, useValue: { canActivate: () => true } },
         ],
-      }).compile();
+      })
+        // Guard classes from @UseGuards are registered as enhancers by Nest;
+        // override their actual enhancer tokens rather than adding providers.
+        .overrideGuard(SessionCsrfGuard)
+        .useValue({
+          canActivate: (context: ExecutionContext) => {
+            context.switchToHttp().getRequest().userContext = actor;
+            return true;
+          },
+        })
+        // Simulate a previously successful guard decision. The service must
+        // recheck the current DB role and scope inside the transaction.
+        .overrideGuard(PermissionGuard)
+        .useValue({ canActivate: () => true })
+        .compile();
       const httpApp = testModule.createNestApplication();
       try {
         await httpApp.listen(0, '127.0.0.1');
