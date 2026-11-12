@@ -19,6 +19,7 @@ import { Pool } from 'pg';
 import Redis from 'ioredis';
 import { uuidv7 } from 'uuidv7';
 import { AuthenticatedRequest, SessionCsrfGuard } from '../../common/guards/session-csrf.guard';
+import { NoGenericIdempotencyReceipt } from '../../common/decorators/no-generic-idempotency-receipt.decorator';
 
 export abstract class DltSmsGateway {
   abstract sendOtpSms(phoneE164: string, otp: string, templateId: string): Promise<{ delivered: boolean }>;
@@ -30,6 +31,7 @@ export abstract class TransactionalMailGateway {
 }
 
 @Controller('api/v1/auth')
+@NoGenericIdempotencyReceipt()
 export class IdentityController {
   constructor(
     private readonly pool: Pool,
