@@ -13,6 +13,7 @@ import { Pool, PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { withTenantTransaction, TenantActorContext, DomainOutboxEvent } from '@tradecloseout/db';
 import { AssetTagSchema } from '@tradecloseout/shared';
+import { assertAssetInScope, validateAssetProjectScope, AssetScopeTarget } from './asset-scope';
 import { ResolvedRequirementSpec } from '../checklists/checklists.service';
 
 export interface CreateAssetInput {
@@ -36,6 +37,56 @@ export class AssetsService {
   constructor(private readonly pool: Pool) {}
 
   /**
+   * PH3-G08-002: a route guard's earlier project membership is not sufficient
+   * for resource authorization. Lock the currently ACTIVE membership and scope
+   * in the same transaction as a read/mutation; do not trust a client-side
+   * or stale session snapshot. Owners/admins are checked against the current
+   * organisation membership, not the stale HTTP role.
+   */
+  private async getCurrentAssetScope(
+    client: PoolClient, ctx: TenantActorContext, projectId: string,
+  ): Promise<Record<string, unknown>> {
+    if (ctx.actorType === 'SYSTEM') return {};
+    if (ctx.actorType === 'GUEST' || ctx.guestGrantId) {
+      throw new NotFoundException('PROJECT_NOT_FOUND');
+    }
+    const membership = await client.query(
+      `SELECT role FROM memberships
+        WHERE org_id = $1 AND user_id = $2 AND status = 'ACTIVE' FOR SHARE`,
+      [ctx.orgId, ctx.userId],
+    );
+    if (!membership.rows.length) throw new NotFoundException('PROJECT_NOT_FOUND');
+    if (membership.rows[0].role === 'R-OWNER' || membership.rows[0].role === 'R-ADMIN') return {};
+    const { rows } = await client.query(
+      `SELECT scope_json FROM project_members
+        WHERE org_id = $1 AND project_id = $2 AND user_id = $3
+          AND status = 'ACTIVE' FOR SHARE`,
+      [ctx.orgId, projectId, ctx.userId],
+    );
+    if (!rows.length) throw new NotFoundException('PROJECT_NOT_FOUND');
+    return validateAssetProjectScope(rows[0].scope_json);
+  }
+
+  private async assertCurrentAssetAccess(
+    client: PoolClient, ctx: TenantActorContext, projectId: string,
+    assetId: string, write: boolean,
+  ): Promise<AssetScopeTarget> {
+    const scope = await this.getCurrentAssetScope(client, ctx, projectId);
+    const { rows } = await client.query(
+      `SELECT id, category_key, created_at FROM assets
+        WHERE org_id = $1 AND project_id = $2 AND id = $3
+          AND deleted_at IS NULL ${write ? 'FOR UPDATE' : 'FOR SHARE'}`,
+      [ctx.orgId, projectId, assetId],
+    );
+    if (!rows.length) throw new NotFoundException('ASSET_NOT_FOUND');
+    const asset: AssetScopeTarget = {
+      id: rows[0].id, categoryKey: rows[0].category_key, createdAt: rows[0].created_at,
+    };
+    assertAssetInScope(scope, asset, write);
+    return asset;
+  }
+
+  /**
    * API-071: POST /api/v1/projects/:id/assets
    * Registers an equipment unit and automatically instantiates asset-scoped requirements
    * from the active project checklist snapshot (WF-07, AUD-002).
@@ -54,6 +105,8 @@ export class AssetsService {
     }
 
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      const scope = await this.getCurrentAssetScope(client, ctx, projectId);
+      assertAssetInScope(scope, null, true, input.categoryKey);
       const normalizedTag = tagParse.data;
 
       // Check case-insensitive tag uniqueness per project (FR-AST-004)
@@ -102,6 +155,7 @@ export class AssetsService {
 
       // If this asset replaces an older unit, link replacement lineage (FR-AST-006 / FR-AST-011)
       if (input.replacesAssetId) {
+        await this.assertCurrentAssetAccess(client, ctx, projectId, input.replacesAssetId, true);
         await client.query(
           `UPDATE assets
               SET status = 'REPLACED',
@@ -149,6 +203,7 @@ export class AssetsService {
    */
   async deleteOrRetireAsset(ctx: TenantActorContext, projectId: string, assetId: string) {
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      await this.assertCurrentAssetAccess(client, ctx, projectId, assetId, true);
       const { rows: approvedDocs } = await client.query(
         `SELECT da.document_id
            FROM document_assets da
@@ -169,12 +224,15 @@ export class AssetsService {
         });
       }
 
-      await client.query(
+      const retired = await client.query(
         `UPDATE assets
             SET status = 'RETIRED', deleted_at = now(), row_version = row_version + 1
-          WHERE org_id = $1 AND project_id = $2 AND id = $3`,
+          WHERE org_id = $1 AND project_id = $2 AND id = $3
+            AND deleted_at IS NULL AND status NOT IN ('RETIRED', 'REPLACED')
+          RETURNING id`,
         [ctx.orgId, projectId, assetId],
       );
+      if (retired.rows.length !== 1) throw new ConflictException('ASSET_NOT_ACTIVE');
 
       emit({
         eventType: 'ASSET_DELETED',
@@ -205,7 +263,18 @@ export class AssetsService {
          ORDER BY tag ASC`,
         [ctx.orgId, projectId],
       );
-      return res.rows;
+      const scope = await this.getCurrentAssetScope(client, ctx, projectId);
+      return res.rows.filter((asset: any) => {
+        try {
+          assertAssetInScope(scope, {
+            id: asset.id, categoryKey: asset.category_key, createdAt: asset.created_at,
+          }, false);
+          return true;
+        } catch (err) {
+          if (err instanceof NotFoundException) return false;
+          throw err;
+        }
+      });
     });
   }
 
@@ -220,6 +289,7 @@ export class AssetsService {
         [ctx.orgId, projectId, assetId],
       );
       if (!res.rows.length) throw new NotFoundException('ASSET_NOT_FOUND');
+      await this.assertCurrentAssetAccess(client, ctx, projectId, assetId, false);
       return res.rows[0];
     });
   }
@@ -253,6 +323,7 @@ export class AssetsService {
         [ctx.orgId, projectId, assetId],
       );
       if (!curRes.rows.length) throw new NotFoundException('ASSET_NOT_FOUND');
+      await this.assertCurrentAssetAccess(client, ctx, projectId, assetId, true);
       const current = curRes.rows[0];
 
       // 2. Detect identity attribute modifications
@@ -439,6 +510,7 @@ export class AssetsService {
    */
   async getAssetIdentityHistory(ctx: TenantActorContext, projectId: string, assetId: string) {
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+      await this.assertCurrentAssetAccess(client, ctx, projectId, assetId, false);
       const revsRes = await client.query(
         `SELECT air.*, u.name as created_by_name
          FROM asset_identity_revisions air
@@ -479,6 +551,7 @@ export class AssetsService {
     dto: { status: 'CONFIRMED' | 'MISMATCH' | 'EXEMPT'; notes?: string; expectedRowVersion?: number },
   ) {
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit) => {
+      await this.assertCurrentAssetAccess(client, ctx, projectId, assetId, true);
       // 1. Fetch current revalidation and ensure qualified verifier cannot self-approve (F01, V04)
       const current = await client.query(
         `SELECT er.*, dv.uploaded_by AS uploader_user_id
@@ -839,6 +912,7 @@ export class AssetsService {
       if (!assetRes.rows.length) {
         throw new NotFoundException({ code: 'ASSET_NOT_FOUND', detail: 'Equipment not found.' });
       }
+      await this.assertCurrentAssetAccess(client, ctx, projectId, assetId, false);
       const asset = assetRes.rows[0];
 
       // 1. Linked Documents & Versions
@@ -1051,8 +1125,9 @@ export class AssetsService {
     query: { filename?: string; text?: string; tagCandidate?: string },
   ) {
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+      const scope = await this.getCurrentAssetScope(client, ctx, projectId);
       const { rows: assetList } = await client.query(
-        `SELECT id, tag, name, category_key, make, model, serial_no, location
+        `SELECT id, tag, name, category_key, created_at, make, model, serial_no, location
          FROM assets
          WHERE org_id = $1 AND project_id = $2 AND deleted_at IS NULL`,
         [ctx.orgId, projectId],
@@ -1076,6 +1151,14 @@ export class AssetsService {
       }> = [];
 
       for (const a of assetList) {
+        try {
+          assertAssetInScope(scope, {
+            id: a.id, categoryKey: a.category_key, createdAt: a.created_at,
+          }, false);
+        } catch (err) {
+          if (err instanceof NotFoundException) continue;
+          throw err;
+        }
         const upperTag = a.tag.toUpperCase();
         const upperSerial = a.serial_no ? a.serial_no.toUpperCase() : null;
         const upperModel = a.model ? a.model.toUpperCase() : null;
