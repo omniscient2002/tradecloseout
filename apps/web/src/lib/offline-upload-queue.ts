@@ -1,4 +1,4 @@
-import { apiFetch } from './api-client';
+import { apiFetch, ApiProblemError } from './api-client';
 
 export interface OfflineQueuedUpload {
   queueId: string;
@@ -26,11 +26,77 @@ export interface OfflineQueuedUpload {
   status: 'QUEUED_OFFLINE' | 'UPLOADING' | 'PROCESSING' | 'BLOCKED_SCOPE' | 'COMPLETED' | 'FAILED';
   lastError?: string;
   createdAt: number;
+  completedUploadAt?: number;
 }
 
 const DB_NAME = 'tradecloseout_field_pwa';
 const STORE_NAME = 'tc_offline_upload_outbox';
 const ACTOR_PARTITION_KEY = 'tc_offline_actor_partition';
+const DRAIN_LOCK_NAME = 'tradecloseout:field-upload-drain';
+// Multipart part URLs expire. One refresh/retry per failed part prevents an
+// unbounded permission-error loop, while preserving receipts already persisted.
+const MAX_PART_URL_REFRESHES = 1;
+
+function assertSameActor(item: OfflineQueuedUpload): void {
+  if (typeof window === 'undefined' ||
+      window.localStorage.getItem(ACTOR_PARTITION_KEY) !== item.actorPartition) {
+    throw new Error('UPLOAD_ACTOR_CONTEXT_CHANGED');
+  }
+}
+
+type PresignedPart = { partNumber: number; url?: string; uploadUrl?: string; requiredHeaders?: Record<string, string> };
+function normalizeParts(parts: PresignedPart[]): Array<{ partNumber: number; url: string; requiredHeaders: Record<string, string> }> {
+  if (!Array.isArray(parts)) throw new Error('UPLOAD_PARTS_INVALID');
+  const seen = new Set<number>();
+  return parts.map((part) => {
+    const url = part.url || part.uploadUrl;
+    if (!Number.isInteger(part.partNumber) || part.partNumber < 1 ||
+        typeof url !== 'string' || !/^https?:\\/\\//.test(url) ||
+        seen.has(part.partNumber)) {
+      throw new Error('UPLOAD_PARTS_INVALID');
+    }
+    seen.add(part.partNumber);
+    return { partNumber: part.partNumber, url, requiredHeaders: part.requiredHeaders || {} };
+  });
+}
+
+async function refreshOutstandingParts(item: OfflineQueuedUpload): Promise<void> {
+  const intent = item.uploadIntent;
+  if (!intent?.isMultipart) throw new Error('UPLOAD_URL_REFRESH_UNAVAILABLE');
+  assertSameActor(item);
+  const response = await apiFetch<{
+    versionId: string;
+    refreshedParts: PresignedPart[];
+  }>(`/api/v1/document-versions/${encodeURIComponent(intent.versionId)}/refresh-upload-urls`, {
+    method: 'POST',
+  });
+  assertSameActor(item);
+  if (response.versionId !== intent.versionId) throw new Error('UPLOAD_REFRESH_VERSION_MISMATCH');
+  const refreshed = normalizeParts(response.refreshedParts);
+  const byNumber = new Map(refreshed.map((part) => [part.partNumber, part]));
+  const uploaded = new Set(item.uploadedParts.map((part) => part.partNumber));
+  for (const old of intent.parts) {
+    // Receipts for already-complete parts must never be invalidated by refresh.
+    if (!uploaded.has(old.partNumber) && !byNumber.has(old.partNumber)) {
+      throw new Error('UPLOAD_REFRESH_MISSING_PART');
+    }
+  }
+  intent.parts = intent.parts.map((part) => byNumber.get(part.partNumber) || part);
+}
+
+async function checkDocumentProcessingState(item: OfflineQueuedUpload): Promise<'READY' | 'PENDING' | 'REJECTED'> {
+  if (!item.uploadIntent) throw new Error('UPLOAD_INTENT_MISSING');
+  assertSameActor(item);
+  const doc = await apiFetch<{ versions?: Array<{ id: string; file_status: string }> }>(
+    `/api/v1/documents/${encodeURIComponent(item.uploadIntent.documentId)}`,
+  );
+  assertSameActor(item);
+  const current = doc.versions?.find((v) => v.id === item.uploadIntent?.versionId);
+  if (current?.file_status === 'READY') return 'READY';
+  if (current?.file_status === 'FAILED' || current?.file_status === 'QUARANTINED') return 'REJECTED';
+  return 'PENDING';
+}
+
 
 export function setOfflineActorPartition(partition: string | null): void {
   if (typeof window === 'undefined') return;
@@ -184,7 +250,9 @@ export async function enqueueFieldUpload(params: {
   });
 
   if (typeof navigator !== 'undefined' && navigator.onLine) {
-    void drainOfflineUploadQueue();
+    // Do not turn a completed IndexedDB save into an unhandled rejection
+    // if synchronization cannot begin on this device.
+    void drainOfflineUploadQueue().catch(() => undefined);
   }
   return item;
 }
@@ -197,10 +265,24 @@ export async function enqueueFieldUpload(params: {
 export async function drainOfflineUploadQueue(
   onProgress?: (queueId: string, uploadedBytes: number, totalBytes: number) => void,
 ): Promise<void> {
-  if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+  if (typeof navigator === 'undefined' || !navigator.onLine) return;
   if (typeof indexedDB === 'undefined') return;
+  // Web Locks are origin-wide and released automatically when a tab crashes.
+  // Never dispatch duplicate provider writes from an unsupported browser.
+  if (!navigator.locks?.request) {
+    throw new Error('UPLOAD_CROSS_TAB_LOCK_UNAVAILABLE');
+  }
+  await navigator.locks.request(DRAIN_LOCK_NAME, { mode: 'exclusive', ifAvailable: true }, async (lock) => {
+    if (!lock) return;
+    await drainLockedUploadQueue(onProgress);
+  });
+}
 
+async function drainLockedUploadQueue(
+  onProgress?: (queueId: string, uploadedBytes: number, totalBytes: number) => void,
+): Promise<void> {
   const db = await openOfflineDb();
+  try {
   const items = await new Promise<OfflineQueuedUpload[]>((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readonly');
     const req = tx.objectStore(STORE_NAME).getAll();
@@ -218,13 +300,27 @@ export async function drainOfflineUploadQueue(
       await saveQueueItem(db, item);
       continue;
     }
-    if (item.status === 'BLOCKED_SCOPE') {
-      item.status = navigator.onLine ? 'UPLOADING' : 'QUEUED_OFFLINE';
-      item.lastError = undefined;
-      await saveQueueItem(db, item);
-    }
+    // Never silently revive a blocked draft after a session/grant change.
+    // An explicit same-identity recovery workflow is required.
+    if (item.status === 'BLOCKED_SCOPE') continue;
 
     try {
+      assertSameActor(item);
+      if (item.status === 'PROCESSING' || item.completedUploadAt) {
+        const status = await checkDocumentProcessingState(item);
+        if (status === 'READY') {
+          await deleteQueueItem(db, item.queueId);
+        } else if (status === 'REJECTED') {
+          item.status = 'FAILED';
+          item.lastError = 'Server rejected or quarantined the evidence. Do not re-upload without reviewing the failure.';
+          await saveQueueItem(db, item);
+        }
+        // Do not POST completion twice or send bytes again after acceptance.
+        continue;
+      }
+      item.status = 'UPLOADING';
+      item.lastError = undefined;
+      await saveQueueItem(db, item);
       // Step 1: Request or reuse S3 multipart upload intent (TC2-030 contract alignment)
       if (!item.uploadIntent) {
         const intentRes = await apiFetch<{
@@ -237,7 +333,7 @@ export async function drainOfflineUploadQueue(
             partSizeBytes: number;
             parts: Array<{ partNumber: number; url?: string; uploadUrl?: string; requiredHeaders?: Record<string, string> }>;
           };
-        }>(`/api/v1/projects/${item.projectId}/documents/upload-intents`, {
+        }>(`/api/v1/projects/${encodeURIComponent(item.projectId)}/documents/upload-intents`, {
           method: 'POST',
           idempotencyKey: `intent_${item.queueId}`,
           body: JSON.stringify({
@@ -254,11 +350,8 @@ export async function drainOfflineUploadQueue(
           }),
         });
 
-        const resolvedParts = (intentRes.upload?.parts || intentRes.parts || []).map((p) => ({
-          partNumber: p.partNumber,
-          url: p.url || p.uploadUrl || '',
-          requiredHeaders: p.requiredHeaders || {},
-        }));
+        assertSameActor(item);
+        const resolvedParts = normalizeParts(intentRes.upload?.parts || intentRes.parts || []);
         const resolvedPartSize = intentRes.upload?.partSizeBytes || intentRes.partSizeBytes || 5 * 1024 * 1024;
 
         item.uploadIntent = {
@@ -274,35 +367,50 @@ export async function drainOfflineUploadQueue(
       // Step 2: Upload only remaining parts directly to S3 presigned URLs
       const completedPartNums = new Set(item.uploadedParts.map((p) => p.partNumber));
       const partSize = item.uploadIntent.partSizeBytes;
+      if (!Number.isSafeInteger(partSize) || partSize <= 0) throw new Error('UPLOAD_PART_SIZE_INVALID');
 
       for (const part of item.uploadIntent.parts) {
+        assertSameActor(item);
         if (completedPartNums.has(part.partNumber)) continue;
-
         const startByte = (part.partNumber - 1) * partSize;
         const endByte = Math.min(startByte + partSize, item.sizeBytes);
+        if (startByte >= endByte) throw new Error('UPLOAD_PART_RANGE_INVALID');
         const chunkBlob = item.fileBlob.slice(startByte, endByte);
-
-        const putRes = await fetch(part.url, {
-          method: 'PUT',
-          headers: part.requiredHeaders,
-          body: chunkBlob,
-        });
-        if (!putRes.ok) {
-          throw new Error(`S3 part ${part.partNumber} failed with status ${putRes.status}`);
+        let putRes: Response | undefined;
+        for (let attempt = 0; attempt <= MAX_PART_URL_REFRESHES; attempt++) {
+          assertSameActor(item);
+          const currentPart = item.uploadIntent.parts.find((p) => p.partNumber === part.partNumber);
+          if (!currentPart) throw new Error('UPLOAD_PART_MISSING');
+          putRes = await fetch(currentPart.url, {
+            method: 'PUT',
+            headers: currentPart.requiredHeaders,
+            body: chunkBlob,
+          });
+          assertSameActor(item);
+          if (putRes.ok) break;
+          // An expired presigned URL is provider-specific. Refresh only for
+          // rejected authorizations, retry once, then surface the real failure.
+          if ((putRes.status === 401 || putRes.status === 403) &&
+              item.uploadIntent.isMultipart && attempt < MAX_PART_URL_REFRESHES) {
+            await refreshOutstandingParts(item);
+            await saveQueueItem(db, item);
+            continue;
+          }
+          throw new Error(`UPLOAD_PART_HTTP_${putRes.status}`);
         }
-
+        if (!putRes?.ok) throw new Error('UPLOAD_PART_FAILED');
         const etag = putRes.headers.get('ETag');
         if (!etag && item.uploadIntent.isMultipart) {
           throw new Error('UPLOAD_ETAG_MISSING: storage CORS must expose ETag before multipart completion can proceed.');
         }
         item.uploadedParts.push({ partNumber: part.partNumber, etag: etag || '' });
         await saveQueueItem(db, item);
-
         onProgress?.(item.queueId, endByte, item.sizeBytes);
       }
 
       // Step 3: Complete multipart upload with checksum & trigger scan (TC2-001 & TC2-030)
-      await apiFetch(`/api/v1/document-versions/${item.uploadIntent.versionId}/complete`, {
+      assertSameActor(item);
+      await apiFetch(`/api/v1/document-versions/${encodeURIComponent(item.uploadIntent.versionId)}/complete`, {
         method: 'POST',
         idempotencyKey: `complete_${item.queueId}`,
         body: JSON.stringify({
@@ -311,46 +419,42 @@ export async function drainOfflineUploadQueue(
         }),
       });
 
-      // Poll authoritative document version state before declaring completed
+      // This checkpoint prevents future drains from repeating completion
+      // while a worker asynchronously scans the immutable received bytes.
+      assertSameActor(item);
+      item.completedUploadAt = Date.now();
+      item.status = 'PROCESSING';
+      await saveQueueItem(db, item);
       const startTime = Date.now();
-      let serverVerifiedReady = false;
       while (Date.now() - startTime < 10000) {
-        try {
-          const docRes = await apiFetch<{ versions?: Array<{ id: string; file_status: string }> }>(
-            `/api/v1/documents/${item.uploadIntent.documentId}`,
-          );
-          const currentVer = docRes.versions?.find((v) => v.id === item.uploadIntent!.versionId);
-          if (currentVer) {
-            if (currentVer.file_status === 'READY') {
-              serverVerifiedReady = true;
-              break;
-            }
-            if (currentVer.file_status === 'FAILED' || currentVer.file_status === 'QUARANTINED') {
-              throw new Error(`Upload security failure: File is ${currentVer.file_status}.`);
-            }
-          }
-        } catch (pollErr: any) {
-          if (pollErr.message?.startsWith('Upload security failure:')) throw pollErr;
+        const result = await checkDocumentProcessingState(item);
+        if (result === 'READY') {
+          await deleteQueueItem(db, item.queueId);
+          break;
         }
-        await new Promise((r) => setTimeout(r, 1500));
+        if (result === 'REJECTED') {
+          item.status = 'FAILED';
+          item.lastError = 'Server rejected or quarantined the evidence.';
+          await saveQueueItem(db, item);
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1500));
       }
-
-      if (!serverVerifiedReady) {
-        // Upload transmission is complete, but server-side verification has not finished.
-        // Keep the local blob and receipt so reload/retry cannot misreport evidence as accepted.
-        item.status = 'PROCESSING';
-        item.lastError = 'Upload received; security verification is still pending.';
-        await saveQueueItem(db, item);
-        continue;
-      }
-
-      item.status = 'COMPLETED';
-      await deleteQueueItem(db, item.queueId);
-    } catch (err: any) {
-      item.status = typeof navigator !== 'undefined' && navigator.onLine ? 'FAILED' : 'QUEUED_OFFLINE';
-      item.lastError = err.message || 'Network interrupted during upload';
+      // Pending status is durable; subsequent online triggers reconcile it.
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err.message : 'Upload interrupted';
+      const authBlocked = error === 'UPLOAD_ACTOR_CONTEXT_CHANGED' ||
+        (err instanceof ApiProblemError && (err.status === 401 || err.status === 403));
+      item.status = authBlocked ? 'BLOCKED_SCOPE' :
+        (typeof navigator !== 'undefined' && !navigator.onLine ? 'QUEUED_OFFLINE' : 'FAILED');
+      item.lastError = authBlocked
+        ? 'Authentication or access changed. This draft cannot be replayed automatically.'
+        : error;
       await saveQueueItem(db, item);
     }
+  }
+  } finally {
+    db.close();
   }
 }
 
