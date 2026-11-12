@@ -53,6 +53,9 @@ function clearLocalUploadAuthority(): void {
   if (typeof window === 'undefined') return;
   try {
     window.localStorage.removeItem('tc_offline_actor_partition');
+    // Even re-login as the same person must not revive an earlier session's
+    // queued writes without explicit current-authority recovery.
+    window.localStorage.setItem('tc_offline_actor_epoch', crypto.randomUUID());
   } catch {
     // The caller still receives the authoritative authentication result.
   }
