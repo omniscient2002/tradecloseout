@@ -1,4 +1,5 @@
 import { apiFetch, ApiProblemError } from './api-client';
+import { sha256BlobChunked } from './chunked-sha256';
 
 export interface OfflineQueuedUpload {
   queueId: string;
@@ -252,11 +253,7 @@ function openOfflineDb(): Promise<IDBDatabase> {
 }
 
 export async function computeBrowserFileSha256(file: Blob): Promise<string> {
-  const arrayBuffer = await file.arrayBuffer();
-  const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
-  return Array.from(new Uint8Array(hashBuffer))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
+  return sha256BlobChunked(file);
 }
 
 /**
