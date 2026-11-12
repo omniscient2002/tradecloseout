@@ -97,3 +97,41 @@ describe('PH4-G17-002 exact remedy scope qualification', () => {
     expect(queries.some(q => q.includes('UPDATE defects'))).toBe(true);
   });
 });
+
+describe('PH4-G17-006 defect severity contract', () => {
+  const ctx: any = {
+    orgId: randomUUID(), userId: randomUUID(), actorType: 'SYSTEM',
+    requestId: randomUUID(), ip: '127.0.0.1', userAgent: 'phase4-test',
+  };
+  it('fails before DB access for unknown severity and empty title', async () => {
+    const pool: any = { connect: jest.fn(() => { throw new Error('DATABASE_SHOULD_NOT_BE_CALLED'); }) };
+    const svc = new WarrantyAndBillingService(pool);
+    await expect(svc.createDefect(ctx, randomUUID(), {
+      title: 'Unsafe', severity: 'SAFETY' as any,
+    })).rejects.toMatchObject({ response: { code: 'DEFECT_SEVERITY_UNSUPPORTED' } });
+    await expect(svc.createDefect(ctx, randomUUID(), {
+      title: '  ', severity: 'CRITICAL',
+    })).rejects.toMatchObject({ response: { code: 'DEFECT_INPUT_INVALID' } });
+    expect(pool.connect).not.toHaveBeenCalled();
+  });
+
+  it('maps only documented legacy alias MAJOR to HIGH, never arbitrary severity', async () => {
+    const queries: Array<{ sql: string; params: any[] }> = [];
+    const pool: any = { connect: jest.fn(async () => ({
+      query: jest.fn(async (sql: string, params: any[] = []) => {
+        queries.push({ sql, params });
+        return { rows: [], rowCount: 1 };
+      }),
+      release: jest.fn(),
+    })) };
+    const result = await new WarrantyAndBillingService(pool).createDefect(ctx, randomUUID(), {
+      title: ' Commissioning discrepancy ', severity: 'MAJOR',
+    });
+    expect(result.severity).toBe('HIGH');
+    const inserted = queries.find(q => q.sql.includes('INSERT INTO defects'));
+    expect(inserted).toBeDefined();
+    expect(inserted?.params[4]).toBe('Commissioning discrepancy');
+    expect(inserted?.params[6]).toBe('HIGH');
+    expect(queries.some(q => q.sql === 'COMMIT')).toBe(true);
+  });
+});
