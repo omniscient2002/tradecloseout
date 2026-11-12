@@ -32,6 +32,10 @@ export class WarrantyAndBillingService {
       remedyVersionId?: string | null;
       reason?: string | null;
       toSeverity?: string;
+      receipt?: {
+        sha256: string; providerVersionId: string; sizeBytes: number;
+        scannedAt: Date; assetIds: string[];
+      };
     } = {},
   ): Promise<string> {
     const eventId = uuidv7();
@@ -42,10 +46,12 @@ export class WarrantyAndBillingService {
           assigned_user_id, assigned_party_id, due_at,
           from_severity, to_severity,
           evidence_object_id, remedy_document_version_id, reason,
-          previous_assigned_user_id, previous_assigned_party_id, previous_due_at)
+          previous_assigned_user_id, previous_assigned_party_id, previous_due_at,
+          evidence_sha256, evidence_provider_version_id,
+          evidence_size_bytes, evidence_scanned_at, evidence_asset_scope_ids)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
                $11, $12, $13, $14, $15, $16, $17, $18,
-               $19, $20, $21)`,
+               $19, $20, $21, $22, $23, $24, $25, $26)`,
       [eventId, ctx.orgId, defect.project_id, defect.id, action,
         defect.status, toStatus, defect.row_version,
         defect.row_version + 1, ctx.userId,
@@ -55,7 +61,12 @@ export class WarrantyAndBillingService {
         defect.severity ?? null, details.toSeverity ?? defect.severity ?? null,
         details.evidenceObjectId ?? null, details.remedyVersionId ?? null,
         details.reason ?? null, defect.assigned_user_id ?? null,
-        defect.assigned_party_id ?? null, defect.due_at ?? null],
+        defect.assigned_party_id ?? null, defect.due_at ?? null,
+        details.receipt?.sha256 ?? null,
+        details.receipt?.providerVersionId ?? null,
+        details.receipt?.sizeBytes ?? null,
+        details.receipt?.scannedAt ?? null,
+        details.receipt?.assetIds ?? null],
     );
     return eventId;
   }
