@@ -25,7 +25,7 @@ describe('PH1-G01-004 / PH1-G26-004: session eligibility inside real tenant tran
       );
       const ctx = {
         orgId: a.orgId, userId, actorType: 'USER' as const,
-        orgRole: 'R-SITE', sessionId, requestId: 'live-session-fence-test',
+        orgRole: 'R-SITE', sessionId, sessionTokenHash: 'a'.repeat(64), requestId: 'live-session-fence-test',
       };
       const service = new TenantDbService(app);
       let entered = 0;
@@ -65,7 +65,7 @@ describe('PH1-G01-004 / PH1-G26-004: session eligibility inside real tenant tran
         [altSessionId, userId, b.orgId, 'c'.repeat(64), 'd'.repeat(64)],
       );
       await expect(service.withTenantContext({
-        ...ctx, orgId: b.orgId, sessionId: altSessionId,
+        ...ctx, orgId: b.orgId, sessionId: altSessionId, sessionTokenHash: 'c'.repeat(64),
       }, async () => 'alternate-active-org')).resolves.toBe('alternate-active-org');
 
       await admin.query(
@@ -88,6 +88,16 @@ describe('PH1-G01-004 / PH1-G26-004: session eligibility inside real tenant tran
       await expect(permitted()).rejects.toThrow('AUTH_SESSION_CONTEXT_CHANGED');
       expect(entered).toBe(1);
       await admin.query("UPDATE users SET status='ACTIVE' WHERE id=$1", [userId]);
+
+      // Rotating MFA authentication material retains the session row ID.
+      // The old, already-admitted request must still fail at the command
+      // transaction boundary once its token generation is obsolete.
+      await admin.query("UPDATE sessions SET token_hash=$2 WHERE id=$1", [sessionId, '9'.repeat(64)]);
+      await expect(permitted()).rejects.toThrow('AUTH_SESSION_CONTEXT_CHANGED');
+      expect(entered).toBe(1);
+      await expect(service.withTenantContext({
+        ...ctx, sessionTokenHash: '9'.repeat(64),
+      }, async () => 'rotated-and-current')).resolves.toBe('rotated-and-current');
 
       await admin.query("UPDATE sessions SET revoked_at=now() WHERE id=$1", [sessionId]);
       await expect(permitted()).rejects.toThrow('AUTH_SESSION_CONTEXT_CHANGED');
@@ -118,7 +128,7 @@ describe('PH1-G01-004 / PH1-G26-004: session eligibility inside real tenant tran
       );
       const ctx = {
         orgId: a.orgId, userId, actorType: 'USER' as const,
-        orgRole: 'R-SITE', sessionId, requestId: 'fence-race',
+        orgRole: 'R-SITE', sessionId, sessionTokenHash: 'e'.repeat(64), requestId: 'fence-race',
       };
       let entered!: () => void;
       let finish!: () => void;
@@ -180,7 +190,7 @@ describe('PH1-G01-004 / PH1-G26-004: session eligibility inside real tenant tran
       const service = new TenantDbService(app);
       const ctx = {
         orgId: a.orgId, userId, actorType: 'GUEST' as const,
-        guestGrantId: grantId, sessionId, requestId: 'guest-revocation-fence',
+        guestGrantId: grantId, sessionId, sessionTokenHash: 'g'.repeat(64), requestId: 'guest-revocation-fence',
       };
       await expect(service.withTenantContext(ctx, async () => 'guest-authorized'))
         .resolves.toBe('guest-authorized');
