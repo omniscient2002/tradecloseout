@@ -59,6 +59,27 @@ export interface ReviewCommentDto {
 export class ReviewsService {
   constructor(private readonly db: TenantDbService) {}
 
+  /**
+   * Invoked only while holding the canonical document_versions FOR UPDATE row.
+   * Cancelling across stage keys models the currently supported single terminal
+   * outcome; advanced multi-stage approvals require a separately reviewed
+   * stage policy and may not silently revive these assignments.
+   */
+  private async cancelPendingSiblingReviews(
+    client: PoolClient, orgId: string, versionId: string, winnerReviewId?: string,
+  ): Promise<void> {
+    await client.query(
+      `UPDATE reviews
+          SET status = 'CANCELLED', row_version = row_version + 1,
+              recorded_at = now(),
+              comment = COALESCE(comment, 'Cancelled following terminal document decision')
+        WHERE org_id = $1 AND document_version_id = $2
+          AND ($3::uuid IS NULL OR id <> $3::uuid)
+          AND status IN ('PENDING', 'IN_REVIEW')`,
+      [orgId, versionId, winnerReviewId ?? null],
+    );
+  }
+
   private async assertVerifiedReviewEvidence(client: PoolClient, orgId: string, version: any): Promise<void> {
     const { rows } = await client.query(
       `SELECT 1 FROM storage_objects
@@ -102,7 +123,7 @@ export class ReviewsService {
                 d.latest_version_id AS document_latest_version_id
            FROM document_versions dv
            JOIN documents d ON d.id = dv.document_id
-          WHERE dv.org_id = $1 AND dv.id = $2`,
+          WHERE dv.org_id = $1 AND dv.id = $2 FOR UPDATE OF dv`,
         [ctx.orgId, dto.documentVersionId],
       );
       if (!verRes.rows.length) {
@@ -111,6 +132,13 @@ export class ReviewsService {
       const version = verRes.rows[0];
       if (version.project_id !== req.project_id || version.document_project_id !== req.project_id) {
         throw new NotFoundException('VERSION_NOT_IN_REQUIREMENT_PROJECT');
+      }
+      // Submission cannot resurrect a previously terminal version or create
+      // another actionable assignment after a decision. The version is locked
+      // before mutating review/requirement state.
+      assertReviewVersionNotTerminal(version.review_status);
+      if (version.review_status !== 'NOT_SUBMITTED') {
+        throw new ConflictException('DOCUMENT_VERSION_ALREADY_SUBMITTED');
       }
       if (version.file_status !== 'READY') {
         throw new ConflictException('FILE_NOT_READY_FOR_REVIEW');
@@ -576,15 +604,39 @@ export class ReviewsService {
     }
 
     const run = async (client: PoolClient) => {
-      // 1. Fetch review record
+      // Read the intended assignment without a row lock solely to discover its
+      // shared version. This must not become authorization or decision state:
+      // all fields are rechecked after taking the canonical version lock.
+      const preliminaryRes = await client.query(
+        `SELECT * FROM reviews WHERE org_id = $1 AND id = $2`,
+        [ctx.orgId, reviewId],
+      );
+      if (!preliminaryRes.rows.length) throw new NotFoundException('REVIEW_NOT_FOUND');
+      const preliminary = preliminaryRes.rows[0];
+      if (ctx.actorType === 'GUEST' || preliminary.reviewer_subject_type !== 'USER' ||
+          preliminary.reviewer_subject_id !== ctx.userId ||
+          (preliminary.reviewer_user_id && preliminary.reviewer_user_id !== ctx.userId)) {
+        throw new ForbiddenException('REVIEW_ASSIGNMENT_REQUIRED');
+      }
+
+      // Every decision pathway must acquire the same document-version lock
+      // FIRST, before locking any individual assignment. Otherwise cancelling
+      // sibling reviews deadlocks with another reviewer holding their own row.
+      const verRes = await client.query(
+        `SELECT * FROM document_versions WHERE org_id = $1 AND id = $2 FOR UPDATE`,
+        [ctx.orgId, preliminary.document_version_id],
+      );
+      if (!verRes.rows.length) throw new NotFoundException('DOCUMENT_VERSION_NOT_FOUND');
+      const version = verRes.rows[0];
       const reviewRes = await client.query(
         `SELECT * FROM reviews WHERE org_id = $1 AND id = $2 FOR UPDATE`,
         [ctx.orgId, reviewId],
       );
-      if (!reviewRes.rows.length) {
-        throw new NotFoundException('REVIEW_NOT_FOUND');
-      }
+      if (!reviewRes.rows.length) throw new NotFoundException('REVIEW_NOT_FOUND');
       const review = reviewRes.rows[0];
+      if (review.document_version_id !== version.id) {
+        throw new ConflictException('REVIEW_VERSION_CHANGED');
+      }
       if (review.status !== 'IN_REVIEW' && review.status !== 'PENDING') {
         throw new ConflictException(`INVALID_STATE_TRANSITION: Review is already in status ${review.status}`);
       }
@@ -593,19 +645,12 @@ export class ReviewsService {
           (review.reviewer_user_id && review.reviewer_user_id !== ctx.userId)) {
         throw new ForbiddenException('REVIEW_ASSIGNMENT_REQUIRED');
       }
-
-      // 2. Lock document_version FOR UPDATE via document_version_id (CB-005, AUD-007)
-      const verRes = await client.query(
-        `SELECT * FROM document_versions WHERE org_id = $1 AND id = $2 FOR UPDATE`,
-        [ctx.orgId, review.document_version_id],
-      );
-      if (!verRes.rows.length) {
-        throw new NotFoundException('DOCUMENT_VERSION_NOT_FOUND');
-      }
-      const version = verRes.rows[0];
       // All sibling reviewers must serialize on this same row. The first
       // committed terminal result wins even if another review remains queued.
       assertReviewVersionNotTerminal(version.review_status);
+      if (version.review_status !== 'IN_REVIEW') {
+        throw new ConflictException('DOCUMENT_VERSION_NOT_IN_REVIEW');
+      }
 
       // Optimistic concurrency check (10 §1 If-Match, NP10)
       if (dto.expectedRowVersion !== undefined && version.row_version !== dto.expectedRowVersion) {
@@ -632,7 +677,11 @@ export class ReviewsService {
         `SELECT * FROM documents WHERE org_id = $1 AND id = $2 FOR UPDATE`,
         [ctx.orgId, version.document_id],
       );
+      if (!docRes.rows.length) throw new NotFoundException('DOCUMENT_NOT_FOUND');
       const doc = docRes.rows[0];
+      if (doc.current_approved_version_id === version.id) {
+        throw new ConflictException('DOCUMENT_VERSION_ALREADY_APPROVED_POINTER');
+      }
 
       // 4. Verify version is latest
       if (doc.latest_version_id && doc.latest_version_id !== version.id) {
@@ -777,6 +826,11 @@ export class ReviewsService {
         );
       }
 
+      // The winning terminal outcome settles every other in-flight assignment
+      // for this exact version, across all stage keys. A different reviewer
+      // cannot later action an orphaned sibling even if they never refresh UI.
+      await this.cancelPendingSiblingReviews(client, ctx.orgId, version.id, review.id);
+
       // Record cryptographic audit event for review decision
       const auditEventId = uuidv7();
       const actionName = dto.decision === 'APPROVE' ? 'REVIEW_APPROVED' : (dto.decision === 'REQUEST_CHANGES' ? 'REVIEW_CHANGES_REQUESTED' : 'REVIEW_REJECTED');
@@ -886,6 +940,7 @@ export class ReviewsService {
         throw new NotFoundException('VERSION_NOT_FOUND');
       }
       const version = verRes.rows[0];
+      assertReviewVersionNotTerminal(version.review_status);
       if (version.row_version !== expectedRowVersion) {
         throw new HttpException({ code: 'VERSION_CHANGED', detail: 'Refresh the document version before recording a response.' }, 412);
       }
@@ -997,6 +1052,10 @@ export class ReviewsService {
          WHERE org_id = $2 AND id = $3`,
         [version.id, ctx.orgId, doc.id],
       );
+
+      // Recording a terminal external response must also cancel actionable
+      // in-app assignments against this version, under the same version lock.
+      await this.cancelPendingSiblingReviews(client, ctx.orgId, version.id);
 
       // Insert reviews record strictly matching SQL schema (CB-005) with dual event time (Top 25 Item 4)
       const reviewId = uuidv7();
