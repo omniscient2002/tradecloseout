@@ -682,12 +682,12 @@ export class ChecklistsService {
         `INSERT INTO waivers
           (id, org_id, project_id, requirement_id, type, reason,
            is_mandatory_item, requested_by, approved_by, status,
-           obligation_row_version, command_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8, $9, $10, $11)`,
+           obligation_row_version, command_id, previous_requirement_status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8, $9, $10, $11, $12)`,
         [
           waiverId, ctx.orgId, projectId, requirementId, type,
           reason.trim(), mandatory, ctx.userId, status, req.row_version,
-          options.commandId ?? null,
+          options.commandId ?? null, req.status,
         ],
       );
       await client.query(
@@ -807,6 +807,106 @@ export class ChecklistsService {
         rowVersion: req.row_version + 1, idempotentReplay: false,
       };
     });
+  }
+
+  /**
+   * PH3-G07: an independent reviewer rejects the explicit pending waiver;
+   * the requester may withdraw it. Never infer the prior requirement status.
+   */
+  private async decidePendingWaiver(
+    ctx: TenantActorContext, waiverId: string,
+    outcome: 'REJECTED' | 'REVOKED', reason: string,
+  ) {
+    if (typeof reason !== 'string' ||
+        reason.trim().length < 10 || reason.trim().length > 2000) {
+      throw new UnprocessableEntityException('WAIVER_DECISION_REASON_REQUIRED');
+    }
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      const { rows: identifiers } = await client.query(
+        `SELECT project_id, requirement_id FROM waivers
+           WHERE org_id = $1 AND id = $2`,
+        [ctx.orgId, waiverId],
+      );
+      if (!identifiers.length) throw new NotFoundException('WAIVER_NOT_FOUND');
+      const { project_id: projectId, requirement_id: requirementId } = identifiers[0];
+      // Identical lock order for request/approval/rejection/cancellation.
+      const req = await this.lockCurrentWaiverRequirement(client, ctx, projectId, requirementId);
+      await this.assertLiveWaiverAuthority(
+        client, ctx, projectId,
+        outcome === 'REJECTED' ? 'requirement.waive_second' : 'requirement.waive',
+      );
+      const { rows } = await client.query(
+        `SELECT * FROM waivers WHERE org_id = $1 AND project_id = $2
+           AND requirement_id = $3 AND id = $4 FOR UPDATE`,
+        [ctx.orgId, projectId, requirementId, waiverId],
+      );
+      if (!rows.length) throw new NotFoundException('WAIVER_NOT_FOUND');
+      const waiver = rows[0];
+      if (outcome === 'REJECTED' &&
+          (ctx.userId === waiver.requested_by || ctx.userId === waiver.approved_by)) {
+        throw new ForbiddenException('WAIVER_INDEPENDENT_REJECTION_REQUIRED');
+      }
+      if (outcome === 'REVOKED' && ctx.userId !== waiver.requested_by) {
+        throw new ForbiddenException('WAIVER_WITHDRAWAL_REQUIRES_REQUESTER');
+      }
+      if (waiver.status === outcome &&
+          waiver.decided_by === ctx.userId && waiver.decision_reason === reason.trim()) {
+        if (waiver.obligation_row_version == null ||
+            req.status !== waiver.previous_requirement_status ||
+            req.row_version !== waiver.obligation_row_version + 2) {
+          throw new ConflictException('WAIVER_OUTCOME_CHANGED');
+        }
+        return {
+          waiverId, status: outcome, requirementStatus: req.status,
+          rowVersion: req.row_version, idempotentReplay: true,
+        };
+      }
+      if (waiver.status !== WaiverStatus.PENDING_SECOND_APPROVAL) {
+        throw new ConflictException('WAIVER_NOT_PENDING_SECOND_APPROVAL');
+      }
+      if (!waiver.is_mandatory_item ||
+          waiver.obligation_row_version == null ||
+          !waiver.previous_requirement_status ||
+          req.status !== RequirementStatus.PENDING_WAIVER ||
+          req.row_version !== waiver.obligation_row_version + 1) {
+        throw new ConflictException('WAIVER_OBLIGATION_REVISION_CONFLICT');
+      }
+      const { rowCount } = await client.query(
+        `UPDATE waivers SET status = $1, decision_reason = $2,
+             decided_by = $3, decided_at = now()
+           WHERE org_id = $4 AND project_id = $5 AND id = $6
+             AND status = 'PENDING_SECOND_APPROVAL'`,
+        [outcome, reason.trim(), ctx.userId, ctx.orgId, projectId, waiverId],
+      );
+      if (rowCount !== 1) throw new ConflictException('WAIVER_DECISION_CONFLICT');
+      const restoredStatus = waiver.previous_requirement_status as string;
+      await client.query(
+        `UPDATE requirements SET status = $4, updated_at = now(),
+           row_version = row_version + 1
+          WHERE org_id = $1 AND project_id = $2 AND id = $3 AND row_version = $5`,
+        [ctx.orgId, projectId, requirementId, restoredStatus, req.row_version],
+      );
+      emit({
+        eventType: outcome === 'REJECTED' ? 'WAIVER_REJECTED' : 'WAIVER_WITHDRAWN',
+        projectId, entityType: 'WAIVER', entityId: waiverId,
+        afterJson: {
+          requirementId, status: outcome, restoredStatus,
+          obligationRowVersion: waiver.obligation_row_version, actorUserId: ctx.userId,
+        },
+      });
+      return {
+        waiverId, status: outcome, requirementStatus: restoredStatus,
+        rowVersion: req.row_version + 1, idempotentReplay: false,
+      };
+    });
+  }
+
+  async rejectWaiver(ctx: TenantActorContext, waiverId: string, reason: string) {
+    return this.decidePendingWaiver(ctx, waiverId, 'REJECTED', reason);
+  }
+
+  async withdrawWaiver(ctx: TenantActorContext, waiverId: string, reason: string) {
+    return this.decidePendingWaiver(ctx, waiverId, 'REVOKED', reason);
   }
 
   /**
