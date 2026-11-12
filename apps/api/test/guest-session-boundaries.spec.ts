@@ -26,6 +26,8 @@ describe('guest session boundaries', () => {
       .toBeLessThan(statements.findIndex((sql) => sql.includes('FROM guest_grants')));
     expect(req.userContext.guestGrantId).toBe('grant-1');
     expect(req.userContext.sessionId).toBe('session-1');
+    expect(req.userContext.sessionTokenHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(req.userContext.sessionTokenHash).not.toBe('spoofed');
   });
 
   it('does not create bearer-only sessions for legacy grants', async () => {
