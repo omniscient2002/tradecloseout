@@ -81,6 +81,15 @@ describe('Production Re-Audit Remediation Suite (PROD-001..PROD-018)', () => {
       expect(allowedResult).toBeDefined();
       expect(allowedResult.id).toBe(allowedProjectId);
 
+      // An absent project binding on a guest grant is not a license to
+      // enumerate arbitrary tenant projects, even through direct service use.
+      await expect(
+        projectsService.getProject({ ...guestCtx, guestProjectId: undefined }, allowedProjectId),
+      ).rejects.toThrow(NotFoundException);
+      await expect(
+        projectsService.getProjectDashboard({ ...guestCtx, guestProjectId: undefined }, allowedProjectId),
+      ).rejects.toThrow(NotFoundException);
+
       // 2. Guest querying an unpermitted project throws NotFoundException
       await expect(
         projectsService.getProject(guestCtx, forbiddenProjectId),
