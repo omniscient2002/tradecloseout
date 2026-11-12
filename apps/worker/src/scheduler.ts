@@ -291,7 +291,9 @@ export class TradeCloseoutScheduler {
       let verifiedEvents = 0;
 
       for (const org of orgs) {
-        await client.query('BEGIN');
+        // Read chain and registry under one snapshot, avoiding false alarms from
+        // a legitimate concurrent append between the two SELECTs.
+        await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
         await client.query(
           `SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`,
           [org.id],
@@ -337,6 +339,22 @@ export class TradeCloseoutScheduler {
           prevSeq = sequence;
           prevHash = ev.hash;
           verifiedEvents++;
+        }
+
+        // A chain whose tail was removed can remain internally contiguous.
+        // The separate protected registry retains the committed head/count.
+        const { rows: expectedRows } = await client.query(
+          'SELECT event_count, head_seq, head_hash FROM public.phase1_audit_expected_head($1)',
+          [org.id],
+        );
+        if (expectedRows.length !== 1 ||
+            BigInt(expectedRows[0].event_count) !== BigInt(events.length) ||
+            (events.length > 0 &&
+              (BigInt(expectedRows[0].head_seq) !== prevSeq ||
+               expectedRows[0].head_hash !== prevHash)) ||
+            (events.length === 0 &&
+              (expectedRows[0].head_seq !== null || expectedRows[0].head_hash !== null))) {
+          throw new Error('AUDIT_CHAIN_HEAD_MISMATCH');
         }
 
         await client.query('COMMIT');
