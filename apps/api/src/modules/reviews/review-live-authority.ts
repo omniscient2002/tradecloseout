@@ -56,7 +56,7 @@ export async function resolveLiveProjectCommandAuthority(
   client: PoolClient,
   ctx: ExecutionContext,
   projectId: string,
-  permission: 'review.decide' | 'document.delete' | 'document.read' | 'document.download',
+  permission: 'review.decide' | 'document.delete' | 'document.read' | 'document.download' | 'document.upload',
 ): Promise<LiveReviewAuthority> {
   if (ctx.actorType === 'GUEST' || ctx.guestGrantId || !projectId || !ctx.userId || !ctx.orgId) return denied();
 
