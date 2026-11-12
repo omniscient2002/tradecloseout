@@ -185,7 +185,7 @@ describe('PH1-G02-006 — guest version and detail scope (restricted PostgreSQL 
       await expect(service.createUploadIntent(ctx, projectId, {
         mimeType: 'application/pdf', fileName: 'denied.pdf', sizeBytes: 1024,
         requirementId: allowedRequirementId,
-      })).rejects.toThrow('RESOURCE_OUTSIDE_GUEST_SCOPE');
+      })).rejects.toMatchObject({ response: { code: 'RESOURCE_OUTSIDE_GUEST_SCOPE' } });
       expect(signer.createUploadUrls).toHaveBeenCalledTimes(1);
       expect(signer.createSignedDownloadUrl).toHaveBeenCalledTimes(1);
       expect(signer.refreshUploadUrls).toHaveBeenCalledTimes(1);
