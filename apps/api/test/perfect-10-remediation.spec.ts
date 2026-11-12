@@ -557,7 +557,10 @@ describe('Perfect 10 Remediation & Hardening Test Suite', () => {
             id: '0192e3a0-3000-7000-8000-000000000004',
             code: 'PROJECT_PASS', name: 'Configured single-project pass',
             price_paise: '2499900', interval: 'ONE_TIME_PROJECT',
-            limits_json: { maxActiveProjects: 1 },
+            limits_json: {
+              maxActiveProjects: 1, maxSeats: 1,
+              maxStorageBytes: 1073741824, maxPackageGenerationsPerMonth: 1,
+            },
           }] }),
         }),
       } as any);
