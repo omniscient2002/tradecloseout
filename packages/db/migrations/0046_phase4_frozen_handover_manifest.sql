@@ -3,6 +3,12 @@
 -- MUST NOT be silently reconstructed from mutable document metadata.
 SET ROLE tc_migrator;
 
+ALTER TABLE handover_packages
+  ADD COLUMN manifest_format_version INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE handover_packages
+  ADD CONSTRAINT handover_manifest_format_positive
+  CHECK (manifest_format_version BETWEEN 1 AND 2);
+
 ALTER TABLE package_items
   ADD COLUMN source_document_id UUID,
   ADD COLUMN source_object_id UUID,
