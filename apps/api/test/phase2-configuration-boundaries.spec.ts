@@ -70,6 +70,26 @@ describe('Phase 2 configuration fail-closed boundaries', () => {
     ]));
   });
 
+  it('keeps authoritative provenance when a child restates a locked requirement identically', () => {
+    const protectedRequirement = {
+      key: 'SAFE-DOC', locked: true, mandatory: true,
+      docTypeKey: 'DT-001', scopeType: 'PROJECT',
+    };
+    const result = resolveConfigV021({
+      PLATFORM: layer('PLATFORM', { 'checklist.requirements': [protectedRequirement] }),
+      ORG: layer('ORG', { 'checklist.requirements': [{ ...protectedRequirement }] }),
+      PROJECT: layer('PROJECT', { 'checklist.requirements': [{ ...protectedRequirement }] }),
+    });
+    expect(result.conflicts).toHaveLength(0);
+    expect(result.provenance['checklist.requirements']).toMatchObject({
+      level: 'PLATFORM',
+      versionId: 'phase2-platform',
+    });
+    expect(result.payload['checklist.requirements']).toEqual([
+      expect.objectContaining({ key: 'SAFE-DOC', provenanceLevel: 'PLATFORM' }),
+    ]);
+  });
+
   it('materializes registered checklist requirements for snapshot consumers', () => {
     const requirements = [{ key: 'DOC-01', mandatory: true, title: 'Manual', docTypeKey: 'O_AND_M', scopeType: 'PROJECT' }];
     const result = resolveConfigV021({
