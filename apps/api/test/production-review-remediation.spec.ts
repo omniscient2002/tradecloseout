@@ -374,10 +374,15 @@ describe('Production Review Remediation Suite (NP01..NP06, NP09, NP10)', () => {
       const mockPool: any = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string) => {
-            if (sql.includes('FROM document_versions') || sql.includes('WITH all_items')) {
+            if (sql.includes('FROM memberships')) return { rows: [{ role: 'R-OWNER' }] };
+            if (sql.includes('FROM project_members')) return { rows: [] };
+            if (sql.includes('SELECT id FROM projects')) return { rows: [{ id: projectId }] };
+            if (sql.includes('WITH access AS')) {
               return {
-                rows: [
-                  {
+                rows: [{
+                  total: '1', reviews: '1', waivers: '0', defects: '0',
+                  revalidations: '0', supplier_obligations: '0',
+                  items: [{
                     entity_id: uuidv7(),
                     entity_version: 3,
                     title: 'Approved Submittal',
@@ -392,8 +397,8 @@ describe('Production Review Remediation Suite (NP01..NP06, NP09, NP10)', () => {
                     next_path: `/api/v1/projects/${projectId}/document-versions/dv-1/decision`,
                     next_method: 'POST',
                     next_action: 'DECIDE_REVIEW',
-                  },
-                ],
+                  }],
+                }],
               };
             }
             return { rows: [] };
