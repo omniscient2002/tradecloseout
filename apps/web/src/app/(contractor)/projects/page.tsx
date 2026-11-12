@@ -33,7 +33,8 @@ interface ProjectItem {
   applicableCount?: number;
 }
 
-function formatInr(paise: string): string {
+function formatInr(paise: string | null | undefined): string {
+  if (paise == null) return 'Not available';
   const rupees = Number(BigInt(paise || "0")) / 100;
   return new Intl.NumberFormat("en-IN", {
     style: "currency",
@@ -188,8 +189,8 @@ function ProjectsDirectoryContent() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map((proj) => {
             const pct =
-              proj.applicableCount > 0
-                ? Math.round((proj.approvedCount / proj.applicableCount) * 100)
+              (proj.applicableCount ?? 0) > 0
+                ? Math.round(((proj.approvedCount ?? 0) / (proj.applicableCount ?? 1)) * 100)
                 : 0;
 
             return (
@@ -223,19 +224,19 @@ function ProjectsDirectoryContent() {
                   </h3>
 
                   <div className="mt-2 space-y-1 text-xs text-slate-600">
-                    <div>Client: <strong className="text-slate-800">{proj.clientName}</strong></div>
-                    <div>General Contractor: <strong className="text-slate-800">{proj.mcName}</strong></div>
-                    <div>PMC: <strong className="text-slate-800">{proj.pmcName}</strong></div>
+                    <div>Client: <strong className="text-slate-800">{proj.clientName ?? proj.client_name ?? 'Not assigned'}</strong></div>
+                    <div>General Contractor: <strong className="text-slate-800">{proj.mcName ?? 'Not assigned'}</strong></div>
+                    <div>PMC: <strong className="text-slate-800">{proj.pmcName ?? 'Not assigned'}</strong></div>
                   </div>
                 </div>
 
                 <div className="mt-4 pt-3 border-t border-slate-100 space-y-2">
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-slate-500">Closeout Completion</span>
-                    <span className="font-mono font-bold text-slate-800">{pct}% ({proj.approvedCount}/{proj.applicableCount})</span>
+                    <span className="font-mono font-bold text-slate-800">{proj.applicableCount == null ? 'Not available' : `${pct}% (${proj.approvedCount ?? 0}/${proj.applicableCount})`}</span>
                   </div>
                   <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                    <div style={{ width: `${pct}%` }} className="h-full bg-emerald-600 rounded-full" />
+                    <div style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} className="h-full bg-emerald-600 rounded-full" />
                   </div>
                   <div className="flex items-center justify-between pt-1 text-[11px]">
                     <span className="font-mono text-slate-600">Retention: <strong>{formatInr(proj.retentionAtRiskPaise)}</strong></span>
