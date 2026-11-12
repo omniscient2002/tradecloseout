@@ -12,12 +12,12 @@ describe('Phase 3 fail-closed evidence integrity contracts', () => {
       '2/0: compressed; stream = 9, index = 0',
       '3/0: compressed; stream = 9, index = 1',
       '4/0: free; next = 0',
-    ].join('\\n'))).toBe(3);
+    ].join('\n'))).toBe(3);
   });
 
   it('PH3-G10-001: detects compressed-object limit bypass and malformed inventory', () => {
     const xref = Array.from({ length: 25001 }, (_, i) =>
-      `${i + 1}/0: compressed; stream = 3, index = ${i}`).join('\\n');
+      `${i + 1}/0: compressed; stream = 3, index = ${i}`).join('\n');
     expect(countQpdfLiveObjects(xref)).toBeGreaterThan(25000);
     expect(() => countQpdfLiveObjects('')).toThrow('PDF_XREF_EMPTY');
     expect(() => countQpdfLiveObjects('1/0: unsupported entry')).toThrow('PDF_XREF_UNRECOGNIZED_ENTRY');
