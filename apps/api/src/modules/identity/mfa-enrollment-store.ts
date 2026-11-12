@@ -1,0 +1,191 @@
+import { ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import { PoolClient } from 'pg';
+import { uuidv7 } from 'uuidv7';
+import { TenantDbService } from '../../database/tenant-db.service';
+import {
+  decryptFactor, encryptFactor, hashRecoveryCode,
+  newRecoveryCodes, newTotpSecret, verifyTotp,
+} from './mfa-crypto';
+
+/**
+ * Only pass a cookie-authenticated, SERVER-verified session ID and SHA-256
+ * hash of its opaque token. Never pass the raw token or trust these fields
+ * from a client DTO. The final HTTP MFA controller must additionally enforce
+ * CSRF, distributed MFA attempt budgets and post-confirm session rotation.
+ */
+export interface MfaEnrollmentSession {
+  userId: string;
+  sessionId: string;
+  sessionTokenHash: string;
+}
+export interface MfaEnrollmentProposal {
+  proposalId: string;
+  manualSetupKey: string; // One-time secret, NEVER log or persist plaintext.
+  expiresAt: string;
+}
+export interface MfaConfirmedEnrollment {
+  recoveryCodes: string[]; // Shown exactly once; never written to a receipt.
+  confirmed: true;
+}
+
+const proposalDenied = (): never => {
+  // Do not reveal whether an expired, superseded, cancelled or other user's
+  // enrollment existed. Never echo a factor or session token in errors.
+  throw new ConflictException({ code: 'MFA_ENROLLMENT_NOT_PENDING' });
+};
+
+/**
+ * Provider-independent MFA enrollment persistence / verification contract.
+ *
+ * This store is intentionally not an HTTP route. The authenticated MFA
+ * controller and privileged route enforcement must be integrated and accepted
+ * before the enrollment workflow is available to end users.
+ */
+export class MfaEnrollmentStore {
+  constructor(private readonly db: TenantDbService) {}
+
+  private assertContext(ctx: MfaEnrollmentSession): void {
+    if (!ctx || typeof ctx.userId !== 'string' || !ctx.userId ||
+        typeof ctx.sessionId !== 'string' || !ctx.sessionId ||
+        typeof ctx.sessionTokenHash !== 'string' ||
+        !/^[0-9a-f]{64}$/.test(ctx.sessionTokenHash)) {
+      throw new UnauthorizedException({ code: 'SESSION_CONTEXT_CHANGED' });
+    }
+  }
+
+  private async lockAccountAndSession(
+    client: PoolClient,
+    ctx: MfaEnrollmentSession,
+  ): Promise<{ mfa_totp_secret: string | null; mfa_enabled_at: string | null; mfa_totp_last_step: string | number }> {
+    // Same lock order for start/confirm/cancel: account -> session -> proposal.
+    // A factor change and an offboarding event cannot race these writes.
+    const { rows: accounts } = await client.query(
+      `SELECT mfa_totp_secret,mfa_enabled_at,mfa_totp_last_step
+         FROM users WHERE id=$1 AND status='ACTIVE' FOR NO KEY UPDATE`,
+      [ctx.userId],
+    );
+    if (accounts.length !== 1) {
+      throw new UnauthorizedException({ code: 'ACCOUNT_UNAVAILABLE' });
+    }
+    const { rows: sessions } = await client.query(
+      `SELECT id FROM sessions WHERE id=$1 AND user_id=$2 AND token_hash=$3
+         AND guest_grant_id IS NULL AND revoked_at IS NULL AND expires_at>now()
+         FOR SHARE`,
+      [ctx.sessionId, ctx.userId, ctx.sessionTokenHash],
+    );
+    if (sessions.length !== 1) {
+      throw new UnauthorizedException({ code: 'SESSION_CONTEXT_CHANGED' });
+    }
+    return accounts[0];
+  }
+
+  async begin(ctx: MfaEnrollmentSession): Promise<MfaEnrollmentProposal> {
+    this.assertContext(ctx);
+    return this.db.withUserContext(ctx.userId, async client => {
+      const account = await this.lockAccountAndSession(client, ctx);
+      if (account.mfa_enabled_at || account.mfa_totp_secret) {
+        throw new ConflictException({ code: 'MFA_ALREADY_ENROLLED' });
+      }
+      const secret = newTotpSecret();
+      const encryptedSecret = encryptFactor(secret);
+      // Replace ALL previous pending proposals in the same account lock. The
+      // unique PENDING index adds a database-level fail-closed backstop.
+      await client.query(
+        `UPDATE mfa_enrollment_proposals
+            SET status='REPLACED', encrypted_secret=NULL, completed_at=now()
+          WHERE user_id=$1 AND status='PENDING'`,
+        [ctx.userId],
+      );
+      const proposalId = uuidv7();
+      const { rows } = await client.query(
+        `INSERT INTO mfa_enrollment_proposals
+          (id,user_id,session_id,session_token_hash,encrypted_secret,expires_at)
+         VALUES ($1,$2,$3,$4,$5,now()+interval '10 minutes')
+         RETURNING expires_at`,
+        [proposalId, ctx.userId, ctx.sessionId,
+          ctx.sessionTokenHash, encryptedSecret],
+      );
+      if (rows.length !== 1) throw new Error('MFA_ENROLLMENT_WRITE_LOST');
+      return {
+        proposalId,
+        manualSetupKey: secret,
+        expiresAt: new Date(rows[0].expires_at).toISOString(),
+      };
+    });
+  }
+
+  async confirm(
+    ctx: MfaEnrollmentSession,
+    proposalId: string,
+    code: string,
+  ): Promise<MfaConfirmedEnrollment> {
+    this.assertContext(ctx);
+    if (!/^[0-9]{6}$/.test(code) ||
+        typeof proposalId !== 'string' || !/^[0-9a-f-]{36}$/i.test(proposalId)) {
+      throw new ForbiddenException({ code: 'MFA_CODE_INVALID' });
+    }
+    return this.db.withUserContext(ctx.userId, async client => {
+      const account = await this.lockAccountAndSession(client, ctx);
+      if (account.mfa_enabled_at || account.mfa_totp_secret) {
+        throw new ConflictException({ code: 'MFA_ALREADY_ENROLLED' });
+      }
+      const { rows } = await client.query(
+        `SELECT encrypted_secret FROM mfa_enrollment_proposals
+          WHERE id=$1 AND user_id=$2 AND session_id=$3
+            AND session_token_hash=$4
+            AND status='PENDING' AND expires_at>now()
+          FOR UPDATE`,
+        [proposalId, ctx.userId, ctx.sessionId, ctx.sessionTokenHash],
+      );
+      if (rows.length !== 1 || typeof rows[0].encrypted_secret !== 'string') {
+        proposalDenied();
+      }
+      const plaintext = decryptFactor(rows[0].encrypted_secret);
+      const step = verifyTotp(plaintext, code, Number(account.mfa_totp_last_step));
+      if (step === null) throw new UnauthorizedException({ code: 'MFA_CODE_INVALID_OR_REPLAYED' });
+
+      const update = await client.query(
+        `UPDATE users SET mfa_totp_secret=$2, mfa_enabled_at=now(),
+                mfa_totp_last_step=$3
+          WHERE id=$1 AND mfa_totp_secret IS NULL AND mfa_enabled_at IS NULL`,
+        [ctx.userId, encryptFactor(plaintext), step],
+      );
+      if (update.rowCount !== 1) proposalDenied();
+      const recoveryCodes = newRecoveryCodes();
+      for (const code of recoveryCodes) {
+        await client.query(
+          `INSERT INTO mfa_recovery_codes(id,user_id,code_hash)
+           VALUES($1,$2,$3)`,
+          [uuidv7(), ctx.userId, hashRecoveryCode(code)],
+        );
+      }
+      const marked = await client.query(
+        `UPDATE mfa_enrollment_proposals
+            SET status='CONFIRMED', encrypted_secret=NULL, completed_at=now()
+          WHERE id=$1 AND user_id=$2 AND status='PENDING'`,
+        [proposalId, ctx.userId],
+      );
+      if (marked.rowCount !== 1) proposalDenied();
+
+      // The HTTP integration must rotate the opaque session token and CSRF
+      // before returning recovery codes. This low-level store cannot set
+      // cookies, and must not be exposed as a generic API operation.
+      return { confirmed: true as const, recoveryCodes };
+    });
+  }
+
+  async cancel(ctx: MfaEnrollmentSession, proposalId: string): Promise<void> {
+    this.assertContext(ctx);
+    return this.db.withUserContext(ctx.userId, async client => {
+      await this.lockAccountAndSession(client, ctx);
+      const update = await client.query(
+        `UPDATE mfa_enrollment_proposals
+            SET status='CANCELLED', encrypted_secret=NULL, completed_at=now()
+          WHERE id=$1 AND user_id=$2 AND session_id=$3
+            AND session_token_hash=$4 AND status='PENDING'`,
+        [proposalId, ctx.userId, ctx.sessionId, ctx.sessionTokenHash],
+      );
+      if (update.rowCount !== 1) proposalDenied();
+    });
+  }
+}
