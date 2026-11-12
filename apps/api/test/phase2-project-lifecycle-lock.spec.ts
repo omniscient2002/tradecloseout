@@ -30,7 +30,7 @@ describe('PH2-G05-005: project commercial-write lifecycle fence', () => {
       client_name: 'Contracted Client', mc_name: null,
       pmc_name: 'Engineering Consultant', contract_value_paise: '9007199254740993',
       target_handover_date: '2027-03-01', row_version: 3,
-    });
+    }, true); // caller has a live commercial capability
     expect(dto).toMatchObject({
       clientName: 'Contracted Client', mcName: null, pmcName: 'Engineering Consultant',
       contractValuePaise: '9007199254740993', targetHandoverDate: '2027-03-01',
@@ -38,6 +38,14 @@ describe('PH2-G05-005: project commercial-write lifecycle fence', () => {
     });
     expect(dto.approvedCount).toBeUndefined();
     expect(dto.retentionAtRiskPaise).toBeUndefined();
+    const restricted = service.projectDirectoryDto({
+      id: 'project-1', code: 'HVAC-01', name: 'HVAC plant',
+      status: 'ACTIVE', contract_value_paise: '9007199254740993',
+      settings_json: { retention_inr: 'HIDDEN' },
+    }, false);
+    expect(restricted.contractValuePaise).toBeNull();
+    expect(restricted.contract_value_paise).toBeNull();
+    expect(JSON.stringify(restricted)).not.toContain('HIDDEN');
   });
 
   it.each(['DRAFT', 'ACTIVE'])('permits %s commercial changes', async status => {
