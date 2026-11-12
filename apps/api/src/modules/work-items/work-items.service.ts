@@ -123,18 +123,18 @@ export class WorkItemsService {
       const projectFilterClause = `AND ($4::uuid IS NULL OR p.id = $4::uuid)`;
       const assetVisible = (alias: string): string => `
         AND (NOT (ap.scope ? 'assetIds') OR
-             (${alias.id IS NOT NULL AND (ap.scope->'assetIds' ? ${alias.id::text)))
+             (${alias}.id IS NOT NULL AND (ap.scope->'assetIds' ? ${alias}.id::text)))
         AND (NOT (ap.scope ? 'assetCategories') OR
-             (${alias.id IS NOT NULL AND (ap.scope->'assetCategories' ? ${alias.category_key)))
+             (${alias}.id IS NOT NULL AND (ap.scope->'assetCategories' ? ${alias}.category_key)))
         AND (NOT (ap.scope ? 'startDate') OR
-             (${alias.id IS NOT NULL AND ${alias.created_at::date >= (ap.scope->>'startDate')::date))
+             (${alias}.id IS NOT NULL AND ${alias}.created_at::date >= (ap.scope->>'startDate')::date))
         AND (NOT (ap.scope ? 'endDate') OR
-             (${alias.id IS NOT NULL AND ${alias.created_at::date <= (ap.scope->>'endDate')::date))
+             (${alias}.id IS NOT NULL AND ${alias}.created_at::date <= (ap.scope->>'endDate')::date))
       `;
       const requirementVisible = (alias: string): string => `
-        AND (NOT (ap.scope ? 'requirementIds') OR (ap.scope->'requirementIds' ? ${alias.id::text))
-        AND (NOT (ap.scope ? 'requirementGroups') OR (ap.scope->'requirementGroups' ? ${alias.group_key))
-        AND (NOT (ap.scope ? 'documentTypes') OR (ap.scope->'documentTypes' ? ${alias.doc_type_key))
+        AND (NOT (ap.scope ? 'requirementIds') OR (ap.scope->'requirementIds' ? ${alias}.id::text))
+        AND (NOT (ap.scope ? 'requirementGroups') OR (ap.scope->'requirementGroups' ? ${alias}.group_key))
+        AND (NOT (ap.scope ? 'documentTypes') OR (ap.scope->'documentTypes' ? ${alias}.doc_type_key))
       `;
       const documentVisible = `
         AND (NOT (ap.scope ? 'documentIds') OR (ap.scope->'documentIds' ? d.id::text))
@@ -164,7 +164,7 @@ export class WorkItemsService {
               AND la.deleted_at IS NULL
              WHERE da.org_id = d.org_id AND da.project_id = d.project_id
                AND da.document_id = d.id
-               AND NOT (true ${assetVisible('la'))
+               AND NOT (true ${assetVisible('la')})
           )))
       `;
       // 1. Pending Submittal Reviews
