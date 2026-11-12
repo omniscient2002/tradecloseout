@@ -1155,6 +1155,11 @@ export class WarrantyAndBillingService {
         }
       } else {
         await this.assertMemberDefectScope(client, ctx, defect, false);
+        if (ctx.actorType === 'MEMBER' &&
+            ['R-SITE', 'R-SUBCONTRACTOR'].includes(ctx.projectRole || '') &&
+            defect.assigned_user_id !== ctx.userId) {
+          throw new NotFoundException({ code: 'DEFECT_NOT_FOUND' });
+        }
       }
       const { rows: events } = await client.query(
         `SELECT id, action, from_status, to_status,
