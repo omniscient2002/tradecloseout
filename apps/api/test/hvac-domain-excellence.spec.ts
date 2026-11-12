@@ -96,6 +96,8 @@ describe('HVAC Domain Excellence Suite (XP11..XP18)', () => {
             if (sql.includes('FROM assets WHERE')) {
               return { rows: [] }; // No existing tags
             }
+            if (sql.includes('FROM projects')) return { rows: [{ status: 'ACTIVE' }] };
+            if (sql.includes('FROM memberships')) return { rows: [{ role: 'R-OWNER' }] };
             if (sql.includes('INSERT INTO assets')) {
               executedInserts.push(params);
               return { rowCount: 1, rows: [{ id: params[0], tag: params[3] }] };
@@ -223,6 +225,7 @@ describe('HVAC Domain Excellence Suite (XP11..XP18)', () => {
       const mockPool: any = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string) => {
+            if (sql.includes('FROM memberships')) return { rows: [{ role: 'R-OWNER' }] };
             if (sql.includes('FROM assets')) {
               return {
                 rows: [
@@ -488,6 +491,14 @@ describe('HVAC Domain Excellence Suite (XP11..XP18)', () => {
         const independentUserId = uuidv7();
         await admin.query(`INSERT INTO users (id, name, status) VALUES ($1, 'Independent Verifier', 'ACTIVE')`, [independentUserId]);
         await admin.query(`INSERT INTO memberships (id, org_id, user_id, role, status) VALUES ($1, $2, $3, 'R-PM', 'ACTIVE')`, [uuidv7(), orgIdA, independentUserId]);
+
+        // Independent reviewer is a current project member, not just an
+        // organisation member. This preserves the live asset scope check.
+        await admin.query(
+          `INSERT INTO project_members (id, org_id, project_id, user_id, role, scope_json, status, added_by)
+            VALUES ($1, $2, $3, $4, 'R-PM', '{}'::jsonb, 'ACTIVE', $5)`,
+          [uuidv7(), orgIdA, projectA0, independentUserId, seededUserId],
+        );
 
         const ctxA: TenantActorContext = {
           orgId: orgIdA,
