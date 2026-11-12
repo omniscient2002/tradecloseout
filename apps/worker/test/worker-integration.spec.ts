@@ -39,6 +39,8 @@ void test('PH1-G27-005: worker diagnostic egress and package failure persistence
       reportWorkerFailure('SCHEDULER_LOCK_RELEASE_FAILED', malicious, secret);
       assert.equal(safeWorkerErrorCategory(databaseError), 'DB_UNIQUE_CONFLICT');
       assert.equal(safeWorkerErrorCategory(malicious), 'UNCLASSIFIED');
+      assert.equal(safeWorkerErrorCategory({ code: '__proto__' }), 'UNCLASSIFIED');
+      assert.equal(safeWorkerErrorCategory({ code: 'constructor' }), 'UNCLASSIFIED');
       assert.equal(jobFingerprint(secret)?.length, 16);
       assert(!logs.join(' ').includes(secret));
       assert(logs.some(row => row.includes('OUTBOX_EVENT_DISPATCH_FAILED')));
