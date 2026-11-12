@@ -106,6 +106,13 @@ export class DocumentsService {
              WHERE dr.org_id = d.org_id AND dr.project_id = d.project_id
                AND dr.document_id = d.id
                AND NOT (g.scope_json->'requirementIds' ? dr.requirement_id::text))
+          AND NOT EXISTS (
+            SELECT 1 FROM document_assets da
+             WHERE da.org_id = d.org_id AND da.project_id = d.project_id
+               AND da.document_id = d.id
+               AND NOT COALESCE(
+                 jsonb_typeof(g.scope_json->'assetIds') = 'array'
+                   AND (g.scope_json->'assetIds' ? da.asset_id::text), false))
         LIMIT 1
         FOR SHARE OF g, p, party`,
       [ctx.orgId, ctx.guestGrantId, versionId, capability],
@@ -274,6 +281,13 @@ export class DocumentsService {
                  WHERE dr.org_id = d.org_id AND dr.project_id = d.project_id
                    AND dr.document_id = d.id
                    AND NOT (g.scope_json->'requirementIds' ? dr.requirement_id::text))
+              AND NOT EXISTS (
+                SELECT 1 FROM document_assets da
+                 WHERE da.org_id = d.org_id AND da.project_id = d.project_id
+                   AND da.document_id = d.id
+                   AND NOT COALESCE(
+                     jsonb_typeof(g.scope_json->'assetIds') = 'array'
+                       AND (g.scope_json->'assetIds' ? da.asset_id::text), false))
             ORDER BY dv.version_no DESC`,
           [ctx.orgId, ctx.guestGrantId, documentId],
         );
@@ -441,8 +455,13 @@ export class DocumentsService {
                    WHERE dr.org_id = d.org_id AND dr.project_id = d.project_id
                      AND dr.document_id = d.id
                      AND NOT (dr.requirement_id::text = ANY($5::text[])))
+                AND NOT EXISTS (
+                  SELECT 1 FROM document_assets da
+                   WHERE da.org_id = d.org_id AND da.project_id = d.project_id
+                     AND da.document_id = d.id
+                     AND NOT (da.asset_id::text = ANY($6::text[])))
               LIMIT 1`,
-            [ctx.orgId, projectId, existingId, guestGrantId, allowedRequirements],
+            [ctx.orgId, projectId, existingId, guestGrantId, allowedRequirements, allowedAssets],
           );
           if (!owned.rows.length) throw new NotFoundException('DOCUMENT_NOT_FOUND_IN_PROJECT');
         }
