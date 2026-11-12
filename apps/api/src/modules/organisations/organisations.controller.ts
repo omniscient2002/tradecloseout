@@ -28,7 +28,7 @@ export class OrganisationsController {
   }
 
   @Get('audit')
-  @RequirePermission('org.read')
+  @RequirePermission('audit.read')
   async getAuditLog(@Req() req: any, @Param('orgId') orgId: string) {
     return this.orgsService.getAuditLog(req.userContext, orgId);
   }
