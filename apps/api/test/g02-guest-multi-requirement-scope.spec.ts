@@ -82,7 +82,9 @@ describe('PH1-G02-006 — guest version and detail scope (restricted PostgreSQL 
 
       const signer = {
         createSignedDownloadUrl: jest.fn().mockResolvedValue('https://signed.example.test/file'),
-        createUploadUrls: jest.fn(),
+        createUploadUrls: jest.fn().mockResolvedValue({
+          uploadId: null, partSizeBytes: 1024, parts: [],
+        }),
         refreshUploadUrls: jest.fn().mockResolvedValue({ parts: [], expiresInSeconds: 900 }),
         finalizeUpload: jest.fn(),
         abortUpload: jest.fn(),
@@ -98,6 +100,12 @@ describe('PH1-G02-006 — guest version and detail scope (restricted PostgreSQL 
         await expect(service.refreshUploadUrls(ctx, pendingVersionId)).rejects.toThrow('VERSION_NOT_FOUND');
         await expect(service.completeUpload(ctx, pendingVersionId)).rejects.toThrow('VERSION_NOT_FOUND');
         await expect(service.abortUpload(ctx, pendingVersionId)).rejects.toThrow('VERSION_NOT_FOUND');
+        await expect(service.createUploadIntent(ctx, projectId, {
+          documentId, requirementId: allowedRequirementId,
+          mimeType: 'application/pdf', fileName: 'forbidden-revision.pdf', sizeBytes: 1024,
+          revisionCode: 'R3',
+        })).rejects.toThrow('DOCUMENT_NOT_FOUND_IN_PROJECT');
+        expect(signer.createUploadUrls).not.toHaveBeenCalled();
         expect(signer.createSignedDownloadUrl).not.toHaveBeenCalled();
         expect(signer.refreshUploadUrls).not.toHaveBeenCalled();
         expect(signer.finalizeUpload).not.toHaveBeenCalled();
@@ -121,6 +129,16 @@ describe('PH1-G02-006 — guest version and detail scope (restricted PostgreSQL 
       expect(signer.createSignedDownloadUrl).toHaveBeenCalledTimes(1);
       expect(signer.refreshUploadUrls).toHaveBeenCalledTimes(1);
 
+      // After a scope extension, a guest may revise their own version of a
+      // fully-in-scope document; a mixed-scope parent was denied above.
+      const revised = await service.createUploadIntent(ctx, projectId, {
+        documentId, requirementId: allowedRequirementId,
+        mimeType: 'application/pdf', fileName: 'allowed-revision.pdf', sizeBytes: 1024,
+        revisionCode: 'R3',
+      });
+      expect(revised.documentId).toBe(documentId);
+      expect(signer.createUploadUrls).toHaveBeenCalledTimes(1);
+
       await admin.query("UPDATE projects SET status='CLOSED' WHERE org_id=$1 AND id=$2", [a.orgId, projectId]);
       await expect(service.refreshUploadUrls(ctx, pendingVersionId)).rejects.toThrow('VERSION_NOT_FOUND');
       expect(signer.refreshUploadUrls).toHaveBeenCalledTimes(1);
@@ -136,7 +154,7 @@ describe('PH1-G02-006 — guest version and detail scope (restricted PostgreSQL 
         mimeType: 'application/pdf', fileName: 'denied.pdf', sizeBytes: 1024,
         requirementId: allowedRequirementId,
       })).rejects.toThrow('RESOURCE_OUTSIDE_GUEST_SCOPE');
-      expect(signer.createUploadUrls).not.toHaveBeenCalled();
+      expect(signer.createUploadUrls).toHaveBeenCalledTimes(1);
       expect(signer.createSignedDownloadUrl).toHaveBeenCalledTimes(1);
       expect(signer.refreshUploadUrls).toHaveBeenCalledTimes(1);
       await admin.query("UPDATE parties SET status='ACTIVE' WHERE org_id=$1 AND id=$2", [a.orgId, partyId]);
