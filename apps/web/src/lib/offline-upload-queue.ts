@@ -337,8 +337,14 @@ export async function recoverOfflineUploadDraft(queueId: string): Promise<void> 
       if (!epoch || (item.actorEpoch && item.actorEpoch === epoch)) {
         throw new Error('UPLOAD_RECOVERY_REQUIRES_OLD_SESSION_DRAFT');
       }
-      if (item.uploadIntent || item.uploadedParts.length > 0 ||
-          item.completedUploadAt || item.completionRequestedAt) {
+      // "No local uploadIntent" does NOT prove the POST never reached the
+      // server: its response may have been lost before the browser checkpoint.
+      // Only never-drained, truly offline QUEUED_OFFLINE captures can be
+      // rebound. Any send/retry history demands authoritative reconciliation.
+      if (item.status !== 'QUEUED_OFFLINE' ||
+          item.uploadIntent || item.uploadedParts.length > 0 ||
+          item.completedUploadAt || item.completionRequestedAt ||
+          item.retryCount || item.nextAttemptAt || item.terminalFailure) {
         throw new Error('UPLOAD_REMOTE_INTENT_RECOVERY_UNSUPPORTED: Inspect or discard the remote intent first.');
       }
 
