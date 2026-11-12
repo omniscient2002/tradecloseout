@@ -13,7 +13,7 @@ import { createHash } from 'crypto';
 import { withTenantTransaction, consumePlanQuota, TenantActorContext } from '@tradecloseout/db/tenant-tx';
 import { S3StorageService } from '../documents/s3-storage.service';
 import { canonicalJson } from '@tradecloseout/shared';
-import { evaluateReadinessInTransaction } from './closeout-readiness';
+import { evaluateReadinessInTransaction, QUALIFIED_WAIVER_PREDICATE } from './closeout-readiness';
 
 @Injectable()
 export class HandoverService {
@@ -85,9 +85,8 @@ export class HandoverService {
             AND NOT EXISTS (
               SELECT 1 FROM waivers w
                WHERE w.org_id = r.org_id AND w.project_id = r.project_id
-                 AND w.requirement_id = r.id AND w.status = 'ACTIVE'
-                 AND w.type IN ('WAIVE', 'NOT_APPLICABLE')
-                 AND w.second_approved_by IS NOT NULL AND w.second_approved_by <> w.approved_by
+                 AND w.requirement_id = r.id
+                 AND ${QUALIFIED_WAIVER_PREDICATE}
             )
             AND NOT EXISTS (
               SELECT 1
@@ -181,9 +180,8 @@ export class HandoverService {
                 (
                   SELECT w.type FROM waivers w
                    WHERE w.org_id = r.org_id AND w.project_id = r.project_id
-                     AND w.requirement_id = r.id AND w.status = 'ACTIVE'
-                     AND w.type IN ('WAIVE', 'NOT_APPLICABLE')
-                     AND (NOT r.mandatory OR (w.second_approved_by IS NOT NULL AND w.second_approved_by <> w.approved_by))
+                     AND w.requirement_id = r.id
+                     AND ${QUALIFIED_WAIVER_PREDICATE}
                    ORDER BY w.approved_at DESC, w.id DESC LIMIT 1
                 ) AS valid_waiver_type,
                 a.tag AS asset_tag
