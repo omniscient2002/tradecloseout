@@ -2,6 +2,7 @@ import { Pool, PoolClient } from 'pg';
 import { createHash } from 'crypto';
 import { uuidv7 } from 'uuidv7';
 import { assertLiveSessionEligibleInTransaction } from './session-authority';
+import { buildTrustedOutboxPayload } from './outbox-envelope';
 
 export interface TenantActorContext {
   orgId: string;       // Must come exclusively from session.active_org_id (AUD-014)
@@ -114,19 +115,16 @@ export async function withTenantTransaction<T>(
           ctx.orgId,
           ev.projectId ?? null,
           ev.eventType,
-          JSON.stringify({
-            // Untrusted metadata is intentionally placed first: it must never
-            // override the immutable event identity or trusted actor envelope.
-            ...(ev.afterJson ? redactSensitiveFields(ev.afterJson) : {}),
+          JSON.stringify(buildTrustedOutboxPayload({
             eventId,
+            eventType: ev.eventType,
             orgId: ctx.orgId,
             projectId: ev.projectId ?? null,
             entityType: ev.entityType,
             entityId: ev.entityId,
-            packageId: ev.entityType === 'HANDOVER_PACKAGE' ? ev.entityId : undefined,
             actorUserId: ctx.userId,
             requestId: ctx.requestId,
-          }),
+          }, ev.afterJson ? redactSensitiveFields(ev.afterJson) : null)),
         ],
       );
 
