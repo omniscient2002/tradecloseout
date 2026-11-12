@@ -73,6 +73,7 @@ export class SessionCsrfGuard implements CanActivate {
               s.guest_grant_id,
               u.name AS user_name,
               u.status AS user_status,
+              u.mfa_enabled_at,
               o.status AS org_status
          FROM sessions s
          JOIN users u ON u.id = s.user_id
@@ -190,7 +191,8 @@ export class SessionCsrfGuard implements CanActivate {
       process.env.NODE_ENV !== 'development' ||
       process.env.AUTH_REQUIRE_PRIVILEGED_MFA === 'true';
     if (enforceMfa && !session.guest_grant_id &&
-        PRIVILEGED_MFA_ROLES.has(orgRole) && session.mfa_verified !== true) {
+        PRIVILEGED_MFA_ROLES.has(orgRole) &&
+        (session.mfa_verified !== true || !session.mfa_enabled_at)) {
       const routePath = String(req.originalUrl || req.path || '').split('?')[0].replace(/\/$/, '');
       const routeKey = `${req.method.toUpperCase()} ${routePath}`;
       if (!PRE_MFA_ROUTES.has(routeKey)) {
@@ -287,7 +289,7 @@ export class SessionCsrfGuard implements CanActivate {
       requestId: (req.headers['x-request-id'] as string) || 'req_unknown',
       ip: req.ip || '0.0.0.0',
       userAgent: (req.headers['user-agent'] as string) || 'unknown',
-      mfaVerified: session.mfa_verified === true,
+      mfaVerified: session.mfa_verified === true && Boolean(session.mfa_enabled_at),
     };
 
     req.auth = authData;
