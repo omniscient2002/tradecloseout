@@ -13,6 +13,7 @@ import {
 import { Injectable, ServiceUnavailableException, UnprocessableEntityException } from '@nestjs/common';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { ObjectStoragePresigner } from './documents.service';
+import { isImmutableStorageVersion } from '@tradecloseout/shared';
 
 const MULTIPART_THRESHOLD_BYTES = 10 * 1024 * 1024;
 const MULTIPART_PART_BYTES = 5 * 1024 * 1024;
@@ -166,7 +167,7 @@ export class S3StorageService implements ObjectStoragePresigner {
         detail: `Provider object size ${head.ContentLength ?? 'unknown'} does not match declared size ${params.expectedSizeBytes}.`,
       });
     }
-    if (!head.VersionId) {
+    if (!isImmutableStorageVersion(head.VersionId)) {
       throw new ServiceUnavailableException({
         code: 'OBJECT_VERSIONING_REQUIRED',
         detail: 'The storage bucket did not return an immutable object version. Enable provider versioning before accepting uploads.',
