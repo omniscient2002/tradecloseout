@@ -843,7 +843,7 @@ export class DocumentsService {
    * Generates 15-minute temporary signed download URL (TC-DOC-01: blocks PROCESSING, QUARANTINED, FAILED).
    */
   async getDownloadUrl(ctx: ExecutionContext, versionId: string) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+    const version = await this.db.withTenantContext(ctx, async (client: PoolClient) => {
       const verRes = await client.query(
         `SELECT dv.*, d.doc_type_key, d.category_key, d.created_at AS document_created_at,
                 so.object_key, so.mime, so.size_bytes, so.provider_version_id,
@@ -871,6 +871,9 @@ export class DocumentsService {
         });
       }
 
+      return version;
+    });
+
       const downloadUrl = await this.storageAdapter.createSignedDownloadUrl({
         objectKey: version.object_key,
         filename: `${version.revision_code || 'document'}.pdf`,
@@ -883,15 +886,13 @@ export class DocumentsService {
         mime: version.mime,
         sizeBytes: version.size_bytes,
       };
-    });
   }
-
   /**
    * API-089 GET /document-versions/:id/preview-url
    * Generates 15-minute temporary inline preview URL.
    */
   async getPreviewUrl(ctx: ExecutionContext, versionId: string) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+    const version = await this.db.withTenantContext(ctx, async (client: PoolClient) => {
       const verRes = await client.query(
         `SELECT dv.*, d.doc_type_key, d.category_key, d.created_at AS document_created_at,
                 so.object_key, so.mime, so.size_bytes, so.provider_version_id,
@@ -919,6 +920,9 @@ export class DocumentsService {
         });
       }
 
+      return version;
+    });
+
       const previewUrl = await this.storageAdapter.createSignedDownloadUrl({
         objectKey: version.object_key,
         inline: true,
@@ -930,9 +934,7 @@ export class DocumentsService {
         mime: version.mime,
         expiresInSeconds: 900,
       };
-    });
   }
-
   /**
    * API-089 / Stream: Streams verified PDF bytes to browser viewer
    */
