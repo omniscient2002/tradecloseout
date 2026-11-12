@@ -94,7 +94,7 @@ export async function withTenantTransaction<T>(
             packageId: ev.entityType === 'HANDOVER_PACKAGE' ? ev.entityId : undefined,
             actorUserId: ctx.userId,
             requestId: ctx.requestId,
-            ...(ev.afterJson || {}),
+            ...(ev.afterJson ? redactSensitiveFields(ev.afterJson) : {}),
           }),
         ],
       );
