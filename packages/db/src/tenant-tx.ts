@@ -86,6 +86,9 @@ export async function withTenantTransaction<T>(
           ev.projectId ?? null,
           ev.eventType,
           JSON.stringify({
+            // Untrusted metadata is intentionally placed first: it must never
+            // override the immutable event identity or trusted actor envelope.
+            ...(ev.afterJson ? redactSensitiveFields(ev.afterJson) : {}),
             eventId,
             orgId: ctx.orgId,
             projectId: ev.projectId ?? null,
@@ -94,7 +97,6 @@ export async function withTenantTransaction<T>(
             packageId: ev.entityType === 'HANDOVER_PACKAGE' ? ev.entityId : undefined,
             actorUserId: ctx.userId,
             requestId: ctx.requestId,
-            ...(ev.afterJson ? redactSensitiveFields(ev.afterJson) : {}),
           }),
         ],
       );
