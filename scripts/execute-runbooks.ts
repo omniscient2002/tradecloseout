@@ -35,9 +35,9 @@ async function executeRunbook() {
         if (identity.rows[0]?.login !== 'tc_incident_operator') {
           throw new Error('Incident runbooks require the tc_incident_operator database role.');
         }
+        await client.query("SELECT set_config('app.current_org', $1, true)", [args.orgId]);
         const org = await client.query('SELECT id FROM organisations WHERE id = $1', [args.orgId]);
         if (org.rowCount !== 1) throw new Error('Incident organisation not found.');
-        await client.query("SELECT set_config('app.current_org', $1, true)", [args.orgId]);
 
         let targetCount = 0;
         let affected = 0;
