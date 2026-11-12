@@ -79,7 +79,8 @@ export function UploadEvidenceModal({
 
   const recoverDraft = async (draft: OfflineUploadDraftSummary) => {
     if (!window.confirm("Recover " + draft.filename +
-        " from your previous session? The server will recheck your identity, project and upload permission. No remote upload will be started by this action.")) return;
+        " for project " + draft.projectId + ", requirement " + draft.requirementId +
+        " from your previous session? The server will recheck your identity and upload permission. No remote upload will be started by this action.")) return;
     setRecoveringId(draft.queueId);
     setDraftsError(null);
     try {
@@ -245,6 +246,10 @@ export function UploadEvidenceModal({
                     <span className="break-all font-semibold">{draft.filename}</span>
                     <span className="block text-slate-600">
                       {draft.status.replaceAll("_", " ")} · {(draft.sizeBytes / 1024 / 1024).toFixed(1)} MiB
+                    </span>
+                    <span className="block text-slate-500 break-all">
+                      Project: {draft.projectId === projectId ? "Current project" : draft.projectId}
+                      {" · "}Requirement: {draft.requirementId === requirement.id ? "Current requirement" : draft.requirementId}
                     </span>
                     {draft.lastError && <span className="block text-red-700">{draft.lastError}</span>}
                   </div>
