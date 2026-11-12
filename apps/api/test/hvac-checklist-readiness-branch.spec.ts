@@ -143,7 +143,10 @@ describe('HVAC checklist and readiness release gates', () => {
     const insert = client.query.mock.calls.find(([sql]: any[]) => sql.includes('INSERT INTO projects'));
     expect(insert).toBeDefined();
     expect(insert![0]).toContain('project_type');
-    expect(insert![1][insert![1].length - 1]).toBe('HOSPITAL');
+    // Project type stays in its named bind position; the canonical contract
+    // value is now a separate trailing parameter and may be NULL.
+    expect(insert![1][12]).toBe('HOSPITAL');
+    expect(insert![1][13]).toBeNull();
   });
 
   it('rejects unrecognised project types before touching the database', async () => {
