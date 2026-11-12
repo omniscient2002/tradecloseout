@@ -44,7 +44,7 @@ describe('PH3-G21-001/004/006 — actionable work queue resource isolation', () 
              (id,org_id,project_id,asset_id,title,description,status,severity,
               raised_by,assigned_user_id,due_at)
            VALUES ($1,$2,$3,$4,$5,'Needs remedy','OPEN','HIGH',$6,$6,$7)`,
-          [defect,orgId,projectId,tag,userId,'2026-12-03T00:00:00.000Z'],
+          [defect,orgId,projectId,asset,tag,userId,'2026-12-03T00:00:00.000Z'],
         );
       }
       const service = new WorkItemsService(app);
