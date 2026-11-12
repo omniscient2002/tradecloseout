@@ -322,6 +322,35 @@ test('remote abort already committed can be reconciled before local discard', as
   expect(result).toEqual({ abortCalls: 1, remaining: 0 });
 });
 
+test('same-user reauthentication permits explicit discard after a previously committed abort', async ({ page }) => {
+  await fixture(page, false);
+  const result = await page.evaluate(async () => {
+    const q = (window as any).__queue;
+    const base = (window as any).__apiFetch;
+    let aborts = 0;
+    (window as any).__apiFetch = async (url: string, opts?: { method?: string }) => {
+      if (url.endsWith('/complete')) throw new Error('Completion response dropped');
+      if (url.endsWith('/abort-upload')) {
+        aborts++;
+        const error = new q.ApiProblemError('Already aborted');
+        error.status = 409;
+        throw error;
+      }
+      if (url.endsWith('/upload-state')) {
+        return { versionId: 'version-one', fileStatus: 'FAILED', storageStatus: 'ABORTED' };
+      }
+      return base(url, opts);
+    };
+    await q.drainOfflineUploadQueue();
+    q.setOfflineActorPartition(null);
+    q.setOfflineActorPartition('actor-original');
+    const drafts = await q.listOfflineUploadDrafts();
+    await q.discardOfflineUploadDraft(drafts[0].queueId);
+    return { before: drafts[0].status, aborts, remaining: (await q.listOfflineUploadDrafts()).length };
+  });
+  expect(result).toEqual({ before: 'BLOCKED_SCOPE', aborts: 1, remaining: 0 });
+});
+
 test('remote abort forbidden never deletes local original', async ({ page }) => {
   await fixture(page, false);
   const result = await page.evaluate(async () => {
