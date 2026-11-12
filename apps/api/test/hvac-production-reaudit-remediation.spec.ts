@@ -387,6 +387,7 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
                     sha256: 'a'.repeat(64),
                     size_bytes: 512,
                     observed_size_bytes: 512,
+                    av_scanned_at: '2026-11-12T10:00:00.000Z',
                     linked_in_project: false,
                     linked_in_other_project: true,
                   },
