@@ -2,6 +2,7 @@
 // Comprehensive Test Suite for Phase 0 & Phase 1 Invariants (TC2-001 to TC2-028)
 
 import { PoolClient } from 'pg';
+import { GetBucketVersioningCommand } from '@aws-sdk/client-s3';
 import { uuidv7 } from 'uuidv7';
 import { NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { TenantDbService } from '../src/database/tenant-db.service';
@@ -525,6 +526,12 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
       try {
       const { S3StorageService } = await import('../src/modules/documents/s3-storage.service');
       const storage = new S3StorageService();
+      // Protocol simulation: presigned URLs only become available after the
+      // backing bucket reports enabled immutable versioning.
+      (storage as any).client.send = jest.fn(async (command: any) => {
+        if (command instanceof GetBucketVersioningCommand) return { Status: 'Enabled' };
+        throw new Error('UNEXPECTED_STORAGE_NETWORK_REQUEST');
+      });
 
       const uploadResult = await storage.createUploadUrls({
         objectKey: 'orgs/test/projects/p1/doc.pdf',
@@ -540,6 +547,7 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
       const downloadUrl = await storage.createSignedDownloadUrl({
         objectKey: 'orgs/test/projects/p1/doc.pdf',
         filename: 'cert.pdf',
+        versionId: 'fixture-immutable-v1',
       });
 
       expect(downloadUrl).toContain('X-Amz-Algorithm=AWS4-HMAC-SHA256');
