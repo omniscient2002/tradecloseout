@@ -32,7 +32,7 @@ export function isExpiredOnIndiaDate(expiryDate: string | Date, now = new Date()
  */
 export function assertReviewVersionNotTerminal(status: unknown): void {
   if (status === 'APPROVED' || status === 'REJECTED' ||
-      status === 'CHANGES_REQUESTED' || status === 'SUPERSEDED') {
+      status === 'CHANGES_REQUESTED' || status === 'SUPERSEDED' || status === 'WITHDRAWN') {
     throw new ConflictException('DOCUMENT_VERSION_ALREADY_DECIDED');
   }
 }
@@ -823,6 +823,18 @@ export class ReviewsService {
             dto.backdatingReason || null,
             false,
           ],
+        );
+        // Do not leave these linked obligations showing IN_REVIEW after a
+        // terminal rejection/change request. Preserve existing APPROVED
+        // obligations which may have been qualified by other evidence.
+        await client.query(
+          `UPDATE requirements
+              SET status = $1, row_version = row_version + 1, updated_at = now()
+            WHERE org_id = $2 AND project_id = $3
+              AND id IN (SELECT requirement_id FROM document_requirements
+                           WHERE org_id = $2 AND project_id = $3 AND document_id = $4)
+              AND status IN ('IN_REVIEW', 'UNDER_REVIEW', 'UPLOADED', 'REQUESTED')`,
+          [nextStatus, ctx.orgId, version.project_id, doc.id],
         );
       }
 
