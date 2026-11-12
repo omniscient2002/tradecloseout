@@ -710,11 +710,13 @@ export class DocumentsService {
         `SELECT dv.*, so.id AS storage_id, so.object_key, so.bucket, so.s3_upload_id,
                 so.expected_sha256, so.size_bytes AS storage_size_bytes,
                 so.provider_version_id, so.original_filename, d.id AS doc_id, d.title AS doc_title,
+                d.doc_type_key, d.category_key, d.created_at AS document_created_at,
                 d.current_approved_version_id
            FROM document_versions dv
-           JOIN storage_objects so ON so.id = dv.object_id
-           JOIN documents d ON d.id = dv.document_id
-          WHERE dv.org_id = $1 AND dv.id = $2 FOR UPDATE OF dv`,
+           JOIN storage_objects so ON so.org_id = dv.org_id AND so.id = dv.object_id
+           JOIN documents d ON d.org_id = dv.org_id AND d.project_id = dv.project_id AND d.id = dv.document_id
+          WHERE dv.org_id = $1 AND dv.id = $2
+            AND dv.deleted_at IS NULL AND d.deleted_at IS NULL FOR UPDATE OF dv`,
         [ctx.orgId, versionId],
       );
 
@@ -723,6 +725,7 @@ export class DocumentsService {
       }
       await this.assertGuestVersionScope(client, ctx, versionId, 'document.upload');
       const version = verRes.rows[0];
+      await this.assertMemberVersionScope(client, ctx, version, 'document.upload');
       if (version.file_status !== 'PENDING_UPLOAD') {
         if (['PROCESSING', 'READY'].includes(version.file_status) && version.provider_version_id) {
           return {
@@ -820,9 +823,13 @@ export class DocumentsService {
   async abortUpload(ctx: ExecutionContext, versionId: string) {
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
       const verRes = await client.query(
-        `SELECT dv.*, so.id AS storage_id, so.object_key, so.s3_upload_id FROM document_versions dv
-           JOIN storage_objects so ON so.id = dv.object_id
-          WHERE dv.org_id = $1 AND dv.id = $2`,
+        `SELECT dv.*, so.id AS storage_id, so.object_key, so.s3_upload_id,
+                  d.doc_type_key, d.category_key, d.created_at AS document_created_at
+           FROM document_versions dv
+           JOIN storage_objects so ON so.org_id = dv.org_id AND so.id = dv.object_id
+           JOIN documents d ON d.org_id = dv.org_id AND d.project_id = dv.project_id AND d.id = dv.document_id
+          WHERE dv.org_id = $1 AND dv.id = $2
+            AND dv.deleted_at IS NULL AND d.deleted_at IS NULL`,
         [ctx.orgId, versionId],
       );
       if (!verRes.rows.length) {
@@ -830,6 +837,7 @@ export class DocumentsService {
       }
       await this.assertGuestVersionScope(client, ctx, versionId, 'document.upload');
       const version = verRes.rows[0];
+      await this.assertMemberVersionScope(client, ctx, version, 'document.upload');
 
       if (version.file_status !== 'PENDING_UPLOAD') {
         throw new ConflictException(`UPLOAD_CANNOT_ABORT_FROM_${version.file_status}`);
