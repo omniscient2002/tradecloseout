@@ -18,6 +18,7 @@ import { compileAndPersistHandoverPackage, markHandoverPackageFailed } from './q
 import { compileAndPersistPortableArchive } from './queues/portable-archive.processor';
 import { BoundedByteStream } from './queues/bounded-stream';
 import { OUTBOX_EVENT_REGISTRY } from './event-registry';
+import { jobFingerprint, reportWorkerFailure } from './safe-worker-errors';
 
 const execFileAsync = promisify(execFile);
 
@@ -45,8 +46,8 @@ const s3 = new S3Client({
 
 async function checkDependencies() {
   try {
-    const { stdout } = await execFileAsync('qpdf', ['--version']);
-    console.log('✓ qpdf engine detected:', stdout.split('\n')[0]);
+    await execFileAsync('qpdf', ['--version']);
+    console.log('✓ qpdf engine detected');
     qpdfAvailable = true;
   } catch {
     console.warn('! qpdf binary not found in PATH; install qpdf for out-of-process PDF linearization.');
@@ -135,7 +136,7 @@ async function bootWorker() {
         console.log(`[Scheduler] Dispatched ${sentNotifications} queued notifications.`);
       }
     } catch (err) {
-      console.error('[Scheduler Error]:', err);
+      reportWorkerFailure('SCHEDULER_CYCLE_FAILED', err);
     }
   };
 
@@ -152,7 +153,7 @@ async function bootWorker() {
   const fileWorker = new Worker(
     'file-processing',
     async (job) => {
-      console.log(`[BullMQ] Processing file job ${job.id}`);
+      console.log(`[BullMQ] Processing file job ${jobFingerprint(job.id) ?? 'unknown'}`);
       const { originalFilename, expectedSha256, clamdHost, clamdPort, versionId, orgId, storageObjectId,
         bucket, objectKey, providerVersionId } = job.data;
       if (!versionId || !orgId || !storageObjectId || !bucket || !objectKey || !providerVersionId) {
@@ -300,7 +301,7 @@ async function bootWorker() {
   const pdfWorker = new Worker(
     'pdf-compilation',
     async (job) => {
-      console.log(`[BullMQ] Compiling PDF package job ${job.id}`);
+      console.log(`[BullMQ] Compiling PDF package job ${jobFingerprint(job.id) ?? 'unknown'}`);
       try {
         return await compileAndPersistHandoverPackage(pool, s3, job.data, String(job.id), qpdfAvailable);
       } catch (err) {
@@ -316,7 +317,7 @@ async function bootWorker() {
   const formatWorker = new Worker(
     'format-conversion',
     async (job) => {
-      console.log(`[BullMQ] Converting format job ${job.id}`);
+      console.log(`[BullMQ] Converting format job ${jobFingerprint(job.id) ?? 'unknown'}`);
       return await convertSupportingFormatToPdf(job.data);
     },
     { connection: redis, concurrency: 2 },
@@ -325,14 +326,14 @@ async function bootWorker() {
   const archiveWorker = new Worker(
     'archive-export',
     async (job) => {
-      console.log(`[BullMQ] Compiling portable archive job ${job.id}`);
+      console.log(`[BullMQ] Compiling portable archive job ${jobFingerprint(job.id) ?? 'unknown'}`);
       return await compileAndPersistPortableArchive(pool, s3, job.data);
     },
     { connection: redis, concurrency: 2 },
   );
 
   fileWorker.on('failed', async (job, err) => {
-    console.error(`Job ${job?.id} failed:`, err);
+    reportWorkerFailure('FILE_JOB_FAILED', err, job?.id);
     if (!job || job.attemptsMade < Number(job.opts.attempts || 1)) return;
 
     const { orgId, versionId, storageObjectId, providerVersionId } = job.data;
@@ -379,18 +380,18 @@ async function bootWorker() {
       await client.query('COMMIT');
     } catch (persistError) {
       await client.query('ROLLBACK').catch(() => {});
-      console.error(`Could not persist terminal file failure for job ${job.id}:`, persistError);
+      reportWorkerFailure('FILE_FAILURE_PERSIST_FAILED', persistError, job.id);
     } finally {
       client.release();
     }
   });
   pdfWorker.on('failed', (job, err) => {
-    console.error(`Job ${job?.id} failed:`, err);
+    reportWorkerFailure('PDF_JOB_FAILED', err, job?.id);
     if (job && job.attemptsMade >= Number(job.opts.attempts || 1)) {
       void markHandoverPackageFailed(pool, job.data, String(job.id), err);
     }
   });
-  formatWorker.on('failed', (job, err) => console.error(`Job ${job?.id} failed:`, err));
+  formatWorker.on('failed', (job, err) => reportWorkerFailure('FORMAT_JOB_FAILED', err, job?.id));
 
   // 4. Outbox Poller (every 2s) with durable transaction locking (TC2-005)
   const pollOutbox = async () => {
@@ -454,7 +455,7 @@ async function bootWorker() {
                 });
               } else if (reg.category === 'INFORMATIONAL') {
                 // Registered informational domain events are acknowledged for downstream audit / notification
-                console.log(`[Outbox Poller] Dispatched informational event: ${row.event_type} (${row.id})`);
+                console.log('[Outbox Poller] Dispatched registered informational event');
               } else {
                 throw new Error(`UNHANDLED_EXECUTABLE_OUTBOX_EVENT: ${row.event_type} (${row.id})`);
               }
@@ -465,7 +466,7 @@ async function bootWorker() {
                 [orgId, row.id],
               );
             } catch (dispatchErr) {
-              console.error(`Failed to dispatch outbox event ${row.id}:`, dispatchErr);
+              reportWorkerFailure('OUTBOX_EVENT_DISPATCH_FAILED', dispatchErr, row.id);
               await client.query(
                 `UPDATE outbox_events SET attempts = attempts + 1 WHERE org_id = $1 AND id = $2`,
                 [orgId, row.id],
@@ -475,13 +476,13 @@ async function bootWorker() {
           await client.query('COMMIT');
         } catch (err) {
           await client.query('ROLLBACK').catch(() => {});
-          console.error(`[Outbox Poller Error] tenant ${orgId}:`, err);
+          reportWorkerFailure('OUTBOX_TENANT_POLL_FAILED', err);
         } finally {
           client.release();
         }
       }
     } catch (err) {
-      console.error('[Outbox Poller Error]:', err);
+      reportWorkerFailure('OUTBOX_POLLER_FAILED', err);
     }
   };
 
@@ -506,7 +507,7 @@ async function bootWorker() {
 
 if (require.main === module) {
   bootWorker().catch((err) => {
-    console.error('Worker failed to boot:', err);
+    reportWorkerFailure('WORKER_BOOT_FAILED', err);
     process.exit(1);
   });
 }
