@@ -245,6 +245,8 @@ export default function ProjectWorkspacePage() {
   const [warranties, setWarranties] = useState<any[]>([]);
   const [defects, setDefects] = useState<any[]>([]);
   const [loadingWarranties, setLoadingWarranties] = useState(false);
+  const [warrantyLoadError, setWarrantyLoadError] = useState<string | null>(null);
+  const [defectsLoadError, setDefectsLoadError] = useState<string | null>(null);
 
   // Filter & Modals State
   const [statusFilter, setStatusFilter] = useState<string>("");
@@ -402,16 +404,38 @@ export default function ProjectWorkspacePage() {
 
   const fetchWarranties = useCallback(async () => {
     if (!projectId) return;
+    // Do not leave another project's old records on screen after a context
+    // change, or convert denied/failed requests into fictitious empty data.
+    setWarranties([]);
+    setDefects([]);
+    setWarrantyLoadError(null);
+    setDefectsLoadError(null);
     setLoadingWarranties(true);
+    const parseRows = (data: unknown): any[] => {
+      if (Array.isArray(data)) return data;
+      if (data && typeof data === "object" && "data" in data &&
+          Array.isArray((data as { data: unknown }).data)) {
+        return (data as { data: any[] }).data;
+      }
+      throw new Error("Unexpected response format.");
+    };
     try {
-      const [wData, dData] = await Promise.all([
-        apiFetch<any>(`/api/v1/projects/${encodeURIComponent(projectId)}/warranty-events`).catch(() => []),
-        apiFetch<any>(`/api/v1/projects/${encodeURIComponent(projectId)}/defects`).catch(() => []),
+      const [warrantyResult, defectResult] = await Promise.allSettled([
+        apiFetch<unknown>(`/api/v1/projects/${encodeURIComponent(projectId)}/warranty-events`),
+        apiFetch<unknown>(`/api/v1/projects/${encodeURIComponent(projectId)}/defects`),
       ]);
-      setWarranties(Array.isArray(wData) ? wData : wData?.data || []);
-      setDefects(Array.isArray(dData) ? dData : dData?.data || []);
-    } catch (err) {
-      console.error("Error loading warranties", err);
+      try {
+        if (warrantyResult.status === "rejected") throw warrantyResult.reason;
+        setWarranties(parseRows(warrantyResult.value));
+      } catch (error) {
+        setWarrantyLoadError(error instanceof Error ? error.message : "Unable to load warranties.");
+      }
+      try {
+        if (defectResult.status === "rejected") throw defectResult.reason;
+        setDefects(parseRows(defectResult.value));
+      } catch (error) {
+        setDefectsLoadError(error instanceof Error ? error.message : "Unable to load defects.");
+      }
     } finally {
       setLoadingWarranties(false);
     }
@@ -1410,9 +1434,15 @@ export default function ProjectWorkspacePage() {
                 OEM Warranty Registrations
               </div>
               {loadingWarranties ? (
-                <div className="p-6 space-y-2">
+                <div className="p-6 space-y-2" role="status" aria-label="Loading warranty registrations">
                   <div className="h-8 w-full animate-pulse rounded bg-slate-100" />
                   <div className="h-8 w-full animate-pulse rounded bg-slate-100" />
+                </div>
+              ) : warrantyLoadError ? (
+                <div className="p-6 text-red-800 text-xs" role="alert">
+                  Warranty records could not be loaded: {warrantyLoadError}. The list below is not a verified empty result.
+                  <button type="button" onClick={() => void fetchWarranties()}
+                    className="ml-3 font-semibold underline">Retry</button>
                 </div>
               ) : warranties.length === 0 ? (
                 <div className="p-8 text-center text-xs text-slate-500">
@@ -1434,14 +1464,14 @@ export default function ProjectWorkspacePage() {
                     <tbody className="divide-y divide-slate-100">
                       {warranties.map((w) => (
                         <tr key={w.id} className="hover:bg-slate-50/80">
-                          <td className="py-3 px-4 font-mono font-bold text-slate-900">{w.asset_tag || w.tag || "CHLR-01"}</td>
+                          <td className="py-3 px-4 font-mono font-bold text-slate-900">{w.asset_tag || w.tag || "—"}</td>
                           <td className="py-3 px-4 font-mono text-slate-700">{w.oem_reference || "—"}</td>
-                          <td className="py-3 px-4 font-medium text-slate-600">{w.basis || "HANDOVER"}</td>
+                          <td className="py-3 px-4 font-medium text-slate-600">{w.basis || "—"}</td>
                           <td className="py-3 px-4 font-mono text-slate-600">{formatDateIst(w.warranty_start)}</td>
                           <td className="py-3 px-4 font-mono text-slate-600">{formatDateIst(w.warranty_end)}</td>
                           <td className="py-3 px-4">
                             <span className="rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
-                              {w.status || "CONFIRMED"}
+                              {w.status || "Not recorded"}
                             </span>
                           </td>
                         </tr>
@@ -1457,9 +1487,17 @@ export default function ProjectWorkspacePage() {
               <div className="px-5 py-4 border-b border-slate-200 font-bold text-sm text-slate-900">
                 Defect Liability & Rectification Register
               </div>
-              {defects.length === 0 ? (
+              {loadingWarranties ? (
+                <div role="status" className="p-6 text-slate-500 text-xs">Loading defect records…</div>
+              ) : defectsLoadError ? (
+                <div className="p-6 text-red-800 text-xs" role="alert">
+                  Defect records could not be loaded: {defectsLoadError}. No zero-defects claim can be made.
+                  <button type="button" onClick={() => void fetchWarranties()}
+                    className="ml-3 font-semibold underline">Retry</button>
+                </div>
+              ) : defects.length === 0 ? (
                 <div className="p-8 text-center text-xs text-slate-500">
-                  Zero defects recorded for this project.
+                  No defects returned for this project.
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -1493,7 +1531,7 @@ export default function ProjectWorkspacePage() {
                             <div className="font-semibold text-slate-900">{d.title}</div>
                             <div className="text-slate-500 text-[11px] mt-0.5">{d.description}</div>
                           </td>
-                          <td className="py-3 px-4 font-mono text-slate-700">{d.asset_tag || "HVAC Unit"}</td>
+                          <td className="py-3 px-4 font-mono text-slate-700">{d.asset_tag || "—"}</td>
                           <td className="py-3 px-4">
                             <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
                               d.status === "CLOSED"
