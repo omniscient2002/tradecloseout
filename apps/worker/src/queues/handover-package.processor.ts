@@ -127,16 +127,8 @@ export async function compileAndPersistHandoverPackage(
     const { rows: requirements } = await client.query(
       `SELECT pr.requirement_key, pr.title, pr.asset_tag, pr.doc_type_key,
               pr.status_at_generation, pr.decision, pr.decided_by, pr.decision_method,
-              COALESCE(dv.revision_code, 'v' || dv.version_no::text, 'R0') AS revision_code
+              pr.revision_code_at_generation AS revision_code
          FROM package_requirements pr
-         LEFT JOIN LATERAL (
-           SELECT dv2.revision_code, dv2.version_no
-             FROM document_requirements dr
-             JOIN document_versions dv2 ON dv2.document_id = dr.document_id AND dv2.org_id = pr.org_id
-             JOIN package_items pi ON pi.document_version_id = dv2.id AND pi.package_id = pr.package_id
-            WHERE dr.requirement_id = pr.requirement_id
-            ORDER BY dv2.created_at DESC LIMIT 1
-         ) dv ON true
         WHERE pr.org_id = $1 AND pr.project_id = $2 AND pr.package_id = $3
         ORDER BY pr.requirement_key, pr.scope_key, pr.id`,
       [orgId, packageMeta.project_id, packageId],
@@ -151,18 +143,15 @@ export async function compileAndPersistHandoverPackage(
     );
     const { rows: items } = await client.query(
       `SELECT pi.document_version_id, pi.section_key, pi.sort_order,
-              dv.document_id, dv.version_no, dv.revision_code,
-              d.title, so.bucket, so.object_key, so.mime, so.size_bytes,
-              so.observed_size_bytes, so.provider_version_id, so.sha256, so.status AS object_status
+              pi.source_document_id AS document_id, pi.source_object_id AS object_id,
+              pi.source_revision_code AS revision_code, pi.source_title AS title,
+              pi.source_bucket AS bucket, pi.source_object_key AS object_key,
+              pi.source_mime AS mime, pi.source_size_bytes AS size_bytes,
+              pi.source_size_bytes AS observed_size_bytes,
+              pi.source_provider_version_id AS provider_version_id,
+              pi.source_sha256 AS sha256,
+              CASE WHEN pi.source_object_id IS NOT NULL THEN 'READY' ELSE 'UNPINNED' END AS object_status
          FROM package_items pi
-         JOIN document_versions dv
-           ON dv.org_id = pi.org_id AND dv.project_id = pi.project_id AND dv.id = pi.document_version_id
-          AND dv.deleted_at IS NULL
-         JOIN documents d
-           ON d.org_id = dv.org_id AND d.project_id = dv.project_id AND d.id = dv.document_id
-          AND d.deleted_at IS NULL
-         JOIN storage_objects so
-           ON so.org_id = dv.org_id AND so.id = dv.object_id
         WHERE pi.org_id = $1 AND pi.project_id = $2 AND pi.package_id = $3 AND pi.included = true
         ORDER BY pi.sort_order, pi.id`,
       [orgId, packageMeta.project_id, packageId],
@@ -182,7 +171,11 @@ export async function compileAndPersistHandoverPackage(
   const maxSourceBytes = configuredLimit('PACKAGE_MAX_SOURCE_BYTES', DEFAULT_MAX_SOURCE_BYTES);
   let totalSourceBytes = 0;
   for (const source of sourceRows) {
-    if (source.object_status !== 'READY' || !isImmutableStorageVersion(source.provider_version_id) || !source.sha256 ||
+    if (source.object_status !== 'READY' || !source.object_id || !source.document_id ||
+        !source.bucket || !source.object_key || !source.title ||
+        !isImmutableStorageVersion(source.provider_version_id) ||
+        !/^[a-f0-9]{64}$/i.test(String(source.sha256 || '')) ||
+        !Number.isSafeInteger(Number(source.size_bytes)) || Number(source.size_bytes) <= 0 ||
         Number(source.observed_size_bytes) !== Number(source.size_bytes)) {
       throw new Error(`PACKAGE_SOURCE_NOT_VERIFIED:${source.document_version_id}`);
     }
