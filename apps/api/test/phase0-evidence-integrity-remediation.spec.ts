@@ -156,12 +156,15 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
         withTenantContext: jest.fn().mockImplementation(async (ctx, fn) => {
           const client = {
             query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
+              if (sql.includes('SELECT m.role AS org_role')) return { rows: [{ org_role: 'R-OWNER' }] };
+              if (sql.includes('SELECT status FROM projects')) return { rows: [{ status: 'ACTIVE' }] };
               if (sql.includes('SELECT * FROM reviews')) {
                 return {
                   rows: [
                     {
                       id: 'rev-1',
                       org_id: orgId,
+                      project_id: projectId,
                       document_version_id: 'ver-unscanned',
                       status: 'IN_REVIEW',
                       reviewer_subject_type: 'USER', reviewer_subject_id: userId,
@@ -175,6 +178,7 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
                     {
                       id: 'ver-unscanned',
                       org_id: orgId,
+                      project_id: projectId,
                       document_id: 'doc-1',
                       file_status: 'PROCESSING', // Not yet READY!
                       uploaded_by: 'other-user',
@@ -207,12 +211,15 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
           const client = {
             query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
               executedQueries.push({ sql, params });
+              if (sql.includes('SELECT m.role AS org_role')) return { rows: [{ org_role: 'R-OWNER' }] };
+              if (sql.includes('SELECT status FROM projects')) return { rows: [{ status: 'ACTIVE' }] };
               if (sql.includes('SELECT * FROM reviews')) {
                 return {
                   rows: [
                     {
                       id: 'rev-2',
                       org_id: orgId,
+                      project_id: projectId,
                       document_version_id: 'ver-ready',
                       status: 'IN_REVIEW',
                       reviewer_subject_type: 'USER', reviewer_subject_id: userId,
@@ -226,6 +233,7 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
                     {
                       id: 'ver-ready',
                       org_id: orgId,
+                      project_id: projectId,
                       document_id: 'doc-1',
                       file_status: 'READY',
                       object_id: 'object-1',
@@ -240,6 +248,7 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
                     {
                       id: 'doc-1',
                       org_id: orgId,
+                      project_id: projectId,
                       latest_version_id: 'ver-ready',
                       current_approved_version_id: null,
                     },
