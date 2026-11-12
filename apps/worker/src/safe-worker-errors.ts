@@ -37,7 +37,8 @@ export function safeWorkerErrorCategory(error: unknown): string {
     if (!descriptor || !('value' in descriptor) || typeof descriptor.value !== 'string') {
       return 'UNCLASSIFIED';
     }
-    return APPROVED_ERROR_CODES[descriptor.value] ?? 'UNCLASSIFIED';
+    return Object.prototype.hasOwnProperty.call(APPROVED_ERROR_CODES, descriptor.value)
+      ? APPROVED_ERROR_CODES[descriptor.value] : 'UNCLASSIFIED';
   } catch {
     return 'UNCLASSIFIED';
   }
