@@ -95,7 +95,27 @@ export async function compileAndPersistHandoverPackage(
       return { packageId, status: 'READY', replayed: true };
     }
     if (packageMeta.manifest_format_version !== 2 || packageMeta.package_purpose !== 'FULL_HANDOVER') {
-      throw new Error('PACKAGE_UNPINNED_MANIFEST_REQUIRES_REGENERATION');
+      // A historical unpinned QUEUED/GENERATING row can never be repaired by
+      // reading the current document pointer: quarantine it and surface an
+      // explicit regeneration instruction instead of leaving it QUEUED forever.
+      if (['QUEUED', 'GENERATING'].includes(packageMeta.status)) {
+        await client.query(
+          `UPDATE handover_packages SET status = 'FAILED',
+              error_code = 'PACKAGE_LEGACY_MANIFEST_UNPINNED',
+              error_detail = 'Generate a new full-handover package with frozen evidence receipts.',
+              row_version = row_version + 1, updated_at = now()
+            WHERE org_id = $1 AND id = $2
+              AND status IN ('QUEUED', 'GENERATING')`,
+          [orgId, packageId],
+        );
+        await client.query('COMMIT');
+        return {
+          packageId, status: 'FAILED', manualRegenerationRequired: true,
+          errorCode: 'PACKAGE_LEGACY_MANIFEST_UNPINNED',
+        };
+      }
+      await client.query('COMMIT');
+      return { packageId, status: packageMeta.status, skipped: 'Historical unpinned manifest is not buildable.' };
     }
     const cover = typeof packageMeta.metadata_snapshot_json === 'string'
       ? JSON.parse(packageMeta.metadata_snapshot_json)
