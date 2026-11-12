@@ -114,6 +114,7 @@ test('PH4-G14-003: a stalled BullMQ delivery cannot publish under the previous a
         return { rows: [{
           id: packageId, org_id: orgId, project_id: randomUUID(),
           status: 'GENERATING', error_code: 'PACKAGE_JOB:same-bullmq-job',
+          package_purpose: 'FULL_HANDOVER', manifest_format_version: 2,
           updated_at: new Date().toISOString(),
         }] };
       }
@@ -158,4 +159,33 @@ test('PH4-G14-003: malformed terminal owner never mutates a handover package', a
     orgId: randomUUID(), packageId: randomUUID(),
   }, 'logical-job', new Error('stale'), 'PACKAGE_JOB:logical-job');
   assert.equal(acquired, 0);
+});
+
+test('PH4-G14-002: a legacy unpinned manifest cannot be silently rebuilt from current documents', async () => {
+  const orgId = randomUUID(), packageId = randomUUID();
+  const queries: string[] = [];
+  let n = 0;
+  const pool: any = { connect: async () => {
+    n++;
+    return {
+      query: async (sql: string) => {
+        queries.push(sql);
+        if (sql.includes('pg_try_advisory_lock')) return { rows: [{ acquired: true }] };
+        if (sql.includes('SELECT hp.id, hp.org_id')) return {
+          rows: [{ id: packageId, org_id: orgId, project_id: randomUUID(),
+            status: 'QUEUED', manifest_format_version: 1,
+            package_purpose: 'FULL_HANDOVER' }],
+        };
+        return { rows: [] };
+      },
+      release: () => undefined,
+    };
+  } };
+  await assert.rejects(compileAndPersistHandoverPackage(pool, {} as any,
+    { orgId, packageId }, 'logical-job', true, `PACKAGE_ATTEMPT:${randomUUID()}`),
+    /PACKAGE_UNPINNED_MANIFEST_REQUIRES_REGENERATION/);
+  assert.equal(n, 2, 'must not allocate the upload/publish transaction');
+  assert.equal(queries.filter(q => q.includes('UPDATE handover_packages')).length, 0);
+  assert(queries.some(q => q.includes('ROLLBACK')));
+  assert(queries.some(q => q.includes('pg_advisory_unlock')));
 });
