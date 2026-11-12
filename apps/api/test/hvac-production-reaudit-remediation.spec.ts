@@ -542,8 +542,9 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
               };
             }
             if (sql.includes('FROM document_versions dv')) {
-              return { rows: [{ id: remedyVersionId }] };
+              return { rows: [{ id: remedyVersionId, document_id: uuidv7() }] };
             }
+            if (sql.includes('SELECT id FROM document_assets')) return { rows: [{ id: uuidv7() }] };
             if (sql.includes('UPDATE defects')) {
               if (sql.includes("status = 'RECTIFIED'")) {
                 currentDefect = {
