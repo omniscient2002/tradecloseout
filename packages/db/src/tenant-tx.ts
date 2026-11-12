@@ -190,7 +190,7 @@ export async function reconcileStorageQuotaOnFileStatusChange(
 
   await client.query(
     `UPDATE usage_counters
-        SET value = GREATEST(0::numeric, value::numeric + $2)::text,
+        SET value = GREATEST(0::numeric, value::numeric + $2::numeric)::bigint,
             updated_at = now()
       WHERE org_id = $1 AND metric = 'STORAGE_BYTES' AND period = 'ALL_TIME'`,
     [orgId, delta.toString()],
