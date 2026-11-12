@@ -119,6 +119,38 @@ describe('PH1-G02-006 — guest version and detail scope (restricted PostgreSQL 
         "UPDATE guest_grants SET scope_json=$1::jsonb WHERE id=$2",
         [JSON.stringify({ requirementIds: [allowedRequirementId, otherRequirementId] }), grantId],
       );
+
+      // Even with all requirements in scope, an asset link needs separate
+      // explicit authority. A missing assetIds array must not imply ALL.
+      const linkedAssetId = randomUUID();
+      await admin.query(
+        `INSERT INTO assets (id,org_id,project_id,tag,name,category_key,created_by)
+         VALUES ($1,$2,$3,'AHU-SCOPE','Scoped air handler','HVAC',$4)`,
+        [linkedAssetId, a.orgId, projectId, userId],
+      );
+      await admin.query(
+        `INSERT INTO document_assets (id,org_id,project_id,document_id,asset_id,is_primary)
+         VALUES ($1,$2,$3,$4,$5,true)`,
+        [randomUUID(), a.orgId, projectId, documentId, linkedAssetId],
+      );
+      await expect(service.getDocument(ctx, documentId)).rejects.toThrow('DOCUMENT_NOT_FOUND');
+      await expect(service.getDownloadUrl(ctx, readyVersionId)).rejects.toThrow('VERSION_NOT_FOUND');
+      await expect(service.refreshUploadUrls(ctx, pendingVersionId)).rejects.toThrow('VERSION_NOT_FOUND');
+      await expect(service.createUploadIntent(ctx, projectId, {
+        documentId, requirementId: allowedRequirementId,
+        mimeType: 'application/pdf', fileName: 'asset-out-of-scope.pdf', sizeBytes: 1024,
+        revisionCode: 'R3',
+      })).rejects.toThrow('DOCUMENT_NOT_FOUND_IN_PROJECT');
+      expect(signer.createUploadUrls).not.toHaveBeenCalled();
+      expect(signer.createSignedDownloadUrl).not.toHaveBeenCalled();
+
+      await admin.query(
+        "UPDATE guest_grants SET scope_json=$1::jsonb WHERE id=$2",
+        [JSON.stringify({
+          requirementIds: [allowedRequirementId, otherRequirementId],
+          assetIds: [linkedAssetId],
+        }), grantId],
+      );
       await expect(service.getDocument(ctx, documentId)).resolves.toMatchObject({
         id: documentId, versions: expect.arrayContaining([expect.objectContaining({ id: readyVersionId })]),
       });
