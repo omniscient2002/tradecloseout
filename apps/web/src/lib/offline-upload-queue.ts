@@ -37,6 +37,45 @@ const DRAIN_LOCK_NAME = 'tradecloseout:field-upload-drain';
 // unbounded permission-error loop, while preserving receipts already persisted.
 const MAX_PART_URL_REFRESHES = 1;
 
+// The API rejects uploads over 100 MiB. Bound browser-local original evidence
+// and do not imply a later provider upload will succeed for oversized files.
+export const MAX_UPLOAD_FILE_BYTES = 100 * 1024 * 1024;
+export const MAX_ACTOR_DRAFT_BYTES = 300 * 1024 * 1024;
+export const MAX_GLOBAL_DRAFT_BYTES = 500 * 1024 * 1024;
+export const MAX_ACTOR_DRAFTS = 10;
+
+export interface OfflineUploadDraftSummary {
+  queueId: string;
+  projectId: string;
+  requirementId: string;
+  filename: string;
+  sizeBytes: number;
+  status: OfflineQueuedUpload['status'];
+  createdAt: number;
+  lastError?: string;
+  hasActiveIntent: boolean;
+}
+
+export function assertOfflineDraftBudget(
+  fileBytes: number,
+  existing: ReadonlyArray<Pick<OfflineQueuedUpload, 'actorPartition' | 'sizeBytes'>>,
+  actorPartition: string,
+): void {
+  if (!Number.isSafeInteger(fileBytes) || fileBytes < 1 || fileBytes > MAX_UPLOAD_FILE_BYTES) {
+    throw new Error('UPLOAD_SIZE_LIMIT: Evidence must be 1 byte to 100 MiB.');
+  }
+  const actor = existing.filter((item) => item.actorPartition === actorPartition);
+  const bytes = (list: typeof actor) => list.reduce((sum, entry) => sum + (Number(entry.sizeBytes) || 0), 0);
+  if (actor.length >= MAX_ACTOR_DRAFTS) {
+    throw new Error('UPLOAD_QUEUE_ITEM_LIMIT: Resolve or discard existing drafts before capturing more.');
+  }
+  if (bytes(actor) + fileBytes > MAX_ACTOR_DRAFT_BYTES ||
+      bytes(existing as typeof actor) + fileBytes > MAX_GLOBAL_DRAFT_BYTES) {
+    throw new Error('UPLOAD_QUEUE_STORAGE_LIMIT: Free space by synchronizing or discarding drafts.');
+  }
+}
+
+
 function assertSameActor(item: OfflineQueuedUpload): void {
   if (typeof window === 'undefined' ||
       window.localStorage.getItem(ACTOR_PARTITION_KEY) !== item.actorPartition) {
@@ -232,7 +271,12 @@ export async function enqueueFieldUpload(params: {
     throw new Error('UPLOAD_ACTOR_CONTEXT_REQUIRED: Sign in or establish the guest grant before queueing evidence.');
   }
   const originalFile = params.file;
+  assertOfflineDraftBudget(originalFile.size, [], actorPartition);
+  assertSameActor({ actorPartition } as OfflineQueuedUpload);
   const checksumSha256 = await computeBrowserFileSha256(originalFile);
+  // An account switch during the async hash must not persist the evidence
+  // under an old actor's partition or trigger a stale-network upload.
+  assertSameActor({ actorPartition } as OfflineQueuedUpload);
   const item: OfflineQueuedUpload = {
     queueId: crypto.randomUUID(),
     actorPartition,
@@ -254,12 +298,30 @@ export async function enqueueFieldUpload(params: {
   };
 
   const db = await openOfflineDb();
-  await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    tx.objectStore(STORE_NAME).put(item);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
+  try {
+    // Quota validation and save share one atomic IndexedDB transaction, so
+    // concurrent tabs cannot both pass a stale count and overfill the queue.
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const list = store.getAll();
+      list.onsuccess = () => {
+        try {
+          assertSameActor(item);
+          assertOfflineDraftBudget(item.sizeBytes, list.result as OfflineQueuedUpload[], actorPartition);
+          store.put(item);
+        } catch (error) {
+          tx.abort();
+          reject(error);
+        }
+      };
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error || new Error('UPLOAD_BROWSER_STORAGE_UNAVAILABLE'));
+      tx.onabort = () => reject(tx.error || new Error('UPLOAD_BROWSER_STORAGE_FULL_OR_BLOCKED'));
+    });
+  } finally {
+    db.close();
+  }
 
   if (typeof navigator !== 'undefined' && navigator.onLine) {
     // Do not turn a completed IndexedDB save into an unhandled rejection
