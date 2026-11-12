@@ -26,6 +26,11 @@ describe('PH4-G17-005/006: actual PostgreSQL immutable defect transition ledger'
         [projectId, orgId, userId],
       );
       await admin.query(
+        `INSERT INTO memberships (id, org_id, user_id, role, status)
+          VALUES ($1, $2, $3, 'R-SITE', 'ACTIVE')`,
+        [uuidv7(), orgId, assigneeId],
+      );
+      await admin.query(
         `INSERT INTO project_members (id, org_id, project_id, user_id, role, status, added_by)
           VALUES ($1, $2, $3, $4, 'R-SITE', 'ACTIVE', $5)`,
         [uuidv7(), orgId, projectId, assigneeId, userId],
