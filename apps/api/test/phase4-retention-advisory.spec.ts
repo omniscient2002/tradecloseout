@@ -38,7 +38,12 @@ describe('PH4-G19-005: retention is an advisory estimate, never payment authorit
             ? [{ resolved_payload_json: { requirements: [{ requirementKey: 'DOC-01' }] } }]
             : [] };
         }
-        if (sql.includes('FROM defects')) return { rows: [{ open_defects: '0', critical_defects: '0' }] };
+        if (sql.includes('FROM defects')) {
+          expect(sql).toContain("defect_context = 'AFTERCARE'");
+          expect(sql).toContain('mandatory = true');
+          return { rows: [{ open_defects: '1', open_closeout_defects: '0',
+            open_aftercare_defects: '1', critical_defects: '0' }] };
+        }
         if (sql.includes('FROM submissions s')) return { rows: accepted ? [{ id: randomUUID() }] : [] };
         return { rows: [] };
       }),
@@ -55,6 +60,10 @@ describe('PH4-G19-005: retention is an advisory estimate, never payment authorit
     expect(result.mandatoryRequirements.satisfactionPercentage).toBeNull();
     expect(result.retentionAtRiskPaise).toBeNull();
     expect(result.contractValuePaise).toBeNull();
+    expect(result.defects.open).toBe(1);
+    expect(result.defects.closeoutOpen).toBe(0);
+    expect(result.defects.aftercareOpen).toBe(1);
+    expect(result.defects.critical).toBe(0);
     expect(result.commercialReadiness.isRetentionEligible).toBe(false);
     expect(result.commercialReadiness.releaseStatus).toBe('INFORMATIONAL_ONLY');
     expect(result.commercialReadiness.configurationBlocker).toBeTruthy();
