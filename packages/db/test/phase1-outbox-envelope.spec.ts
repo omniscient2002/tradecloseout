@@ -101,6 +101,26 @@ test('PH1-G27-004: pending legacy row is supported only if every supplied row id
   assert.throws(() => parseTrustedOutboxDispatch(row([])), /OUTBOX_ENVELOPE_INVALID/);
 });
 
+test('PH1-G27-004: a submission can reference its package without impersonating a package event', () => {
+  const submission = {
+    ...identity,
+    eventType: 'SUBMISSION_DISPATCHED',
+    entityType: 'SUBMISSION',
+    entityId: 'submission-a',
+  };
+  const source = buildTrustedOutboxPayload(submission, {
+    packageId: 'package-reference', recipientCount: 2,
+  });
+  assert.deepEqual(source.data, { packageId: 'package-reference', recipientCount: 2 });
+  const parsed = parseTrustedOutboxDispatch({
+    id: submission.eventId, org_id: submission.orgId,
+    project_id: submission.projectId, event_type: submission.eventType,
+    payload_json: source,
+  });
+  assert.equal(parsed.payload.packageId, 'package-reference');
+  assert.equal(parsed.payload.entityId, 'submission-a');
+});
+
 test('PH1-G27-004: archived exportId and packageId cannot redirect a queued resource', () => {
   const archive = {
     ...identity,
