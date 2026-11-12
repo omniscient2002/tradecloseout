@@ -131,15 +131,13 @@ export class HandoverService {
                 r.mandatory, r.status, r.due_at,
                 evidence.version_ids,
                 evidence.has_valid_evidence,
-                evidence.has_expired_evidence,
-                (
-                  SELECT w.type FROM waivers w
-                   WHERE w.org_id = r.org_id AND w.project_id = r.project_id
-                     AND w.requirement_id = r.id AND w.status = 'ACTIVE'
-                     AND w.type IN ('WAIVE', 'NOT_APPLICABLE')
-                     AND (NOT r.mandatory OR (w.second_approved_by IS NOT NULL AND w.second_approved_by <> w.approved_by))
-                   ORDER BY w.approved_at DESC, w.id DESC LIMIT 1
-                ) AS valid_waiver_type,
+                evidence.has_expired_evidence, evidence.revision_code,
+                waiver.type AS valid_waiver_type,
+                waiver.id AS valid_waiver_id,
+                waiver.reason AS valid_waiver_reason,
+                waiver.approved_by AS valid_waiver_approved_by,
+                waiver.approved_at AS valid_waiver_approved_at,
+                waiver.second_approved_by AS valid_waiver_second_approved_by,
                 a.tag AS asset_tag
            FROM requirements r
            LEFT JOIN LATERAL (
@@ -149,7 +147,11 @@ export class HandoverService {
                    (dv.expiry_date IS NULL OR dv.expiry_date >= CURRENT_DATE)), ARRAY[]::uuid[]) AS version_ids,
                COALESCE(bool_or(dv.id IS NOT NULL AND
                    (dv.expiry_date IS NULL OR dv.expiry_date >= CURRENT_DATE)), false) AS has_valid_evidence,
-               COALESCE(bool_or(dv.id IS NOT NULL AND dv.expiry_date < CURRENT_DATE), false) AS has_expired_evidence
+               COALESCE(bool_or(dv.id IS NOT NULL AND dv.expiry_date < CURRENT_DATE), false) AS has_expired_evidence,
+               (array_agg(COALESCE(dv.revision_code, 'v' || dv.version_no::text)
+                  ORDER BY dv.version_no DESC)
+                FILTER (WHERE dv.id IS NOT NULL AND
+                  (dv.expiry_date IS NULL OR dv.expiry_date >= CURRENT_DATE)))[1] AS revision_code
              FROM document_requirements dr
              JOIN documents d
                ON d.org_id = dr.org_id AND d.project_id = dr.project_id AND d.id = dr.document_id
@@ -177,6 +179,17 @@ export class HandoverService {
                     AND er.status IN ('PENDING', 'MISMATCH')
                )
            ) evidence ON true
+           LEFT JOIN LATERAL (
+             SELECT w.id, w.type, w.reason, w.approved_by,
+                    w.approved_at, w.second_approved_by
+               FROM waivers w
+              WHERE w.org_id = r.org_id AND w.project_id = r.project_id
+                AND w.requirement_id = r.id AND w.status = 'ACTIVE'
+                AND w.type IN ('WAIVE', 'NOT_APPLICABLE')
+                AND (NOT r.mandatory OR
+                  (w.second_approved_by IS NOT NULL AND w.second_approved_by <> w.approved_by))
+              ORDER BY w.approved_at DESC, w.id DESC LIMIT 1
+           ) waiver ON true
            LEFT JOIN assets a
              ON r.scope_key = ('asset:' || a.id::text) AND a.org_id = r.org_id AND a.project_id = r.project_id
           WHERE r.org_id = $1 AND r.project_id = $2 AND r.superseded_at IS NULL
