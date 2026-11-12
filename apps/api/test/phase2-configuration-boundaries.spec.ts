@@ -70,6 +70,30 @@ describe('Phase 2 configuration fail-closed boundaries', () => {
     ]));
   });
 
+  it('materializes registered checklist requirements for snapshot consumers', () => {
+    const requirements = [{ key: 'DOC-01', mandatory: true, title: 'Manual', docTypeKey: 'O_AND_M', scopeType: 'PROJECT' }];
+    const result = resolveConfigV021({
+      PROJECT: layer('PROJECT', { 'checklist.requirements': requirements }),
+    });
+    expect(result.conflicts).toHaveLength(0);
+    expect(result.payload.requirements).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: 'DOC-01', mandatory: true }),
+    ]));
+    expect(result.provenance.requirements).toEqual(result.provenance['checklist.requirements']);
+  });
+
+  it('rejects contradictory legacy and registered checklist requirements', () => {
+    const result = resolveConfigV021({
+      PROJECT: layer('PROJECT', {
+        requirements: [{ key: 'DOC-01', mandatory: false }],
+        'checklist.requirements': [{ key: 'DOC-01', mandatory: true }],
+      }),
+    });
+    expect(result.conflicts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: 'requirements' }),
+    ]));
+  });
+
   it('refuses prototype keys and missing merge keys', () => {
     const result = resolveConfigV021({
       PROJECT: layer('PROJECT', { 'checklist.groups': [
