@@ -6,7 +6,7 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { withTenantTransaction, TenantActorContext } from '@tradecloseout/db/tenant-tx';
 
@@ -42,6 +42,27 @@ export interface CreateSeasonalScheduleInput {
   season: 'SUMMER_PEAK' | 'MONSOON_HUMIDITY' | 'WINTER_MINIMUM';
   targetDate: string;
   parameters?: Record<string, any>;
+}
+
+/**
+ * Share the project row lock with project closure. Baseline-changing technical
+ * records must not be written after handover is legally CLOSED. Deferred tests
+ * require an explicit future post-close policy and are intentionally denied.
+ */
+async function lockOpenCommissioningProject(client: PoolClient, orgId: string, projectId: string) {
+  const { rows } = await client.query(
+    `SELECT id, status FROM projects WHERE org_id = $1 AND id = $2 FOR UPDATE`,
+    [orgId, projectId],
+  );
+  if (!rows.length) {
+    throw new NotFoundException({ code: 'PROJECT_NOT_FOUND', detail: 'Project not found.' });
+  }
+  if (!['ACTIVE', 'HANDOVER'].includes(rows[0].status)) {
+    throw new ConflictException({
+      code: 'PROJECT_COMMISSIONING_LIFECYCLE_BLOCKED',
+      detail: 'Technical baseline changes require an ACTIVE or HANDOVER project. Accepted projects require formal reopening.',
+    });
+  }
 }
 
 @Injectable()
@@ -156,14 +177,7 @@ export class CommissioningService {
     };
 
     return withTenantTransaction(this.pool, ctx, async (client, emit) => {
-      // Verify project exists
-      const { rows: projRows } = await client.query(
-        `SELECT id FROM projects WHERE org_id = $1 AND id = $2`,
-        [ctx.orgId, projectId],
-      );
-      if (!projRows.length) {
-        throw new NotFoundException({ code: 'PROJECT_NOT_FOUND', detail: 'Project not found.' });
-      }
+      await lockOpenCommissioningProject(client, ctx.orgId, projectId);
 
       // Verify asset if specified
       if (input.assetId) {
@@ -312,14 +326,7 @@ export class CommissioningService {
     }
 
     return withTenantTransaction(this.pool, ctx, async (client, emit) => {
-      // Verify project exists
-      const { rows: projRows } = await client.query(
-        `SELECT id FROM projects WHERE org_id = $1 AND id = $2`,
-        [ctx.orgId, projectId],
-      );
-      if (!projRows.length) {
-        throw new NotFoundException({ code: 'PROJECT_NOT_FOUND', detail: 'Project not found.' });
-      }
+      await lockOpenCommissioningProject(client, ctx.orgId, projectId);
 
       // F02: Verify asset exists under exact composite scope (org_id, project_id, id)
       if (input.assetId) {
@@ -438,6 +445,7 @@ export class CommissioningService {
     }
 
     return withTenantTransaction(this.pool, ctx, async (client, emit) => {
+      await lockOpenCommissioningProject(client, ctx.orgId, projectId);
       const { rows } = await client.query(
         `SELECT * FROM quality_inspections
           WHERE org_id = $1 AND project_id = $2 AND id = $3
@@ -556,14 +564,7 @@ export class CommissioningService {
     input: CreateSeasonalScheduleInput,
   ) {
     return withTenantTransaction(this.pool, ctx, async (client, emit) => {
-      // Verify project exists
-      const { rows: projRows } = await client.query(
-        `SELECT id FROM projects WHERE org_id = $1 AND id = $2`,
-        [ctx.orgId, projectId],
-      );
-      if (!projRows.length) {
-        throw new NotFoundException({ code: 'PROJECT_NOT_FOUND', detail: 'Project not found.' });
-      }
+      await lockOpenCommissioningProject(client, ctx.orgId, projectId);
 
       // F02: Verify asset exists under exact composite scope (org_id, project_id, id)
       if (input.assetId) {
@@ -672,6 +673,7 @@ export class CommissioningService {
     }
 
     return withTenantTransaction(this.pool, ctx, async (client, emit) => {
+      await lockOpenCommissioningProject(client, ctx.orgId, projectId);
       const { rows } = await client.query(
         `SELECT * FROM seasonal_commissioning_schedules
           WHERE org_id = $1 AND project_id = $2 AND id = $3
