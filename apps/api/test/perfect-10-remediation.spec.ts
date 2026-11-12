@@ -233,6 +233,20 @@ describe('Perfect 10 Remediation & Hardening Test Suite', () => {
       const mockPool = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation((sql: string, params: any[]) => {
+            // Exercise the real authorization path. A deleted-document fixture
+            // without live account/membership/project rows is not valid.
+            if (sql.includes('SELECT project_id FROM documents')) {
+              return Promise.resolve({ rows: [{ project_id: projectId }] });
+            }
+            if (sql.includes('SELECT m.role AS org_role')) {
+              return Promise.resolve({ rows: [{ org_role: 'R-OWNER' }] });
+            }
+            if (sql.includes('SELECT status FROM projects')) {
+              return Promise.resolve({ rows: [{ status: 'ACTIVE' }] });
+            }
+            if (sql.includes('SELECT id, project_id, doc_type_key')) {
+              return Promise.resolve({ rows: [{ id: docId, project_id: projectId, doc_type_key: 'DT-001', category_key: 'DOC', created_at: new Date() }] });
+            }
             if (sql.includes('UPDATE documents') && sql.includes('deleted_at = now()')) {
               return Promise.resolve({ rows: [{ id: docId }] });
             }
