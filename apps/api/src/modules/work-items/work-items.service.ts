@@ -144,6 +144,24 @@ export class WorkItemsService {
       const documentVisible = `
         AND (NOT (ap.scope ? 'documentIds') OR (ap.scope->'documentIds' ? d.id::text))
         AND (NOT (ap.scope ? 'documentTypes') OR (ap.scope->'documentTypes' ? d.doc_type_key))
+        AND (NOT (ap.scope ? 'requirementGroups') OR
+          (EXISTS (
+            SELECT 1 FROM document_requirements dr
+            JOIN requirements rr ON rr.org_id = dr.org_id
+              AND rr.project_id = dr.project_id AND rr.id = dr.requirement_id
+              AND rr.superseded_at IS NULL
+             WHERE dr.org_id = d.org_id AND dr.project_id = d.project_id
+               AND dr.document_id = d.id
+               AND ap.scope->'requirementGroups' ? rr.group_key
+          ) AND NOT EXISTS (
+            SELECT 1 FROM document_requirements dr
+            LEFT JOIN requirements rr ON rr.org_id = dr.org_id
+              AND rr.project_id = dr.project_id AND rr.id = dr.requirement_id
+              AND rr.superseded_at IS NULL
+             WHERE dr.org_id = d.org_id AND dr.project_id = d.project_id
+               AND dr.document_id = d.id
+               AND (rr.id IS NULL OR NOT (ap.scope->'requirementGroups' ? rr.group_key))
+          )))
         AND (NOT (ap.scope ? 'requirementIds') OR
           (EXISTS (
             SELECT 1 FROM document_requirements dr
@@ -193,10 +211,17 @@ export class WorkItemsService {
           JOIN documents d ON d.id = dv.document_id AND d.org_id = dv.org_id
           JOIN projects p ON p.id = dv.project_id AND p.org_id = dv.org_id
           JOIN access ap ON ap.project_id = p.id AND ap.can_review
-          JOIN reviews rv ON rv.org_id = dv.org_id AND rv.project_id = dv.project_id
-            AND rv.document_version_id = dv.id AND rv.reviewer_subject_type = 'USER'
-            AND rv.reviewer_subject_id = $2 AND (rv.reviewer_user_id IS NULL OR rv.reviewer_user_id = $2)
-            AND rv.status IN ('PENDING','IN_REVIEW')
+          JOIN LATERAL (
+            SELECT rv.due_at
+              FROM reviews rv
+             WHERE rv.org_id = dv.org_id AND rv.project_id = dv.project_id
+               AND rv.document_version_id = dv.id AND rv.reviewer_subject_type = 'USER'
+               AND rv.reviewer_subject_id = $2
+               AND (rv.reviewer_user_id IS NULL OR rv.reviewer_user_id = $2)
+               AND rv.status IN ('PENDING','IN_REVIEW')
+             ORDER BY rv.created_at ASC, rv.id ASC
+             LIMIT 1
+          ) rv ON TRUE
          WHERE dv.org_id = $1
            AND dv.file_status = 'READY'
            AND dv.review_status = 'IN_REVIEW'
