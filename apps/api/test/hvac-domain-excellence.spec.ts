@@ -309,8 +309,8 @@ describe('HVAC Domain Excellence Suite (XP11..XP18)', () => {
       const mockPool: any = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
-            if (sql.includes('SELECT id FROM projects')) {
-              return { rows: [{ id: projectId }] };
+            if (sql.includes('SELECT id, status FROM projects')) {
+              return { rows: [{ id: projectId, status: 'ACTIVE' }] };
             }
             if (sql.includes('INSERT INTO tab_worksheets')) {
               insertedRow = params;
@@ -345,8 +345,8 @@ describe('HVAC Domain Excellence Suite (XP11..XP18)', () => {
       const mockPool: any = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string) => {
-            if (sql.includes('SELECT id FROM projects')) {
-              return { rows: [{ id: projectId }] };
+            if (sql.includes('SELECT id, status FROM projects')) {
+              return { rows: [{ id: projectId, status: 'ACTIVE' }] };
             }
             if (sql.includes('INSERT INTO tab_worksheets')) {
               return { rowCount: 1 };
@@ -380,8 +380,8 @@ describe('HVAC Domain Excellence Suite (XP11..XP18)', () => {
       const mockPool: any = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
-            if (sql.includes('SELECT id FROM projects')) {
-              return { rows: [{ id: projectId }] };
+            if (sql.includes('SELECT id, status FROM projects')) {
+              return { rows: [{ id: projectId, status: 'ACTIVE' }] };
             }
             if (sql.includes('INSERT INTO quality_inspections')) {
               return { rowCount: 1 };
@@ -446,8 +446,8 @@ describe('HVAC Domain Excellence Suite (XP11..XP18)', () => {
       const mockPool: any = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string) => {
-            if (sql.includes('SELECT id FROM projects')) {
-              return { rows: [{ id: projectId }] };
+            if (sql.includes('SELECT id, status FROM projects')) {
+              return { rows: [{ id: projectId, status: 'ACTIVE' }] };
             }
             if (sql.includes('INSERT INTO seasonal_commissioning_schedules')) {
               return { rowCount: 1 };
