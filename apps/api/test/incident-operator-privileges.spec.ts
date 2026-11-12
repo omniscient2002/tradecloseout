@@ -15,7 +15,7 @@ describe('PH5-G28-001 least-privilege incident operator database contract', () =
     );
     expect(rows).toHaveLength(1);
     expect(rows[0]).toEqual({
-      rolcanlogin: true, rolsuper: false, rolbypassrls: false,
+      rolcanlogin: false, rolsuper: false, rolbypassrls: false,
       rolcreaterole: false, rolcreatedb: false, rolinherit: false,
     });
   });
