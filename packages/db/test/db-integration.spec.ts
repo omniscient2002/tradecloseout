@@ -113,6 +113,25 @@ void test('Disposable PostgreSQL migration, isolation and audit regression tests
       });
     });
 
+    await t.test('PH1-G26-002/G24-007: storage reconciliation persists typed BIGINT values', async () => {
+      const { reconcileStorageQuotaOnFileStatusChange } = await import('../src/tenant-tx');
+      await scoped(app, a.orgId, async client => {
+        await reconcileStorageQuotaOnFileStatusChange(client, a.orgId, 1234n, 'MARKED_READY');
+        const read = async () => BigInt((await client.query(
+          "SELECT value FROM usage_counters WHERE org_id=$1 AND metric='STORAGE_BYTES' AND period='ALL_TIME'",
+          [a.orgId],
+        )).rows[0].value);
+        assert.equal(await read(), 1234n);
+        await reconcileStorageQuotaOnFileStatusChange(client, a.orgId, 234n, 'DELETED_OR_PURGED');
+        assert.equal(await read(), 1000n);
+      });
+      await scoped(app, b.orgId, async client => {
+        assert.equal((await client.query(
+          "SELECT value FROM usage_counters WHERE metric='STORAGE_BYTES' AND period='ALL_TIME'",
+        )).rowCount, 0);
+      });
+    });
+
     await t.test('DB-08: direct cross-project procurement insert fails the intended composite FK', async () => {
       const partyId = randomUUID();
       await admin.query(`INSERT INTO parties (id, org_id, name, types) VALUES ($1, $2, 'Test supplier', ARRAY['SUPPLIER'])`, [partyId, a.orgId]);
