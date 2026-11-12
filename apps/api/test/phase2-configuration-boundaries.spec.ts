@@ -1,4 +1,5 @@
 import { resolveConfigV021, resolveConfigurationHierarchy } from '../src/modules/configuration/config-resolver';
+import { ChecklistsService, assertLockedChecklistBaselineInvariant } from '../src/modules/checklists/checklists.service';
 
 const layer = (level: 'PLATFORM' | 'ORG' | 'PROJECT', payload: Record<string, unknown>, schemaVersion = 'v1.0') => ({
   level,
@@ -300,5 +301,63 @@ describe('Phase 2 configuration fail-closed boundaries', () => {
       expect.objectContaining({ key: 'accepted', title: 'safe' }),
     ]);
     expect(result.conflicts).toHaveLength(2);
+  });
+});
+
+
+describe('PH2-G06-006: immutable active baseline against single-layer reimports', () => {
+  const locked = {
+    key: 'SAFETY-001', title: 'Approved safety manual', locked: true, mandatory: true,
+    docTypeKey: 'DT-001', scopeType: 'PROJECT', reviewerRole: 'R-QC',
+  };
+
+  it('allows identical locked obligations without changing source provenance', () => {
+    expect(() => assertLockedChecklistBaselineInvariant(
+      { requirements: [locked] },
+      { requirements: [{ ...locked, provenanceLevel: 'PROJECT' }] },
+    )).not.toThrow();
+  });
+
+  it.each([
+    [{ key: 'SAFETY-001', mandatory: false }],
+    [{ ...locked, docTypeKey: 'DT-002' }],
+    [{ ...locked, locked: false }],
+    [],
+  ])('rejects locked requirement removal and changes', requirements => {
+    expect(() => assertLockedChecklistBaselineInvariant(
+      { requirements: [locked] }, { requirements },
+    )).toThrow('Conflict Exception');
+  });
+
+  it('denies an actual checklist snapshot mutation before writing new baseline rows', async () => {
+    const projectId = '0192e3a0-1111-7000-8000-000000000001';
+    const orgId = '0192e3a0-1111-7000-8000-000000000002';
+    const userId = '0192e3a0-1111-7000-8000-000000000003';
+    const query = jest.fn(async (sql: string) => {
+      if (sql.includes('FROM projects WHERE org_id')) {
+        return { rows: [{ id: projectId, status: 'ACTIVE', purged_at: null }] };
+      }
+      if (sql.includes('FROM checklist_snapshots')) {
+        return { rows: [{ id: 'prior', version_no: 1, resolved_payload_json: {
+          requirements: [locked],
+        } }] };
+      }
+      return { rows: [] };
+    });
+    const client = { query };
+    const emit = jest.fn();
+    const service = new ChecklistsService({} as any);
+    const ctx: any = { orgId, userId, actorType:'MEMBER', requestId:'phase2-immutable' };
+    await expect(service.createAndApplySnapshot(ctx, projectId, [
+      { level: 'PROJECT', versionId: 'new-unsafe', payload: {
+        requirements: [{ ...locked, mandatory: false }],
+      } },
+    ], undefined, 'unsafe overwrite', { client: client as any, emit }))
+      .rejects.toMatchObject({ response: expect.objectContaining({
+        code: 'LOCKED_CHECKLIST_CHANGE_REQUIRES_REVIEW',
+      }) });
+    expect(query.mock.calls.some(([sql]) =>
+      /UPDATE checklist_snapshots|INSERT INTO checklist_snapshots/.test(sql))).toBe(false);
+    expect(emit).not.toHaveBeenCalled();
   });
 });
