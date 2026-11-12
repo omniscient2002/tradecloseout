@@ -1,0 +1,10 @@
+{
+  "apps/api/src/modules/checklists/checklists.service.ts": "d9d1165fdc684fa775d255ec44c6fbf5a5320f9967cdc67b74fe57e3107a1093",
+  "apps/api/test/helpers/synthetic-hvac-publication.ts": "584c77f5e6124e09e7e3a27899d0aa502caf310b2d18a7b2bc5549c87f6ba3dc",
+  "apps/api/test/phase2-hvac-governance-db.spec.ts": "949bb5cf1b7a7c7669b9afde43c9028725301ad30bd594fc9ad47b4f3c19d22f",
+  "apps/api/test/remaining-production-gaps.spec.ts": "f86e8180aa77210e5562cc80ec69753aa4a501b016dde7f29c2e20446c5a04d7",
+  "packages/db/migrations/0053_phase2_hvac_template_governance.sql": "f4cb18b049ceb7acae23068464734fb91435cb70fbba689f1d3b11ce6d7add28",
+  "packages/db/src/hvac-template-governance-cli.ts": "c811d4a293925f64e7eb16c5ce3bcb990bfce486f57187b811172d50b27b07e7",
+  "packages/db/src/schema.ts": "3ff57cb13b3ab8b802e1a37c35563be5f71b30977d5689631dea08416c95170b",
+  "scripts/hvac-template-governance.ts": "1998f59a246e30cb01f4bacd8b282c00f7c08abead18b3f01b8f9c4124b40477"
+}

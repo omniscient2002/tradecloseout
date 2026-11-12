@@ -25,25 +25,30 @@
     {
       "number": 3,
       "work": "Atomic quota enforcement and recovery",
-      "state": "LOCAL_CHECKS_PASSED_CI_PENDING",
+      "state": "CI_VERIFIED_ENGINEERING_PASS",
       "notes": "Expanded canonical storage reservation to actual compiler artifacts before provider PUT, with unpublished retry reuse, stale-owner rejection, quota downgrade checks and independently verified bytes in programmable S3 fixture. Exact new-head CI pending; full provider cleanup/lease recovery and new lifecycle/reactivation features remain in their respective passes.",
       "verifiedCheckpoints": [
         {
           "sha": "b187d41d31adec392dbb08f7e3a5da0581c8a385",
           "ci": "https://github.com/omniscient2002/tradecloseout/actions/runs/43227078567"
         }
-      ]
+      ],
+      "verifiedSha": "9bffac16763f87103147ce4c0061f042b2a65bf4",
+      "ci": "https://github.com/omniscient2002/tradecloseout/actions/runs/43230577929"
     },
     {
       "number": 4,
       "work": "Configuration schemas and merge protection",
-      "state": "LOCAL_BOUNDARIES_VERIFIED_CI_PENDING",
-      "notes": "51 checks across resolver, actual checklist/readiness and isolated DB suites. Hardened flags/budgets/schema forwarding; preserved mandatory inheritance and per-item/field origin. Persisted lineage and real consumers remain Pass5 work."
+      "state": "CI_VERIFIED_ENGINEERING_PASS",
+      "notes": "51 checks across resolver, actual checklist/readiness and isolated DB suites. Hardened flags/budgets/schema forwarding; preserved mandatory inheritance and per-item/field origin. Persisted lineage and real consumers remain Pass5 work.",
+      "verifiedSha": "9bffac16763f87103147ce4c0061f042b2a65bf4",
+      "ci": "https://github.com/omniscient2002/tradecloseout/actions/runs/43230577929"
     },
     {
       "number": 5,
       "work": "Persisted configuration, template governance and approved impact changes",
-      "state": "PLANNED"
+      "state": "IN_PROGRESS",
+      "notes": "Governed immutable global pack publication and signed legacy exclusion implemented; targeted roles/state/upgrade checks pass. Qualified HVAC acceptance remains BLOCKED_EXTERNAL. Persisted configuration, installation lineage, impact-controlled active changes and real consumers remain engineering work."
     },
     {
       "number": 6,
@@ -675,6 +680,11 @@
       "id": "PH2-G06-004",
       "state": "IMPLEMENTED_SUBSET_TESTED_NOT_ACCEPTED",
       "notes": "Added per-item/field and removal provenance while preserving legacy field winners and deterministic checksums. Persistence/preview UI remain open in later passes."
+    },
+    {
+      "id": "PH2-G06-009",
+      "state": "IMPLEMENTED_SUBSET_TESTED_NOT_ACCEPTED",
+      "notes": "Separate provisioned author/reviewer principals, immutable payload/review provenance, bounded schema validation, no runtime edit/trigger/publication authority, explicit candidate/qualification/catalogue/mapping/applicability/scenario/exception records, retirement and guarded install. No real author/reviewer memberships or approval evidence seeded. CLI uses a separately configured least-privileged human connection; external gate stays blocked."
     }
   ]
 }

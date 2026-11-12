@@ -424,11 +424,19 @@ export const templatePacks = pgTable(
     version: integer('version').notNull(),
     schemaVersion: integer('schema_version').notNull().default(1),
     payloadJson: jsonb('payload_json').notNull(),
-    status: text('status').notNull().default('ACTIVE'),
+    status: text('status').notNull().default('DRAFT'),
+    authorIdentity: text('author_identity'),
+    reviewerIdentity: text('reviewer_identity'),
+    reviewedAt: timestamp('reviewed_at',{withTimezone:true}),
+    reviewEvidenceRef:text('review_evidence_ref'),
+    payloadChecksum:text('payload_checksum'),
+    governanceVersion:integer('governance_version'),
+    reviewRecordJson:jsonb('review_record_json'),
+    reviewedCandidateSha:text('reviewed_candidate_sha'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
-    tradeVerUq: uniqueIndex('template_packs_trade_ver_uq').on(t.trade, t.version),
+    codeVersionUq: uniqueIndex('template_packs_code_version_key').on(t.code, t.version),
   }),
 );
 

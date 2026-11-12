@@ -478,7 +478,11 @@ export class ChecklistsService {
                      THEN jsonb_array_length(payload_json->'requirements') ELSE 0 END
                 AS requirement_count
            FROM template_packs
-          WHERE trade = 'HVAC' AND status = 'ACTIVE'
+          WHERE trade = 'HVAC' AND status = 'ACTIVE' AND schema_version=1 AND governance_version=1
+            AND reviewed_at IS NOT NULL AND reviewer_identity IS NOT NULL AND author_identity IS NOT NULL
+            AND reviewer_identity<>author_identity AND review_record_json IS NOT NULL
+            AND reviewed_candidate_sha ~ '^[a-f0-9]{40}$'
+            AND payload_checksum=encode(digest(payload_json::text,'sha256'),'hex')
           ORDER BY code, version DESC`,
       );
       return rows;
@@ -500,11 +504,10 @@ export class ChecklistsService {
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
       await this.lockEditableProject(client, ctx.orgId, projectId);
       const { rows } = await client.query(
-        `SELECT id, code, name, version, schema_version, payload_json
-           FROM template_packs
-          WHERE id = $1 AND trade = 'HVAC' AND status = 'ACTIVE'
-          FOR SHARE`,
-        [templatePackId],
+        `SELECT id,code,name,version,schema_version,payload_json,payload_checksum,
+                reviewer_identity,reviewed_at,reviewed_candidate_sha
+           FROM lock_reviewed_hvac_template_pack($1,$2)`,
+        [templatePackId,projectId],
       );
       if (!rows.length) {
         throw new NotFoundException('APPROVED_HVAC_TEMPLATE_NOT_FOUND');

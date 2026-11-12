@@ -1,3 +1,4 @@
+import {publishSyntheticHvacPack} from './helpers/synthetic-hvac-publication';
 import { createHash, createHmac } from 'crypto';
 import { Pool } from 'pg';
 import { uuidv7 } from 'uuidv7';
@@ -19,32 +20,29 @@ async function seed(admin: Pool) {
   );
   await admin.query(
     `INSERT INTO projects(id, org_id, code, name, status, created_by)
-       VALUES($1, $2, 'HVAC-APPROVED-PACK', 'Template Validation', 'ACTIVE', $3)`,
+       VALUES($1, $2, 'HVAC-APPROVED-PACK', 'Template Validation', 'DRAFT', $3)`,
     [projectId, orgId, userId],
   );
+  await admin.query(`INSERT INTO memberships(id,org_id,user_id,role,status) VALUES($1,$2,$3,'R-OWNER','ACTIVE')`,[uuidv7(),orgId,userId]);
   return { orgId, projectId, userId, ctx: {
-    orgId, userId, actorType: 'MEMBER' as const,
+    orgId, userId, actorType: 'MEMBER' as const, orgRole:'R-OWNER',
     requestId: uuidv7(), ip: '127.0.0.1', userAgent: 'template-test',
   } };
 }
 
-describe('Remaining production gap: approved HVAC templates', () => {
-  it('lists published packs and applies the selected version through the real snapshot writer', async () => {
+describe('Template publication mechanics with synthetic reviewer identities', () => {
+  it('lists a synthetically published pack and applies its selected version through the actual snapshot writer', async () => {
     await withDisposableDatabase(async ({ admin, app }) => {
       const { orgId, projectId, ctx } = await seed(admin);
       const packId = uuidv7(), draftId = uuidv7();
       const payload = { requirements: [{
-        key: 'CHILLER-COMMISSIONING', groupKey: 'COMMISSIONING',
-        title: 'Chiller commissioning report', docTypeKey: 'DT-042',
+        key: 'SYNTHETIC-DOCUMENT', groupKey: 'SYNTHETIC',
+        title: 'Synthetic scope mechanics; not an HVAC obligation', docTypeKey: 'DT-018',
         mandatory: true, reviewerRole: 'R-QC', scopeType: 'PROJECT',
       }] };
-      for (const [id, version, status] of [[packId, 7, 'ACTIVE'], [draftId, 8, 'DRAFT']] as const) {
-        await admin.query(
-          `INSERT INTO template_packs(id, trade, code, name, version, payload_json, status)
-           VALUES($1, 'HVAC', 'CONSULTANT-CONTRACT', 'HVAC contractual pack', $2, $3::jsonb, $4)`,
-          [id, version, JSON.stringify(payload), status],
-        );
-      }
+      await publishSyntheticHvacPack(admin,{id:packId,code:'CONSULTANT-CONTRACT',name:'Synthetic publication fixture',version:7,payload});
+      await admin.query(`INSERT INTO template_packs(id,trade,code,name,version,payload_json,status)
+        VALUES($1,'HVAC','CONSULTANT-CONTRACT','Unsigned draft',8,$2,'DRAFT')`,[draftId,JSON.stringify(payload)]);
       const service = new ChecklistsService(app);
       const packs = await service.listApprovedHvacTemplates(ctx, projectId);
       expect(packs).toHaveLength(1);
@@ -62,8 +60,8 @@ describe('Remaining production gap: approved HVAC templates', () => {
         [orgId, projectId],
       );
       expect(rows).toEqual([expect.objectContaining({
-        requirement_key: 'CHILLER-COMMISSIONING',
-        doc_type_key: 'DT-042',
+        requirement_key: 'SYNTHETIC-DOCUMENT',
+        doc_type_key: 'DT-018',
         reviewer_role: 'R-QC',
       })]);
     });

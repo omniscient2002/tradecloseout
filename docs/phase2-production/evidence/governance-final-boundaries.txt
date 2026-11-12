@@ -1,0 +1,9 @@
+PASS test/remaining-production-gaps.spec.ts (9.291 s)
+PASS test/phase2-policy-upgrade-and-org-lock-db.spec.ts
+PASS test/phase2-hvac-governance-db.spec.ts
+
+Test Suites: 3 passed, 3 total
+Tests:       8 passed, 8 total
+Snapshots:   0 total
+Time:        13.27 s, estimated 17 s
+Ran all test suites matching /test\/phase2-hvac-governance-db.spec.ts|test\/remaining-production-gaps.spec.ts|test\/phase2-policy-upgrade-and-org-lock-db.spec.ts/i.
