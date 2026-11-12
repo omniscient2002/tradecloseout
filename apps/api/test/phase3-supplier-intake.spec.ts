@@ -124,6 +124,41 @@ describe('PH3-G04-004 — real PostgreSQL supplier intake authority and durabili
         [orgId, grantId, supplierId],
       );
 
+      // A durable event dispatch failure must roll back the status,
+      // decision history and audit together. Never acknowledge partial work.
+      await admin.query(`
+        CREATE FUNCTION phase3_fail_supplier_intake_outbox() RETURNS trigger AS $
+        BEGIN
+          IF NEW.event_type = 'SUPPLIER_INTAKE_REJECTED' THEN
+            RAISE EXCEPTION 'TEST_INTAKE_OUTBOX_FAILURE';
+          END IF;
+          RETURN NEW;
+        END;
+        $ LANGUAGE plpgsql
+      `);
+      await admin.query(`
+        CREATE TRIGGER phase3_fail_supplier_intake_outbox
+          BEFORE INSERT ON outbox_events
+          FOR EACH ROW EXECUTE FUNCTION phase3_fail_supplier_intake_outbox()
+      `);
+      await expect(service.intakeSupplierObligation(
+        ctx, projectId, obligationId,
+        { decision: 'REJECT', notes: 'Missing supplier test seal', documentVersionId: versionId,
+          commandId, expectedRowVersion: 1 },
+      )).rejects.toThrow('TEST_INTAKE_OUTBOX_FAILURE');
+      const rolledBack = await admin.query(
+        `SELECT status, row_version FROM supplier_document_obligations WHERE id = $1`,
+        [obligationId],
+      );
+      expect(rolledBack.rows[0]).toMatchObject({ status: 'UPLOADED', row_version: 1 });
+      const historyBefore = await admin.query(
+        'SELECT count(*)::int AS n FROM supplier_intake_decisions WHERE obligation_id = $1',
+        [obligationId],
+      );
+      expect(historyBefore.rows[0].n).toBe(0);
+      await admin.query('DROP TRIGGER phase3_fail_supplier_intake_outbox ON outbox_events');
+      await admin.query('DROP FUNCTION phase3_fail_supplier_intake_outbox()');
+
       const rejected = await service.intakeSupplierObligation(
         ctx, projectId, obligationId,
         { decision: 'REJECT', notes: 'Missing supplier test seal', documentVersionId: versionId,
