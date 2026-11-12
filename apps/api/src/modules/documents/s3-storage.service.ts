@@ -233,7 +233,7 @@ export class S3StorageService implements ObjectStoragePresigner {
     }
     try {
       const current = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: params.objectKey }));
-      if (current.VersionId && current.VersionId.toLowerCase() !== 'null') {
+      if (isImmutableObjectVersionId(current.VersionId)) {
         await this.client.send(new DeleteObjectCommand({
           Bucket: this.bucket,
           Key: params.objectKey,
