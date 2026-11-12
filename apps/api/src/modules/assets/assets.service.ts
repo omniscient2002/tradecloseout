@@ -91,11 +91,26 @@ export class AssetsService {
    * Registers an equipment unit and automatically instantiates asset-scoped requirements
    * from the active project checklist snapshot (WF-07, AUD-002).
    */
-  async createAsset(
-    ctx: TenantActorContext,
-    projectId: string,
-    input: CreateAssetInput,
+  async createAsset(ctx: TenantActorContext, projectId: string, input: CreateAssetInput) {
+    return withTenantTransaction(this.pool, ctx, (client, emit) =>
+      this.createAssetInTransaction(client, ctx, projectId, input, emit));
+  }
+
+  /**
+   * Shared insert command for single-asset and atomic batch imports.
+   * Do not open a nested pool transaction: import rollback must also roll
+   * back the asset, its instantiated requirements, and staged audit/outbox.
+   */
+  private async createAssetInTransaction(
+    client: PoolClient, ctx: TenantActorContext, projectId: string,
+    input: CreateAssetInput, emit: (event: DomainOutboxEvent) => void,
   ) {
+    if (!input || typeof input.name !== 'string' ||
+        input.name.trim().length < 1 || input.name.trim().length > 200 ||
+        typeof input.categoryKey !== 'string' ||
+        !/^[A-Za-z0-9_.:-]{1,80}$/.test(input.categoryKey)) {
+      throw new UnprocessableEntityException('INVALID_ASSET_IDENTITY');
+    }
     const tagParse = AssetTagSchema.safeParse(input.tag);
     if (!tagParse.success) {
       throw new UnprocessableEntityException({
@@ -103,8 +118,16 @@ export class AssetsService {
         detail: tagParse.error.issues[0]?.message ?? 'Invalid asset tag.',
       });
     }
+    const project = await client.query(
+      `SELECT status FROM projects
+        WHERE org_id = $1 AND id = $2 AND purged_at IS NULL FOR UPDATE`,
+      [ctx.orgId, projectId],
+    );
+    if (!project.rows.length) throw new NotFoundException('PROJECT_NOT_FOUND');
+    if (['CLOSED', 'ARCHIVED', 'CANCELLED'].includes(project.rows[0].status)) {
+      throw new ConflictException('PROJECT_NOT_EDITABLE');
+    }
 
-    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
       const scope = await this.getCurrentAssetScope(client, ctx, projectId);
       assertAssetInScope(scope, null, true, input.categoryKey);
       const normalizedTag = tagParse.data;
@@ -194,7 +217,6 @@ export class AssetsService {
         tag: normalizedTag,
         instantiatedRequirements: instantiatedCount,
       };
-    });
   }
 
   /**
@@ -744,6 +766,14 @@ export class AssetsService {
       };
     }
 
+    if (isAtomic && hasErrors) {
+      throw new ConflictException({
+        code: 'ATOMIC_IMPORT_HAS_INVALID_ROWS',
+        detail: 'Atomic import cannot commit any rows when preview contains validation errors.',
+        results,
+      });
+    }
+
     if (conflictStrategy === 'FAIL' && (hasErrors || hasConflicts)) {
       throw new ConflictException({
         code: 'IMPORT_PREVALIDATION_FAILED',
@@ -776,7 +806,7 @@ export class AssetsService {
             }
           }
 
-          const asset = await this.createAsset(ctx, projectId, item);
+          const asset = await this.createAssetInTransaction(client, ctx, projectId, item, emit);
           created.push(asset);
         }
 
