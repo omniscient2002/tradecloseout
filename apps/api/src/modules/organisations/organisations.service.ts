@@ -75,6 +75,9 @@ export class OrganisationsService {
         ? `AND EXISTS (SELECT 1 FROM project_members pm
                         WHERE pm.org_id=r.org_id AND pm.project_id=r.project_id
                           AND pm.user_id=$2 AND pm.status='ACTIVE')` : '';
+      // PostgreSQL rejects extra bind parameters. Only scoped queries use $2.
+      const dashboardQueryArgs = projectRead.scope === 'S'
+        ? [orgId, ctx.userId] : [orgId];
       // 1. Fetch Org and Profile
       const { rows: orgRows } = await client.query(
         `SELECT o.id, o.legal_name, o.display_name, o.state, op.gstin
@@ -127,7 +130,7 @@ export class OrganisationsService {
           LEFT JOIN parties p_pmc ON p_pmc.id = p.consultant_party_id
          WHERE p.org_id = $1 ${projectScopeClause}
          ORDER BY p.created_at DESC`,
-        [orgId, ctx.userId],
+        dashboardQueryArgs,
       );
 
       const projects = projRows.map((p) => ({
@@ -172,7 +175,7 @@ export class OrganisationsService {
             AND dv.expiry_date IS NOT NULL
             AND dv.expiry_date BETWEEN (now() AT TIME ZONE 'Asia/Kolkata')::date
                                    AND ((now() AT TIME ZONE 'Asia/Kolkata') + interval '30 days')::date`,
-        [orgId, ctx.userId],
+        dashboardQueryArgs,
       );
       const expiringSoonCount = Number(expiringRows[0]?.count || 0);
 
@@ -191,7 +194,7 @@ export class OrganisationsService {
             AND r.superseded_at IS NULL
           ORDER BY r.due_at ASC NULLS LAST, r.created_at DESC
           LIMIT 5`,
-        [orgId, ctx.userId],
+        dashboardQueryArgs,
       );
 
       const needsAttention = attentionRows.map((r) => ({
