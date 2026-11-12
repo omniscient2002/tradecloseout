@@ -271,6 +271,9 @@ export class SessionCsrfGuard implements CanActivate {
       orgId: session.active_org_id,
       userId: session.user_id,
       actorType: session.guest_grant_id ? 'GUEST' : 'USER',
+      // Server-derived only: never accept a session id from request body,
+      // path, header or caller-provided execution context.
+      sessionId: session.session_id,
       requestId: authData.requestId,
       orgRole,
       projectRole,
