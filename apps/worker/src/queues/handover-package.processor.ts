@@ -1,4 +1,4 @@
-import { HeadObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { GetBucketVersioningCommand, HeadObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { Pool } from 'pg';
 import { createHash } from 'crypto';
 import { createReadStream, createWriteStream } from 'fs';
@@ -8,6 +8,7 @@ import path from 'path';
 import { pipeline } from 'stream/promises';
 import { Readable } from 'stream';
 import { uuidv7 } from 'uuidv7';
+import { isImmutableObjectVersionId } from '@tradecloseout/shared';
 import { compileHandoverDossierStreamingQpdf } from './pdf-stream-compiler';
 
 type PackageJob = { orgId: string; projectId?: string; packageId?: string; entityId?: string; entityType?: string; eventId?: string };
@@ -164,7 +165,7 @@ export async function compileAndPersistHandoverPackage(
   const maxSourceBytes = configuredLimit('PACKAGE_MAX_SOURCE_BYTES', DEFAULT_MAX_SOURCE_BYTES);
   let totalSourceBytes = 0;
   for (const source of sourceRows) {
-    if (source.object_status !== 'READY' || !source.provider_version_id || !source.sha256 ||
+    if (source.object_status !== 'READY' || !isImmutableObjectVersionId(source.provider_version_id) || !source.sha256 ||
         Number(source.observed_size_bytes) !== Number(source.size_bytes)) {
       throw new Error(`PACKAGE_SOURCE_NOT_VERIFIED:${source.document_version_id}`);
     }
@@ -198,6 +199,9 @@ export async function compileAndPersistHandoverPackage(
         Key: source.object_key,
         VersionId: source.provider_version_id,
       }));
+      if (stored.VersionId !== source.provider_version_id) {
+        throw new Error(`PACKAGE_SOURCE_VERSION_RECEIPT_MISMATCH:${source.document_version_id}`);
+      }
       if (!stored.Body) throw new Error(`PACKAGE_SOURCE_EMPTY:${source.document_version_id}`);
       await pipeline(
         Readable.from(stored.Body as AsyncIterable<Uint8Array>),
@@ -258,6 +262,10 @@ export async function compileAndPersistHandoverPackage(
 
     const bucket = process.env.S3_BUCKET;
     if (!bucket) throw new Error('PACKAGE_STORAGE_NOT_CONFIGURED');
+    // A suspended/unversioned destination bucket must never publish a READY
+    // package, even if an object upload returns a mutable null VersionId.
+    const versioning = await s3.send(new GetBucketVersioningCommand({ Bucket: bucket }));
+    if (versioning.Status !== 'Enabled') throw new Error('PACKAGE_STORAGE_VERSIONING_REQUIRED');
     const artifactId = uuidv7();
     const objectKey = `organisations/${orgId}/projects/${packageMeta.project_id}/handover/${packageId}/${artifactId}.pdf`;
     const putResult = await s3.send(new PutObjectCommand({
@@ -272,7 +280,7 @@ export async function compileAndPersistHandoverPackage(
       ServerSideEncryption: process.env.S3_KMS_KEY_ID ? 'aws:kms' : undefined,
       SSEKMSKeyId: process.env.S3_KMS_KEY_ID || undefined,
     }));
-    if (!putResult.VersionId || putResult.VersionId.trim().toLowerCase() === 'null') {
+    if (!isImmutableObjectVersionId(putResult.VersionId)) {
       throw new Error('PACKAGE_STORAGE_VERSION_ID_MISSING');
     }
     const head = await s3.send(new HeadObjectCommand({ Bucket: bucket, Key: objectKey, VersionId: putResult.VersionId }));
