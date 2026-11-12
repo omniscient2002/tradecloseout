@@ -323,7 +323,7 @@ describe('Production Review Remediation Suite (NP01..NP06, NP09, NP10)', () => {
       expect(sub.id).toBeNull();
       expect(sub.status).toBe('INACTIVE');
       expect(sub.planTier).toBe('NONE');
-      expect(sub.pricePaise).toBe(0);
+      expect(sub.pricePaise).toBeNull();
       expect(sub.seatLimit).toBe(0);
       expect(sub.storageQuotaBytes).toBe(0);
       expect(sub.limitsJson).toEqual({ maxActiveProjects: 0, maxSeats: 0, maxStorageBytes: 0, maxPackageGenerationsPerMonth: 0 });

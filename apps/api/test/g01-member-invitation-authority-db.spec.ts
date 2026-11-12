@@ -114,7 +114,22 @@ describe('G01 membership privilege escalation and invitation validity', () => {
       expect((await admin.query(
         'SELECT status FROM invitations WHERE id=$1',[ownerOnlyInvite.id],
       )).rows[0].status).toBe('PENDING');
-      const transferred=await service.transferOwnership(ctx(owner,'R-OWNER'),administrator);
+      await expect(service.transferOwnership(ctx(owner,'R-OWNER'),administrator)).rejects.toMatchObject({
+        response:expect.objectContaining({code:'OWNERSHIP_TWO_PARTY_CONFIRMATION_REQUIRED'}),
+      });
+      const previousPolicy={ttl:process.env.OWNERSHIP_INTENT_TTL_SECONDS,mfa:process.env.OWNERSHIP_MFA_MAX_AGE_SECONDS};
+      let transferred:any;
+      try {
+        process.env.OWNERSHIP_INTENT_TTL_SECONDS='600';process.env.OWNERSHIP_MFA_MAX_AGE_SECONDS='300';
+        const generations=(await admin.query('SELECT id,auth_generation FROM sessions WHERE id=ANY($1::uuid[])',[[sessionIds.get(owner),sessionIds.get(administrator)]])).rows;
+        const ownerContext={...ctx(owner,'R-OWNER'),sessionId:sessionIds.get(owner),authGeneration:generations.find(x=>x.id===sessionIds.get(owner)).auth_generation};
+        const recipientContext={...ctx(administrator,'R-ADMIN'),sessionId:sessionIds.get(administrator),authGeneration:generations.find(x=>x.id===sessionIds.get(administrator)).auth_generation};
+        const intent=await service.requestOwnershipTransfer(ownerContext,{targetUserId:administrator,rowVersion:1,requestKey:uuidv7()});
+        transferred=await service.acceptOwnershipTransfer(recipientContext,intent.intentId);
+      }finally{
+        if(previousPolicy.ttl===undefined)delete process.env.OWNERSHIP_INTENT_TTL_SECONDS;else process.env.OWNERSHIP_INTENT_TTL_SECONDS=previousPolicy.ttl;
+        if(previousPolicy.mfa===undefined)delete process.env.OWNERSHIP_MFA_MAX_AGE_SECONDS;else process.env.OWNERSHIP_MFA_MAX_AGE_SECONDS=previousPolicy.mfa;
+      }
       expect(transferred).toMatchObject({
         previousOwnerUserId:owner,newOwnerUserId:administrator,
       });

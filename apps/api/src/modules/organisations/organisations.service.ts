@@ -16,6 +16,7 @@ import { uuidv7 } from 'uuidv7';
 import { randomBytes, createHash } from 'crypto';
 import { withTenantTransaction, TenantActorContext, DomainOutboxEvent } from '@tradecloseout/db';
 import { hasPermission, isValidIndianGstin, IndianPanSchema, canonicalAuthenticationEmail } from '@tradecloseout/shared';
+import { OwnershipTransfersService } from './ownership-transfers.service';
 import { TransactionalMailGateway } from '../identity/identity.controller';
 import { isProductionEnvironment } from '../identity/auth-security';
 import { OrgProfilePatch } from './organisation-validation';
@@ -251,7 +252,7 @@ export class OrganisationsService {
 
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
       const { rows: orgRows } = await client.query(
-        `SELECT id, legal_name, display_name, entity_type, status, country, state, row_version, created_at, updated_at
+        `SELECT id, legal_name, display_name, entity_type, status, country, state, timezone, row_version, created_at, updated_at
            FROM organisations WHERE id = $1 LIMIT 1`,
         [orgId],
       );
@@ -282,6 +283,7 @@ export class OrganisationsService {
     expectedRowVersion: number,
     input: OrgProfilePatch,
   ) {
+    if(input.allowSelfApproval===true)throw new UnprocessableEntityException({code:'SELF_APPROVAL_POLICY_NOT_SUPPORTED'});
     const orgColumns: Record<string, string> = {
       legalName:'legal_name', displayName:'display_name', entityType:'entity_type',
       state:'state', timeZone:'timezone',
@@ -294,7 +296,7 @@ export class OrganisationsService {
       defaultRetentionMonths:'default_retention_months', addressJson:'address_json',
       contactEmail:'contact_email', contactPhone:'contact_phone', footerText:'footer_text',
     };
-    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+    return withTenantTransaction(this.pool, {...ctx,organisationWrite:true}, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
       const {rows:orgRows}=await client.query(
         `SELECT id,legal_name,display_name,entity_type,state,row_version FROM organisations
           WHERE id=$1 FOR UPDATE`,[ctx.orgId],
@@ -961,6 +963,16 @@ export class OrganisationsService {
    * API-018: POST /api/v1/orgs/:orgId/transfer-ownership
    * Atomically transfers R-OWNER to another active member (FR-IAM-004, FR-ORG-014).
    */
+  async requestOwnershipTransfer(ctx:TenantActorContext,input:{targetUserId:string;rowVersion:number;requestKey:string}) {
+    return new OwnershipTransfersService(this.pool).request(ctx,input);
+  }
+  async acceptOwnershipTransfer(ctx:TenantActorContext,id:string) {
+    return new OwnershipTransfersService(this.pool).decide(ctx,id,'ACCEPT');
+  }
+  async cancelOwnershipTransfer(ctx:TenantActorContext,id:string) {
+    return new OwnershipTransfersService(this.pool).decide(ctx,id,'CANCEL');
+  }
+
   async transferOwnership(ctx: TenantActorContext, newOwnerUserId: string) {
     if (typeof newOwnerUserId !== 'string' ||
         !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(newOwnerUserId)) {

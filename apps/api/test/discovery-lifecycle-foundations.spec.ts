@@ -737,7 +737,7 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
           if (sql.includes('COUNT(r.id)::int AS open_reqs')) {
             return { rows: [{ project_id: projectId, project_code: 'PRJ-01', open_reqs: 3 }] };
           }
-          if (sql.includes('COUNT(rv.id)::int AS pending_reviews')) {
+          if (sql.includes('COUNT(DISTINCT rv.id)::int AS pending_reviews')) {
             return { rows: [{ project_id: projectId, project_code: 'PRJ-01', pending_reviews: 2 }] };
           }
           if (sql.includes('COUNT(hp.id)::int AS draft_packages')) {

@@ -25,6 +25,8 @@ export interface TenantActorContext {
   // Optional for controlled migrations, background jobs and offline fixtures.
   sessionId?: string;
   authGeneration?: string;
+  /** Server-selected stronger initial lock for organisation administration. */
+  organisationWrite?: boolean;
 }
 
 export interface DomainOutboxEvent {

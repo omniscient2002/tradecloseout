@@ -17,7 +17,7 @@ describe('PH2-G20-002: project notifications verify live identity at transaction
         [orgId]);
       const membershipId=uuidv7();
       await admin.query(`INSERT INTO memberships(id,org_id,user_id,role,status)
-        VALUES($1,$2,$3,'R-OWNER','ACTIVE'),($4,$2,$5,'R-OWNER','ACTIVE')`,
+        VALUES($1,$2,$3,'R-OWNER','ACTIVE'),($4,$2,$5,'R-ADMIN','ACTIVE')`,
         [uuidv7(),orgId,owner,membershipId,userId]);
       await admin.query(`INSERT INTO projects(id,org_id,code,name,status,created_by)
         VALUES($1,$2,'PH2-NOT-AUTH','Notification authorization','ACTIVE',$3)`,

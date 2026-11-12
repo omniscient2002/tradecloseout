@@ -1,0 +1,2370 @@
+{
+  "schema_version": 1,
+  "phase": "Phase 2 \u2014 Organisation & Project Setup",
+  "assessment_date": "2026-11-12 Asia/Calcutta",
+  "source_sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+  "separate_g03_source_sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08",
+  "main_sha": "c6b6024d3d5b25d2d1ab87f77e2d3294500c5bb0",
+  "release_decision": "NO_GO",
+  "canonical_group_registers_modified": false,
+  "findings": [
+    {
+      "id": "PH2-G20-001",
+      "group": "G20",
+      "title": "Enforce safe message projections and approved templates before delivery",
+      "priority": "P1",
+      "kind": "CODE_DEFECT",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION",
+      "probe_ids": [
+        "P18",
+        "N01"
+      ],
+      "requirements": [
+        "FR-NOT-013"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/notifications/notifications.service.ts",
+          "line": 24,
+          "symbol": "async createNotification",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/notifications/notifications.service.ts#L24"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/worker/src/notification-delivery.ts",
+          "line": 24,
+          "symbol": "body: JSON.stringify",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/worker/src/notification-delivery.ts#L24"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/worker/src/scheduler.ts",
+          "line": 341,
+          "symbol": "totalRetentionAtRiskPaise: totalRetentionAtRiskPaise.toString()",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/worker/src/scheduler.ts#L341"
+        }
+      ],
+      "observed": "P18 retains commercial values, internal comments and a 100-character requirement title. N01 sends the complete arbitrary payload to a loopback gateway. The weekly owner email itself includes retention amounts. This contradicts the explicit message-body restrictions in FR-NOT-013; gateway acknowledgement does not perform redaction.",
+      "correction": "Replace generic client-controlled payload delivery with versioned event templates and channel-specific allowlisted projections. Keep prohibited financial totals and internal details behind an authorized in-app link. Reconcile the rupee-at-risk digest intent with FR-NOT-013 through accountable product/privacy review before allowing derived commercial amounts in external bodies. Truncate permitted titles to 60 characters; validate recipient-visible fields and escape output. Apply the same policy to digest and supplier paths before enqueue and at rendering.",
+      "acceptance": "Use synthetic markers for every prohibited field through all producers, retries and email/SMS/manual WhatsApp renderers. Assert no prohibited content reaches provider request, preview, logs or callback records. Verify long/unicode titles and localized escaping; keep internal dashboards useful within permission."
+    },
+    {
+      "id": "PH2-G20-002",
+      "group": "G20",
+      "title": "Bind notification reads and writes to current project and resource visibility",
+      "priority": "P1",
+      "kind": "CODE_DEFECT",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION",
+      "probe_ids": [
+        "P16"
+      ],
+      "requirements": [
+        "FR-PRJ-011",
+        "FR-NOT-002"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/notifications/notifications.service.ts",
+          "line": 77,
+          "symbol": "async listNotifications",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/notifications/notifications.service.ts#L77"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/notifications/notifications.controller.ts",
+          "line": 22,
+          "symbol": "@Get('notifications')",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/notifications/notifications.controller.ts#L22"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/notifications/notifications.controller.ts",
+          "line": 45,
+          "symbol": "@Get('projects/:projectId/owner-digest')",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/notifications/notifications.controller.ts#L45"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/common/guards/permission.guard.ts",
+          "line": 116,
+          "symbol": "let projectId",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/common/guards/permission.guard.ts#L116"
+        }
+      ],
+      "observed": "P16 returns an IN_APP broadcast from a project with no Site membership to that Site member through the actual service with a valid live session. The global feed SQL admits every recipient-null IN_APP tenant row. The POST body projectId is not the project resolved by the guard; owner-digest uses project.read while returning commercial fields.",
+      "correction": "Authorize the body project/resource and intended recipient explicitly, and revalidate current membership/scope in the transaction. Filter broadcasts and existing personal notifications after access changes. Define a safe digest DTO and financial visibility capability; do not rely on a global document.read grant for all notification categories.",
+      "acceptance": "Exercise real HTTP global routes for Owner, Site, scoped PM, billing and guests. Include unassigned projects, narrowed resources, offboarding, tenant switch, scope changes, pagination/counts and personal versus broadcast messages. No hidden payload or financial field may escape."
+    },
+    {
+      "id": "PH2-G20-003",
+      "group": "G20",
+      "title": "Separate gateway acceptance from delivery and reconcile uncertain outcomes",
+      "priority": "P1",
+      "kind": "CODE_DEFECT",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION",
+      "probe_ids": [
+        "N01"
+      ],
+      "requirements": [
+        "FR-NOT-004",
+        "FR-NOT-010"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/worker/src/notification-delivery.ts",
+          "line": 12,
+          "symbol": "export async function deliverNotification",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/worker/src/notification-delivery.ts#L12"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/worker/src/scheduler.ts",
+          "line": 538,
+          "symbol": "async dispatchQueuedNotifications",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/worker/src/scheduler.ts#L538"
+        }
+      ],
+      "observed": "The generic adapter returns true for accepted=true with a matching notification ID; the scheduler immediately labels the row SENT. It has no business-notification attempt/receipt ledger, signed delivery callbacks, bounce reconciliation or unknown-outcome state. The stronger authentication delivery ledger is a different path and cannot certify these messages.",
+      "correction": "Persist claim/attempt/acceptance/delivery/failure states with correlated provider IDs and a reviewed channel contract. Reconcile timeout-after-acceptance and crash-after-send safely; use provider deduplication on the stable message identity. Enforce HTTPS for real adapters, reject redirects, bound response size and validate acknowledgements. Keep secrets out of receipts.",
+      "acceptance": "Fixture tests must cover duplicate send/callback, reordered receipts, forged callbacks, timeout after provider acceptance, DB rollback and restart. Obtain real email/SMS delivery/bounce evidence separately. An accepted request must never be presented as confirmed recipient delivery."
+    },
+    {
+      "id": "PH2-G20-004",
+      "group": "G20",
+      "title": "Add bounded retries, fair claiming and dead-letter recovery to business notifications",
+      "priority": "P1",
+      "kind": "CODE_DEFECT",
+      "status": "OPEN",
+      "evidence_level": "SOURCE_CONFIRMED",
+      "probe_ids": [],
+      "requirements": [
+        "FR-NOT-010"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/worker/src/scheduler.ts",
+          "line": 538,
+          "symbol": "async dispatchQueuedNotifications",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/worker/src/scheduler.ts#L538"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/worker/src/notification-delivery.ts",
+          "line": 25,
+          "symbol": "AbortSignal.timeout",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/worker/src/notification-delivery.ts#L25"
+        }
+      ],
+      "observed": "The scheduler selects the oldest 25 queued rows, calls the provider sequentially while holding the database transaction/row locks, and silently continues on every false result or exception. Failed rows retain the same position with no attempts, next-attempt time, failure classification or dead letter. Twenty-five permanently failing email rows can repeatedly consume the batch; up to 25 ten-second network waits occur inside one transaction. PR16 outbox leases do not change this notification table.",
+      "correction": "Claim a bounded batch in a short transaction, send outside locks, and settle each leased attempt with fencing. Persist exponential backoff/jitter, permanent versus transient errors, retry ceilings, dead letters and audited redrive. Provide per-tenant/channel fairness, bounded concurrency, rate limits and queue-age/failure metrics.",
+      "acceptance": "Seed more than one batch with poison rows and a healthy later message. Verify bounded delivery latency, restart/lease expiry, provider outage, 429 Retry-After, shutdown and redrive without duplicate delivery or long-lived DB locks. Alert on backlog age and exhausted retries."
+    },
+    {
+      "id": "PH2-G20-005",
+      "group": "G20",
+      "title": "Implement enforceable preferences and nonessential unsubscribe",
+      "priority": "P2",
+      "kind": "WORKFLOW_GAP",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION",
+      "probe_ids": [
+        "P17"
+      ],
+      "requirements": [
+        "FR-NOT-007",
+        "FR-NOT-011"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/notifications/notifications.service.ts",
+          "line": 24,
+          "symbol": "async createNotification",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/notifications/notifications.service.ts#L24"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/worker/src/scheduler.ts",
+          "line": 538,
+          "symbol": "async dispatchQueuedNotifications",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/worker/src/scheduler.ts#L538"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "packages/db/migrations/0000_complete_v021_schema_and_rls.sql",
+          "line": 1079,
+          "symbol": "CREATE TABLE IF NOT EXISTS notification_preferences",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/packages/db/migrations/0000_complete_v021_schema_and_rls.sql#L1079"
+        }
+      ],
+      "observed": "P17 queues an EMAIL MARKETING event despite an explicit disabled matching notification_preferences row. The table has no registered preference/unsubscribe management workflow or enforcement in producer/dispatcher. Digest versus immediate is not applied.",
+      "correction": "Define approved event categories and essential/nonessential policy. Implement authenticated preference management and secure unsubscribe for nonessential email, then enforce it at enqueue and dispatch. Security/transactional notices must retain their mandatory delivery rules. Digest aggregation must not duplicate immediate delivery.",
+      "acceptance": "Test disabled categories, category changes while queued, replayed/untrusted unsubscribe links, essential notices, tenant isolation and digest boundaries. Verify actual UI and rendered mail headers/links. Treat full per-category digest customization as V1 unless explicitly included."
+    },
+    {
+      "id": "PH2-G20-006",
+      "group": "G20",
+      "title": "Make deduplication preserve immutable event and delivery identity",
+      "priority": "P2",
+      "kind": "CODE_DEFECT",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION",
+      "probe_ids": [
+        "P15"
+      ],
+      "requirements": [
+        "FR-NOT-006"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/notifications/notifications.service.ts",
+          "line": 50,
+          "symbol": "ON CONFLICT",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/notifications/notifications.service.ts#L50"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "packages/db/migrations/0000_complete_v021_schema_and_rls.sql",
+          "line": 1076,
+          "symbol": "notifications_dedup_uq",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/packages/db/migrations/0000_complete_v021_schema_and_rls.sql#L1076"
+        }
+      ],
+      "observed": "P15 reuses a SENT in-app ID with a changed payload while preserving the old event key, project and sent_at. Dedup has no configurable event window and the conflict update does not compare request meaning. An old delivered record can be rewritten rather than recording a distinct event or rejecting a conflicting retry.",
+      "correction": "Use a stable event/recipient/channel/window identity plus canonical payload fingerprint. Identical retries return the same outcome; conflicting content must reject or create an explicitly new event. Preserve delivered content/attempt history and project binding. Specify behavior for recipient-null broadcasts, whose NULL expression does not provide ordinary unique-key equality.",
+      "acceptance": "Test same/different payload, event, project, recipient and window, including parallel enqueue, broadcast NULL recipients and retries after SENT/READ. Historical message content and delivery evidence must remain unchanged."
+    },
+    {
+      "id": "PH2-G20-007",
+      "group": "G20",
+      "title": "Persist and consistently apply urgency, quiet hours and expiry",
+      "priority": "P2",
+      "kind": "CODE_DEFECT",
+      "status": "OPEN",
+      "evidence_level": "SOURCE_CONFIRMED",
+      "probe_ids": [],
+      "requirements": [
+        "FR-NOT-003",
+        "FR-NOT-010"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/notifications/notifications.service.ts",
+          "line": 37,
+          "symbol": "const shouldDefer",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/notifications/notifications.service.ts#L37"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/worker/src/scheduler.ts",
+          "line": 559,
+          "symbol": "channel NOT IN ('SMS', 'WHATSAPP')",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/worker/src/scheduler.ts#L559"
+        }
+      ],
+      "observed": "The API calculates deferredForQuietHours using isUrgent, but does not persist urgency. The worker defers every SMS/WhatsApp message in quiet hours, so an API response can say no deferral while the worker defers it. Rows also carry no business expiry/cancellation eligibility check after a project closes or the obligation is satisfied.",
+      "correction": "Define a channel/category urgency policy, persist authorized urgency and eligible/expiry timestamps, and share one timezone/quiet-hours calculation. Re-evaluate recipient, project and obligation eligibility before sending. Never let arbitrary callers classify marketing as urgent security traffic.",
+      "acceptance": "Test exact 22:00/08:00 IST boundaries, UTC dates, allowed urgent security versus nonessential messages, satisfied requirements, closed/suspended projects, revoked grants and expired upload links. API status and eventual queue behavior must agree."
+    },
+    {
+      "id": "PH2-G20-008",
+      "group": "G20",
+      "title": "Complete requirement and warranty reminder scheduling and supplier message contracts",
+      "priority": "P1",
+      "kind": "WORKFLOW_GAP",
+      "status": "OPEN",
+      "evidence_level": "SOURCE_CONFIRMED",
+      "probe_ids": [],
+      "requirements": [
+        "FR-NOT-001",
+        "FR-NOT-003",
+        "FR-NOT-004",
+        "FR-NOT-008",
+        "FR-NOT-012",
+        "FR-NOT-014"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/worker/src/scheduler.ts",
+          "line": 219,
+          "symbol": "async runDailyExpiryJob",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/worker/src/scheduler.ts#L219"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/worker/src/main.ts",
+          "line": 119,
+          "symbol": "runWeeklyOwnerRetentionAtRiskDigest",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/worker/src/main.ts#L119"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/parties/supplier-guest.service.ts",
+          "line": 157,
+          "symbol": "const shareMessage",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/parties/supplier-guest.service.ts#L157"
+        }
+      ],
+      "observed": "The worker has daily expiry and a weekly owner digest, but no complete configurable 7/3/1 requirement-reminder or 30/14/7/1 warranty/DLP reminder producer. The supplier manual WhatsApp deep link exists, which is a positive MVP control, but its share text is only a generic upload link and omits the required list, deadline and help contact. WhatsApp Business API is V1, not an automatic MVP blocker.",
+      "correction": "Implement durable per-event schedules from reviewed project configuration, correct NULL-due semantics, assignee/PM/asset-owner resolution, cancellation/resume and dedup windows. Add safe supplier template fields and authenticated deep links without exposing internal content. Keep optional escalation and WhatsApp Business behind explicit V1 scope.",
+      "acceptance": "Use controllable clocks and actual DB queues across due date, midnight, missed runs, restart and DST/IST boundaries. NULL due dates never become missing. Verify warranty basis/disputes and confirmed expiry dates, all four offsets, supplier list/deadline/contact and no reminder after completion or revoked access."
+    },
+    {
+      "id": "PH2-G20-009",
+      "group": "G20",
+      "title": "Use one qualified missing-work and financial-summary definition",
+      "priority": "P2",
+      "kind": "CODE_DEFECT",
+      "status": "OPEN",
+      "evidence_level": "SOURCE_CONFIRMED",
+      "probe_ids": [],
+      "requirements": [
+        "FR-NOT-001",
+        "FR-NOT-008",
+        "FR-CNT-003"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/notifications/notifications.service.ts",
+          "line": 92,
+          "symbol": "async getOwnerDigest",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/notifications/notifications.service.ts#L92"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/worker/src/scheduler.ts",
+          "line": 302,
+          "symbol": "Calculate missing/expired counts",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/worker/src/scheduler.ts#L302"
+        }
+      ],
+      "observed": "The owner-digest endpoint counts mandatory NOT_STARTED requirements without requiring an overdue due date and does not exclude superseded rows. It reads project-level financial columns/site_json fallback; the scheduled digest instead totals active contracts and filters overdue rows. The two surfaces can disagree. A full contract retention amount is informational exposure, not proof of money actually gated by a particular missing item.",
+      "correction": "Use shared current-obligation and contract-summary queries with explicit overdue/expiry semantics, approved financial visibility and integer paise. Label informational retention exposure accurately. Exclude superseded/non-applicable work and preserve unknown values rather than inventing money at risk.",
+      "acceptance": "Cross-check dashboard, API digest and scheduled safe summary for no due date, future due, superseded obligations, mixed contracts, variations and unknown values. Use values beyond JS safe integer range and verify scope-filtered counts."
+    },
+    {
+      "id": "PH2-G20-010",
+      "group": "G20",
+      "title": "Resolve real recipients and deliver business events through a reviewed asynchronous contract",
+      "priority": "P1",
+      "kind": "WORKFLOW_GAP",
+      "status": "OPEN",
+      "evidence_level": "SOURCE_CONFIRMED",
+      "probe_ids": [],
+      "requirements": [
+        "FR-NOT-004",
+        "FR-NOT-010",
+        "FR-NOT-012"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/notifications/notifications.service.ts",
+          "line": 57,
+          "symbol": "ctx.userId,",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/notifications/notifications.service.ts#L57"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/worker/src/notification-delivery.ts",
+          "line": 1,
+          "symbol": "export interface QueuedNotification",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/worker/src/notification-delivery.ts#L1"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/worker/src/main.ts",
+          "line": 472,
+          "symbol": "pollOutbox",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/worker/src/main.ts#L472"
+        }
+      ],
+      "observed": "The generic POST always sets recipient_user_id to the actor; it exposes no typed recipient contract or recipient-visible destination projection. The worker sends identity IDs and arbitrary event payloads to a generic gateway. There is no complete producer mapping from requirement/review/warranty events to eligible users, parties, verified destinations and configured templates. A queued self-notification is not proof that the responsible person was notified.",
+      "correction": "Create trusted event-to-recipient/template producers backed by the outbox, current eligible identities and verified contact channels. Define a narrow gateway request/acknowledgement schema and server-owned routing. Preserve nonblocking business commits and durable notification failures; use the separate G01 protocol for OTP/invitation credentials.",
+      "acceptance": "Trace a real business mutation through committed event, recipient resolution, safe rendered message, provider attempt and in-app link. Cover missing/unverified contacts, removed assignees, external-party scope, multiple recipients, rollback and duplicate outbox delivery."
+    },
+    {
+      "id": "PH2-G20-011",
+      "group": "G20",
+      "title": "Deliver a usable notification inbox and preference journey",
+      "priority": "P2",
+      "kind": "WORKFLOW_GAP",
+      "status": "OPEN",
+      "evidence_level": "SOURCE_CONFIRMED",
+      "probe_ids": [],
+      "requirements": [
+        "FR-NOT-002",
+        "FR-NOT-004",
+        "FR-NOT-011"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/notifications/notifications.controller.ts",
+          "line": 19,
+          "symbol": "export class NotificationsController",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/notifications/notifications.controller.ts#L19"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/notifications/notifications.service.ts",
+          "line": 82,
+          "symbol": "ORDER BY created_at DESC LIMIT 50",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/notifications/notifications.service.ts#L82"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/web/src/app/(contractor)/layout.tsx",
+          "line": 1,
+          "symbol": "",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/web/src/app/(contractor)/layout.tsx#L1"
+        }
+      ],
+      "observed": "The notification module exposes list/create/digest only; there is no mark-read, unread count or pagination contract beyond LIMIT 50. The tracked application routes do not provide a notification inbox/preferences workflow. A stored READ field and a backend list are not a complete end-user delivery experience.",
+      "correction": "Add scoped, paginated inbox/read-state endpoints and the approved accessible web journey with real unread state and links. Provide preferences/unsubscribe settings, honest queued/failed states and reload-safe errors. Avoid forcing notification visibility through document permissions for unrelated categories.",
+      "acceptance": "Run real web/API journeys for empty and >50-item inboxes, read/unread, keyboard/mobile use, removed project access, tenant switch, reload and API/provider failure. No synthetic success or silent truncation."
+    },
+    {
+      "id": "PH2-G20-012",
+      "group": "G20",
+      "title": "Obtain provider, privacy and operational delivery acceptance",
+      "priority": "P1",
+      "kind": "RELEASE_GATE",
+      "status": "BLOCKED_EXTERNAL",
+      "evidence_level": "EXTERNAL_EVIDENCE_NOT_PROVIDED",
+      "probe_ids": [],
+      "requirements": [
+        "FR-NOT-004",
+        "FR-NOT-005",
+        "FR-NOT-010",
+        "FR-INT-012"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/worker/src/notification-delivery.ts",
+          "line": 12,
+          "symbol": "export async function deliverNotification",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/worker/src/notification-delivery.ts#L12"
+        },
+        {
+          "sha": "c6b6024d3d5b25d2d1ab87f77e2d3294500c5bb0",
+          "path": "docs/engineering/agent-collaboration.md",
+          "line": 9,
+          "symbol": "There is no automatic merge",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/c6b6024d3d5b25d2d1ab87f77e2d3294500c5bb0/docs/engineering/agent-collaboration.md#L9"
+        }
+      ],
+      "observed": "Local transport is a loopback synthetic gateway; no real email/SMS provider, sender/domain reputation, DLT template/entity registration, opt-in, deliverability or production queue SLO is accepted by this audit. Authentication fixture success does not supply business-delivery acceptance.",
+      "correction": "After code fixes, obtain accountable provider/template/privacy approval, production-like sender configuration, monitoring and incident/redrive ownership. Complete separate G01 credential-delivery acceptance. Activate only channels actually contracted and approved.",
+      "acceptance": "Retain sanitized provider acknowledgements, delivered/bounced/undeliverable outcomes, domain/DLT configuration evidence, load/outage recovery results and alarms against the final integrated SHA. Independent reviewers and the owner decide release."
+    },
+    {
+      "id": "PH2-G18-001",
+      "group": "G18",
+      "title": "Replace contradictory fallbacks with one effective entitlement policy",
+      "priority": "P1",
+      "kind": "CODE_DEFECT",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION",
+      "probe_ids": [
+        "P01",
+        "P02",
+        "P03"
+      ],
+      "requirements": [
+        "FR-BIL-001",
+        "FR-BIL-002",
+        "FR-BIL-003"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/billing/warranty-and-billing.service.ts",
+          "line": 554,
+          "symbol": "async getSubscription",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/billing/warranty-and-billing.service.ts#L554"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/projects/projects.service.ts",
+          "line": 890,
+          "symbol": "private async getOrgMaxActiveProjectsLimit",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/projects/projects.service.ts#L890"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/documents/documents.service.ts",
+          "line": 385,
+          "symbol": "Soft check plan storage limit",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/documents/documents.service.ts#L385"
+        }
+      ],
+      "observed": "P01 reports no subscription and maxActiveProjects=0 while activation succeeds using a ten-project fallback. P02 permits an expired ACTIVE subscription; P03 permits a CANCELLED subscription through the same fallback. Subscription DTO defaults (20 seats/100GB/15 projects) differ from activation defaults, and storage filters a different status set.",
+      "correction": "Implement one versioned effective-entitlement resolver for org status, subscription state, period/grace boundaries, plan status and explicit trial/no-plan policy. Unknown, cancelled or missing entitlements must follow an approved safe policy without invented Starter allowances. Share it across reads, invites, uploads, activation/reopen and package generation; preserve authorized reads/exports.",
+      "acceptance": "Table-drive missing, TRIAL, ACTIVE, PAST_DUE, SUSPENDED, CANCELLED, expired/future periods and inactive plans at exact boundaries. API/UI limits and every writer must agree; no bad/missing plan may silently increase allowance."
+    },
+    {
+      "id": "PH2-G18-002",
+      "group": "G18",
+      "title": "Enforce seats on every membership activation under one capacity lock",
+      "priority": "P1",
+      "kind": "CODE_DEFECT",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION",
+      "probe_ids": [
+        "P21",
+        "G10"
+      ],
+      "requirements": [
+        "FR-BIL-001",
+        "FR-BIL-002",
+        "FR-ORG-008"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/identity/identity.controller.ts",
+          "line": 595,
+          "symbol": "const acceptInvitation",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/identity/identity.controller.ts#L595"
+        },
+        {
+          "sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08",
+          "path": "apps/api/src/modules/identity/identity.controller.ts",
+          "line": 619,
+          "symbol": "SELECT p.limits_json->>'maxSeats'",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/7b2b649ecf33b69e8cf1b5753630d82ed89aaf08/apps/api/src/modules/identity/identity.controller.ts#L619"
+        }
+      ],
+      "observed": "P21 executes the actual PR16 invitation acceptance path and produces two active members on maxSeats=1. PR13 adds a subscription-row lock and blocks the ACTIVE-plan case, but G10 changes that plan to PAST_DUE and the same capacity is bypassed. PR13 has no quota row when status/plan is absent and does not validate period dates. Its fix is not present in the shared PR16 snapshot.",
+      "correction": "Integrate the seat correction with the authoritative entitlement resolver and a lock that exists even when no subscription row does. Define invited/active/suspended seat accounting and enforce signup/reactivation/import/admin activation consistently. Serialize plan edits and acceptances, preserve proof recovery on capacity rejection and make retries idempotent.",
+      "acceptance": "Use actual OTP/invitation acceptance with restricted tc_app for at-limit, below-limit, no-plan, expired and grace states; race multiple acceptances, suspension/removal and downgrade. Verify proof retry/reissue semantics, counter reconciliation and no orphaned user or membership on rollback."
+    },
+    {
+      "id": "PH2-G18-003",
+      "group": "G18",
+      "title": "Reserve storage atomically and treat zero as a real limit",
+      "priority": "P1",
+      "kind": "CODE_DEFECT",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION",
+      "probe_ids": [
+        "P04",
+        "P05"
+      ],
+      "requirements": [
+        "FR-BIL-001",
+        "FR-BIL-002"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/documents/documents.service.ts",
+          "line": 385,
+          "symbol": "Soft check plan storage limit",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/documents/documents.service.ts#L385"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "packages/db/src/tenant-tx.ts",
+          "line": 203,
+          "symbol": "reconcileStorageQuotaOnFileStatusChange",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/packages/db/src/tenant-tx.ts#L203"
+        }
+      ],
+      "observed": "P04 creates an upload intent on a zero-byte plan because the limit is tested by truthiness. P05 creates two ten-byte intents on a ten-byte plan: usage only counts READY bytes and pending work reserves nothing. Existing positive quota checks therefore do not stop pending uploads or later scan completion from exceeding capacity.",
+      "correction": "Resolve an explicit validated limit, including zero, and reserve pending bytes atomically under an org usage lock. Reconcile reserved/committed bytes on complete, scanner success/failure, abort, expiry, delete and restore. Define safe over-quota recovery after downgrade; do not weaken scanning or immutable object verification.",
+      "acceptance": "Race intents and scanner completions at the ceiling; verify zero/no-plan, dishonest size, retries, interrupted multipart, failed scan, expired intents, delete/restore and plan downgrade. Actual object sizes must settle exactly once and pending reservations must not leak."
+    },
+    {
+      "id": "PH2-G18-004",
+      "group": "G18",
+      "title": "Align active-project usage with lifecycle and reopening",
+      "priority": "P1",
+      "kind": "CODE_DEFECT",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION",
+      "probe_ids": [
+        "P07"
+      ],
+      "requirements": [
+        "FR-BIL-001",
+        "FR-BIL-002",
+        "FR-PRJ-014"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/projects/projects.service.ts",
+          "line": 205,
+          "symbol": "async activateProject",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/projects/projects.service.ts#L205"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/projects/projects.service.ts",
+          "line": 475,
+          "symbol": "async reopenProject",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/projects/projects.service.ts#L475"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/projects/projects.service.ts",
+          "line": 318,
+          "symbol": "async closeProject",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/projects/projects.service.ts#L318"
+        }
+      ],
+      "observed": "Activation increments ACTIVE_PROJECTS, while reopen sets ACTIVE without any reservation (P07). Close/suspend contain no corresponding usage transition and archive is not exposed. The counter cannot consistently mean current active projects, and an org can reopen beyond a zero project entitlement.",
+      "correction": "Define which lifecycle states consume capacity, including HANDOVER and SUSPENDED, then implement atomic transition deltas/reservations and a reconciliation job against canonical project state. Reopen/resume must use effective limits. Archive must exclude projects without deleting records; retries and rollback must not double-count.",
+      "acceptance": "Exercise activation, failed activation, suspend/resume, handover/close/reopen, cancel/archive and downgrade, both serially and concurrently. Compare counter to real projects after each transition and restart; allow retained read/export access while over quota."
+    },
+    {
+      "id": "PH2-G18-005",
+      "group": "G18",
+      "title": "Use plan-specific package limits and idempotent consumption",
+      "priority": "P1",
+      "kind": "CODE_DEFECT",
+      "status": "OPEN",
+      "evidence_level": "SOURCE_CONFIRMED",
+      "probe_ids": [],
+      "requirements": [
+        "FR-BIL-001",
+        "FR-BIL-002"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/handover/handover.service.ts",
+          "line": 131,
+          "symbol": "'PACKAGE_GENERATIONS', currentMonth, 1n, 50n",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/handover/handover.service.ts#L131"
+        }
+      ],
+      "observed": "Handover generation calls consumePlanQuota with hardcoded 50n rather than maxPackageGenerationsPerMonth from the plan. The shared counter SQL defect from Phase1 is fixed in PR16, but this policy still allows or blocks the wrong number of generations. Generation failure/retry needs a defined billable-attempt contract.",
+      "correction": "Use the shared effective-entitlement contract and explicit IST billing-period semantics. Define whether failed/cancelled attempts count; bind reservations/settlement to durable generation identity so API/worker retries cannot charge twice or release unrelated usage.",
+      "acceptance": "Test plans below and above 50, zero/no-plan, month boundary, identical generation retry, queue timeout, failed artifact validation and concurrent final slots. Inspect actual counter and generation ledger; never create fake PDFs to make a generation appear successful."
+    },
+    {
+      "id": "PH2-G18-006",
+      "group": "G18",
+      "title": "Complete subscription fulfilment, expiry, grace and dunning safely",
+      "priority": "P1",
+      "kind": "WORKFLOW_GAP",
+      "status": "OPEN",
+      "evidence_level": "SOURCE_CONFIRMED",
+      "probe_ids": [],
+      "requirements": [
+        "FR-BIL-003",
+        "FR-BIL-004",
+        "FR-BIL-006"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/billing/billing.service.ts",
+          "line": 172,
+          "symbol": "async handleRazorpayWebhook",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/billing/billing.service.ts#L172"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/billing/warranty-and-billing.service.ts",
+          "line": 627,
+          "symbol": "AUTOMATED_PAYMENT_FULFILLMENT_DISABLED",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/billing/warranty-and-billing.service.ts#L627"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "packages/db/migrations/0021_razorpay_verified_webhook_inbox.sql",
+          "line": 1,
+          "symbol": "",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/packages/db/migrations/0021_razorpay_verified_webhook_inbox.sql#L1"
+        }
+      ],
+      "observed": "The raw signed Razorpay webhook is safely recorded for reconciliation and returns processed=false. Automated fulfilment is intentionally disabled; no complete checkout/activation, provider-to-org reconciliation, period expiry/grace/dunning or plan-state scheduler is registered. Receiving a verified webhook is not an active paid subscription.",
+      "correction": "Implement a reviewed subscription state machine and server-owned provider/customer/plan mapping with reconciliation, replay/order handling, idempotent ledger transitions and durable dunning events. Coordinate notification delivery and suspended read access. Keep live fulfilment disabled until provider and finance acceptance exists; never trust webhook notes as tenant authority.",
+      "acceptance": "Cover out-of-order/duplicate/forged events, receipt-before-API-return, timeout/unknown payment outcome, refund/cancellation, expiry/grace/reactivation and provider outage. Real provider sandbox acceptance and operations reconciliation must precede live activation."
+    },
+    {
+      "id": "PH2-G18-007",
+      "group": "G18",
+      "title": "Validate and version plan definitions and entitlement snapshots",
+      "priority": "P1",
+      "kind": "CODE_DEFECT",
+      "status": "OPEN",
+      "evidence_level": "SOURCE_CONFIRMED",
+      "probe_ids": [],
+      "requirements": [
+        "FR-BIL-001",
+        "FR-BIL-007",
+        "FR-BIL-008"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "packages/db/migrations/0000_complete_v021_schema_and_rls.sql",
+          "line": 1190,
+          "symbol": "CREATE TABLE IF NOT EXISTS plans",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/packages/db/migrations/0000_complete_v021_schema_and_rls.sql#L1190"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "packages/db/migrations/0000_complete_v021_schema_and_rls.sql",
+          "line": 1200,
+          "symbol": "CREATE TABLE IF NOT EXISTS subscriptions",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/packages/db/migrations/0000_complete_v021_schema_and_rls.sql#L1200"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/billing/billing.service.ts",
+          "line": 18,
+          "symbol": "async listPlans",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/billing/billing.service.ts#L18"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/billing/warranty-and-billing.service.ts",
+          "line": 583,
+          "symbol": "const seatLimit",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/billing/warranty-and-billing.service.ts#L583"
+        }
+      ],
+      "observed": "plans.limits_json is unrestricted JSON; readers directly use Number/BigInt or defaults. Missing, fractional, negative, string or oversized limits have no shared schema/version policy. Subscriptions join live mutable plan rows, so future plan edits can retroactively change contractual limits/price presentation without an accepted transition.",
+      "correction": "Create bounded integer/unit validation and immutable plan/price/entitlement versions with effective dates and explicit migration policy. Pin the subscribed offer and record authorized audited changes. Keep the existing UNIQUE subscriptions.org_id constraint; this audit withdraws the hypothesis that duplicate org subscription rows are allowed.",
+      "acceptance": "Test malformed JSON, zero, null/missing fields, unsafe numeric sizes, retired offers, plan edits and concurrent downgrade/usage. Verify old subscriptions keep their agreed version until an explicit transition and public plan output matches actual provider offers."
+    },
+    {
+      "id": "PH2-G18-008",
+      "group": "G18",
+      "title": "Keep financial issuance gated and remove inconsistent tax paths before enabling it",
+      "priority": "P1",
+      "kind": "CODE_DEFECT",
+      "status": "OPEN",
+      "evidence_level": "SOURCE_CONFIRMED",
+      "probe_ids": [],
+      "requirements": [
+        "FR-BIL-005",
+        "FR-BIL-008",
+        "FR-BIL-009",
+        "FR-BIL-012"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/billing/billing.controller.ts",
+          "line": 30,
+          "symbol": "private assertInvoiceIssuanceEnabled",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/billing/billing.controller.ts#L30"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/billing/billing.service.ts",
+          "line": 83,
+          "symbol": "const taxRateBps = 1800",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/billing/billing.service.ts#L83"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/billing/gst-einvoice-tds.service.ts",
+          "line": 45,
+          "symbol": "billing_tax_configs",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/billing/gst-einvoice-tds.service.ts#L45"
+        }
+      ],
+      "observed": "Tax invoice issuance is disabled by default, which is a required safety control. If enabled, BillingService.createInvoice still hardcodes 1800 basis points, SAC 998315 and an unconditional Rule48 exemption declaration, although another GST service reads configuration. Subscription activation cannot assume these invoice/tax paths are accepted.",
+      "correction": "Keep issuance disabled while reconciling the two paths under authoritative tax configuration, validated supplier/buyer/place-of-supply facts, integer amounts and audited numbering. Obtain accountable finance/legal review for applicability and disclosures; coordinate the later finance group instead of treating G18 as tax certification.",
+      "acceptance": "Prove disabled routes fail honestly; after reviewed fixes, exercise configured tax scenarios, numbering concurrency, refunds/TDS reconciliation and downloadable issued documents against approved fixtures. Live legal/provider acceptance is separate from code tests."
+    },
+    {
+      "id": "PH2-G18-009",
+      "group": "G18",
+      "title": "Expose honest usage, remaining capacity and actionable billing recovery",
+      "priority": "P2",
+      "kind": "WORKFLOW_GAP",
+      "status": "OPEN",
+      "evidence_level": "SOURCE_CONFIRMED",
+      "probe_ids": [],
+      "requirements": [
+        "FR-BIL-002",
+        "FR-BIL-003",
+        "FR-BIL-007"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/web/src/app/(contractor)/billing/page.tsx",
+          "line": 105,
+          "symbol": "Verified subscription limits",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/web/src/app/(contractor)/billing/page.tsx#L105"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/billing/warranty-and-billing.service.ts",
+          "line": 554,
+          "symbol": "async getSubscription",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/billing/warranty-and-billing.service.ts#L554"
+        }
+      ],
+      "observed": "The billing page renders subscription limits as verified but does not reconcile them with actual enforcement/usage. It lacks the complete subscribe/upgrade/grace/reactivation workflow and clear quota recovery contract. The backend can report zero while allowing work; generic errors do not meet the clear upgrade-prompt requirement.",
+      "correction": "Expose one typed usage/limit/effective-state DTO, including reservations, period and safe recovery actions. Build the authorized plan and payment-status journey with honest unavailable/disabled states, clear quota errors and retained reads/exports. Do not fabricate a plan when configuration/provider data is unavailable.",
+      "acceptance": "Run real web/API tests at and over each limit, no subscription, provider delay, downgrade and grace expiry. Display accurate remaining usage and a recoverable action without hiding existing project evidence; verify owner/billing permissions and integer money formatting."
+    },
+    {
+      "id": "PH2-G18-010",
+      "group": "G18",
+      "title": "Accept the final entitlement and provider integration independently",
+      "priority": "P1",
+      "kind": "RELEASE_GATE",
+      "status": "BLOCKED_EXTERNAL",
+      "evidence_level": "EXTERNAL_EVIDENCE_NOT_PROVIDED",
+      "probe_ids": [],
+      "requirements": [
+        "FR-BIL-001",
+        "FR-BIL-002",
+        "FR-BIL-003",
+        "FR-BIL-004"
+      ],
+      "source": [
+        {
+          "sha": "c6b6024d3d5b25d2d1ab87f77e2d3294500c5bb0",
+          "path": "docs/engineering/agent-collaboration.md",
+          "line": 9,
+          "symbol": "There is no automatic merge",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/c6b6024d3d5b25d2d1ab87f77e2d3294500c5bb0/docs/engineering/agent-collaboration.md#L9"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/billing/billing.service.ts",
+          "line": 172,
+          "symbol": "async handleRazorpayWebhook",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/billing/billing.service.ts#L172"
+        }
+      ],
+      "observed": "Local synthetic quota/OTP tests do not establish real payment settlement, subscription fulfilment, taxation or billing operations. PR13 and PR16 are divergent; no common integrated production candidate has been reviewed. PR13 exact-head application CI is failing.",
+      "correction": "Produce one reviewed integrated SHA, passing application CI, concurrency and provider acceptance, a reconciled usage ledger and approved billing/grace policy. Name owners for payment reconciliation, quota recovery, dunning, incident response and rollback.",
+      "acceptance": "Attach exact-SHA CI, provider sandbox-to-production checklist with real acknowledgements, sustained capacity races, failed-payment recovery and read/export retention results. Obtain independent security/finance/product review and owner release authorization."
+    },
+    {
+      "id": "PH2-G03-001",
+      "group": "G03",
+      "title": "Integrate proposed G03 repairs onto the reviewed shared foundations",
+      "priority": "P1",
+      "kind": "CODE_DEFECT",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION",
+      "probe_ids": [
+        "G01",
+        "G03",
+        "G04",
+        "G05",
+        "G09",
+        "G11"
+      ],
+      "requirements": [
+        "FR-ORG-004",
+        "FR-ORG-007"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/organisations/organisations.controller.ts",
+          "line": 30,
+          "symbol": "@Get('audit')",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/organisations/organisations.controller.ts#L30"
+        },
+        {
+          "sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08",
+          "path": "apps/api/src/modules/organisations/organisations.service.ts",
+          "line": 1188,
+          "symbol": "async getAuditLog",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/7b2b649ecf33b69e8cf1b5753630d82ed89aaf08/apps/api/src/modules/organisations/organisations.service.ts#L1188"
+        },
+        {
+          "sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08",
+          "path": "apps/api/src/modules/organisations/organisation-validation.ts",
+          "line": 60,
+          "symbol": "parseOrgProfilePatch",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/7b2b649ecf33b69e8cf1b5753630d82ed89aaf08/apps/api/src/modules/organisations/organisation-validation.ts#L60"
+        }
+      ],
+      "observed": "PR13 fixes several canonical G03 findings, but PR16 does not contain its organisation service/controller/validation changes. Main contains neither complete candidate. G03 probes G01/G03/G04/G05/G09/G11 confirm partial PATCH/clearing, audit denial, dashboard execution, self-replacement denial, invitation events and contact/footer round trip on PR13 only. Its application CI fails in workspace regressions.",
+      "correction": "Integrate the reviewed fixes once with current Phase1 authority/session/transaction controls, retain original G03-001..023 IDs and rerun affected assertions on one exact head. Do not overwrite canonical register statuses, reintroduce old vulnerabilities or label divergent candidate observations as merged behavior.",
+      "acceptance": "Pass complete CI, real migrated DB/HTTP negatives, concurrency and web journeys on the integrated head. Reconcile each original ID with fix SHA, evidence and reviewer disposition; retain failed CI as a blocker until diagnosed and corrected."
+    },
+    {
+      "id": "PH2-G03-002",
+      "group": "G03",
+      "title": "Finish profile policy, defaults and generated-output integration",
+      "priority": "P1",
+      "kind": "CODE_DEFECT",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION",
+      "probe_ids": [
+        "G02"
+      ],
+      "requirements": [
+        "FR-ORG-004",
+        "FR-ORG-007",
+        "FR-ORG-011",
+        "FR-ORG-012"
+      ],
+      "source": [
+        {
+          "sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08",
+          "path": "apps/api/src/modules/organisations/organisations.service.ts",
+          "line": 274,
+          "symbol": "async updateOrgProfile",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/7b2b649ecf33b69e8cf1b5753630d82ed89aaf08/apps/api/src/modules/organisations/organisations.service.ts#L274"
+        },
+        {
+          "sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08",
+          "path": "apps/api/src/modules/organisations/organisations.service.ts",
+          "line": 236,
+          "symbol": "async getOrganisation",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/7b2b649ecf33b69e8cf1b5753630d82ed89aaf08/apps/api/src/modules/organisations/organisations.service.ts#L236"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/worker/src/main.ts",
+          "line": 378,
+          "symbol": "Compiling PDF package job",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/worker/src/main.ts#L378"
+        }
+      ],
+      "observed": "PR13 adds typed contact/address/footer/branding-object fields and working PATCH semantics. G02 still stores allowSelfApproval=true in org_profiles while organisations.allow_self_approval remains false. getOrganisation omits timezone, and the allowlist has no date-format/language/multiple-signatory management. Generated package workers do not consume the full branding/signatory/default contract.",
+      "correction": "Choose one authoritative policy/default representation and update all readers/writers consistently. Round-trip timezone/date/language and supported signatories; safely resolve verified branding objects in generated indexes/covers. Preserve current no-self-approval controls until a reviewed policy intentionally changes them; do not enable self-approval merely to synchronize fields.",
+      "acceptance": "Test save/read/reload plus real PDF/index output for each supported field, explicit clearing, stale version, scanner-rejected/wrong-tenant logo, profile-versus-org policy and multiple signatories. Verify consumer behavior and safe policy changes, not only storage."
+    },
+    {
+      "id": "PH2-G03-003",
+      "group": "G03",
+      "title": "Lock every affected editable project before reassignment",
+      "priority": "P1",
+      "kind": "CODE_DEFECT",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION",
+      "probe_ids": [
+        "G06",
+        "G08"
+      ],
+      "requirements": [
+        "FR-ORG-008",
+        "WF-21"
+      ],
+      "source": [
+        {
+          "sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08",
+          "path": "apps/api/src/modules/organisations/organisations.service.ts",
+          "line": 795,
+          "symbol": "const {rows:blockedProjects}",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/7b2b649ecf33b69e8cf1b5753630d82ed89aaf08/apps/api/src/modules/organisations/organisations.service.ts#L795"
+        },
+        {
+          "sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08",
+          "path": "apps/api/src/modules/organisations/organisations.service.ts",
+          "line": 853,
+          "symbol": "const {rows:affected}",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/7b2b649ecf33b69e8cf1b5753630d82ed89aaf08/apps/api/src/modules/organisations/organisations.service.ts#L853"
+        },
+        {
+          "sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08",
+          "path": "apps/api/src/modules/organisations/organisations.service.ts",
+          "line": 913,
+          "symbol": "UPDATE requirements",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/7b2b649ecf33b69e8cf1b5753630d82ed89aaf08/apps/api/src/modules/organisations/organisations.service.ts#L913"
+        }
+      ],
+      "observed": "PR13 rejects a project already CLOSED (G06), but locks only projects selected as non-editable. G08 pauses after selecting editable affected projects, closes the project on another DB connection, then commits reassignment of two requirements in the CLOSED project. No SQL result is mocked.",
+      "correction": "Acquire the shared lifecycle lock on all affected projects in deterministic order, re-evaluate the complete work manifest and current project state, then mutate under the same transaction. Use the compatible account/membership/session/project lock order of the integrated foundation; do not rely on a precheck of only non-editable rows.",
+      "acceptance": "Deterministic close-versus-reassign, project membership edits, removal and role-change races must serialize safely without closed-project mutation, stale authority, deadlock or partial events. Retain separate static CLOSED rejection and prove the new race control under actual tc_app SQL."
+    },
+    {
+      "id": "PH2-G03-004",
+      "group": "G03",
+      "title": "Validate each replacement responsibility and lock its current eligibility",
+      "priority": "P1",
+      "kind": "CODE_DEFECT",
+      "status": "OPEN",
+      "evidence_level": "SOURCE_CONFIRMED",
+      "probe_ids": [],
+      "requirements": [
+        "WF-21",
+        "FR-PRJ-011"
+      ],
+      "source": [
+        {
+          "sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08",
+          "path": "apps/api/src/modules/organisations/organisations.service.ts",
+          "line": 841,
+          "symbol": "const { rows: repRows }",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/7b2b649ecf33b69e8cf1b5753630d82ed89aaf08/apps/api/src/modules/organisations/organisations.service.ts#L841"
+        },
+        {
+          "sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08",
+          "path": "apps/api/src/modules/organisations/organisations.service.ts",
+          "line": 879,
+          "symbol": "const {rows:reviewRoleNeeds}",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/7b2b649ecf33b69e8cf1b5753630d82ed89aaf08/apps/api/src/modules/organisations/organisations.service.ts#L879"
+        },
+        {
+          "sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08",
+          "path": "apps/api/src/modules/organisations/organisations.service.ts",
+          "line": 899,
+          "symbol": "const eligibleRoles=",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/7b2b649ecf33b69e8cf1b5753630d82ed89aaf08/apps/api/src/modules/organisations/organisations.service.ts#L899"
+        }
+      ],
+      "observed": "PR13 checks active identity, membership and project role, improving G03-006. It does not lock the replacement membership row, does not apply resource scope_json to each assignment, and treats Owner/Admin as general review-role eligibility without proving stage or separation-of-duty requirements. One replacement still receives heterogeneous responsibilities.",
+      "correction": "Use an explicit per-project/per-work allocation plan. Validate and lock current account, org/project membership, resource scope, reviewer stage/qualification and no-self-approval rules for every transferred operational responsibility. Recheck remaining work before removal and preserve immutable authorship.",
+      "acceptance": "Test replacement demotion/suspension while transferring, read-only/narrow scopes, wrong stage, self-review, incompatible work types and absent eligible replacements. Qualified assignments succeed atomically; rejected plans return accurate gaps with no revocation or assignment partial commit."
+    },
+    {
+      "id": "PH2-G03-005",
+      "group": "G03",
+      "title": "Produce an accurate operational gap and delegation manifest",
+      "priority": "P1",
+      "kind": "CODE_DEFECT",
+      "status": "OPEN",
+      "evidence_level": "SOURCE_CONFIRMED",
+      "probe_ids": [],
+      "requirements": [
+        "WF-21"
+      ],
+      "source": [
+        {
+          "sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08",
+          "path": "apps/api/src/modules/organisations/organisations.service.ts",
+          "line": 1051,
+          "symbol": "private async computeMemberGapReport",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/7b2b649ecf33b69e8cf1b5753630d82ed89aaf08/apps/api/src/modules/organisations/organisations.service.ts#L1051"
+        },
+        {
+          "sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08",
+          "path": "apps/api/src/modules/organisations/organisations.service.ts",
+          "line": 829,
+          "symbol": "const {rows:pendingSubmissions}",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/7b2b649ecf33b69e8cf1b5753630d82ed89aaf08/apps/api/src/modules/organisations/organisations.service.ts#L829"
+        },
+        {
+          "sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08",
+          "path": "apps/api/src/modules/organisations/organisations.service.ts",
+          "line": 930,
+          "symbol": "UPDATE handover_packages",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/7b2b649ecf33b69e8cf1b5753630d82ed89aaf08/apps/api/src/modules/organisations/organisations.service.ts#L930"
+        },
+        {
+          "sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08",
+          "path": "apps/api/src/modules/organisations/organisations.service.ts",
+          "line": 938,
+          "symbol": "UPDATE defects",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/7b2b649ecf33b69e8cf1b5753630d82ed89aaf08/apps/api/src/modules/organisations/organisations.service.ts#L938"
+        }
+      ],
+      "observed": "PR13 fixes review joins and COUNT(DISTINCT), blocks PARTY review bulk reassignment, and blocks removal with pending submissions. These are safe boundaries, but the public gap DTO still omits pending submissions and cannot express their operational successor or PARTY delegation. Package requested_by is still rewritten as though it were an operational assignee; defect reassignment does not increment its row_version.",
+      "correction": "Separate immutable created_by/submitted_by/requested_by provenance from explicit operational responsibility. Include submissions, packages, review stage/party authority, requirements and defects in one scoped manifest with eligible allocation options and unresolved reasons. Add independently authorized external delegation; preserve honest blocked states until available.",
+      "acceptance": "Compare manifest counts to distinct real work in multiple projects and stages. Test pending/partial submissions, PARTY authority, generating packages, superseded obligations, version increments and post-transfer history. No synthetic replacement may impersonate an external party or rewrite historical authorship."
+    },
+    {
+      "id": "PH2-G03-006",
+      "group": "G03",
+      "title": "Complete membership suspension/reactivation and project-team reconciliation",
+      "priority": "P1",
+      "kind": "WORKFLOW_GAP",
+      "status": "OPEN",
+      "evidence_level": "SOURCE_CONFIRMED",
+      "probe_ids": [],
+      "requirements": [
+        "FR-IAM-007",
+        "WF-21"
+      ],
+      "source": [
+        {
+          "sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08",
+          "path": "apps/api/src/modules/organisations/organisations.service.ts",
+          "line": 978,
+          "symbol": "async suspendMember",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/7b2b649ecf33b69e8cf1b5753630d82ed89aaf08/apps/api/src/modules/organisations/organisations.service.ts#L978"
+        },
+        {
+          "sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08",
+          "path": "apps/api/src/modules/organisations/organisations.service.ts",
+          "line": 946,
+          "symbol": "// 4. Transition membership state",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/7b2b649ecf33b69e8cf1b5753630d82ed89aaf08/apps/api/src/modules/organisations/organisations.service.ts#L946"
+        },
+        {
+          "sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08",
+          "path": "apps/api/src/modules/organisations/organisations.controller.ts",
+          "line": 101,
+          "symbol": "@Post('members/:userId/suspend')",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/7b2b649ecf33b69e8cf1b5753630d82ed89aaf08/apps/api/src/modules/organisations/organisations.controller.ts#L101"
+        }
+      ],
+      "observed": "PR13 adds emergency suspension and session/invitation revocation, but exposes no supported reactivation workflow. Its removal/suspension transition updates memberships without reconciling project_members. Current org/session checks deny the departed actor, which is positive, yet stale ACTIVE project roles remain available to manager counts and operational queries.",
+      "correction": "Define supported membership states and restore policy with fresh authority/assurance, seats and assignment review. Reconcile active project memberships and responsibility ownership on offboarding, retain history, and prevent silent privilege restoration from old project rows or invitation acceptance.",
+      "acceptance": "Test emergency suspension with open work, session invalidation, explicit reactivation, seat exhaustion, removed versus suspended distinctions and project-manager counts. Verify all API/worker consumers reject departed authority and that restoration does not resurrect unapproved scope."
+    },
+    {
+      "id": "PH2-G03-007",
+      "group": "G03",
+      "title": "Implement two-party ownership with a continuously eligible owner",
+      "priority": "P1",
+      "kind": "WORKFLOW_GAP",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION",
+      "probe_ids": [
+        "G07"
+      ],
+      "requirements": [
+        "FR-ORG-014"
+      ],
+      "source": [
+        {
+          "sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08",
+          "path": "apps/api/src/modules/organisations/organisations.service.ts",
+          "line": 1006,
+          "symbol": "async transferOwnership",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/7b2b649ecf33b69e8cf1b5753630d82ed89aaf08/apps/api/src/modules/organisations/organisations.service.ts#L1006"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/identity/mfa.controller.ts",
+          "line": 1,
+          "symbol": "",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/identity/mfa.controller.ts#L1"
+        }
+      ],
+      "observed": "PR13 correctly disables one-sided transfer with OWNERSHIP_TWO_PARTY_CONFIRMATION_REQUIRED (G07). That contains G03-014/015 but does not deliver ownership transfer. There is no expiring recipient-confirmed intent/accept/cancel workflow, and global account suspension still needs a reviewed sole-owner recovery policy.",
+      "correction": "Implement current-owner intent plus independently authenticated active recipient confirmation, fresh MFA, expiry, cancellation, replay defense and transactional audit. Keep exactly one eligible owner under concurrent role/account/membership changes. Provide reviewed recovery rather than allowing a globally suspended sole owner or silently inventing ownership.",
+      "acceptance": "Exercise two distinct sessions, wrong recipient/tenant, stale MFA, expiry/replay, account suspension, competing transfers, demotion/removal and rollback. Verify safe denial of the legacy one-sided endpoint and independent recovery/operations acceptance."
+    },
+    {
+      "id": "PH2-G03-008",
+      "group": "G03",
+      "title": "Preserve the contracted suspended-org read/export policy safely",
+      "priority": "P1",
+      "kind": "CODE_DEFECT",
+      "status": "OPEN",
+      "evidence_level": "SOURCE_CONFIRMED",
+      "probe_ids": [],
+      "requirements": [
+        "FR-ORG-009",
+        "FR-BIL-002"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/common/guards/session-csrf.guard.ts",
+          "line": 87,
+          "symbol": "ORG_ACCESS_SUSPENDED",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/common/guards/session-csrf.guard.ts#L87"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "packages/db/src/live-session-authority.ts",
+          "line": 36,
+          "symbol": "organisation.rows[0]?.status !== 'ACTIVE'",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/packages/db/src/live-session-authority.ts#L36"
+        },
+        {
+          "sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08",
+          "path": "apps/api/src/common/guards/session-csrf.guard.ts",
+          "line": 264,
+          "symbol": "session.org_status !== 'ACTIVE'",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/7b2b649ecf33b69e8cf1b5753630d82ed89aaf08/apps/api/src/common/guards/session-csrf.guard.ts#L264"
+        }
+      ],
+      "observed": "PR13 rejects non-ACTIVE organisation sessions as expired. PR16 improves bootstrap/org switching/emergency revoke behavior but still denies business reads for suspended orgs and the live transaction fence requires ACTIVE. Neither implements FR-ORG-009 read/export preservation. No change should simply remove current-authority checks.",
+      "correction": "Define operation-aware access for verified suspended members: deny mutations while permitting the explicitly approved scoped reads/exports. Thread this mode through guard and transaction eligibility, audit it, and distinguish billing/policy suspension from revoked membership/account or guest authority.",
+      "acceptance": "Run real browser/API cases for suspended-org retained documents/export, denied uploads/reviews, org picker, reactivation, suspended account/member and revoked guest. Preserve CSRF, MFA, tenant/resource scope and fail-closed behavior throughout."
+    },
+    {
+      "id": "PH2-G03-009",
+      "group": "G03",
+      "title": "Finish invitation destination and seat policy without weakening identity proofs",
+      "priority": "P1",
+      "kind": "WORKFLOW_GAP",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION",
+      "probe_ids": [
+        "P21",
+        "G09",
+        "G10"
+      ],
+      "requirements": [
+        "FR-ORG-008",
+        "FR-BIL-002"
+      ],
+      "source": [
+        {
+          "sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08",
+          "path": "apps/api/src/modules/organisations/organisations.service.ts",
+          "line": 394,
+          "symbol": "async createInvitation",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/7b2b649ecf33b69e8cf1b5753630d82ed89aaf08/apps/api/src/modules/organisations/organisations.service.ts#L394"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/identity/identity.controller.ts",
+          "line": 595,
+          "symbol": "const acceptInvitation",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/identity/identity.controller.ts#L595"
+        },
+        {
+          "sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08",
+          "path": "apps/api/src/modules/identity/identity.controller.ts",
+          "line": 619,
+          "symbol": "SELECT p.limits_json->>'maxSeats'",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/7b2b649ecf33b69e8cf1b5753630d82ed89aaf08/apps/api/src/modules/identity/identity.controller.ts#L619"
+        }
+      ],
+      "observed": "Email invitation proof/issuer binding and PR13 business audit events are positive. Mobile invitations remain unsupported despite FR-ORG-008. Shared-candidate seat activation is unbounded (P21), while PR13 only covers ACTIVE/TRIAL rows and bypasses PAST_DUE capacity (G10). Delivery/provider acceptance is still separate.",
+      "correction": "Integrate G18 seat policy with supported verified email/mobile destination handling, expiry, supersession/revocation and actor hierarchy. Preserve G01 single-use recipient-bound proof and delivery ledger. Record safe correlated lifecycle events without raw links/tokens; keep unavailable providers honest.",
+      "acceptance": "Test email/mobile canonicalization, wrong identity, revoked/demoted issuer, 7-day expiry, duplicated acceptance, at-limit races and no-plan/grace states. Real SMS/email acceptance is a release gate; debug OTP fixtures certify only the tested membership path."
+    },
+    {
+      "id": "PH2-G03-010",
+      "group": "G03",
+      "title": "Deliver resumable onboarding and required consent",
+      "priority": "P2",
+      "kind": "WORKFLOW_GAP",
+      "status": "OPEN",
+      "evidence_level": "SOURCE_CONFIRMED",
+      "probe_ids": [],
+      "requirements": [
+        "FR-ORG-001",
+        "FR-ORG-002",
+        "FR-ORG-003"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/identity/identity.controller.ts",
+          "line": 736,
+          "symbol": "INSERT INTO org_profiles",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/identity/identity.controller.ts#L736"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/web/src/app/(public)/login/page.tsx",
+          "line": 1,
+          "symbol": "",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/web/src/app/(public)/login/page.tsx#L1"
+        }
+      ],
+      "observed": "Both snapshots create an ACTIVE organisation/owner during signup but have no persisted four-step company\u2192trade pack\u2192first project\u2192invite setup journey or complete required terms/privacy consent record. Existing login/project screens do not implement skippable/resumable onboarding.",
+      "correction": "Implement approved progress and consent capture with validated company data, explicit reviewed trade-pack choice, honest empty project state and recoverable team invitations. Keep steps skippable/resumable where specified; never generate fake HVAC evidence or silently map unknown obligations to DT-001.",
+      "acceptance": "Run actual new-owner web/API journeys for verify/signup, terms consent, skip/resume/reload, multiple tabs/devices, partial failure and tenant isolation. Preserve source/version of required consent and real user choices."
+    },
+    {
+      "id": "PH2-G03-011",
+      "group": "G03",
+      "title": "Deliver organisation/team/ownership administration in the real application",
+      "priority": "P2",
+      "kind": "WORKFLOW_GAP",
+      "status": "OPEN",
+      "evidence_level": "SOURCE_CONFIRMED",
+      "probe_ids": [],
+      "requirements": [
+        "FR-ORG-004",
+        "FR-ORG-007",
+        "FR-ORG-008",
+        "FR-ORG-014"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/web/src/app/(contractor)/layout.tsx",
+          "line": 1,
+          "symbol": "",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/web/src/app/(contractor)/layout.tsx#L1"
+        },
+        {
+          "sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08",
+          "path": "apps/api/src/modules/organisations/organisations.controller.ts",
+          "line": 22,
+          "symbol": "export class OrganisationsController",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/7b2b649ecf33b69e8cf1b5753630d82ed89aaf08/apps/api/src/modules/organisations/organisations.controller.ts#L22"
+        }
+      ],
+      "observed": "The tracked web route tree has no complete org settings, team invitation/suspension/reactivation, gap/allocation or two-party ownership administration journey. Backend helper and input-parser tests do not establish usability, access enforcement or recovery on these screens.",
+      "correction": "Build the approved accessible org administration flows against corrected APIs and typed versioned DTOs. Show current actor/tenant, accurate work manifests, explicit sensitive-action confirmation and truthful delivery/blocked states. Remove demo tenant assumptions.",
+      "acceptance": "Run actual web/API Owner/Admin/member/external positives and negatives, stale role/tab/tenant contexts, failed delivery/save, concurrent edit, eligible replacement and reload. Verify keyboard/mobile behavior and no success before committed server acknowledgement."
+    },
+    {
+      "id": "PH2-G03-012",
+      "group": "G03",
+      "title": "Implement owner-confirmed deletion requests and obtain retention acceptance",
+      "priority": "P1",
+      "kind": "WORKFLOW_GAP",
+      "status": "OPEN",
+      "evidence_level": "SOURCE_CONFIRMED",
+      "probe_ids": [],
+      "requirements": [
+        "FR-ORG-010"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "packages/db/migrations/0000_complete_v021_schema_and_rls.sql",
+          "line": 1356,
+          "symbol": "CREATE TABLE IF NOT EXISTS deletion_requests",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/packages/db/migrations/0000_complete_v021_schema_and_rls.sql#L1356"
+        },
+        {
+          "sha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08",
+          "path": "apps/api/src/modules/organisations/organisations.controller.ts",
+          "line": 22,
+          "symbol": "export class OrganisationsController",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/7b2b649ecf33b69e8cf1b5753630d82ed89aaf08/apps/api/src/modules/organisations/organisations.controller.ts#L22"
+        },
+        {
+          "sha": "c6b6024d3d5b25d2d1ab87f77e2d3294500c5bb0",
+          "path": "docs/engineering/agent-collaboration.md",
+          "line": 14,
+          "symbol": "RELEASE_ACCEPTED",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/c6b6024d3d5b25d2d1ab87f77e2d3294500c5bb0/docs/engineering/agent-collaboration.md#L14"
+        }
+      ],
+      "observed": "The schema and permission vocabulary contain deletion concepts, but no registered owner-name-confirmed org request/status/cancel workflow implements FR-ORG-010. A retention table is not an accepted deletion process. No real purge is authorized by this audit.",
+      "correction": "Implement a staged, fresh-assurance current-owner request with exact-name confirmation, cancellation, status and audited retention/hold evaluation. Keep immutable audit/customer evidence protected. Obtain accountable privacy/legal/operations acceptance before any irreversible execution; do not shorten retention through profile settings.",
+      "acceptance": "Use isolated DBs for wrong name/role/tenant, replay, cancellation, legal holds, retention clocks and blocked state tests. Attach independent retention/recovery/backup/provider deletion evidence for the final candidate and owner authorization before production execution."
+    },
+    {
+      "id": "PH2-G05-001",
+      "group": "G05",
+      "title": "Persist project contract value in the canonical financial model",
+      "priority": "P1",
+      "kind": "CODE_DEFECT",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION",
+      "probe_ids": [
+        "P06"
+      ],
+      "requirements": [
+        "FR-PRJ-001",
+        "FR-CNT-003",
+        "FR-BIL-008"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/projects/projects.service.ts",
+          "line": 69,
+          "symbol": "const settingsJson",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/projects/projects.service.ts#L69"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/projects/projects.service.ts",
+          "line": 667,
+          "symbol": "else if (p.contract_value_paise)",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/projects/projects.service.ts#L667"
+        }
+      ],
+      "observed": "P06 creates a project with contractValuePaise=123456; projects.contract_value_paise is NULL and only settings_json receives the value. Dashboard/digest readers use the column or contract register, so the entered amount can disappear from the financial summary. Zero versus unknown is also conflated by truthiness.",
+      "correction": "Choose and document the project fallback versus contract-register authority. Persist exact integer paise in the canonical field, distinguish unknown from zero, and use one aggregation definition across list/dashboard/digest. Backfill existing settings values only through a reviewed append-only migration with reconciliation.",
+      "acceptance": "Test create/read/update/list/dashboard for absent/zero/large amounts and multiple contracts/variations; verify no duplicate counting and exact integer round trips. Do not infer payment status or entitlement from informational contract values."
+    },
+    {
+      "id": "PH2-G05-002",
+      "group": "G05",
+      "title": "Complete and validate the project/contract/specification input contract",
+      "priority": "P1",
+      "kind": "CODE_DEFECT",
+      "status": "OPEN",
+      "evidence_level": "SOURCE_CONFIRMED",
+      "probe_ids": [],
+      "requirements": [
+        "FR-PRJ-001",
+        "FR-PRJ-004",
+        "FR-CNT-001",
+        "FR-CNT-002",
+        "FR-CNT-004",
+        "FR-CNT-005"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/projects/projects.controller.ts",
+          "line": 34,
+          "symbol": "async createProject",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/projects/projects.controller.ts#L34"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/projects/projects.service.ts",
+          "line": 118,
+          "symbol": "async createProject",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/projects/projects.service.ts#L118"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/projects/projects.service.ts",
+          "line": 755,
+          "symbol": "async createVariation",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/projects/projects.service.ts#L755"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/projects/projects.service.ts",
+          "line": 803,
+          "symbol": "async createSpecification",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/projects/projects.service.ts#L803"
+        }
+      ],
+      "observed": "Project creation validates code/type but inline DTOs omit runtime schema enforcement for name, IDs, dates and monetary strings. Client is optional despite FR-PRJ-001; create/update routes omit required site/start/date/settings fields. createVariation passes NULL for omitted optional scopeDeltaJson into a NOT NULL column, observed during probe development. Contract/specification endpoints support only subsets of FR-CNT fields.",
+      "correction": "Use shared bounded runtime DTO schemas and controlled 4xx errors before SQL, including strict UUIDs, nonempty names, decimal-to-paise conversion, date order and safe integer ranges. Implement required lifecycle-editable metadata and reviewed contract/specification fields; use database defaults correctly for omitted optional data. Reject unsupported fields explicitly.",
+      "acceptance": "Exercise malformed JS types/null/arrays, blank names, unsafe numbers, invalid dates/IDs, wrong-tenant parties/documents, optional omission/clearing and duplicate codes. Test correct full field round trip and no fabricated default contract terms or approval."
+    },
+    {
+      "id": "PH2-G05-003",
+      "group": "G05",
+      "title": "Complete the project state machine and enforce terminal-state policy",
+      "priority": "P1",
+      "kind": "CODE_DEFECT",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION",
+      "probe_ids": [
+        "P10"
+      ],
+      "requirements": [
+        "FR-PRJ-002",
+        "FR-PRJ-005",
+        "FR-PRJ-006",
+        "FR-PRJ-014"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/projects/projects.controller.ts",
+          "line": 23,
+          "symbol": "export class ProjectsController",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/projects/projects.controller.ts#L23"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/projects/projects.service.ts",
+          "line": 300,
+          "symbol": "async suspendProject",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/projects/projects.service.ts#L300"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/projects/projects.service.ts",
+          "line": 160,
+          "symbol": "['SUSPENDED', 'CLOSED', 'ARCHIVED'].includes",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/projects/projects.service.ts#L160"
+        }
+      ],
+      "observed": "The controller has no resume, cancel, archive or pause-handover route. suspendProject takes no reason, writes SUSPENDED without a business event and offers no path back to ACTIVE. P10 changes metadata on a CANCELLED project because updateProject rejects only SUSPENDED/CLOSED/ARCHIVED.",
+      "correction": "Implement the approved state/permission/reason/side-effect matrix under the shared project lock, including resumable suspension, cancellation and archival without data destruction. Make terminal restrictions consistent across every writer. Stop/restart only eligible reminders/jobs, preserve reads/exports and enforce capacity on state changes.",
+      "acceptance": "Table-drive all allowed/forbidden state transitions, required reasons, repeated requests, closure races and job cancellation/resume. Prove CANCELLED cannot mutate except the approved archive/hold operations and archived evidence remains readable."
+    },
+    {
+      "id": "PH2-G05-004",
+      "group": "G05",
+      "title": "Require eligible project members and protect the final managing role",
+      "priority": "P1",
+      "kind": "CODE_DEFECT",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION",
+      "probe_ids": [
+        "P08",
+        "P09",
+        "P19"
+      ],
+      "requirements": [
+        "FR-PRJ-003",
+        "FR-PRJ-011"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/projects/projects.service.ts",
+          "line": 854,
+          "symbol": "async addProjectMember",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/projects/projects.service.ts#L854"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/projects/projects.service.ts",
+          "line": 876,
+          "symbol": "async removeProjectMember",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/projects/projects.service.ts#L876"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/projects/projects.service.ts",
+          "line": 249,
+          "symbol": "// Guard 2: Must have at least one active managing member",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/projects/projects.service.ts#L249"
+        }
+      ],
+      "observed": "P09 adds an ACTIVE R-PM project member who has no organisation membership. P19 activates a project whose only managing project member is not an eligible org member. P08 removes the final active managing member with no responsibility-gap check. User/project FKs do not establish current role eligibility.",
+      "correction": "Validate and lock active identity/org membership and allowed project role/scope. Define role hierarchy, protect the required manager and reuse corrected G03 operational reassignment before removal/demotion. Activation must require an actually eligible manager; retain audit/history and reconcile offboarded members.",
+      "acceptance": "Test unrelated/suspended/removed identities, wrong roles, last-manager removal, concurrent offboarding/activation and narrowed scope. Qualified active members work; no active project is stranded without its required managing responsibility."
+    },
+    {
+      "id": "PH2-G05-005",
+      "group": "G05",
+      "title": "Apply lifecycle locks to contract, variation and specification writers",
+      "priority": "P1",
+      "kind": "CODE_DEFECT",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION",
+      "probe_ids": [
+        "P11",
+        "P12",
+        "P13"
+      ],
+      "requirements": [
+        "FR-PRJ-004",
+        "FR-CNT-001",
+        "FR-CFG-009"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/projects/projects.service.ts",
+          "line": 713,
+          "symbol": "async createContract",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/projects/projects.service.ts#L713"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/projects/projects.service.ts",
+          "line": 755,
+          "symbol": "async createVariation",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/projects/projects.service.ts#L755"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/projects/projects.service.ts",
+          "line": 803,
+          "symbol": "async createSpecification",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/projects/projects.service.ts#L803"
+        }
+      ],
+      "observed": "P11 inserts an ACTIVE contract into a CLOSED project; P12 inserts a specification there. These writer methods do not take/check the shared project lifecycle lock. Variations are inserted directly as APPROVED without a reviewed approval transition. The composite FK correctly rejects cross-project contract IDs (P13), so that isolation hypothesis is withdrawn.",
+      "correction": "Route all obligation/commercial/reference mutations through the shared lifecycle lock and approved current-state/change-control policy. Define draft/submitted/approved variation authority instead of auto-approving caller input. Preserve existing composite FKs and invalidate affected baseline/acceptance only through reviewed workflows.",
+      "acceptance": "Test static CLOSED/SUSPENDED/CANCELLED/ARCHIVED denial and concurrent closure versus each writer; valid active writes succeed. Validate approver separation, safe defaults, actual project-bound references, audit/version history and DB rollback on failure."
+    },
+    {
+      "id": "PH2-G05-006",
+      "group": "G05",
+      "title": "Enforce optimistic concurrency and real reasons at lifecycle APIs",
+      "priority": "P1",
+      "kind": "CODE_DEFECT",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION",
+      "probe_ids": [
+        "P07"
+      ],
+      "requirements": [
+        "FR-PRJ-004",
+        "FR-PRJ-007"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/projects/projects.service.ts",
+          "line": 475,
+          "symbol": "async reopenProject",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/projects/projects.service.ts#L475"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/projects/projects.controller.ts",
+          "line": 110,
+          "symbol": "dto?.expectedRowVersion ?? 1",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/projects/projects.controller.ts#L110"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/projects/projects.controller.ts",
+          "line": 95,
+          "symbol": "this.projectsService.closeProject",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/projects/projects.controller.ts#L95"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/projects/projects.service.ts",
+          "line": 530,
+          "symbol": "async handoverProject",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/projects/projects.service.ts#L530"
+        }
+      ],
+      "observed": "P07 reopens rowVersion=1 with expectedRowVersion=999. reopenProject never checks that argument; the controller defaults it to 1 and invents a reason. Activate/close services support optional versions, but controller methods do not pass current versions. Most writes have no durable command identity; repeated handover can increment/version and emit again.",
+      "correction": "Require a consistent explicit version/precondition contract, validate nonempty actor-supplied reasons where required, and check them under lock. Add reviewed idempotency to lifecycle commands so retrying cannot duplicate effects or quota consumption. Do not bypass final-readiness/package acceptance checks.",
+      "acceptance": "Use actual HTTP for missing/stale/current versions, two-tab updates, duplicate keys with same/different payload and timeout-after-commit retry. Verify exactly one transition/event/quota charge and no invented reasons."
+    },
+    {
+      "id": "PH2-G05-007",
+      "group": "G05",
+      "title": "Enforce capacity on every capacity-changing lifecycle transition",
+      "priority": "P1",
+      "kind": "CODE_DEFECT",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION",
+      "probe_ids": [
+        "P07"
+      ],
+      "requirements": [
+        "FR-PRJ-014",
+        "FR-BIL-001",
+        "FR-BIL-002"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/projects/projects.service.ts",
+          "line": 205,
+          "symbol": "async activateProject",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/projects/projects.service.ts#L205"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/projects/projects.service.ts",
+          "line": 475,
+          "symbol": "async reopenProject",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/projects/projects.service.ts#L475"
+        }
+      ],
+      "observed": "Activation consumes a counter through a fallback entitlement, while reopening bypasses the limit and updates no counter (P07). Archival, required to release active capacity, has no route. The plan UI and lifecycle capacity therefore cannot agree.",
+      "correction": "Implement the G18 effective entitlement and lifecycle reservation contract once, including reopen/resume/archive and safe over-limit retained reads. Reconcile canonical projects and usage, with reviewed period/state definitions and deterministic locks.",
+      "acceptance": "Race activation/reopen/resume/downgrade at the final slot; test archive and failed transitions. Counters must match the approved consuming states, remain stable on retry/rollback and preserve customer evidence."
+    },
+    {
+      "id": "PH2-G05-008",
+      "group": "G05",
+      "title": "Use the actual close and contract capabilities at their boundaries",
+      "priority": "P1",
+      "kind": "CODE_DEFECT",
+      "status": "OPEN",
+      "evidence_level": "SOURCE_CONFIRMED",
+      "probe_ids": [],
+      "requirements": [
+        "FR-PRJ-011",
+        "FR-CNT-001"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/projects/projects.controller.ts",
+          "line": 91,
+          "symbol": "@Post(':id/close')",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/projects/projects.controller.ts#L91"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/projects/projects.controller.ts",
+          "line": 121,
+          "symbol": "@Post(':id/contracts')",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/projects/projects.controller.ts#L121"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "packages/shared/src/permissions.ts",
+          "line": 87,
+          "symbol": "export const PROJECT_ROLE_PERMISSIONS",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/packages/shared/src/permissions.ts#L87"
+        }
+      ],
+      "observed": "Close and contract/variation endpoints require project.manage even though project.close and contract.manage are separate capabilities. The permission registry grants project-role PM project.manage without an equivalent project.close entry, so checking manage is not the same contract. This is a source-confirmed capability mismatch; no unauthorized successful final closure was demonstrated.",
+      "correction": "Bind each route and transaction mutation to its declared capability plus current project/resource authority. Validate closure, contractual approval and administrative lifecycle permissions independently; preserve positive-only role union and the strong final readiness/package guards.",
+      "acceptance": "Construct actor combinations where manage is present but close/contract authority is absent, plus qualified positives. Test real HTTP and transaction-time revocation, tenant/project scopes and complete closure readiness; denied actors must not write events or counters."
+    },
+    {
+      "id": "PH2-G05-009",
+      "group": "G05",
+      "title": "Audit project/team/commercial edits transactionally",
+      "priority": "P1",
+      "kind": "CODE_DEFECT",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION",
+      "probe_ids": [
+        "P14"
+      ],
+      "requirements": [
+        "FR-PRJ-004",
+        "FR-ORG-014"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/projects/projects.service.ts",
+          "line": 146,
+          "symbol": "async updateProject",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/projects/projects.service.ts#L146"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/projects/projects.service.ts",
+          "line": 300,
+          "symbol": "async suspendProject",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/projects/projects.service.ts#L300"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/projects/projects.service.ts",
+          "line": 854,
+          "symbol": "async addProjectMember",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/projects/projects.service.ts#L854"
+        }
+      ],
+      "observed": "P14 successfully updates project metadata and produces zero audit events. suspendProject, member add/remove and contract/specification/variation writers similarly do not emit business domain events, even though they modify lifecycle, authority or contractual data. Generic request logs do not replace attributable before/after history.",
+      "correction": "Emit safe scoped events in the same transaction for these writes, including reason, changed field names, actor, current version and relevant responsibility/approval correlation. Preserve immutable history and secret-free payloads; use the Phase1 audit boundary and outbox semantics.",
+      "acceptance": "For each positive, rejected, rolled-back and retried operation, assert correct event count/order/scope and no credentials, unnecessary PII or internal content leakage. Verify an actual authorized auditor can reconstruct a change without duplicate events."
+    },
+    {
+      "id": "PH2-G05-010",
+      "group": "G05",
+      "title": "Make dashboard counts and activity match current qualified work",
+      "priority": "P2",
+      "kind": "CODE_DEFECT",
+      "status": "OPEN",
+      "evidence_level": "SOURCE_CONFIRMED",
+      "probe_ids": [],
+      "requirements": [
+        "FR-PRJ-009",
+        "FR-NOT-001",
+        "FR-NOT-002",
+        "FR-CNT-003"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/projects/projects.service.ts",
+          "line": 622,
+          "symbol": "async getProjectDashboard",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/projects/projects.service.ts#L622"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/handover/closeout-readiness.ts",
+          "line": 1,
+          "symbol": "",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/handover/closeout-readiness.ts#L1"
+        }
+      ],
+      "observed": "Project dashboard missing_or_expired includes NOT_STARTED rows regardless of due date; expiring_soon tests requirement due_at rather than certificate expiry. It lacks the specified unassigned/overdue breakdown and recent 14-day/20-item activity contract. Counts are status-based presentation and must not imply accepted verified evidence/readiness.",
+      "correction": "Use shared current-obligation queries for due/expiry/unassigned/review status, resource-scope-filtered counts and bounded activity. Retain the independent readiness evaluator for closure. Make commercial visibility and unknown values explicit; do not turn all informational retention into earned or blocked payment.",
+      "acceptance": "Test no/future/past due dates, certificate expiry, superseded obligations, scoped members, verified/unverified evidence and 14-day/20-event boundaries. Compare UI filters and counts to query results and canonical readiness without leaking hidden resources."
+    },
+    {
+      "id": "PH2-G05-011",
+      "group": "G05",
+      "title": "Repair the project-list API/UI contract and remove tenant-specific demo text",
+      "priority": "P1",
+      "kind": "CODE_DEFECT",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION",
+      "probe_ids": [
+        "P22"
+      ],
+      "requirements": [
+        "FR-PRJ-001",
+        "FR-PRJ-009",
+        "FR-BIL-008"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/projects/projects.service.ts",
+          "line": 572,
+          "symbol": "async listProjects",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/projects/projects.service.ts#L572"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/web/src/app/(contractor)/projects/page.tsx",
+          "line": 120,
+          "symbol": "p.clientName.toLowerCase()",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/web/src/app/(contractor)/projects/page.tsx#L120"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/web/src/app/(contractor)/projects/page.tsx",
+          "line": 131,
+          "symbol": "Deccan EnviroTech",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/web/src/app/(contractor)/projects/page.tsx#L131"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/web/src/app/(contractor)/projects/page.tsx",
+          "line": 100,
+          "symbol": "BigInt(Math.round",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/web/src/app/(contractor)/projects/page.tsx#L100"
+        }
+      ],
+      "observed": "listProjects returns raw snake_case project rows; the page expects clientName and camelCase monetary/count fields. P22 applies the exact page search expression to an actual list row and gets a toLowerCase TypeError when code/name do not match. The page also names Deccan EnviroTech in generic tenant UI and converts entered rupees through floating Number/Math.round.",
+      "correction": "Provide one typed shared list DTO (or explicit adapter), nullable-safe search/rendering, authoritative tenant display and exact decimal-to-paise input. Render recoverable API errors instead of silently falling back to a different dashboard shape. Support the complete lifecycle status vocabulary and scalable pagination.",
+      "acceptance": "Run the actual project directory with no client, a client, no projects, a nonmatching search, failed API, multiple tenants and large monetary inputs. Verify counts/amounts/statuses are accurate, no demo company appears and project create navigation/reload works."
+    },
+    {
+      "id": "PH2-G05-012",
+      "group": "G05",
+      "title": "Accept full project setup/lifecycle journeys on the integrated application",
+      "priority": "P1",
+      "kind": "RELEASE_GATE",
+      "status": "BLOCKED_EXTERNAL",
+      "evidence_level": "EXTERNAL_EVIDENCE_NOT_PROVIDED",
+      "probe_ids": [],
+      "requirements": [
+        "FR-PRJ-001",
+        "FR-PRJ-002",
+        "FR-PRJ-003",
+        "FR-PRJ-005",
+        "FR-PRJ-014"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/projects/projects.service.ts",
+          "line": 318,
+          "symbol": "async closeProject",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/projects/projects.service.ts#L318"
+        },
+        {
+          "sha": "c6b6024d3d5b25d2d1ab87f77e2d3294500c5bb0",
+          "path": "docs/engineering/agent-collaboration.md",
+          "line": 136,
+          "symbol": "Evaluate security",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/c6b6024d3d5b25d2d1ab87f77e2d3294500c5bb0/docs/engineering/agent-collaboration.md#L136"
+        }
+      ],
+      "observed": "The local browser subset verifies archive/auth-storage behavior, not the complete Phase2 project journey. Strong closure code already requires current readiness and the correct fully accepted package; preserve it. There is no final integrated G03/Phase1 head or production project operational acceptance.",
+      "correction": "After fixes, run production-built web/API journeys with a genuinely reviewed HVAC baseline, verified object versions, correct project teams and real lifecycle/recovery states. Independently review current acceptance, legal holds, exports, migration/rollback and load behavior. Keep V1 duplication/partial-handover enhancements explicitly scoped.",
+      "acceptance": "Attach exact-head CI plus real browser setup\u2192activate\u2192team change\u2192suspend/resume\u2192handover\u2192close/reopen\u2192archive scenarios, negative readiness/capability cases and distributed races. No seed status or synthetic authorization fixture may stand in for approved engineering evidence."
+    },
+    {
+      "id": "PH2-G06-001",
+      "group": "G06",
+      "title": "Make locked ownership and keyed-item protection monotonic",
+      "priority": "P1",
+      "kind": "CODE_DEFECT",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION",
+      "probe_ids": [
+        "C01",
+        "C04"
+      ],
+      "requirements": [
+        "FR-CFG-001",
+        "FR-CFG-002"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/configuration/config-resolver.ts",
+          "line": 118,
+          "symbol": "schema.overridePolicy === 'LOCKED'",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/configuration/config-resolver.ts#L118"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/configuration/config-resolver.ts",
+          "line": 202,
+          "symbol": "map.set(k, { ...current, ...patch",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/configuration/config-resolver.ts#L202"
+        }
+      ],
+      "observed": "C01 resolves a PLATFORM mandatory locked item, accepts ORG locked=false, then removes it at PROJECT with zero conflicts. C04 lets ORG establish a PLATFORM-owned LOCKED security field when no platform value exists. Locks depend on prior provenance or mutable item flags instead of immutable owner policy.",
+      "correction": "Enforce ownerLevel independently of whether a parent supplied a value. Preserve lock/mandatory protection monotonically from the authoritative version; prevent unlock, removal, semantic replacement or approval weakening through child patches. Validate permitted change-request authority separately.",
+      "acceptance": "Test missing platform, explicit null/clear, unlock\u2192remove/optional chains, changed document type/scope/reviewer, multiple levels and preview/apply parity. Legitimate owned edits and identical inherited values succeed without allowing child weakening."
+    },
+    {
+      "id": "PH2-G06-002",
+      "group": "G06",
+      "title": "Use one canonical payload shape across resolver and checklist consumers",
+      "priority": "P1",
+      "kind": "CODE_DEFECT",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION",
+      "probe_ids": [
+        "C02"
+      ],
+      "requirements": [
+        "FR-CFG-001",
+        "FR-CFG-002",
+        "FR-CFG-003"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/configuration/config-resolver.ts",
+          "line": 61,
+          "symbol": "'checklist.requirements'",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/configuration/config-resolver.ts#L61"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/checklists/checklists.service.ts",
+          "line": 94,
+          "symbol": "resolved.payload.requirements",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/checklists/checklists.service.ts#L94"
+        }
+      ],
+      "observed": "The registry protects flat dotted checklist.requirements, while createAndApplySnapshot consumes resolved.payload.requirements. C02 replaces the real root requirements array with [] and receives no lock conflict. Passing nested security/checklist objects also falls through unknown-field REPLACE semantics rather than the declared dotted rules.",
+      "correction": "Choose and version one canonical schema/path representation, validate every payload before resolution and update all producers/consumers atomically. Apply item-level key/lock policy to the array actually used to instantiate obligations. Reject ambiguous mixed flat/nested/legacy shapes or migrate them explicitly.",
+      "acceptance": "Exercise real template/import/config routes with root, dotted, nested and mixed inputs. Prove mandatory protected obligations survive all accepted representations and that invalid legacy payloads get controlled migration/validation errors before snapshot mutation."
+    },
+    {
+      "id": "PH2-G06-003",
+      "group": "G06",
+      "title": "Reject unknown schemas, invalid keys and contradictory layer identity",
+      "priority": "P1",
+      "kind": "CODE_DEFECT",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION",
+      "probe_ids": [
+        "C03",
+        "C05",
+        "C07"
+      ],
+      "requirements": [
+        "FR-CFG-003",
+        "FR-CFG-004"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/configuration/config-resolver.ts",
+          "line": 106,
+          "symbol": "const registry =",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/configuration/config-resolver.ts#L106"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/configuration/config-resolver.ts",
+          "line": 177,
+          "symbol": "String(patch[keyField])",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/configuration/config-resolver.ts#L177"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/configuration/config-resolver.ts",
+          "line": 234,
+          "symbol": "byLevel[layer.level]",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/configuration/config-resolver.ts#L234"
+        }
+      ],
+      "observed": "C03 silently falls back from an unknown schema version and accepts unknown fields. C05 collapses multiple missing merge keys to the string undefined. C07 trusts placement under PLATFORM even when the record declares level PROJECT. Duplicate levels in the compatibility wrapper are silently overwritten; field types and payload budgets are not enforced.",
+      "correction": "Fail closed on unsupported schema/field/type/level, require persisted layer identity and valid stable unique keys, and validate bounded arrays/objects/strings before merging. Define explicit migrations and duplicate-layer policy. Canonicalize only validated safe data; do not label arbitrary placement as platform provenance.",
+      "acceptance": "Test missing/duplicate/blank keys, duplicate levels, unknown version/field, contradictory owner/scope, null/scalar/array confusion, clear/remove operators and large/deep payloads. Reject before database writes and preserve prior snapshots on failure."
+    },
+    {
+      "id": "PH2-G06-004",
+      "group": "G06",
+      "title": "Define semantic additive deduplication and detailed provenance",
+      "priority": "P2",
+      "kind": "CODE_DEFECT",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION",
+      "probe_ids": [
+        "C06"
+      ],
+      "requirements": [
+        "FR-CFG-003",
+        "FR-CFG-008"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/configuration/config-resolver.ts",
+          "line": 142,
+          "symbol": "new Set([...existingArr, ...rawVal])",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/configuration/config-resolver.ts#L142"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/configuration/config-resolver.ts",
+          "line": 248,
+          "symbol": "lockedAtLevel: 'PLATFORM'",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/configuration/config-resolver.ts#L248"
+        }
+      ],
+      "observed": "C06 appends two structurally identical recipient objects because Set compares object identity. The resolver records only top-level field provenance, not merged item/field origins; compatibility conflicts always label lockedAtLevel=PLATFORM even when that is not the actual origin. A checksum alone does not explain an override.",
+      "correction": "Declare additive element identity/canonicalization per field, including recipient normalization, and deduplicate by that identity. Preserve origin/version and applied operation at merged item/field level; report the real protecting level and deterministic ordering policy.",
+      "acceptance": "Test equivalent objects with different key order/case, primitive unions, duplicate/removal behavior, stable ordering/checksum, multiple origins and accurate conflict diagnostics. Preview must explain the exact value that apply will persist."
+    },
+    {
+      "id": "PH2-G06-005",
+      "group": "G06",
+      "title": "Implement persisted configuration versions and installed-pack lineage",
+      "priority": "P1",
+      "kind": "WORKFLOW_GAP",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION",
+      "probe_ids": [
+        "P20",
+        "C09"
+      ],
+      "requirements": [
+        "FR-CFG-001",
+        "FR-CFG-004",
+        "FR-CFG-006"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/configuration/configuration.module.ts",
+          "line": 1,
+          "symbol": "",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/configuration/configuration.module.ts#L1"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/checklists/checklists.service.ts",
+          "line": 429,
+          "symbol": "async applyApprovedHvacTemplate",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/checklists/checklists.service.ts#L429"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/checklists/checklists.service.ts",
+          "line": 513,
+          "symbol": "async importL3Checklist",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/checklists/checklists.service.ts#L513"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "packages/db/migrations/0000_complete_v021_schema_and_rls.sql",
+          "line": 410,
+          "symbol": "CREATE TABLE IF NOT EXISTS config_versions",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/packages/db/migrations/0000_complete_v021_schema_and_rls.sql#L410"
+        }
+      ],
+      "observed": "ConfigurationModule has no providers/controllers. The schema has config_versions, but the operational checklist paths do not resolve persisted platform/org/client/project versions. Pack apply passes one PROJECT layer; import invents a version UUID. P20 creates a snapshot with zero config_versions rows. Installed resolution correctly ignores mutable TRADE input (C09), but no complete installation/copy/version lifecycle supplies the missing lineage.",
+      "correction": "Implement authorized version authoring/validation/publish/archive and installed-pack copy/upgrade contracts. Resolve exact persisted immutable versions for the project, verify tenant/scope/source/checksum and retain a reproducible source manifest. Keep existing projects pinned when global trade packs change.",
+      "acceptance": "Apply platform\u2192installed org\u2192client/contract\u2192project data from persisted versions, then reconstruct the same checksum later. Test unauthorized/wrong-tenant versions, stale installation, pack update, duplicate publish and rollback; existing project baselines must not drift."
+    },
+    {
+      "id": "PH2-G06-006",
+      "group": "G06",
+      "title": "Require approved impact-controlled changes for active baselines",
+      "priority": "P1",
+      "kind": "CODE_DEFECT",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION",
+      "probe_ids": [
+        "P20"
+      ],
+      "requirements": [
+        "FR-CFG-007",
+        "FR-CFG-009"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/checklists/checklists.service.ts",
+          "line": 45,
+          "symbol": "private async lockEditableProject",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/checklists/checklists.service.ts#L45"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/checklists/checklists.service.ts",
+          "line": 513,
+          "symbol": "async importL3Checklist",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/checklists/checklists.service.ts#L513"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/checklists/checklists.service.ts",
+          "line": 914,
+          "symbol": "async createRequirement",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/checklists/checklists.service.ts#L914"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/checklists/checklists.service.ts",
+          "line": 1050,
+          "symbol": "async decideChangeRequest",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/checklists/checklists.service.ts#L1050"
+        }
+      ],
+      "observed": "P20 invokes the public importL3Checklist service on an ACTIVE project, applies a new snapshot and records zero change requests. Template application, import and createRequirement allow ACTIVE/HANDOVER through lockEditableProject. decideChangeRequest handles REMOVE by setting superseded_at without the shared project lock or a replacement snapshot; APPROVED ADD/MODIFY do not apply a coherent baseline change.",
+      "correction": "Require an approved, version-bound change request with impact analysis before every active-project baseline mutation. Use one locked applicator to update snapshots, revisions, requirements, exceptions, package acceptance and readiness coherently; preserve material-change invalidation already present. Decision alone must not bypass lifecycle or apply an incomplete delta.",
+      "acceptance": "Test import/apply/add/remove/modify and every alias before/after activation, stale approval, closed projects, self-approval and concurrent closure/import/decision. Verify affected scope/evidence/waivers/acceptance invalidate correctly and rejected changes leave the old baseline intact."
+    },
+    {
+      "id": "PH2-G06-007",
+      "group": "G06",
+      "title": "Repair catalogue and companion-rule document-type drift",
+      "priority": "P1",
+      "kind": "CODE_DEFECT",
+      "status": "OPEN",
+      "evidence_level": "TARGETED_RUNTIME_OBSERVATION",
+      "probe_ids": [
+        "P23"
+      ],
+      "requirements": [
+        "FR-CFG-006",
+        "FR-CHK-001"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "packages/db/src/catalogue-rules.ts",
+          "line": 201,
+          "symbol": "STANDARD_COMPANION_RULES",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/packages/db/src/catalogue-rules.ts#L201"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "packages/db/src/catalogue-rules.ts",
+          "line": 67,
+          "symbol": "ruleId: 'R-003'",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/packages/db/src/catalogue-rules.ts#L67"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "04-DOCUMENT-CATALOGUE.md",
+          "line": 113,
+          "symbol": "| DT-018 |",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/04-DOCUMENT-CATALOGUE.md#L113"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "04-DOCUMENT-CATALOGUE.md",
+          "line": 128,
+          "symbol": "| DT-033 |",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/04-DOCUMENT-CATALOGUE.md#L128"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/reviews/reviews.service.ts",
+          "line": 407,
+          "symbol": "async evaluateCompanionEvidence",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/reviews/reviews.service.ts#L407"
+        }
+      ],
+      "observed": "Executable rules disagree with 04-DOCUMENT-CATALOGUE: COMP-001 treats DT-018 as pressure test and DT-041 as calibration, but those codes are Design Calculation and NCR; the catalogue uses DT-033 and DT-025. P23 evaluates actual companion logic for DT-033 and returns no missing mandatory companion. R-003 emits DT-041/043/045 for pressure/ACH, IAQ and IST, which are different catalogue documents. Similar code/title drift exists across several rules.",
+      "correction": "Have an accountable HVAC reviewer reconcile every R-001..013 and COMP rule against the current approved catalogue and contractual scope. Use one versioned machine-readable source for IDs/titles/rules and migrate affected baselines/reviews through impact control. Do not silently rename IDs or invent engineering requirements to make tests pass.",
+      "acceptance": "Validate every rule target and semantic mapping, then exercise pressure/calibration, TAB, FAT, warranty, hospital/cleanroom, BMS, electrical/fire and government scenarios through actual snapshot/review paths. Missing, expired, wrong-scope or unqualified companion evidence must block only the correct obligation."
+    },
+    {
+      "id": "PH2-G06-008",
+      "group": "G06",
+      "title": "Connect reviewed applicability rules to actual project setup",
+      "priority": "P1",
+      "kind": "WORKFLOW_GAP",
+      "status": "OPEN",
+      "evidence_level": "SOURCE_CONFIRMED",
+      "probe_ids": [],
+      "requirements": [
+        "FR-CFG-006",
+        "FR-CFG-009",
+        "FR-CHK-001"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "packages/db/src/catalogue-rules.ts",
+          "line": 4,
+          "symbol": "export interface ProjectApplicabilityContext",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/packages/db/src/catalogue-rules.ts#L4"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "packages/db/src/catalogue-rules.ts",
+          "line": 138,
+          "symbol": "export function evaluateCatalogueApplicability",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/packages/db/src/catalogue-rules.ts#L138"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/checklists/checklists.service.ts",
+          "line": 429,
+          "symbol": "async applyApprovedHvacTemplate",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/checklists/checklists.service.ts#L429"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/projects/projects.service.ts",
+          "line": 54,
+          "symbol": "const allowedProjectTypes",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/projects/projects.service.ts#L54"
+        }
+      ],
+      "observed": "evaluateCatalogueApplicability is exported but no operational API/worker caller instantiates a project baseline through it. Template apply takes all supplied requirements and expands explicit scope only. ProjectApplicabilityContext does not include GOVT_PWD although project creation accepts it; R-001 does not represent its documented contract-value threshold. Passing helper-only tests does not prove real conditional obligations.",
+      "correction": "Implement reviewed project/contract/asset applicability inputs and an explicit mapping/preview/approval step that drives baseline creation. Normalize project/client/category vocabulary, capture unknown facts as unresolved review items and apply only approved rules. Re-evaluate material asset/contract changes through G06 change control, not silent defaults.",
+      "acceptance": "Use real reviewed scenarios for all 13 rules and negative/no-trigger cases via actual APIs, including GOVT_PWD, hospital/cleanroom, refrigerant thresholds, warranty and DLP. Verify per-asset/project scope, unknown inputs and resulting evidence requirements against independent engineering review."
+    },
+    {
+      "id": "PH2-G06-009",
+      "group": "G06",
+      "title": "Establish template publication and review authority",
+      "priority": "P1",
+      "kind": "WORKFLOW_GAP",
+      "status": "OPEN",
+      "evidence_level": "SOURCE_CONFIRMED",
+      "probe_ids": [],
+      "requirements": [
+        "FR-CFG-004",
+        "FR-CFG-006"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "packages/db/migrations/0000_complete_v021_schema_and_rls.sql",
+          "line": 397,
+          "symbol": "CREATE TABLE IF NOT EXISTS template_packs",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/packages/db/migrations/0000_complete_v021_schema_and_rls.sql#L397"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/checklists/checklists.service.ts",
+          "line": 408,
+          "symbol": "async listApprovedHvacTemplates",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/checklists/checklists.service.ts#L408"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/checklists/checklists.service.ts",
+          "line": 429,
+          "symbol": "async applyApprovedHvacTemplate",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/checklists/checklists.service.ts#L429"
+        }
+      ],
+      "observed": "The approved-template list actually selects trade=HVAC and status=ACTIVE; schema defaults template_packs to ACTIVE and has no reviewer/approval provenance. The list/apply path does not prove an independently reviewed catalogue, jurisdiction/client applicability or sign-off. This does not assert unrestricted app-role INSERT privilege; global table privileges require their separate platform review.",
+      "correction": "Create a trusted draft\u2192validated\u2192reviewed\u2192published lifecycle with immutable versions, author/reviewer provenance, applicability metadata, deprecation and controlled installed upgrades. The ordinary runtime must not self-certify a template by setting ACTIVE. Expose honest unconfigured states until a real baseline is approved.",
+      "acceptance": "Negative-test publication roles and unsigned/stale/invalid packs; verify published version identity, approved mapping, schema and installation. Independent HVAC/product review must supply real baseline evidence; hypothesis/demo seeds and authorization fixtures are not approved packs."
+    },
+    {
+      "id": "PH2-G06-010",
+      "group": "G06",
+      "title": "Make accepted configuration affect its real consumers",
+      "priority": "P1",
+      "kind": "CODE_DEFECT",
+      "status": "OPEN",
+      "evidence_level": "SOURCE_CONFIRMED",
+      "probe_ids": [],
+      "requirements": [
+        "FR-CFG-011",
+        "FR-ORG-007",
+        "FR-PRJ-010"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/configuration/config-resolver.ts",
+          "line": 14,
+          "symbol": "ConfigSchemaRegistry",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/configuration/config-resolver.ts#L14"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/documents/documents.service.ts",
+          "line": 294,
+          "symbol": "dto.sizeBytes > 100 * 1024 * 1024",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/documents/documents.service.ts#L294"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/worker/src/scheduler.ts",
+          "line": 538,
+          "symbol": "async dispatchQueuedNotifications",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/worker/src/scheduler.ts#L538"
+        }
+      ],
+      "observed": "The resolver declares file-size/MIME/retention/naming/notification fields, but document upload uses hardcoded 100MB and a code MIME set; reminders and generated outputs are not driven through a shared persisted configuration resolver. A value resolving successfully does not establish that uploads, notification scheduling, naming, retention or layout honor it.",
+      "correction": "Define typed effective configuration contracts per consumer with non-overridable platform safety ceilings. Wire the reviewed MVP subset into actual upload, naming, reminder, package/branding and retention paths, with version pinning where evidence reproducibility requires it. Reject or clearly mark unsupported settings.",
+      "acceptance": "Change each supported setting through its API and observe the real consumer behavior, including negative overrides and old-project pinning. Verify scanner/size/type safety, retention holds and generated output are preserved; no UI may claim saved behavior that is ignored."
+    },
+    {
+      "id": "PH2-G06-011",
+      "group": "G06",
+      "title": "Deliver safe preview, impact and configuration administration journeys",
+      "priority": "P2",
+      "kind": "WORKFLOW_GAP",
+      "status": "OPEN",
+      "evidence_level": "SOURCE_CONFIRMED",
+      "probe_ids": [],
+      "requirements": [
+        "FR-CFG-004",
+        "FR-CFG-006",
+        "FR-CFG-008",
+        "FR-CFG-009",
+        "FR-CFG-011"
+      ],
+      "source": [
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/src/modules/configuration/configuration.module.ts",
+          "line": 1,
+          "symbol": "",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/src/modules/configuration/configuration.module.ts#L1"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/api/test/modules/config-checklists-assets.spec.ts",
+          "line": 28,
+          "symbol": "const hasRegistry = true",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/api/test/modules/config-checklists-assets.spec.ts#L28"
+        },
+        {
+          "sha": "e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4",
+          "path": "apps/web/src/components/modals/import-checklist-modal.tsx",
+          "line": 1,
+          "symbol": "",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/e1b2d9506f2f5d1cbd853a91cade58f8bab3cee4/apps/web/src/components/modals/import-checklist-modal.tsx#L1"
+        }
+      ],
+      "observed": "There is no complete configuration API/UI for version history, installed trade pack management, effective-value provenance, preview/diff or impact approval. Existing checklist import/template controls are a partial workflow. Current schema tests include literal booleans/spread-object examples that cannot certify the production resolver.",
+      "correction": "Build typed authorized preview/diff/version and impact endpoints, followed by accessible org/project UI for the supported MVP subset. Display real source versions, conflicts, unknown mapping and affected projects before applying. Keep V1 custom fields/approval workflow authoring/Hindi explicit instead of claiming they are implemented.",
+      "acceptance": "Run real web/API preview\u2192apply parity, stale version, no-op diff, forbidden override, invalid pack, impact approval, failure/reload and tenant/role negatives. Replace placeholder assertions with tests that execute the actual resolver/services at the boundaries claimed."
+    },
+    {
+      "id": "PH2-G06-012",
+      "group": "G06",
+      "title": "Obtain independent engineering and integrated configuration acceptance",
+      "priority": "P1",
+      "kind": "RELEASE_GATE",
+      "status": "BLOCKED_EXTERNAL",
+      "evidence_level": "EXTERNAL_EVIDENCE_NOT_PROVIDED",
+      "probe_ids": [],
+      "requirements": [
+        "FR-CFG-001",
+        "FR-CFG-002",
+        "FR-CFG-004",
+        "FR-CFG-006",
+        "FR-CFG-009"
+      ],
+      "source": [
+        {
+          "sha": "c6b6024d3d5b25d2d1ab87f77e2d3294500c5bb0",
+          "path": "AGENTS.md",
+          "line": 37,
+          "symbol": "Requirements need a real explicit mapping",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/c6b6024d3d5b25d2d1ab87f77e2d3294500c5bb0/AGENTS.md#L37"
+        },
+        {
+          "sha": "c6b6024d3d5b25d2d1ab87f77e2d3294500c5bb0",
+          "path": "docs/engineering/agent-collaboration.md",
+          "line": 9,
+          "symbol": "There is no automatic merge",
+          "url": "https://github.com/omniscient2002/tradecloseout/blob/c6b6024d3d5b25d2d1ab87f77e2d3294500c5bb0/docs/engineering/agent-collaboration.md#L9"
+        }
+      ],
+      "observed": "The audit uses explicitly synthetic authorization/configuration fixtures, including deliberately unregistered document types. They expose validation/control defects and are not HVAC baseline or evidence acceptance. Real templates, obligation mappings, contract-specific applicability and generated deliverables have not been independently accepted here.",
+      "correction": "After fixes, review the final integrated SHA with an accountable HVAC/domain reviewer and security/product reviewers. Approve real catalogue/pack mappings and representative client/asset/contract scenarios; validate migrations and old-project preservation before release.",
+      "acceptance": "Attach exact-head CI and application-browser journeys using a real reviewed baseline, scoped evidence/reviews and output manifests. Demonstrate reproducible configuration lineage, active-change impact control and no fabricated evidence. The owner retains merge/deployment authority."
+    }
+  ]
+}

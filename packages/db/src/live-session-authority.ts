@@ -19,6 +19,7 @@ export async function assertCurrentSessionEligibility(client: PoolClient, ctx: {
   orgRole?: string;
   guestGrantId?: string;
   projectId?: string;
+  organisationWrite?: boolean;
 }): Promise<void> {
   if (!ctx.sessionId && !ctx.authGeneration) return;
   if (!ctx.sessionId || !ctx.authGeneration) {
@@ -31,7 +32,7 @@ export async function assertCurrentSessionEligibility(client: PoolClient, ctx: {
   if (account.rows[0]?.status !== 'ACTIVE') throw new Error('AUTH_ACCOUNT_INACTIVE');
 
   const organisation = await client.query<{status:string}>(
-    `SELECT status FROM organisations WHERE id=$1 FOR SHARE`, [ctx.orgId],
+    `SELECT status FROM organisations WHERE id=$1 FOR ${ctx.organisationWrite ? 'UPDATE' : 'SHARE'}`, [ctx.orgId],
   );
   if (organisation.rows[0]?.status !== 'ACTIVE') throw new Error('AUTH_ORGANISATION_INACTIVE');
 

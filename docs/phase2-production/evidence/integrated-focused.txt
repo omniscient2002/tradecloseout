@@ -1,0 +1,13 @@
+PASS test/discovery-lifecycle-foundations.spec.ts (5.731 s)
+PASS test/g01-member-invitation-authority-db.spec.ts
+PASS test/hvac-production-reaudit-remediation.spec.ts
+PASS test/phase2-org-dashboard-visibility-db.spec.ts
+PASS test/phase2-notification-project-authority-db.spec.ts
+PASS test/production-review-remediation.spec.ts
+PASS test/g03-organisation-validation.spec.ts
+
+Test Suites: 7 passed, 7 total
+Tests:       51 passed, 51 total
+Snapshots:   0 total
+Time:        13.176 s, estimated 16 s
+Ran all test suites matching /test\/g01-member-invitation-authority-db.spec.ts|test\/discovery-lifecycle-foundations.spec.ts|test\/phase2-org-dashboard-visibility-db.spec.ts|test\/phase2-notification-project-authority-db.spec.ts|test\/hvac-production-reaudit-remediation.spec.ts|test\/production-review-remediation.spec.ts|test\/g03-organisation-validation.spec.ts/i.

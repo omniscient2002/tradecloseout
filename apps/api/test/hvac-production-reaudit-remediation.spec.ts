@@ -753,7 +753,7 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
               return { rows: [{ id: orgId, name: 'Metro HVAC EPC Ltd', pan: 'AAACM1234F', gstin: '27AAACM1234F1Z5', tier: 'ENTERPRISE' }] };
             }
             if (sql.includes('FROM users u')) {
-              return { rows: [{ id: userId, name: 'Lead HVAC Engineer', role: 'R-SITE' }] };
+              return { rows: [{ id: userId, name: 'Lead HVAC Engineer', role: 'R-OWNER' }] };
             }
             if (sql.includes('WITH contract_summary AS')) {
               return {

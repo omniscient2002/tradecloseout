@@ -120,6 +120,22 @@ export class OrganisationsController {
 
   }
 
+  @Post('ownership-transfers')
+  @RequirePermission('org.transfer_ownership')
+  async requestOwnership(@Req() req:any,@Body() input:{targetUserId:string;rowVersion:number;requestKey:string}) {
+    return this.orgsService.requestOwnershipTransfer(req.userContext,input);
+  }
+  @Post('ownership-transfers/:id/accept')
+  @RequirePermission('org.read')
+  async acceptOwnership(@Req() req:any,@Param('id') id:string) {
+    return this.orgsService.acceptOwnershipTransfer(req.userContext,id);
+  }
+  @Post('ownership-transfers/:id/cancel')
+  @RequirePermission('org.read')
+  async cancelOwnership(@Req() req:any,@Param('id') id:string) {
+    return this.orgsService.cancelOwnershipTransfer(req.userContext,id);
+  }
+
   @Post('transfer-ownership')
   @RequirePermission('org.transfer_ownership')
   async transferOwnership(
