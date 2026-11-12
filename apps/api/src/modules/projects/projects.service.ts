@@ -184,7 +184,7 @@ export class ProjectsService {
           (id, org_id, code, name, client_party_id, mc_party_id, consultant_party_id,
            status, site_json, start_date, target_handover_date, settings_json, created_by, project_type,
            contract_value_paise)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 'DRAFT', $8, $9, $10, $11, $12, $13, $14),
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'DRAFT', $8, $9, $10, $11, $12, $13, $14)`,
         [
           projectId,
           ctx.orgId,
