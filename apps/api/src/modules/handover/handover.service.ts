@@ -12,7 +12,7 @@ import { uuidv7 } from 'uuidv7';
 import { createHash } from 'crypto';
 import { withTenantTransaction, consumePlanQuota, TenantActorContext } from '@tradecloseout/db/tenant-tx';
 import { S3StorageService } from '../documents/s3-storage.service';
-import { canonicalJson } from '@tradecloseout/shared';
+import { canonicalJson, quotaMonthIndia } from '@tradecloseout/shared';
 import { evaluateReadinessInTransaction } from './closeout-readiness';
 
 @Injectable()
@@ -151,7 +151,7 @@ export class HandoverService {
         });
       }
       const monthlyLimit = BigInt(entitlementRows[0].monthly_limit);
-      const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+      const currentMonth = quotaMonthIndia(); // YYYY-MM in Asia/Kolkata
       await consumePlanQuota(client, ctx.orgId, 'PACKAGE_GENERATIONS', currentMonth, 1n, monthlyLimit);
 
       const { rows: snapRows } = await client.query(
