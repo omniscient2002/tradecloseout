@@ -26,8 +26,14 @@ describe('Sol Integrity & Audit Invariants Suite', () => {
       const mockClient = {
         query: jest.fn(async (sql: string) => {
           executedQueries.push(sql);
-          if (sql.includes('SELECT uc.value AS current_storage')) {
-            return { rows: [] };
+          if (sql.includes("maxStorageBytes' AS max_storage_bytes")) {
+            return { rows: [{ max_storage_bytes: '1048576' }] };
+          }
+          if (sql.includes("metric='STORAGE_BYTES'") && sql.includes('FOR UPDATE')) {
+            return { rows: [{ value: '0' }] };
+          }
+          if (sql.includes('SUM(size_bytes)')) {
+            return { rows: [{ reserved_bytes: '0' }] };
           }
           if (sql.includes('SELECT id, doc_type_key FROM documents WHERE')) {
             return { rows: [{ id: existingDocId, doc_type_key: 'DT-001' }] };
