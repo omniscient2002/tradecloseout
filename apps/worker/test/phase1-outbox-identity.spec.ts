@@ -109,8 +109,8 @@ test('PH1-G27-004: migrated PG16 retains actor/event/request and disallows cross
     const { userId, tenants: [a, b] } = await seedTenants(admin);
     const packageId = randomUUID();
     await admin.query(
-      "INSERT INTO handover_packages(id,org_id,project_id,status,version_no) VALUES($1,$2,$3,'QUEUED',1)",
-      [packageId, a.orgId, a.projectIds[0]],
+      "INSERT INTO handover_packages(id,org_id,project_id,status,version_no,snapshot_checksum) VALUES($1,$2,$3,'QUEUED',1,$4)",
+      [packageId, a.orgId, a.projectIds[0], 'a'.repeat(64)],
     );
     const requestId = 'G27-004-real-postgres-provenance';
     await withTenantTransaction(app, {
