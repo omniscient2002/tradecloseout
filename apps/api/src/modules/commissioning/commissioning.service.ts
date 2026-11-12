@@ -664,12 +664,29 @@ export class CommissioningService {
       WAIVED: 'WAIVED',
       SCHEDULED: 'SCHEDULED',
     };
-    const targetStatus = statusMap[input.status];
+    const targetStatus = statusMap[input?.status];
     if (!targetStatus) {
       throw new BadRequestException({
         code: 'INVALID_SCHEDULE_STATUS',
-        detail: `Status must be one of: PERFORMED, DEFERRED, WAIVED, SCHEDULED`,
+        detail: 'Status must be one of: PERFORMED, DEFERRED, WAIVED, SCHEDULED',
       });
+    }
+    const notes = input.notes?.trim();
+    if (input.notes !== undefined && (typeof input.notes !== 'string' || !notes || notes.length > 1000)) {
+      throw new BadRequestException({ code: 'SEASONAL_REASON_INVALID' });
+    }
+    if (input.testResults !== undefined) {
+      const results = input.testResults;
+      if (!results || Array.isArray(results) || typeof results !== 'object' ||
+          Object.keys(results).length === 0 || Object.keys(results).length > 64 ||
+          Object.entries(results).some(([key, value]) =>
+            !/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(key) ||
+            typeof value !== 'number' || !Number.isFinite(value) || Math.abs(value) > 1_000_000_000)) {
+        throw new BadRequestException({
+          code: 'SEASONAL_RESULTS_SCHEMA_INVALID',
+          detail: 'Results must contain 1–64 named, finite numeric measurements within supported bounds.',
+        });
+      }
     }
 
     return withTenantTransaction(this.pool, ctx, async (client, emit) => {
@@ -689,13 +706,24 @@ export class CommissioningService {
       }
 
       const existing = rows[0];
+      const allowed: Record<string, string[]> = {
+        SCHEDULED: ['PERFORMED', 'DEFERRED', 'WAIVED'],
+        DEFERRED: ['SCHEDULED', 'PERFORMED', 'WAIVED'],
+        PERFORMED: [], // Results are immutable; corrections require a new reviewed attempt.
+        WAIVED: [], // Unwaiving requires a separate audited authorization workflow.
+      };
+      if (!allowed[String(existing.status)]?.includes(targetStatus)) {
+        throw new ConflictException({
+          code: 'SEASONAL_TRANSITION_NOT_ALLOWED',
+          detail: 'This result is terminal or the proposed schedule transition is not permitted.',
+        });
+      }
       const isCompleted = targetStatus === 'PERFORMED';
 
       if (targetStatus === 'PERFORMED') {
-        const hasResults =
-          (input.testResults && Object.keys(input.testResults).length > 0) ||
-          (existing.test_results_json && Object.keys(existing.test_results_json).length > 0);
-        if (!hasResults) {
+        // Never carry forward a previous attempt's values as proof that a
+        // rescheduled test has actually been performed.
+        if (!input.testResults || Object.keys(input.testResults).length === 0) {
           throw new BadRequestException({
             code: 'TEST_RESULTS_REQUIRED',
             detail: 'Seasonal commissioning cannot be marked PERFORMED or COMPLETED without test results.',
@@ -703,17 +731,22 @@ export class CommissioningService {
         }
       }
 
-      if ((targetStatus === 'DEFERRED' || targetStatus === 'WAIVED') && !input.notes?.trim() && !existing.parameters_json?.notes) {
+      if ((targetStatus === 'DEFERRED' || targetStatus === 'WAIVED' ||
+           (existing.status === 'DEFERRED' && targetStatus === 'SCHEDULED')) && !notes) {
         throw new BadRequestException({
           code: 'REASON_REQUIRED',
           detail: `Notes or reason required when status is set to ${targetStatus}.`,
         });
       }
 
-      await client.query(
+      const { rows: savedRows } = await client.query(
         `UPDATE seasonal_commissioning_schedules
             SET status = $4,
-                test_results_json = COALESCE($5, test_results_json),
+                test_results_json = CASE
+                  WHEN $4 = 'PERFORMED' THEN $5::jsonb
+                  WHEN $4 = 'SCHEDULED' THEN NULL
+                  ELSE test_results_json
+                END,
                 completed_at = CASE
                   WHEN $4 = 'PERFORMED' THEN now()
                   WHEN $4 IN ('SCHEDULED', 'DEFERRED', 'WAIVED') THEN NULL
@@ -723,31 +756,42 @@ export class CommissioningService {
                   WHEN $6::text IS NOT NULL THEN jsonb_set(parameters_json, '{notes}', to_jsonb($6::text))
                   ELSE parameters_json
                 END
-          WHERE org_id = $1 AND project_id = $2 AND id = $3`,
+          WHERE org_id = $1 AND project_id = $2 AND id = $3
+          RETURNING status, test_results_json, completed_at`,
         [
           ctx.orgId,
           projectId,
           scheduleId,
           targetStatus,
           input.testResults ? JSON.stringify(input.testResults) : null,
-          input.notes?.trim() || null,
+          notes || null,
         ],
       );
+      if (!savedRows.length) {
+        throw new ConflictException({ code: 'SEASONAL_UPDATE_NOT_PERSISTED' });
+      }
+      const committed = savedRows[0];
 
       emit({
         eventType: 'SEASONAL_COMMISSIONING_UPDATED',
         projectId,
         entityType: 'SEASONAL_COMMISSIONING_SCHEDULE',
         entityId: scheduleId,
-        afterJson: { status: targetStatus, isCompleted },
+        afterJson: {
+          previousStatus: existing.status, status: committed.status, isCompleted,
+          previousCompletedAt: existing.completed_at,
+          completedAt: committed.completed_at,
+          reason: notes ?? null,
+          resultKeys: isCompleted ? Object.keys(input.testResults || {}) : [],
+        },
       });
 
       return {
         id: scheduleId,
         projectId,
-        status: targetStatus,
-        completedAt: isCompleted ? new Date().toISOString() : existing.completed_at,
-        testResults: input.testResults || existing.test_results_json,
+        status: committed.status,
+        completedAt: committed.completed_at,
+        testResults: committed.test_results_json,
       };
     });
   }
