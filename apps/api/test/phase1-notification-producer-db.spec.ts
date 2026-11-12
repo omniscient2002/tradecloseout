@@ -36,7 +36,9 @@ describe('PH1-G24-005: notification producer preserves accepted and in-flight co
       expect(inapp.notification.status).toBe('SENT');
       expect(inapp.notification.gateway_state).toBe('DELIVERED');
       expect(inapp.notification.sent_at).not.toBeNull();
-      const listed=await service.listNotifications(ctx);
+      // The producer is SYSTEM-authorised for creation, whereas inbox reads
+      // are user-scoped and require a live active tenant membership.
+      const listed=await service.listNotifications({...ctx,actorType:'USER'});
       expect(listed.find((row:any)=>row.id===id).gateway_state).toBe('PENDING');
       expect(listed.find((row:any)=>row.id===inapp.notification.id).gateway_state).toBe('DELIVERED');
     });
