@@ -72,17 +72,15 @@ describe('Phase 2 configuration fail-closed boundaries', () => {
   });
 
   it('does not treat differently ordered locked JSON objects as a policy change', () => {
-    const platform = layer('PLATFORM', { 'security.allowed_mime_types': [
-      { mime: 'application/pdf', reviewed: true },
-    ] });
-    const project = layer('PROJECT', { 'security.allowed_mime_types': [
-      { reviewed: true, mime: 'application/pdf' },
-    ] });
-    const result = resolveConfigV021({ PLATFORM: platform, PROJECT: project });
+    const platform=layer('PLATFORM',{'checklist.requirements':[
+      {key:'ORDERED',locked:true,validityRule:{reviewed:true,rule:'explicit'}},
+    ]});
+    const project=layer('PROJECT',{'checklist.requirements':[
+      {key:'ORDERED',locked:true,validityRule:{rule:'explicit',reviewed:true}},
+    ]});
+    const result=resolveConfigV021({PLATFORM:platform,PROJECT:project});
     expect(result.conflicts).toHaveLength(0);
-    expect(result.provenance['security.allowed_mime_types']).toMatchObject({
-      level: 'PLATFORM',
-    });
+    expect(result.provenance['checklist.requirements']).toMatchObject({level:'PLATFORM'});
   });
 
   it('does not allow a source layer to omit or forge its immutable version identity', () => {
@@ -287,6 +285,59 @@ describe('Phase 2 configuration fail-closed boundaries', () => {
     expect(result.conflicts).toEqual(expect.arrayContaining([
       expect.objectContaining({ path: '$level', attemptedAtLevel: 'PROJECT' }),
     ]));
+  });
+
+  it('rejects non-boolean obligation flags and ambiguous removal patches',()=>{
+    for(const patch of [{key:'A',locked:'false'},{key:'A',mandatory:'false'},{key:'A',$remove:'true'},
+      {key:'A',$remove:true,title:'also replace'}]) {
+      const result=resolveConfigV021({PROJECT:layer('PROJECT',{'checklist.requirements':[patch]})});
+      expect(result.conflicts).not.toHaveLength(0);
+      expect(result.payload.requirements).toBeUndefined();
+    }
+  });
+
+  it('preserves individual field/item provenance through partial overrides and removals',()=>{
+    const result=resolveConfigV021({
+      PLATFORM:layer('PLATFORM',{'checklist.requirements':[{key:'A',title:'Original',mandatory:true},{key:'B',title:'Retired'}]}),
+      PROJECT:layer('PROJECT',{'checklist.requirements':[{key:'A',title:'Revised'},{key:'B',$remove:true}]}),
+    });
+    expect(result.conflicts).toHaveLength(0);
+    expect(result.itemProvenance['checklist.requirements'].A).toMatchObject({
+      title:{level:'PROJECT',versionId:'phase2-project'},mandatory:{level:'PLATFORM',versionId:'phase2-platform'},
+    });
+    expect(result.itemProvenance['checklist.requirements'].B.$removed).toMatchObject({level:'PROJECT',removed:true});
+  });
+
+  it('keeps an explicitly supplied compatibility schema version instead of downgrading it silently',()=>{
+    const result=resolveConfigurationHierarchy([{level:'PROJECT',versionId:'unknown-version',schemaVersion:'v99',payload:{'naming.pattern':'unsafe'}}]);
+    expect(result.conflicts).toEqual(expect.arrayContaining([expect.objectContaining({path:'$schemaVersion'})]));
+    expect(result.payload['naming.pattern']).toBeUndefined();
+  });
+
+  it('rejects malformed layer containers, sparse arrays and aggregate payload excess',()=>{
+    expect(resolveConfigurationHierarchy(null as any).conflicts).not.toHaveLength(0);
+    const sparse=Array(2);sparse[1]={key:'A'};
+    expect(resolveConfigV021({PROJECT:layer('PROJECT',{'checklist.requirements':sparse})}).conflicts).not.toHaveLength(0);
+    const oversized=Array.from({length:1000},(_,n)=>({key:'A'+n,title:'a'.repeat(2048)}));
+    expect(resolveConfigV021({PROJECT:layer('PROJECT',{'checklist.requirements':oversized})}).conflicts).not.toHaveLength(0);
+  });
+
+  it('protects inherited mandatory flags even when the item has no locked flag',()=>{
+    for(const patch of [{key:'M',mandatory:false},{key:'M',$remove:true}]) {
+      const result=resolveConfigurationHierarchy([
+        {level:'PLATFORM',versionId:'mandatory-source',payload:{requirements:[{key:'M',mandatory:true}]}},
+        {level:'ORG',versionId:'unrelated-source',payload:{requirements:[{key:'OTHER',mandatory:false}]}},
+        {level:'PROJECT',versionId:'attempt',payload:{requirements:[patch]}},
+      ]);
+      expect(result.payload.requirements).toContainEqual(expect.objectContaining({key:'M',mandatory:true}));
+      expect(result.conflicts).toContainEqual(expect.objectContaining({path:'key:M',lockedAtLevel:'PLATFORM'}));
+    }
+  });
+
+  it('requires MIME strings instead of treating arbitrary object payloads as a security allowlist',()=>{
+    const result=resolveConfigV021({PLATFORM:layer('PLATFORM',{'security.allowed_mime_types':[{mime:'application/pdf'}]})});
+    expect(result.conflicts).not.toHaveLength(0);
+    expect(result.payload['security.allowed_mime_types']).toBeUndefined();
   });
 
   it('refuses prototype keys and missing merge keys', () => {

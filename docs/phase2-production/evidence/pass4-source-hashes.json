@@ -1,0 +1,4 @@
+{
+  "apps/api/src/modules/configuration/config-resolver.ts": "62db148ed37efb672a98a2e3dc0655c83737af53be375ca20524de96d1247297",
+  "apps/api/test/phase2-configuration-boundaries.spec.ts": "9ab19da8561155a2a7e833350e6fee7736296ac54121fbd7812fd97448f21678"
+}

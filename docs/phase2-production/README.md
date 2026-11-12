@@ -48,3 +48,12 @@ Local evidence: workspace suite passed API492/81, shared91/5, DB13, worker32, br
 Verification: the full local workspace run passed DB13/shared91/browser10/PDF and API498/499; its sole failure was an obsolete exact query-count assertion after the added lifecycle lock. The assertion now tests the original security property (no mutation on unauthorized review) and the final targeted run passed18 tests across3 suites, including5 real quota/recovery/concurrency database cases. Typecheck, build, negative security15 and RBAC8 passed. These overlapping counts are not summed. Exact-head CI is still required before calling this checkpoint verified.
 
 Pass3 is deliberately **IN_PROGRESS**. Generated artifact writers still need consistent reservation/accounting, provider completion/cleanup recovery needs final integration, and project lifecycle/seat reactivation coverage will be completed in their passes. These are engineering gaps alongside the separately blocked policy/provider approvals. All58 canonical audit items retain OPEN/BLOCKED_EXTERNAL; independently accepted closures remain0.
+
+
+## Pass 4 candidate — configuration safety and explanatory provenance
+
+Inherited mandatory obligations cannot be removed or made optional by a child layer, even if the mutable `locked` flag was absent. Boolean obligation flags and remove operations now have explicit types; ambiguous remove-and-replace patches reject. The compatibility wrapper preserves a supplied schema version so an unsupported version cannot become v1.0 silently. MIME allowlists require MIME strings. Aggregate JSON, accessor, sparse-array and byte budgets reject before resolution without losing source-field error location.
+
+Resolution records per-item/per-field origins and removal tombstones alongside the existing field winners. A no-op/failed child patch cannot take provenance credit, and conflicts identify the protecting item's actual level. These extra origins still require persistence and usable preview in Pass5/11. Parser tests do not certify persisted layer identity or an HVAC mapping.
+
+Targeted checks passed51 across3 suites, including existing real checklist/readiness/isolated database regressions. Typecheck passed. Original findings remain OPEN; exact-head CI and independent acceptance remain required.

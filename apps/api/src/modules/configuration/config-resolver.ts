@@ -92,6 +92,7 @@ export interface ConfigConflict {
   path: string;
   level: ConfigLevel;
   message: string;
+  lockedAtLevel?:ConfigLevel;
 }
 
 /**
@@ -105,19 +106,44 @@ function isConfigRecord(value: unknown): value is Record<string, unknown> {
   return proto === Object.prototype || proto === null;
 }
 
-function safeConfigData(value: unknown, depth = 0): boolean {
-  if (depth > 8) return false;
-  if (value === null || typeof value === 'boolean') return true;
-  if (typeof value === 'string') return value.length <= 2048;
-  if (typeof value === 'number') return Number.isSafeInteger(value);
-  if (Array.isArray(value)) {
-    return value.length <= 1000 && value.every(item => safeConfigData(item, depth + 1));
+function safeConfigData(value: unknown, depth=0, budget={nodes:0,characters:0}):boolean {
+  if(depth>8||++budget.nodes>50000)return false;
+  if(value===null||typeof value==='boolean')return true;
+  if(typeof value==='string') {
+    budget.characters+=value.length;
+    return value.length<=2048&&budget.characters<=1048576;
   }
-  if (!isConfigRecord(value)) return false;
-  const keys = Object.keys(value);
-  return keys.length <= 64 && keys.every(key =>
-    key.length <= 128 && !['__proto__','constructor','prototype'].includes(key) &&
-    safeConfigData(value[key], depth + 1));
+  if(typeof value==='number')return Number.isSafeInteger(value);
+  if(Array.isArray(value)) {
+    if(value.length>1000)return false;
+    // Explicit iteration rejects sparse arrays as well as unsupported values.
+    for(const item of value)if(!safeConfigData(item,depth+1,budget))return false;
+    return true;
+  }
+  if(!isConfigRecord(value))return false;
+  const entries=Object.entries(Object.getOwnPropertyDescriptors(value));
+  if(entries.length>64)return false;
+  for(const [key,descriptor] of entries) {
+    if(!('value' in descriptor)||!descriptor.enumerable||key.length>128||
+        ['__proto__','constructor','prototype'].includes(key))return false;
+    budget.characters+=key.length;
+    if(!safeConfigData(descriptor.value,depth+1,budget))return false;
+  }
+  return true;
+}
+
+function validKeyedItem(item:Record<string,unknown>):boolean {
+  for(const flag of ['locked','mandatory','$remove']) {
+    if(Object.hasOwn(item,flag)&&typeof item[flag]!=='boolean')return false;
+  }
+  if(item.$remove===true&&Object.keys(item).some(k=>!['key','$remove'].includes(k)))return false;
+  for(const field of ['title','description','docTypeKey','groupKey','assetCategoryKey','assetId','reviewerRole']) {
+    if(Object.hasOwn(item,field)&&(typeof item[field]!=='string'||!(item[field] as string).trim()))return false;
+  }
+  if(Object.hasOwn(item,'scopeType')&&!['PROJECT','ASSET_CATEGORY','ASSET'].includes(item.scopeType as string))return false;
+  if(Object.hasOwn(item,'dueOffsetDays')&&!Number.isSafeInteger(item.dueOffsetDays))return false;
+  if(Object.hasOwn(item,'validityRule')&&!isConfigRecord(item.validityRule))return false;
+  return true;
 }
 
 function validateConfigValue(schema: FieldSchema, value: unknown): boolean {
@@ -125,7 +151,7 @@ function validateConfigValue(schema: FieldSchema, value: unknown): boolean {
   if (schema.type === 'keyed_array') {
     // The keyed merge reports per-item conflicts, without silently losing
     // unrelated valid items during a read-only preview.
-    return Array.isArray(value) && value.every(item => isConfigRecord(item));
+    return Array.isArray(value) && value.every(item => isConfigRecord(item)&&validKeyedItem(item));
   }
   if (schema.type === 'unkeyed_array') {
     if (!Array.isArray(value)) return false;
@@ -134,6 +160,7 @@ function validateConfigValue(schema: FieldSchema, value: unknown): boolean {
         /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient.trim()) &&
         recipient.trim().length <= 254);
     }
+    if(schema.path==='security.allowed_mime_types')return value.every(mime=>typeof mime==='string'&&/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/i.test(mime));
     return true;
   }
   if (schema.type === 'map') return isConfigRecord(value);
@@ -159,6 +186,7 @@ export function resolveConfigV021(
   const result: Record<string, any> = {};
   const provenance: Record<string, { level: ConfigLevel; versionId: string }> = {};
   const conflicts: ConfigConflict[] = [];
+  const itemProvenance:Record<string,Record<string,Record<string,{level:ConfigLevel;versionId:string;removed?:boolean}>>>={};
   // Preserve the source encoding across layers. A legacy flat requirements
   // array must use the *same keyed lock semantics* as registered requirements.
   // Mixed encodings need a reviewed schema migration, not last-writer-wins.
@@ -209,8 +237,20 @@ export function resolveConfigV021(
       continue;
     }
 
-    if (!isConfigRecord(cfg.payload) || Object.keys(cfg.payload).length > 64) {
+    if (!isConfigRecord(cfg.payload) || Object.keys(cfg.payload).length>64 ||
+        Object.values(Object.getOwnPropertyDescriptors(cfg.payload)).some(d=>!('value' in d))) {
       conflicts.push({ path: '$payload', level, message: 'Invalid or excessive configuration fields.' });
+      continue;
+    }
+
+    const layerBudget={nodes:0,characters:0};
+    const unsafePaths=Object.entries(cfg.payload).filter(([,value])=>!safeConfigData(value,0,layerBudget)).map(([path])=>path);
+    if(unsafePaths.length) {
+      for(const path of unsafePaths)conflicts.push({path,level,message:'Configuration value exceeds the supported JSON safety budget.'});
+      continue;
+    }
+    if(Buffer.byteLength(JSON.stringify(cfg.payload),'utf8')>1048576) {
+      conflicts.push({path:'$payload',level,message:'Configuration payload exceeds the supported byte budget.'});
       continue;
     }
 
@@ -303,6 +343,27 @@ export function resolveConfigV021(
 
       if (previousCanonical !== JSON.stringify(sortDeepKeys(result[path]))) {
         provenance[path] = { level, versionId: cfg.versionId };
+        if(schema.type==='keyed_array') {
+          const previousItems:Record<string,unknown>[]=previousCanonical?JSON.parse(previousCanonical):[];
+          const previousByKey=new Map(previousItems.map(item=>[String(item[schema.mergeKey??'key']),item]));
+          const nextItems=result[path] as Record<string,unknown>[];
+          const nextByKey=new Map(nextItems.map(item=>[String(item[schema.mergeKey??'key']),item]));
+          const entries=itemProvenance[path]??={};
+          for(const [key,item] of nextByKey) {
+            const before=previousByKey.get(key);
+            for(const [field,value]of Object.entries(item)) {
+              if(field==='provenanceLevel')continue;
+              if(JSON.stringify(sortDeepKeys(before?.[field]))!==JSON.stringify(sortDeepKeys(value))) {
+                (entries[key]??={})[field]={level,versionId:cfg.versionId};
+              }
+            }
+          }
+          for(const key of previousByKey.keys())if(!nextByKey.has(key))entries[key]={$removed:{level,versionId:cfg.versionId,removed:true}};
+        } else if(schema.overridePolicy==='APPEND') {
+          const previousItems=previousCanonical?JSON.parse(previousCanonical):[];
+          const entries=itemProvenance[path]??={};
+          for(const item of result[path])if(!previousItems.includes(item))entries[item]={value:{level,versionId:cfg.versionId}};
+        }
       }
     }
   }
@@ -319,7 +380,7 @@ export function resolveConfigV021(
   const canonical = JSON.stringify(sortDeepKeys(result));
   const checksum = createHash('sha256').update(canonical).digest('hex');
 
-  return { payload: result, provenance, conflicts, checksum };
+  return { payload: result, provenance, itemProvenance, conflicts, checksum };
 }
 
 function mergeKeyedObjects(
@@ -351,12 +412,18 @@ function mergeKeyedObjects(
     seenPatches.add(k);
     const current = map.get(k);
 
+    if(current?.mandatory===true&&(patch.mandatory===false||patch.$remove===true)) {
+      conflicts.push({path:`${keyField}:${k}`,level,lockedAtLevel:current.provenanceLevel,
+        message:`Mandatory item '${k}' cannot be removed or made optional by a child layer.`});
+      continue;
+    }
     if (patch.$remove === true) {
       if (current?.locked === true) {
         conflicts.push({
           path: `${keyField}:${k}`,
           level,
           message: `Locked item '${k}' cannot be removed at ${level}.`,
+          lockedAtLevel:current.provenanceLevel,
         });
       } else {
         map.delete(k);
@@ -377,6 +444,7 @@ function mergeKeyedObjects(
             path: `${keyField}:${k}`,
             level,
             message: `Locked item '${k}' cannot be weakened at ${level}.`,
+            lockedAtLevel:current.provenanceLevel,
           });
         }
         // Identical children inherit the original locked version; they do
@@ -410,11 +478,16 @@ export interface ConfigLayerInput {
   level: ConfigLevel;
   versionId: string;
   payload: Record<string, any>;
+  schemaVersion?: string;
 }
 
-export function resolveConfigurationHierarchy(layers: ConfigLayerInput[]) {
+export function resolveConfigurationHierarchy(layers: ConfigLayerInput[]):
+  Omit<ReturnType<typeof resolveConfigV021>,'conflicts'> & {conflicts:Array<{path:string;attemptedAtLevel:ConfigLevel;lockedAtLevel:ConfigLevel|null;message:string}>} {
   const byLevel: Partial<Record<ConfigLevel, ConfigLayerRecord>> = {};
   const inputConflicts: ConfigConflict[] = [];
+  if(!Array.isArray(layers)||layers.length>5) {
+    return {payload:{},provenance:{},itemProvenance:{},checksum:'',conflicts:[{path:'$layers',attemptedAtLevel:'PROJECT' as const,lockedAtLevel:null,message:'Supply a bounded array of configuration layers.'}]};
+  }
   for (const layer of layers) {
     if (!layer || !['PLATFORM','TRADE','ORG','CLIENT_CONTRACT','PROJECT'].includes(layer.level)) {
       inputConflicts.push({ path: '$level', level: 'PROJECT', message: 'Unknown configuration level.' });
@@ -428,7 +501,7 @@ export function resolveConfigurationHierarchy(layers: ConfigLayerInput[]) {
     byLevel[layer.level] = {
       level: layer.level,
       versionId: layer.versionId,
-      schemaVersion: 'v1.0',
+      schemaVersion: layer.schemaVersion??'v1.0',
       payload: layer.payload,
     };
   }
@@ -436,12 +509,13 @@ export function resolveConfigurationHierarchy(layers: ConfigLayerInput[]) {
   return {
     payload: res.payload,
     provenance: res.provenance,
+    itemProvenance:res.itemProvenance,
     conflicts: [...inputConflicts, ...res.conflicts].map((c) => ({
       path: c.path,
       attemptedAtLevel: c.level,
       // No invented PLATFORM attribution: the owner level is only known if
       // an actual winning layer established a value at that path.
-      lockedAtLevel: res.provenance[c.path]?.level ?? null,
+      lockedAtLevel: c.lockedAtLevel??res.provenance[c.path]?.level??null,
       message: c.message,
     })),
     checksum: res.checksum,

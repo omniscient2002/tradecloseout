@@ -31,7 +31,8 @@
     {
       "number": 4,
       "work": "Configuration schemas and merge protection",
-      "state": "PLANNED"
+      "state": "LOCAL_BOUNDARIES_VERIFIED_CI_PENDING",
+      "notes": "51 checks across resolver, actual checklist/readiness and isolated DB suites. Hardened flags/budgets/schema forwarding; preserved mandatory inheritance and per-item/field origin. Persisted lineage and real consumers remain Pass5 work."
     },
     {
       "number": 5,
@@ -646,6 +647,21 @@
       "id": "PH2-G18-005",
       "state": "IMPLEMENTED_SUBSET_TESTED_NOT_ACCEPTED",
       "notes": "All known full/RA package generation routes use the same IST-month quota and project lock, with failure rollback and endpoint idempotency. Full provider artifacts and business acceptance remain open."
+    },
+    {
+      "id": "PH2-G06-001",
+      "state": "IMPLEMENTED_SUBSET_TESTED_NOT_ACCEPTED",
+      "notes": "Parent mandatory flags remain protected even without a mutable locked flag; conflicts identify the actual protecting source level."
+    },
+    {
+      "id": "PH2-G06-003",
+      "state": "IMPLEMENTED_SUBSET_TESTED_NOT_ACCEPTED",
+      "notes": "Compatibility wrapper preserves unknown schema versions for rejection; typed obligation flags, MIME values and aggregate/sparse/deep JSON budgets fail safely."
+    },
+    {
+      "id": "PH2-G06-004",
+      "state": "IMPLEMENTED_SUBSET_TESTED_NOT_ACCEPTED",
+      "notes": "Added per-item/field and removal provenance while preserving legacy field winners and deterministic checksums. Persistence/preview UI remain open in later passes."
     }
   ]
 }
