@@ -36,7 +36,7 @@ async function setup(admin: Pool, status = 'ACTIVE') {
   await admin.query(
     `INSERT INTO memberships(id, org_id, user_id, role, status) VALUES
        ($1, $2, $3, 'R-OWNER', 'ACTIVE'),
-       ($4, $2, $5, 'R-QC', 'ACTIVE')`,
+       ($4, $2, $5, 'R-ADMIN', 'ACTIVE')`,
     [uuidv7(), orgId, userId, uuidv7(), approverId],
   );
   const ctx: any = {
@@ -52,6 +52,26 @@ const requirement = (key: string, docTypeKey = 'DT-001') => ({
   scopeType: 'PROJECT' as const,
 });
 
+/**
+ * Tests must obtain a qualified exception through the same state machine as
+ * production. A legacy hand-inserted ACTIVE row has no obligation revision and
+ * may no longer satisfy readiness or the package receipt.
+ */
+async function recordQualifiedWaiver(
+  app: Pool, ctx: any, approverId: string, requirementId: string,
+) {
+  const service = new ChecklistsService(app);
+  const requested = await service.requestWaiver(
+    ctx, requirementId, 'Reviewed baseline exception approved', 'WAIVE',
+  );
+  const approved = await service.countersignWaiver(
+    { ...ctx, userId: approverId, requestId: uuidv7() },
+    requested.waiverId,
+  );
+  if (approved.requirementStatus !== 'WAIVED') throw new Error('qualified waiver missing');
+  return requested.waiverId;
+}
+
 async function acceptedProject(admin: Pool, app: Pool) {
   const seeded = await setup(admin, 'HANDOVER');
   const { orgId, projectId, userId, approverId, ctx } = seeded;
@@ -59,10 +79,7 @@ async function acceptedProject(admin: Pool, app: Pool) {
     requirements: [requirement('ACCEPTED-BASELINE')],
   });
   const { rows: reqs } = await admin.query('SELECT id FROM requirements WHERE project_id = $1', [projectId]);
-  await admin.query(`INSERT INTO waivers
-    (id, org_id, project_id, requirement_id, type, reason, requested_by, approved_by, second_approved_by, status)
-    VALUES($1,$2,$3,$4,'WAIVE','Reviewed baseline exception approved',$5,$5,$6,'ACTIVE')`,
-  [uuidv7(), orgId, projectId, reqs[0].id, userId, approverId]);
+  await recordQualifiedWaiver(app, ctx, approverId, reqs[0].id);
   const packageId = uuidv7(), submissionId = uuidv7();
   await admin.query(`INSERT INTO handover_packages
     (id,org_id,project_id,version_no,status,snapshot_id,snapshot_checksum,requested_by)
@@ -227,14 +244,7 @@ describe('PR1 independent review — PostgreSQL acceptance', () => {
       // A reimport preserves the same legitimate server-assigned reviewer.
       await checklists.importL3Checklist(ctx, projectId, { requirements: [requirement('CHILLER-OM')] });
       const reqId = requirements[0].id;
-      await admin.query(
-        `INSERT INTO waivers
-          (id, org_id, project_id, requirement_id, type, reason,
-           requested_by, approved_by, second_approved_by, status)
-         VALUES($1, $2, $3, $4, 'WAIVE', 'Accepted for prior contract requirement',
-                $5, $5, $6, 'ACTIVE')`,
-        [uuidv7(), orgId, projectId, reqId, userId, approverId],
-      );
+      await recordQualifiedWaiver(app, ctx, approverId, reqId);
       expect((await readiness.evaluateProjectReadiness(ctx, projectId)).readyWithoutOverride).toBe(true);
 
       // R3: Switching a document obligation must not inherit the earlier waiver.
@@ -294,14 +304,7 @@ describe('PR1 independent review — PostgreSQL acceptance', () => {
            AND superseded_at IS NULL`,
         [orgId, projectId],
       );
-      await admin.query(
-        `INSERT INTO waivers
-          (id, org_id, project_id, requirement_id, type, reason,
-           requested_by, approved_by, second_approved_by, status)
-         VALUES($1, $2, $3, $4, 'WAIVE', 'Reviewed baseline exception approved',
-                $5, $5, $6, 'ACTIVE')`,
-        [uuidv7(), orgId, projectId, initialReqs[0].id, userId, approverId],
-      );
+      await recordQualifiedWaiver(app, ctx, approverId, initialReqs[0].id);
       expect((await readiness.evaluateProjectReadiness(ctx, projectId)).readyWithoutOverride).toBe(true);
 
       // Seed an already accepted historic handover to isolate the closure rule.
