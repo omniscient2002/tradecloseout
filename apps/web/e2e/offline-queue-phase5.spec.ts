@@ -552,6 +552,43 @@ test('same authenticated member can deliberately recover only local-only previou
   ]);
 });
 
+test('foreground session-epoch fence preserves unsent draft eligibility for explicit reauthorization', async ({ page }) => {
+  const puts = await fixture(page, false);
+  const result = await page.evaluate(async () => {
+    const q = (window as any).__queue;
+    const orgId = '0192e000-0000-7000-8000-000000000001';
+    const userId = '0192e000-0000-7000-8000-000000000101';
+    const partition = q.getMemberOfflineActorPartition(userId, orgId);
+    q.setOfflineActorPartition(partition);
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    await q.enqueueFieldUpload({
+      actorPartition: partition, projectId: 'project-one', requirementId: 'requirement-one',
+      requirementRowVersion: 7,
+      file: new File(['never sent'], 'local-only.pdf', { type: 'application/pdf' }),
+      revisionCode: 'A', issueDate: '2026-11-12', title: 'Offline local-only',
+    });
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+    q.setOfflineActorPartition(null);
+    q.setOfflineActorPartition(partition);
+    // A normal foreground drain marks this historical generation blocked.
+    await q.drainOfflineUploadQueue();
+    const blocked = (await q.listOfflineUploadDrafts()).find((d: any) => d.filename === 'local-only.pdf');
+    const initialFetch = (window as any).__apiFetch;
+    (window as any).__apiFetch = async (url: string, opts?: unknown) => {
+      if (url === '/api/v1/auth/me') return { userId, activeOrgId: orgId };
+      if (url.endsWith('/recover-upload-authority/requirement-one?rowVersion=7')) {
+        return { allowed: true, projectId: 'project-one', requirementId: 'requirement-one', rowVersion: 7 };
+      }
+      return initialFetch(url, opts);
+    };
+    await q.recoverOfflineUploadDraft(blocked.queueId);
+    const recovered = (await q.listOfflineUploadDrafts()).find((d: any) => d.filename === 'local-only.pdf');
+    return { before: blocked.status, after: recovered.status };
+  });
+  expect(puts).toHaveLength(0);
+  expect(result).toEqual({ before: 'BLOCKED_SCOPE', after: 'QUEUED_OFFLINE' });
+});
+
 test('changed member identity cannot recover a previous actor original', async ({ page }) => {
   await fixture(page, false);
   const result = await page.evaluate(async () => {
