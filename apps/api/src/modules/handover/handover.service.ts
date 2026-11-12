@@ -12,7 +12,7 @@ import { uuidv7 } from 'uuidv7';
 import { createHash } from 'crypto';
 import { withTenantTransaction, consumePlanQuota, TenantActorContext } from '@tradecloseout/db/tenant-tx';
 import { S3StorageService } from '../documents/s3-storage.service';
-import { canonicalJson } from '@tradecloseout/shared';
+import { canonicalJson, isImmutableObjectVersionId } from '@tradecloseout/shared';
 import { evaluateReadinessInTransaction, QUALIFIED_WAIVER_PREDICATE } from './closeout-readiness';
 
 @Injectable()
@@ -105,7 +105,7 @@ export class HandoverService {
                   ON so.org_id = dv.org_id AND so.id = dv.object_id
                  AND so.status = 'READY' AND so.sha256 IS NOT NULL
                  AND so.observed_size_bytes = so.size_bytes
-                 AND so.provider_version_id IS NOT NULL
+                 AND so.provider_version_id IS NOT NULL AND btrim(so.provider_version_id) <> '' AND lower(btrim(so.provider_version_id)) <> 'null'
                WHERE dr.org_id = r.org_id AND dr.project_id = r.project_id
                  AND dr.requirement_id = r.id
                  AND NOT EXISTS (
@@ -208,7 +208,7 @@ export class HandoverService {
                ON so.org_id = dv.org_id AND so.id = dv.object_id
               AND so.status = 'READY' AND so.sha256 IS NOT NULL
               AND so.observed_size_bytes = so.size_bytes
-              AND so.provider_version_id IS NOT NULL
+              AND so.provider_version_id IS NOT NULL AND btrim(so.provider_version_id) <> '' AND lower(btrim(so.provider_version_id)) <> 'null'
              WHERE dr.org_id = r.org_id AND dr.project_id = r.project_id
                AND dr.requirement_id = r.id
                AND NOT EXISTS (
@@ -584,7 +584,7 @@ export class HandoverService {
              ON so.org_id = dv.org_id AND so.id = dv.object_id
             AND so.status = 'READY' AND so.sha256 IS NOT NULL
             AND so.observed_size_bytes = so.size_bytes
-            AND so.provider_version_id IS NOT NULL
+            AND so.provider_version_id IS NOT NULL AND btrim(so.provider_version_id) <> '' AND lower(btrim(so.provider_version_id)) <> 'null'
            LEFT JOIN assets a
              ON r.scope_key = ('asset:' || a.id::text) AND a.org_id = r.org_id AND a.project_id = r.project_id
           WHERE r.org_id = $1 AND r.project_id = $2
@@ -776,7 +776,7 @@ export class HandoverService {
       if (!rows.length) throw new NotFoundException({ code: 'PACKAGE_NOT_FOUND', detail: 'Handover package not found.' });
       const row = rows[0];
       if (row.status !== 'READY' || row.object_status !== 'READY' ||
-          !row.provider_version_id || !row.sha256 || row.sha256 !== row.checksum ||
+          !isImmutableObjectVersionId(row.provider_version_id) || !row.sha256 || row.sha256 !== row.checksum ||
           Number(row.observed_size_bytes) !== Number(row.size_bytes)) {
         throw new UnprocessableEntityException({
           code: 'PACKAGE_ARTIFACT_NOT_VERIFIED',
@@ -951,7 +951,7 @@ export class HandoverService {
          WHERE dv.org_id = $1 AND dv.project_id = $2
            AND dv.deleted_at IS NULL
            AND d.deleted_at IS NULL AND dv.file_status = 'READY' AND so.status = 'READY'
-           AND so.provider_version_id IS NOT NULL AND so.sha256 IS NOT NULL
+           AND so.provider_version_id IS NOT NULL AND btrim(so.provider_version_id) <> '' AND lower(btrim(so.provider_version_id)) <> 'null' AND so.sha256 IS NOT NULL
            AND so.observed_size_bytes = so.size_bytes
          ORDER BY d.category_key ASC, d.title ASC, dv.version_no ASC`,
         [ctx.orgId, projectId],
@@ -1219,7 +1219,7 @@ export class HandoverService {
       if (record.status === 'COMPLETED' && this.storage) {
         const artifact = record.verification_receipt_json?.artifact;
         // Security Invariant (V06 / F06): Require verified immutable artifact identity; forbid unversioned fallback
-        if (!artifact?.objectId || !artifact?.objectKey || !artifact?.providerVersionId) {
+        if (!artifact?.objectId || !artifact?.objectKey || !isImmutableObjectVersionId(artifact?.providerVersionId)) {
           throw new ConflictException({
             code: 'ARCHIVE_ARTIFACT_INTEGRITY_MISSING',
             detail: `Completed archive export ${exportId} lacks immutable artifact objectId, objectKey or providerVersionId.`,
@@ -1249,8 +1249,7 @@ export class HandoverService {
         // Security Invariant (Gap 3 / PA12): READY row must possess non-null provider_version_id, bucket, key,
         // authoritative observed_size_bytes matching declared size_bytes, and matching sha
         if (
-          !so.provider_version_id ||
-          so.provider_version_id === 'null' ||
+          !isImmutableObjectVersionId(so.provider_version_id) ||
           !so.bucket ||
           !so.object_key ||
           !so.sha256 ||
