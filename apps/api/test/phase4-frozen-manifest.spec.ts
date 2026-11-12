@@ -35,14 +35,13 @@ describe('PH4-G14-002: atomic frozen handover package manifest', () => {
         if (sql.includes('SELECT id, status FROM projects')) {
           return { rows: [{ id: projectId, status: overrides.projectStatus ?? 'HANDOVER' }] };
         }
-        if (sql.includes('SELECT r.id, r.requirement_key, r.title, r.mandatory')) {
         if (sql.includes('SELECT p.code AS project_code, p.name AS project_name')) {
           return { rows: [{
             project_code: 'PROJECT-A', project_name: 'HVAC Site A',
             org_name: 'Engineering Company', contract_ref: 'CONTRACT-1', client_name: 'Customer Ltd',
           }] };
         }
-
+        if (sql.includes('SELECT r.id, r.requirement_key, r.title, r.mandatory')) {
           return { rows: [{
             id: reqId, requirement_key: 'AHU-ITR', mandatory: true,
             has_approved_evidence: overrides.approved !== false,
