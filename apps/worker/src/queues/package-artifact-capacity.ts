@@ -18,6 +18,8 @@ export async function reservePackageArtifact(pool:Pool,input:ArtifactReservation
   const client=await pool.connect();let destroy=false;
   try {
     await bind(client,input.orgId);
+    const {rows:organisations}=await client.query(`SELECT status FROM organisations WHERE id=$1 FOR SHARE`,[input.orgId]);
+    if(organisations[0]?.status!=='ACTIVE')throw new Error('PACKAGE_ORGANISATION_INACTIVE');
     const {rows:projects}=await client.query(`SELECT status,purged_at FROM projects
       WHERE org_id=$1 AND id=$2 FOR UPDATE`,[input.orgId,input.projectId]);
     if(!projects[0]||projects[0].purged_at||!['ACTIVE','HANDOVER'].includes(projects[0].status))throw new Error('PACKAGE_PROJECT_NOT_EDITABLE');

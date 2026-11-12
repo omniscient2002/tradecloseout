@@ -291,6 +291,8 @@ export async function compileAndPersistHandoverPackage(
         `SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`,
         [orgId],
       );
+      const {rows:org}=await persistClient.query('SELECT status FROM organisations WHERE id=$1 FOR SHARE',[orgId]);
+      if(org[0]?.status!=='ACTIVE')throw new Error('PACKAGE_ORGANISATION_INACTIVE');
       const {rows:project}=await persistClient.query(`SELECT status,purged_at FROM projects WHERE org_id=$1 AND id=$2 FOR UPDATE`,[orgId,packageMeta.project_id]);
       if(!project[0]||project[0].purged_at||!['ACTIVE','HANDOVER'].includes(project[0].status))throw new Error('PACKAGE_PROJECT_NOT_EDITABLE');
       const entitlement=await resolveEffectiveEntitlements(persistClient,orgId);

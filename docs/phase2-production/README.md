@@ -6,6 +6,20 @@ The [progress register](progress.json) keeps all 58 original IDs, twelve planned
 
 The user confirmed that neither HVAC mappings/packs nor billing/grace policy has independent approval. Those gates remain **BLOCKED_EXTERNAL**. Catalogue IDs and contractual obligations must be preserved. No grace duration, price or capacity is inferred as approved. Charging, automatic paid activation and tax issuance remain disabled. Provider integrations are deferred to the final stage; unrelated technical work continues.
 
+## Current status — configuration-source continuation
+
+Four of the twelve focused engineering passes have exact-head CI evidence. Pass5 remains **IN_PROGRESS**; independently accepted findings remain **0/58** and Phase2 is **not production ready**. The sections below record earlier checkpoints chronologically; a statement that CI was pending at an earlier checkpoint is not the current CI status.
+
+The governed-publication checkpoint `f64209de7c05b155156698dc965d087d2746eb4a` passed [application CI](https://github.com/omniscient2002/tradecloseout/actions/runs/43262432033) and [protocol verification](https://github.com/omniscient2002/tradecloseout/actions/runs/43262432176). This verifies that checkpoint's technical checks, not independent engineering approval of any pack.
+
+The continuation introduces immutable scoped configuration definitions with server-issued identities, canonical database hashes, exact source manifests and persisted field/item provenance. Ordinary runtime cannot rewrite payloads, forge global authoring or delete history. Exact global/organisation/contract/project versions are validated under narrow, scope-bound locking reads. Archived definitions remain reconstructable; new installations cannot use a retired source merely because another project used it. Additive imports preserve parent source identities and project settings. Identical imports/reapplications do not manufacture new snapshots or invalidate acceptance through a no-op. Legacy claimed identities are recorded as unverified manual history, never upgraded into independent approval.
+
+Package artifact reservation and publication also hold an active-organisation lock before the project lock. A real restricted-role PostgreSQL test proves a concurrent suspension cannot overtake admitted reservation and subsequent admission denies after suspension.
+
+Local verification: the initial full API run passed513/516 with three obsolete source fixtures failing. The repaired focused rerun passed59/59 across five suites, including all three failed suites and the real configuration-source/quota suites. Typecheck, build and negative security15 passed. These runs overlap and are not summed. Logs and source hashes are in `evidence/config-source-*`; the new candidate still needs its own GitHub CI and independent review. Synthetic source definitions and programmable providers do not constitute HVAC, billing or provider acceptance.
+
+Pass5 still requires approved, version-bound impact changes for ACTIVE/HANDOVER baselines, coherent requirement/evidence/waiver/package/submission invalidation, safe pack upgrades that preserve other configuration, real consumer wiring, and the administration/preview journeys. Persisted definitions alone do not satisfy those requirements. Project lifecycle/team operations, organisation offboarding/recovery, invitation/suspension/deletion journeys, notification privacy/preferences/delivery/retries, and complete Phase2 business browser acceptance also remain in later passes.
+
 ## Current verification checkpoint
 
 - Current PR21 plus G03 integration and regression repairs: full workspace tests pass locally — API465/80 suites, shared91/5, database13, worker32, archive/auth-storage browser10, plus PDF engine checks.

@@ -295,7 +295,7 @@ describe('PR1 independent review — PostgreSQL acceptance', () => {
         [orgId, projectId],
       );
       await expect(checklists.createAndApplySnapshot(ctx, projectId, [{
-        level: 'PROJECT', versionId: uuidv7(),
+        level: 'PROJECT', versionId: 'explicit-project-authoring', sourceMode: 'MANUAL_PROJECT_INPUT',
         payload: { requirements: [{ ...requirement('BAD-REVIEW'), reviewerRole: 'R-UNKNOWN' }] },
       }])).rejects.toThrow(UnprocessableEntityException);
       const after = await admin.query(

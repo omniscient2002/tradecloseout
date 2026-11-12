@@ -26,7 +26,7 @@
       "number": 3,
       "work": "Atomic quota enforcement and recovery",
       "state": "CI_VERIFIED_ENGINEERING_PASS",
-      "notes": "Expanded canonical storage reservation to actual compiler artifacts before provider PUT, with unpublished retry reuse, stale-owner rejection, quota downgrade checks and independently verified bytes in programmable S3 fixture. Exact new-head CI pending; full provider cleanup/lease recovery and new lifecycle/reactivation features remain in their respective passes.",
+      "notes": "Canonical storage and compiler reservation before provider PUT, immutable verified publication, unpublished retry reuse, stale-owner and quota checks passed exact-head CI at the recorded SHA. Physical cleanup, distinct attempt leases and complete reactivation/recovery remain later work.",
       "verifiedCheckpoints": [
         {
           "sha": "b187d41d31adec392dbb08f7e3a5da0581c8a385",
@@ -48,7 +48,14 @@
       "number": 5,
       "work": "Persisted configuration, template governance and approved impact changes",
       "state": "IN_PROGRESS",
-      "notes": "Governed immutable global pack publication and signed legacy exclusion implemented; targeted roles/state/upgrade checks pass. Qualified HVAC acceptance remains BLOCKED_EXTERNAL. Persisted configuration, installation lineage, impact-controlled active changes and real consumers remain engineering work."
+      "notes": "Governed immutable global pack publication and unsigned legacy exclusion passed exact-head CI at f64209de7c05b155156698dc965d087d2746eb4a. Persisted scoped definitions, canonical hashes, exact lineage, inherited-source preservation, no-op imports and artifact org-suspension serialization have local checks; new-head CI still required. Impact-controlled active changes, pack upgrade composition, consumers and UI remain engineering work. Qualified HVAC acceptance remains BLOCKED_EXTERNAL.",
+      "verifiedCheckpoints": [
+        {
+          "sha": "f64209de7c05b155156698dc965d087d2746eb4a",
+          "ci": "https://github.com/omniscient2002/tradecloseout/actions/runs/43262432033",
+          "scope": "Governed pack publication subset; not complete Pass5 or domain approval"
+        }
+      ]
     },
     {
       "number": 6,
@@ -628,6 +635,20 @@
       "state": "OPEN",
       "evidenceLevel": "SOURCE_CONFIRMED_RISK",
       "notes": "Current owner derives from job id; distinct worker attempts can share it. Package READY compare-and-set prevents stale second publication, but attempt/recovery lifecycle still needs hardening in Pass10."
+    },
+    {
+      "id": "PH2-NEW-008",
+      "title": "Scoped configuration locking must preserve global read-only authority and avoid DRAFT shared-lock upgrades",
+      "state": "CANDIDATE_FIX_TESTED",
+      "evidenceLevel": "TARGETED_POSTGRESQL",
+      "notes": "Narrow eligible-project locking function leaves runtime global UPDATE denied. DRAFT tenant sources take their eventual stronger lock; two real projects select one shared draft concurrently."
+    },
+    {
+      "id": "PH2-NEW-009",
+      "title": "Worker artifact admission and publication must serialize with organisation suspension",
+      "state": "CANDIDATE_FIX_TESTED",
+      "evidenceLevel": "TARGETED_POSTGRESQL",
+      "notes": "Active org SHARE precedes project lock. Real tc_app barrier proves suspension UPDATE cannot overtake admitted reservation; new reservation denies after suspension. Separate pre-auth invitation lock ordering remains future work."
     }
   ],
   "candidateWork": [
@@ -679,12 +700,22 @@
     {
       "id": "PH2-G06-004",
       "state": "IMPLEMENTED_SUBSET_TESTED_NOT_ACCEPTED",
-      "notes": "Added per-item/field and removal provenance while preserving legacy field winners and deterministic checksums. Persistence/preview UI remain open in later passes."
+      "notes": "Per-item/field origins and removals now persist in version2 snapshot provenance with exact source IDs and digests. Identical imports/reapplication preserve baseline identity; source/DB checks pass locally. Preview UI and complete consumer enforcement remain open."
     },
     {
       "id": "PH2-G06-009",
       "state": "IMPLEMENTED_SUBSET_TESTED_NOT_ACCEPTED",
       "notes": "Separate provisioned author/reviewer principals, immutable payload/review provenance, bounded schema validation, no runtime edit/trigger/publication authority, explicit candidate/qualification/catalogue/mapping/applicability/scenario/exception records, retirement and guarded install. No real author/reviewer memberships or approval evidence seeded. CLI uses a separately configured least-privileged human connection; external gate stays blocked."
+    },
+    {
+      "id": "PH2-G06-002",
+      "state": "IMPLEMENTED_SUBSET_TESTED_NOT_ACCEPTED",
+      "notes": "New definitions canonicalize the registered requirements alias before immutable storage and record the normalization; conflicting encodings reject. Legacy source rows remain unverified. Real consumer completeness remains open."
+    },
+    {
+      "id": "PH2-G06-005",
+      "state": "PARTIAL_TESTED",
+      "notes": "Server-issued immutable scoped versions, real canonical database digests, scope/role fencing, exact installed-pack copy and source manifests are used by actual checklist producers. Active baseline changes, pack upgrade composition, authoring/admin UI and independent acceptance remain open."
     }
   ]
 }

@@ -358,7 +358,7 @@ describe('Phase 2 configuration fail-closed boundaries', () => {
 
 describe('PH2-G06-006: immutable active baseline against single-layer reimports', () => {
   const locked = {
-    key: 'SAFETY-001', title: 'Approved safety manual', locked: true, mandatory: true,
+    key: 'SAFETY-001', groupKey: 'SAFETY', title: 'Approved safety manual', locked: true, mandatory: true,
     docTypeKey: 'DT-001', scopeType: 'PROJECT', reviewerRole: 'R-QC',
   };
 
@@ -387,6 +387,8 @@ describe('PH2-G06-006: immutable active baseline against single-layer reimports'
     const projectId = '0192e3a0-1111-7000-8000-000000000001';
     const orgId = '0192e3a0-1111-7000-8000-000000000002';
     const userId = '0192e3a0-1111-7000-8000-000000000003';
+    const sourceId = '0192e3a0-1111-7000-8000-000000000004';
+    const payload = { requirements: [{ ...locked, mandatory: false }] };
     const query = jest.fn(async (sql: string) => {
       if (sql.includes('FROM projects WHERE org_id')) {
         return { rows: [{ id: projectId, status: 'ACTIVE', purged_at: null }] };
@@ -396,6 +398,12 @@ describe('PH2-G06-006: immutable active baseline against single-layer reimports'
           requirements: [locked],
         } }] };
       }
+      if (sql.includes('FROM lock_project_configuration_sources')) return { rows: [{
+        id:sourceId,level:'PROJECT',org_id:orgId,scope_type:'PROJECT',scope_id:projectId,
+        format_version:1,schema_version:1,checksum:'unit-checksum',actual_checksum:'unit-checksum',
+        payload_json:payload,source_manifest_json:{kind:'UNIT_FIXTURE'},status:'ACTIVE',
+      }] };
+      if (sql.includes('SELECT phase2_config_digest')) return { rows: [{checksum:'unit-checksum'}] };
       return { rows: [] };
     });
     const client = { query };
@@ -403,9 +411,7 @@ describe('PH2-G06-006: immutable active baseline against single-layer reimports'
     const service = new ChecklistsService({} as any);
     const ctx: any = { orgId, userId, actorType:'MEMBER', requestId:'phase2-immutable' };
     await expect(service.createAndApplySnapshot(ctx, projectId, [
-      { level: 'PROJECT', versionId: 'new-unsafe', payload: {
-        requirements: [{ ...locked, mandatory: false }],
-      } },
+      { level: 'PROJECT', versionId: sourceId, payload },
     ], undefined, 'unsafe overwrite', { client: client as any, emit }))
       .rejects.toMatchObject({ response: expect.objectContaining({
         code: 'LOCKED_CHECKLIST_CHANGE_REQUIRES_REVIEW',

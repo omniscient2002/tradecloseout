@@ -479,6 +479,8 @@ export interface ConfigLayerInput {
   versionId: string;
   payload: Record<string, any>;
   schemaVersion?: string;
+  /** Selected only by server-owned authoring operations, never a layer claim. */
+  sourceMode?: 'MANUAL_PROJECT_INPUT';
 }
 
 export function resolveConfigurationHierarchy(layers: ConfigLayerInput[]):

@@ -222,6 +222,29 @@ describe('Phase 2 real quota boundary and recovery transactions',()=>{
       // A reservation is not a license to consume after an explicit downgrade.
       await syntheticOffer(admin,t.orgId,{...limits,maxStorageBytes:500});
       await expect(reservePackageArtifact(app,inputs[winner])).rejects.toThrow('STORAGE_QUOTA_EXCEEDED');
+      await syntheticOffer(admin,t.orgId,limits);
+      let signal!:()=>void,release!:()=>void;
+      const entered=new Promise<void>(r=>{signal=r;}),resume=new Promise<void>(r=>{release=r;});
+      const guardedPool={connect:async()=>{
+        const c=await app.connect();
+        return {query:async(sql:string,values:unknown[])=>{
+          const result=await c.query(sql,values);
+          if(sql.includes('SELECT status FROM organisations')&&sql.includes('FOR SHARE')){signal();await resume;}
+          return result;
+        },release:(destroy:boolean)=>c.release(destroy)};
+      }} as any;
+      // Delay only after the real restricted-role query acquired the lock.
+      // No database result or entitlement/identity proof is substituted.
+      const admission=reservePackageArtifact(guardedPool,inputs[winner]);
+      await entered;const suspender=await admin.connect();
+      try {
+        await suspender.query('BEGIN');await suspender.query("SET LOCAL lock_timeout='250ms'");
+        await expect(suspender.query("UPDATE organisations SET status='SUSPENDED' WHERE id=$1",[t.orgId])).rejects.toMatchObject({code:'55P03'});
+      } finally {await suspender.query('ROLLBACK');suspender.release();release();}
+      expect((await admission).reused).toBe(true);
+      await admin.query("UPDATE organisations SET status='SUSPENDED' WHERE id=$1",[t.orgId]);
+      await expect(reservePackageArtifact(app,inputs[winner])).rejects.toThrow('PACKAGE_ORGANISATION_INACTIVE');
+
     });
   });
 

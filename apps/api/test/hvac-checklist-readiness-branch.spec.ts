@@ -89,20 +89,30 @@ describe('HVAC checklist and readiness release gates', () => {
   });
 
   it('supersedes requirements removed from a later checklist snapshot', async () => {
+    const sourceId = '0192e3a0-3000-7000-8000-000000000009';
+    const payload = { requirements: [{
+      key: 'AHU-COMMISSIONING', groupKey: 'COMMISSIONING',
+      title: 'AHU test and commissioning', docTypeKey: 'DT-042',
+      mandatory: true, scopeType: 'PROJECT' as const,
+    }] };
+    // This focused reconciliation unit test supplies a persisted source. Real
+    // source identity, checksum and author permissions run in the DB suite.
     const { pool, client } = mockPool((sql) => {
       if (sql.includes('SELECT id, status, purged_at FROM projects') && sql.includes('FOR UPDATE')) {
         return { rows: [{ id: projectId, status: 'ACTIVE', purged_at: null }] };
       }
+      if (sql.includes('SELECT id FROM projects')) return { rows: [{ id: projectId }] };
+      if (sql.includes('FROM lock_project_configuration_sources')) return { rows: [{
+        id: sourceId, level: 'PROJECT', org_id: orgId, scope_type: 'PROJECT', scope_id: projectId,
+        format_version: 1, schema_version: 1, checksum: 'unit-checksum', actual_checksum: 'unit-checksum',
+        payload_json: payload, source_manifest_json: {kind:'UNIT_FIXTURE'}, status:'ACTIVE',
+      }] };
+      if (sql.includes('SELECT phase2_config_digest')) return { rows: [{ checksum: 'unit-checksum' }] };
       return undefined;
     });
     const svc = new ChecklistsService(pool);
-    const applied = await svc.createAndApplySnapshot(ctx, projectId, [{
-      level: 'PROJECT', versionId: 'new-snapshot-config',
-      payload: { requirements: [{
-        key: 'AHU-COMMISSIONING', groupKey: 'COMMISSIONING',
-        title: 'AHU test and commissioning', docTypeKey: 'DT-042',
-        mandatory: true, scopeType: 'PROJECT',
-      }] },
+    const applied = await svc.createAndApplySnapshot({...ctx,orgRole:'R-OWNER',projectRole:'R-OWNER'}, projectId, [{
+      level: 'PROJECT', versionId: sourceId, payload,
     }]);
     expect(applied.instantiatedRequirements).toBe(1);
     const retiring = client.query.mock.calls.find(([sql]: any[]) =>

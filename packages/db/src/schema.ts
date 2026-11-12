@@ -452,6 +452,8 @@ export const configVersions = pgTable(
     schemaVersion: integer('schema_version').notNull().default(1),
     payloadJson: jsonb('payload_json').notNull(),
     checksum: text('checksum').notNull(),
+    formatVersion:integer('format_version'),
+    sourceManifestJson:jsonb('source_manifest_json').notNull().default({}),
     status: text('status').notNull().default('DRAFT'), // DRAFT | ACTIVE | ARCHIVED
     sourcePackId: uuid('source_pack_id').references(() => templatePacks.id),
     createdBy: uuid('created_by').notNull().references(() => users.id),
