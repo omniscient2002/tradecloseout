@@ -65,18 +65,18 @@ export function assertOfflineDraftBudget(
     throw new Error('UPLOAD_SIZE_LIMIT: Evidence must be 1 byte to 100 MiB.');
   }
   const actor = existing.filter((item) => item.actorPartition === actorPartition);
-  const bytes = (list: typeof actor) => list.reduce((sum, entry) => sum + (Number(entry.sizeBytes) || 0), 0);
+  const bytes = (list: ReadonlyArray<{ sizeBytes: number }>) => list.reduce((sum, entry) => sum + (Number(entry.sizeBytes) || 0), 0);
   if (actor.length >= MAX_ACTOR_DRAFTS) {
     throw new Error('UPLOAD_QUEUE_ITEM_LIMIT: Resolve or discard existing drafts before capturing more.');
   }
   if (bytes(actor) + fileBytes > MAX_ACTOR_DRAFT_BYTES ||
-      bytes(existing as typeof actor) + fileBytes > MAX_GLOBAL_DRAFT_BYTES) {
+      bytes(existing) + fileBytes > MAX_GLOBAL_DRAFT_BYTES) {
     throw new Error('UPLOAD_QUEUE_STORAGE_LIMIT: Free space by synchronizing or discarding drafts.');
   }
 }
 
 
-function assertSameActor(item: OfflineQueuedUpload): void {
+function assertSameActor(item: Pick<OfflineQueuedUpload, 'actorPartition'>): void {
   if (typeof window === 'undefined' ||
       window.localStorage.getItem(ACTOR_PARTITION_KEY) !== item.actorPartition) {
     throw new Error('UPLOAD_ACTOR_CONTEXT_CHANGED');
@@ -156,6 +156,82 @@ export function setOfflineActorPartition(partition: string | null): void {
     return;
   }
   window.localStorage.setItem(ACTOR_PARTITION_KEY, partition);
+}
+
+/**
+ * Never expose another account's original Blob or even its filename through
+ * the queue inventory. Browser-origin storage itself is not encrypted; shared
+ * devices still require separate OS/browser profiles for strong isolation.
+ */
+export async function listOfflineUploadDrafts(): Promise<OfflineUploadDraftSummary[]> {
+  if (typeof window === 'undefined') return [];
+  const partition = window.localStorage.getItem(ACTOR_PARTITION_KEY);
+  if (!partition) return [];
+  const db = await openOfflineDb();
+  try {
+    const records = await new Promise<OfflineQueuedUpload[]>((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const get = tx.objectStore(STORE_NAME).getAll();
+      get.onsuccess = () => resolve(get.result as OfflineQueuedUpload[]);
+      get.onerror = () => reject(get.error);
+    });
+    if (window.localStorage.getItem(ACTOR_PARTITION_KEY) !== partition) {
+      throw new Error('UPLOAD_ACTOR_CONTEXT_CHANGED');
+    }
+    return records
+      .filter((item) => item.actorPartition === partition && item.status !== 'COMPLETED')
+      .map((item) => ({
+        queueId: item.queueId,
+        projectId: item.projectId,
+        requirementId: item.requirementId,
+        filename: item.filename,
+        sizeBytes: item.sizeBytes,
+        status: item.status,
+        createdAt: item.createdAt,
+        lastError: item.lastError,
+        hasActiveIntent: Boolean(item.uploadIntent),
+      }))
+      .sort((a, b) => b.createdAt - a.createdAt);
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Deliberate local draft discard. Abort unfinished remote intents before
+ * deleting the original, under the SAME origin-wide sender lock. Never erase
+ * a PROCESSING receipt; server scan outcome still requires reconciliation.
+ */
+export async function discardOfflineUploadDraft(queueId: string): Promise<void> {
+  if (typeof navigator === 'undefined' || !navigator.locks?.request) {
+    throw new Error('UPLOAD_CROSS_TAB_LOCK_UNAVAILABLE');
+  }
+  if (!queueId) throw new Error('UPLOAD_QUEUE_ID_REQUIRED');
+  await navigator.locks.request(DRAIN_LOCK_NAME, { mode: 'exclusive' }, async () => {
+    const db = await openOfflineDb();
+    try {
+      const item = await new Promise<OfflineQueuedUpload | undefined>((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const req = tx.objectStore(STORE_NAME).get(queueId);
+        req.onsuccess = () => resolve(req.result as OfflineQueuedUpload | undefined);
+        req.onerror = () => reject(req.error);
+      });
+      if (!item) return; // repeat after a committed discard is harmless
+      assertSameActor(item);
+      if (item.completedUploadAt || item.status === 'PROCESSING') {
+        throw new Error('UPLOAD_PROCESSING_CANNOT_DISCARD: Verify the server outcome first.');
+      }
+      if (item.uploadIntent) {
+        await apiFetch(`/api/v1/document-versions/${encodeURIComponent(item.uploadIntent.versionId)}/abort-upload`, {
+          method: 'POST',
+        });
+        assertSameActor(item);
+      }
+      await deleteQueueItem(db, queueId);
+    } finally {
+      db.close();
+    }
+  });
 }
 
 function openOfflineDb(): Promise<IDBDatabase> {
@@ -272,11 +348,11 @@ export async function enqueueFieldUpload(params: {
   }
   const originalFile = params.file;
   assertOfflineDraftBudget(originalFile.size, [], actorPartition);
-  assertSameActor({ actorPartition } as OfflineQueuedUpload);
+  assertSameActor({ actorPartition });
   const checksumSha256 = await computeBrowserFileSha256(originalFile);
   // An account switch during the async hash must not persist the evidence
   // under an old actor's partition or trigger a stale-network upload.
-  assertSameActor({ actorPartition } as OfflineQueuedUpload);
+  assertSameActor({ actorPartition });
   const item: OfflineQueuedUpload = {
     queueId: crypto.randomUUID(),
     actorPartition,
