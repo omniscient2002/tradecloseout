@@ -28,6 +28,7 @@ export interface OfflineQueuedUpload {
   lastError?: string;
   createdAt: number;
   completedUploadAt?: number;
+  completionRequestedAt?: number;
 }
 
 const DB_NAME = 'tradecloseout_field_pwa';
@@ -136,7 +137,8 @@ async function refreshOutstandingParts(item: OfflineQueuedUpload): Promise<void>
   intent.parts = intent.parts.map((part) => byNumber.get(part.partNumber) || part);
 }
 
-async function checkDocumentProcessingState(item: OfflineQueuedUpload): Promise<'READY' | 'PENDING' | 'REJECTED'> {
+type VerifiedUploadState = 'READY' | 'REJECTED' | 'PROCESSING' | 'PENDING_UPLOAD' | 'UNKNOWN';
+async function checkDocumentProcessingState(item: OfflineQueuedUpload): Promise<VerifiedUploadState> {
   if (!item.uploadIntent) throw new Error('UPLOAD_INTENT_MISSING');
   assertSameActor(item);
   const doc = await apiFetch<{ versions?: Array<{ id: string; file_status: string }> }>(
@@ -146,7 +148,9 @@ async function checkDocumentProcessingState(item: OfflineQueuedUpload): Promise<
   const current = doc.versions?.find((v) => v.id === item.uploadIntent?.versionId);
   if (current?.file_status === 'READY') return 'READY';
   if (current?.file_status === 'FAILED' || current?.file_status === 'QUARANTINED') return 'REJECTED';
-  return 'PENDING';
+  if (current?.file_status === 'PROCESSING') return 'PROCESSING';
+  if (current?.file_status === 'PENDING_UPLOAD') return 'PENDING_UPLOAD';
+  return 'UNKNOWN';
 }
 
 
@@ -453,17 +457,32 @@ async function drainLockedUploadQueue(
 
     try {
       assertSameActor(item);
-      if (item.status === 'PROCESSING' || item.completedUploadAt) {
+      if (item.status === 'PROCESSING' || item.completedUploadAt || item.completionRequestedAt) {
+        // A lost /complete response is not permission to blindly replay it.
+        // Reconcile first; resend only when server explicitly remains PENDING_UPLOAD.
         const status = await checkDocumentProcessingState(item);
         if (status === 'READY') {
           await deleteQueueItem(db, item.queueId);
-        } else if (status === 'REJECTED') {
+          continue;
+        }
+        if (status === 'REJECTED') {
           item.status = 'FAILED';
           item.lastError = 'Server rejected or quarantined the evidence. Do not re-upload without reviewing the failure.';
           await saveQueueItem(db, item);
+          continue;
         }
-        // Do not POST completion twice or send bytes again after acceptance.
-        continue;
+        if (status === 'PROCESSING') {
+          item.completedUploadAt ??= Date.now();
+          item.status = 'PROCESSING';
+          item.lastError = 'Upload received; scanning is still pending.';
+          await saveQueueItem(db, item);
+          continue;
+        }
+        if (status !== 'PENDING_UPLOAD' || item.completedUploadAt || item.status === 'PROCESSING') {
+          throw new Error('UPLOAD_COMPLETION_STATE_UNCERTAIN: Recheck the authoritative server before retrying.');
+        }
+        // The server confirms the same intent is still pending. Reuse the
+        // stable completion idempotency key and existing completed-part receipts.
       }
       item.status = 'UPLOADING';
       item.lastError = undefined;
@@ -555,7 +574,11 @@ async function drainLockedUploadQueue(
         onProgress?.(item.queueId, endByte, item.sizeBytes);
       }
 
-      // Step 3: Complete multipart upload with checksum & trigger scan (TC2-001 & TC2-030)
+      // Step 3: Record the request intent BEFORE the external completion POST.
+      // A crash/lost response then triggers server-state reconciliation first.
+      assertSameActor(item);
+      item.completionRequestedAt ??= Date.now();
+      await saveQueueItem(db, item);
       assertSameActor(item);
       await apiFetch(`/api/v1/document-versions/${encodeURIComponent(item.uploadIntent.versionId)}/complete`, {
         method: 'POST',
