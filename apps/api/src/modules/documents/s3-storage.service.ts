@@ -14,6 +14,17 @@ import { Injectable, ServiceUnavailableException, UnprocessableEntityException }
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { ObjectStoragePresigner } from './documents.service';
 
+/** S3's literal "null" sentinel is a mutable key, not an immutable version. */
+export function requireImmutableObjectVersionId(value: unknown): string {
+  if (typeof value !== 'string' || !value.trim() || value.trim().toLowerCase() === 'null') {
+    throw new ServiceUnavailableException({
+      code: 'OBJECT_VERSIONING_REQUIRED',
+      detail: 'Object storage must return a non-null immutable version identifier.',
+    });
+  }
+  return value;
+}
+
 const MULTIPART_THRESHOLD_BYTES = 10 * 1024 * 1024;
 const MULTIPART_PART_BYTES = 5 * 1024 * 1024;
 
@@ -123,8 +134,8 @@ export class S3StorageService implements ObjectStoragePresigner {
       } catch (err) {
         // Continue only if an earlier request already completed this exact-size object.
         const prior = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: params.objectKey })).catch(() => null);
-        if (prior?.ContentLength === params.expectedSizeBytes && prior.VersionId) {
-          return { observedSizeBytes: prior.ContentLength, versionId: prior.VersionId };
+        if (prior?.ContentLength === params.expectedSizeBytes) {
+          return { observedSizeBytes: prior.ContentLength, versionId: requireImmutableObjectVersionId(prior.VersionId) };
         }
         throw err;
       }
@@ -166,13 +177,7 @@ export class S3StorageService implements ObjectStoragePresigner {
         detail: `Provider object size ${head.ContentLength ?? 'unknown'} does not match declared size ${params.expectedSizeBytes}.`,
       });
     }
-    if (!head.VersionId) {
-      throw new ServiceUnavailableException({
-        code: 'OBJECT_VERSIONING_REQUIRED',
-        detail: 'The storage bucket did not return an immutable object version. Enable provider versioning before accepting uploads.',
-      });
-    }
-    return { observedSizeBytes: head.ContentLength, versionId: head.VersionId };
+    return { observedSizeBytes: head.ContentLength, versionId: requireImmutableObjectVersionId(head.VersionId) };
   }
 
   async refreshUploadUrls(params: { objectKey: string; uploadId: string; sizeBytes: number }) {
@@ -219,7 +224,7 @@ export class S3StorageService implements ObjectStoragePresigner {
     }
     try {
       const current = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: params.objectKey }));
-      if (current.VersionId) {
+      if (current.VersionId && current.VersionId.toLowerCase() !== 'null') {
         await this.client.send(new DeleteObjectCommand({
           Bucket: this.bucket,
           Key: params.objectKey,
