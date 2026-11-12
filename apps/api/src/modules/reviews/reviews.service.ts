@@ -425,7 +425,7 @@ export class ReviewsService {
            AND dv.id = d.current_approved_version_id AND dv.deleted_at IS NULL AND dv.superseded_at IS NULL
            AND dv.review_status = 'APPROVED' AND dv.file_status = 'READY'
            AND (dv.expiry_date IS NULL OR dv.expiry_date >= (now() AT TIME ZONE 'Asia/Kolkata')::date)
-           AND so.status = 'READY' AND so.sha256 IS NOT NULL AND so.provider_version_id IS NOT NULL
+           AND so.status = 'READY' AND so.sha256 IS NOT NULL AND so.provider_version_id IS NOT NULL AND btrim(so.provider_version_id) <> '' AND lower(btrim(so.provider_version_id)) <> 'null'
            AND so.observed_size_bytes IS NOT NULL AND so.observed_size_bytes = so.size_bytes
            AND (d.doc_type_key = $3 OR d.category_key = $3 OR d.metadata_json->>'doc_type_key' = $3)
            AND $4::uuid IS NOT NULL
@@ -840,7 +840,7 @@ export class ReviewsService {
            JOIN storage_objects so ON so.org_id = dv.org_id AND so.id = dv.object_id
           WHERE dv.org_id = $1 AND dv.project_id = $2 AND dv.file_status = 'READY'
             AND dv.deleted_at IS NULL AND d.deleted_at IS NULL
-            AND so.status = 'READY' AND so.sha256 IS NOT NULL AND so.provider_version_id IS NOT NULL
+            AND so.status = 'READY' AND so.sha256 IS NOT NULL AND so.provider_version_id IS NOT NULL AND btrim(so.provider_version_id) <> '' AND lower(btrim(so.provider_version_id)) <> 'null'
             AND so.observed_size_bytes IS NOT NULL AND so.observed_size_bytes = so.size_bytes
           ORDER BY d.title, dv.version_no DESC, dv.id LIMIT 100`,
         [ctx.orgId, projectId],
@@ -926,7 +926,7 @@ export class ReviewsService {
             AND (($3::uuid IS NOT NULL AND proof.id = $3) OR ($4::uuid IS NOT NULL AND so.id = $4))
             AND so.status = 'READY' AND proof.file_status = 'READY' AND proof.deleted_at IS NULL
             AND proof_document.deleted_at IS NULL
-            AND so.sha256 IS NOT NULL AND so.provider_version_id IS NOT NULL
+            AND so.sha256 IS NOT NULL AND so.provider_version_id IS NOT NULL AND btrim(so.provider_version_id) <> '' AND lower(btrim(so.provider_version_id)) <> 'null'
             AND so.observed_size_bytes IS NOT NULL AND so.observed_size_bytes = so.size_bytes
           LIMIT 2`,
         [ctx.orgId, version.project_id, dto.proofVersionId || null, dto.evidenceObjectId || null],
