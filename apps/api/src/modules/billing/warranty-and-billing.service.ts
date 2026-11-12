@@ -16,6 +16,95 @@ import { evaluateReadinessInTransaction } from '../handover/closeout-readiness';
 export class WarrantyAndBillingService {
   constructor(private readonly pool: Pool) {}
 
+  /** All new transitions are append-only, attributed and aligned to one
+   * successfully updated row_version within the same RLS transaction. */
+  private async appendDefectTransition(
+    client: PoolClient, ctx: TenantActorContext,
+    defect: Record<string, any>,
+    action: 'ASSIGNED' | 'REMEDY_SUBMITTED' | 'REMEDY_REJECTED' |
+      'INDEPENDENTLY_CLOSED' | 'WAIVED' | 'REOPENED',
+    toStatus: string,
+    details: {
+      assignedUserId?: string | null;
+      assignedPartyId?: string | null;
+      dueAt?: Date | null;
+      evidenceObjectId?: string | null;
+      remedyVersionId?: string | null;
+      reason?: string | null;
+    } = {},
+  ): Promise<string> {
+    const eventId = uuidv7();
+    await client.query(
+      `INSERT INTO defect_transition_events
+         (id, org_id, project_id, defect_id, action, from_status, to_status,
+          previous_row_version, next_row_version, actor_user_id,
+          assigned_user_id, assigned_party_id, due_at,
+          evidence_object_id, remedy_document_version_id, reason)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+               $11, $12, $13, $14, $15, $16)`,
+      [eventId, ctx.orgId, defect.project_id, defect.id, action,
+        defect.status, toStatus, defect.row_version,
+        defect.row_version + 1, ctx.userId,
+        details.assignedUserId ?? defect.assigned_user_id ?? null,
+        details.assignedPartyId ?? defect.assigned_party_id ?? null,
+        details.dueAt === undefined ? (defect.due_at ?? null) : details.dueAt,
+        details.evidenceObjectId ?? null, details.remedyVersionId ?? null,
+        details.reason ?? null],
+    );
+    return eventId;
+  }
+
+  private assertDefectSupervisor(ctx: TenantActorContext): void {
+    if (ctx.actorType === 'GUEST' || ctx.guestGrantId) {
+      throw new ForbiddenException({ code: 'DEFECT_SUPERVISOR_REQUIRED' });
+    }
+    if (ctx.actorType === 'SYSTEM') return;
+    if (![ctx.orgRole, ctx.projectRole].some(role =>
+      ['R-PM', 'R-OWNER', 'R-ADMIN'].includes(role || ''))) {
+      throw new ForbiddenException({ code: 'DEFECT_SUPERVISOR_REQUIRED' });
+    }
+  }
+
+  private assertDefectIndependentReviewer(
+    ctx: TenantActorContext, defect: Record<string, any>,
+  ): void {
+    if (ctx.actorType === 'GUEST' || ctx.guestGrantId) {
+      throw new ForbiddenException({ code: 'DEFECT_INDEPENDENT_VERIFIER_REQUIRED' });
+    }
+    if (ctx.actorType !== 'SYSTEM' &&
+        ![ctx.orgRole, ctx.projectRole].some(role =>
+          ['R-QC', 'R-PM', 'R-OWNER', 'R-ADMIN'].includes(role || ''))) {
+      throw new ForbiddenException({ code: 'DEFECT_VERIFIER_ROLE_REQUIRED' });
+    }
+    if (ctx.userId === defect.assigned_user_id || ctx.userId === defect.remedied_by) {
+      throw new ForbiddenException({ code: 'INDEPENDENT_VERIFICATION_REQUIRED' });
+    }
+  }
+
+  private assertDefectExpectedVersion(
+    defect: Record<string, any>, expectedRowVersion: number | undefined,
+  ): void {
+    if (!Number.isSafeInteger(expectedRowVersion) ||
+        (expectedRowVersion as number) < 1 ||
+        defect.row_version !== expectedRowVersion) {
+      throw new ConflictException({
+        code: 'DEFECT_CONCURRENCY_CONFLICT',
+        detail: 'A current positive expectedRowVersion is required for this transition.',
+      });
+    }
+  }
+
+  private requireDefectDecisionReason(reason: unknown): string {
+    if (typeof reason !== 'string' ||
+        reason.trim().length < 12 || reason.trim().length > 1200) {
+      throw new UnprocessableEntityException({
+        code: 'DEFECT_DECISION_REASON_REQUIRED',
+        detail: 'A specific decision reason between 12 and 1200 characters is required.',
+      });
+    }
+    return reason.trim();
+  }
+
   /**
    * A supplier contributor's project-wide capability is NOT an assignment
    * to every defect. Recheck the live guest grant and party in the same RLS
@@ -533,12 +622,17 @@ export class WarrantyAndBillingService {
         });
       }
 
+      const transitionId = await this.appendDefectTransition(
+        client, ctx, defect, 'REMEDY_SUBMITTED', 'RECTIFIED',
+        { evidenceObjectId: remedyEvidenceObjectId, remedyVersionId },
+      );
+
       emit({
         eventType: 'DEFECT_REMEDY_SUBMITTED',
         projectId: targetProjectId,
         entityType: 'DEFECT',
         entityId: defectId,
-        afterJson: { status: 'RECTIFIED', remedyEvidenceObjectId, remedyVersionId, remediedBy: ctx.userId },
+        afterJson: { status: 'RECTIFIED', remedyEvidenceObjectId, remedyVersionId, remediedBy: ctx.userId, transitionId },
       });
 
       return { defectId, status: 'RECTIFIED', rowVersion: defect.row_version + 1 };
@@ -735,12 +829,18 @@ export class WarrantyAndBillingService {
         });
       }
 
+      const transitionId = await this.appendDefectTransition(
+        client, ctx, defect, 'INDEPENDENTLY_CLOSED', 'CLOSED',
+        { evidenceObjectId: closureEvidenceObjectId,
+          remedyVersionId: defect.remedy_document_version_id },
+      );
+
       emit({
         eventType: 'DEFECT_CLOSED',
         projectId: targetProjectId,
         entityType: 'DEFECT',
         entityId: defectId,
-        afterJson: { status: 'CLOSED', closureEvidenceObjectId },
+        afterJson: { status: 'CLOSED', closureEvidenceObjectId, transitionId },
       });
 
       return { defectId, status: 'CLOSED', rowVersion: defect.row_version + 1 };
