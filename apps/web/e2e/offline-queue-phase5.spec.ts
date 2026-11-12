@@ -619,3 +619,39 @@ test('prior remote upload intent cannot be rebound after reauthentication', asyn
     retained: 1,
   });
 });
+
+
+test('lost upload-intent response cannot masquerade as an untouched offline draft after login', async ({ page }) => {
+  await fixture(page, false);
+  const result = await page.evaluate(async () => {
+    const q = (window as any).__queue;
+    const base = (window as any).__apiFetch;
+    let issuedIntent = 0;
+    let recoveryChecks = 0;
+    (window as any).__apiFetch = async (url: string, opts?: unknown) => {
+      if (url.includes('/upload-intents')) {
+        issuedIntent++;
+        throw new TypeError('Failed to fetch'); // server may already have accepted
+      }
+      if (url.includes('/recover-upload-authority') || url === '/api/v1/auth/me') {
+        recoveryChecks++;
+      }
+      return base(url, opts);
+    };
+    await q.drainOfflineUploadQueue();
+    q.setOfflineActorPartition(null);
+    q.setOfflineActorPartition('actor-original');
+    const stale = (await q.listOfflineUploadDrafts())[0];
+    let blocked = '';
+    try { await q.recoverOfflineUploadDraft(stale.queueId); }
+    catch (err) { blocked = (err as Error).message; }
+    return {
+      issuedIntent, recoveryChecks, blocked,
+      retained: (await q.listOfflineUploadDrafts()).length,
+    };
+  });
+  expect(result.issuedIntent).toBe(1);
+  expect(result.recoveryChecks).toBe(0);
+  expect(result.blocked).toContain('UPLOAD_REMOTE_INTENT_RECOVERY_UNSUPPORTED');
+  expect(result.retained).toBe(1);
+});
