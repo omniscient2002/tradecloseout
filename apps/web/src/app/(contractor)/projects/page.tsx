@@ -14,12 +14,13 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { apiFetch, ApiProblemError } from "../../../lib/api-client";
+import { parseInrToPaise } from "@tradecloseout/shared";
 
 interface ProjectItem {
   id: string;
   code: string;
   name: string;
-  status: "DRAFT" | "ACTIVE" | "SUSPENDED" | "HANDOVER" | "CLOSED";
+  status: "DRAFT" | "ACTIVE" | "SUSPENDED" | "HANDOVER" | "CLOSED" | "CANCELLED" | "ARCHIVED";
   clientName?: string | null;
   client_name?: string | null;
   mcName?: string | null;
@@ -34,13 +35,13 @@ interface ProjectItem {
 }
 
 function formatInr(paise: string | null | undefined): string {
-  if (paise == null) return 'Not available';
-  const rupees = Number(BigInt(paise || "0")) / 100;
-  return new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 0,
-  }).format(rupees);
+  if (paise == null || !/^[0-9]+$/.test(paise)) return "Not available";
+  try {
+    const exact = BigInt(paise);
+    return `₹${(exact / 100n).toLocaleString("en-IN")}.${(exact % 100n).toString().padStart(2, "0")}`;
+  } catch {
+    return "Not available";
+  }
 }
 
 function ProjectsDirectoryContent() {
@@ -70,15 +71,14 @@ function ProjectsDirectoryContent() {
     setLoading(true);
     try {
       const data = await apiFetch<any>("/api/v1/projects");
-      const list = Array.isArray(data) ? data : data?.projects || data?.data || [];
+      const list = Array.isArray(data) ? data : data?.projects ?? data?.data;
+      if (!Array.isArray(list)) throw new Error("INVALID_PROJECT_LIST");
       setProjects(list);
-    } catch (err: any) {
-      try {
-        const d = await apiFetch<any>("/api/v1/orgs/current/dashboard");
-        setProjects(d?.projects || []);
-      } catch (e) {
-        console.error(e);
-      }
+      setError(null);
+    } catch (err: unknown) {
+      setProjects([]);
+      setError(err instanceof ApiProblemError
+        ? err.message : "Could not load projects. Retry to refresh the directory.");
     } finally {
       setLoading(false);
     }
@@ -87,7 +87,7 @@ function ProjectsDirectoryContent() {
   useEffect(() => {
     fetchProjects();
     apiFetch<any[]>("/api/v1/parties")
-      .then((data) => setPartiesList(data || []))
+      .then((data) => setPartiesList(Array.isArray(data) ? data : []))
       .catch(() => {});
   }, [fetchProjects]);
 
@@ -101,7 +101,7 @@ function ProjectsDirectoryContent() {
         body: JSON.stringify({
           code: code.trim().toUpperCase(),
           name: name.trim(),
-          contractValuePaise: BigInt(Math.round(Number(contractValue || "0") * 100)).toString(),
+          contractValuePaise: parseInrToPaise(contractValue),
           targetHandoverDate: targetDate || undefined,
           clientPartyId: clientPartyId || undefined,
           mcPartyId: mcPartyId || undefined,
@@ -111,7 +111,12 @@ function ProjectsDirectoryContent() {
       setCreateModalOpen(false);
       router.push(`/projects/${res.projectId}`);
     } catch (err: any) {
-      setError(err instanceof ApiProblemError ? err.message : "Failed to create project.");
+      setError(err instanceof ApiProblemError ? err.message
+        : err instanceof Error && err.message === "INR_AMOUNT_OUT_OF_RANGE"
+          ? "Contract value is too large."
+          : err instanceof Error && err.message === "INVALID_INR_AMOUNT"
+            ? "Enter a nonnegative INR amount with at most two decimal places."
+            : "Failed to create project.");
     } finally {
       setCreating(false);
     }
@@ -119,8 +124,8 @@ function ProjectsDirectoryContent() {
 
   const filtered = projects.filter((p) => {
     const matchSearch =
-      p.code.toLowerCase().includes(search.toLowerCase()) ||
-      p.name.toLowerCase().includes(search.toLowerCase()) ||
+      (p.code ?? "").toLowerCase().includes(search.toLowerCase()) ||
+      (p.name ?? "").toLowerCase().includes(search.toLowerCase()) ||
       (p.clientName ?? p.client_name ?? "").toLowerCase().includes(search.toLowerCase());
     const matchStatus = statusFilter === "ALL" || p.status === statusFilter;
     return matchSearch && matchStatus;
@@ -168,6 +173,9 @@ function ProjectsDirectoryContent() {
             <option value="HANDOVER">HANDOVER</option>
             <option value="CLOSED">CLOSED</option>
             <option value="DRAFT">DRAFT</option>
+            <option value="SUSPENDED">SUSPENDED</option>
+            <option value="CANCELLED">CANCELLED</option>
+            <option value="ARCHIVED">ARCHIVED</option>
           </select>
         </div>
       </div>
@@ -297,7 +305,8 @@ function ProjectsDirectoryContent() {
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Base Contract Value (₹ INR)</label>
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   required
                   value={contractValue}
                   onChange={(e) => setContractValue(e.target.value)}
