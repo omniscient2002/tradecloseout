@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Modal } from "../ui/modal";
 import {
   UploadCloud,
@@ -9,7 +9,13 @@ import {
   FileText,
   Loader2,
 } from "lucide-react";
-import { enqueueFieldUpload } from "../../lib/offline-upload-queue";
+import {
+  enqueueFieldUpload,
+  listOfflineUploadDrafts,
+  discardOfflineUploadDraft,
+  MAX_UPLOAD_FILE_BYTES,
+  type OfflineUploadDraftSummary,
+} from "../../lib/offline-upload-queue";
 
 interface UploadEvidenceModalProps {
   open: boolean;
@@ -39,13 +45,43 @@ export function UploadEvidenceModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [queuedLocally, setQueuedLocally] = useState(false);
+  const [drafts, setDrafts] = useState<OfflineUploadDraftSummary[]>([]);
+  const [draftsError, setDraftsError] = useState<string | null>(null);
+  const [discardingId, setDiscardingId] = useState<string | null>(null);
+
+  const refreshDrafts = useCallback(async () => {
+    try {
+      const entries = await listOfflineUploadDrafts();
+      setDrafts(entries);
+      setDraftsError(null);
+    } catch (error) {
+      setDrafts([]);
+      setDraftsError(error instanceof Error ? error.message : "Unable to read browser drafts.");
+    }
+  }, []);
+
+  const discardDraft = async (draft: OfflineUploadDraftSummary) => {
+    if (!window.confirm("Discard the local original for " + draft.filename +
+        "? If an upload intent exists, the server must confirm abort first. This cannot be undone.")) return;
+    setDiscardingId(draft.queueId);
+    setDraftsError(null);
+    try {
+      await discardOfflineUploadDraft(draft.queueId);
+      await refreshDrafts();
+    } catch (error) {
+      setDraftsError(error instanceof Error ? error.message : "Draft could not be discarded.");
+    } finally {
+      setDiscardingId(null);
+    }
+  };
 
   useEffect(() => {
     if (open) {
       setQueuedLocally(false);
       setError(null);
+      void refreshDrafts();
     }
-  }, [open, requirement?.id]);
+  }, [open, requirement?.id, refreshDrafts]);
 
   if (!requirement) return null;
 
@@ -59,6 +95,11 @@ export function UploadEvidenceModal({
       return;
     }
 
+    if (selected.size > MAX_UPLOAD_FILE_BYTES || selected.size < 1) {
+      setError("Choose a non-empty file up to 100 MiB; the server rejects larger uploads.");
+      setFile(null);
+      return;
+    }
     setError(null);
     setQueuedLocally(false);
     setFile(selected);
@@ -94,6 +135,7 @@ export function UploadEvidenceModal({
       // Clear the native file input as well, so selecting the same file later
       // fires onChange and the user can deliberately queue a new revision.
       form.reset();
+      void refreshDrafts();
       try {
         onUploadSuccess(); // Re-query authoritative server state, if available.
       } catch {
@@ -163,6 +205,43 @@ export function UploadEvidenceModal({
             <span>{error}</span>
           </div>
         )}
+
+        {/* Local unsynced evidence is not a server document or an accepted submission. */}
+        <section aria-label="Drafts saved in this browser" className="rounded-lg border border-slate-200 p-3 text-xs space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <strong className="text-slate-800">Your local upload drafts</strong>
+            <button type="button" onClick={() => void refreshDrafts()}
+              className="font-semibold text-indigo-700 underline">Refresh</button>
+          </div>
+          <p className="text-slate-500">
+            Saved in this browser, not necessarily uploaded. Browser storage is not guaranteed against eviction;
+            do not use shared browser profiles for confidential evidence.
+          </p>
+          {draftsError && <p role="alert" className="text-red-800">{draftsError}</p>}
+          {drafts.length === 0 ? (
+            <p className="text-slate-600">No drafts visible for the current account.</p>
+          ) : (
+            <ul className="max-h-36 overflow-y-auto divide-y divide-slate-100">
+              {drafts.map((draft) => (
+                <li key={draft.queueId} className="py-2 flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <span className="break-all font-semibold">{draft.filename}</span>
+                    <span className="block text-slate-600">
+                      {draft.status.replaceAll("_", " ")} · {(draft.sizeBytes / 1024 / 1024).toFixed(1)} MiB
+                    </span>
+                    {draft.lastError && <span className="block text-red-700">{draft.lastError}</span>}
+                  </div>
+                  <button type="button"
+                    disabled={discardingId !== null || draft.status === "PROCESSING"}
+                    onClick={() => void discardDraft(draft)}
+                    className="shrink-0 text-red-700 font-semibold underline disabled:opacity-50">
+                    {discardingId === draft.queueId ? "Discarding…" : "Discard"}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
 
         {/* Revision & Issue Date */}
         <div className="grid grid-cols-2 gap-3">
