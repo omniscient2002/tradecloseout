@@ -1,7 +1,7 @@
 import { DocumentsService } from '../src/modules/documents/documents.service';
 
 function subject(actorType: 'MEMBER' | 'GUEST', grantPresent = true, versionPresent = true) {
-  const query = jest.fn(async (sql: string) => {
+  const query = jest.fn(async (sql: string, _params?: unknown[]) => {
     if (sql.includes('FROM document_versions dv') && sql.includes('storage_objects so')) {
       return { rows: versionPresent
         ? [{ id: 'version-one', file_status: 'READY', storage_status: 'QUARANTINED' }]
@@ -42,7 +42,7 @@ describe('PH5-G22-003 minimal upload status and guest privacy', () => {
     const { service, context, query } = subject('GUEST');
     await expect(service.getUploadState(context, 'version-one'))
       .resolves.toMatchObject({ storageStatus: 'QUARANTINED' });
-    expect(query.mock.calls[1][1][3]).toBe('document.upload');
+    expect(query.mock.calls[1]?.[1]?.[3]).toBe('document.upload');
     expect(query.mock.calls[1][0]).toContain('dv.uploaded_by_grant_id = g.id');
   });
 
