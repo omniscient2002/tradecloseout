@@ -64,9 +64,18 @@ export async function withTenantTransaction<T>(
 
   const client = await pool.connect();
   const stagedEvents: DomainOutboxEvent[] = [];
+  let began = false;
+  let commitAttempted = false;
+  let discardConnection = false;
 
   try {
     await client.query('BEGIN');
+    began = true;
+    // Bound every scoped transaction, including lock waits and idle client gaps.
+    // These are transaction-local: pooled connections cannot retain these settings.
+    await client.query("SET LOCAL lock_timeout = '5s'");
+    await client.query("SET LOCAL statement_timeout = '60s'");
+    await client.query("SET LOCAL idle_in_transaction_session_timeout = '60s'");
 
     // Bind transaction-local settings for PostgreSQL RLS policies (08 §5.2)
     await client.query(`SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`, [ctx.orgId]);
@@ -125,13 +134,25 @@ export async function withTenantTransaction<T>(
       );
     }
 
+    // A failed COMMIT can leave the outcome unknown. Never offer that connection
+    // to another tenant or automatically replay this possibly committed command.
+    commitAttempted = true;
     await client.query('COMMIT');
     return result;
   } catch (err) {
-    await client.query('ROLLBACK');
+    discardConnection = !began || commitAttempted;
+    if (began) {
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        // Preserve the original command/commit failure, not the cleanup error.
+        // node-postgres must physically destroy connections with unknown state.
+        discardConnection = true;
+      }
+    }
     throw err;
   } finally {
-    client.release();
+    client.release(discardConnection);
   }
 }
 
