@@ -564,13 +564,17 @@ export class DocumentsService {
     ctx: ExecutionContext,
     projectId: string,
     requirementId: string,
+    capturedRowVersion: number,
   ) {
+    if (!Number.isSafeInteger(capturedRowVersion) || capturedRowVersion < 1) {
+      throw new BadRequestException('DRAFT_RECOVERY_ROW_VERSION_REQUIRED');
+    }
     if (ctx.actorType === 'GUEST' || ctx.guestGrantId) {
       throw new ForbiddenException('GUEST_DRAFT_RECOVERY_NOT_SUPPORTED');
     }
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
       const { rows } = await client.query(
-        `SELECT p.id AS project_id, r.id AS requirement_id
+        `SELECT p.id AS project_id, r.id AS requirement_id, r.row_version
            FROM projects p
            JOIN requirements r
              ON r.org_id = p.org_id AND r.project_id = p.id
@@ -579,13 +583,19 @@ export class DocumentsService {
             AND p.purged_at IS NULL
             AND r.superseded_at IS NULL
             AND r.status NOT IN ('SUPERSEDED', 'NOT_APPLICABLE', 'HANDED_OVER')
+            AND r.row_version = $4
           LIMIT 1`,
-        [ctx.orgId, projectId, requirementId],
+        [ctx.orgId, projectId, requirementId, capturedRowVersion],
       );
       if (rows.length !== 1) {
         throw new NotFoundException('DRAFT_RECOVERY_TARGET_NO_LONGER_ELIGIBLE');
       }
-      return { projectId: rows[0].project_id, requirementId: rows[0].requirement_id, allowed: true };
+      return {
+        projectId: rows[0].project_id,
+        requirementId: rows[0].requirement_id,
+        rowVersion: rows[0].row_version,
+        allowed: true,
+      };
     });
   }
 
