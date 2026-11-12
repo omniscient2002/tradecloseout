@@ -47,28 +47,13 @@ import { ExternalApprovalModal } from "@/components/modals/external-approval-mod
 import { apiFetch, ApiProblemError } from "@/lib/api-client";
 import { downloadCsv } from "@/lib/csv-export";
 import { getMemberOfflineActorPartition, setOfflineActorPartition } from "@/lib/offline-upload-queue";
+import { parseProjectRequirementResponse, type ProjectRequirementRow, type RequirementStatus } from "@/lib/project-requirements";
 
 /* -------------------------------------------------------------------------- */
 /* TYPES & CONSTANTS                                                          */
 /* -------------------------------------------------------------------------- */
 
-export type RequirementStatus =
-  | "NOT_STARTED"
-  | "REQUESTED"
-  | "UPLOADED"
-  | "IN_REVIEW"
-  | "UNDER_REVIEW"
-  | "CHANGES_REQUESTED"
-  | "REJECTED"
-  | "APPROVED"
-  | "APPROVED_EXTERNAL"
-  | "PENDING_WAIVER"
-  | "WAIVED"
-  | "NOT_APPLICABLE"
-  | "EXPIRED"
-  | "MISSING"
-  | "HANDED_OVER"
-  | "SUPERSEDED";
+export type { RequirementStatus } from "@/lib/project-requirements";
 
 export interface ProjectSummaryDto {
   id: string;
@@ -91,24 +76,7 @@ export interface ProjectSummaryDto {
   rowVersion: number;
 }
 
-export interface RequirementItemDto {
-  id: string;
-  requirementKey: string;
-  groupKey: string;
-  title: string;
-  docTypeKey: string;
-  mandatory: boolean;
-  milestoneKey: string;
-  assetTag: string | null;
-  status: RequirementStatus;
-  ownerName: string | null;
-  reviewerRole: string | null;
-  dueAt: string | null;
-  revisionCode: string | null;
-  latestVersionId: string | null;
-  waiverId?: string | null;
-  rowVersion: number;
-}
+export interface RequirementItemDto extends ProjectRequirementRow {}
 
 const STATUS_BADGE_MAP: Record<
   RequirementStatus,
@@ -354,49 +322,7 @@ export default function ProjectWorkspacePage() {
       qs.set("limit", "100");
 
       const payload = await apiFetch<any>(`/api/v1/projects/${encodeURIComponent(projectId)}/requirements?${qs.toString()}`);
-      const rawList = Array.isArray(payload)
-        ? payload
-        : Array.isArray(payload?.data)
-        ? payload.data
-        : null;
-      if (!rawList) {
-        throw new Error("CHECKLIST_RESPONSE_INVALID: The server did not return a requirement list.");
-      }
-      const mappedList: RequirementItemDto[] = rawList.map((r: any) => {
-        const requirementKey = r?.requirementKey ?? r?.requirement_key;
-        const groupKey = r?.groupKey ?? r?.group_key;
-        const docTypeKey = r?.docTypeKey ?? r?.doc_type_key;
-        const milestoneKey = r?.milestoneKey ?? r?.milestone_key;
-        const rowVersion = r?.rowVersion ?? r?.row_version;
-        if (!r || typeof r.id !== "string" || typeof r.title !== "string" ||
-            typeof requirementKey !== "string" || typeof groupKey !== "string" ||
-            typeof docTypeKey !== "string" || typeof milestoneKey !== "string" ||
-            typeof r.mandatory !== "boolean" ||
-            !Number.isSafeInteger(rowVersion) || rowVersion < 1 ||
-            !Object.prototype.hasOwnProperty.call(STATUS_BADGE_MAP, r.status)) {
-          throw new Error("CHECKLIST_ROW_INVALID: Required status, ownership or revision metadata is missing.");
-        }
-        return {
-          id: r.id,
-          requirementKey,
-          groupKey,
-          title: r.title,
-          docTypeKey,
-          mandatory: r.mandatory,
-          milestoneKey,
-          assetTag: r.assetTag || r.asset_tag ||
-            (typeof r.scope_key === "string" && r.scope_key.startsWith("asset:")
-              ? r.scope_key.slice(6, 14).toUpperCase() : null),
-          status: r.status as RequirementStatus,
-          ownerName: r.ownerName || r.owner_name || null,
-          reviewerRole: r.reviewerRole || r.reviewer_role || null,
-          dueAt: r.dueAt || r.due_at || null,
-          revisionCode: r.revisionCode || r.revision_code || null,
-          latestVersionId: r.latestVersionId || r.latest_version_id || null,
-          waiverId: r.waiverId || r.waiver_id || null,
-          rowVersion,
-        };
-      });
+      const mappedList: RequirementItemDto[] = parseProjectRequirementResponse(payload);
       setRequirements(mappedList);
     } catch (err: any) {
       // Never render a previous project's checklist after a failed refresh.
