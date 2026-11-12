@@ -84,6 +84,8 @@ export class DocumentsService {
     const { rows } = await client.query(
       `SELECT 1
          FROM guest_grants g
+         JOIN parties party ON party.org_id = g.org_id AND party.id = g.party_id
+           AND party.status = 'ACTIVE' AND party.deleted_at IS NULL
          JOIN document_versions dv
            ON dv.org_id = g.org_id AND dv.project_id = g.project_id
           AND dv.uploaded_by_grant_id = g.id AND dv.id = $3
@@ -92,7 +94,8 @@ export class DocumentsService {
          JOIN projects p ON p.org_id = d.org_id AND p.id = d.project_id
         WHERE g.org_id = $1 AND g.id = $2 AND g.status = 'ACTIVE' AND g.expires_at > now()
           AND dv.deleted_at IS NULL AND g.capabilities @> ARRAY[$4]::text[]
-          AND ($4 <> 'document.upload' OR p.status IN ('ACTIVE', 'HANDOVER'))
+          AND (($4 = 'document.upload' AND p.status IN ('ACTIVE', 'HANDOVER'))
+            OR ($4 = 'document.download' AND p.status NOT IN ('CANCELLED', 'SUSPENDED')))
           AND jsonb_typeof(g.scope_json->'requirementIds') = 'array'
           AND EXISTS (
             SELECT 1 FROM document_requirements dr
@@ -104,7 +107,7 @@ export class DocumentsService {
                AND dr.document_id = d.id
                AND NOT (g.scope_json->'requirementIds' ? dr.requirement_id::text))
         LIMIT 1
-        FOR SHARE OF g, p`,
+        FOR SHARE OF g, p, party`,
       [ctx.orgId, ctx.guestGrantId, versionId, capability],
     );
     if (!rows.length) throw new NotFoundException('VERSION_NOT_FOUND');
@@ -251,6 +254,8 @@ export class DocumentsService {
           `SELECT DISTINCT dv.id, dv.version_no, dv.revision_code, dv.file_status, dv.review_status,
                   dv.issue_date, dv.expiry_date, dv.created_at
              FROM guest_grants g
+             JOIN parties party ON party.org_id = g.org_id AND party.id = g.party_id
+               AND party.status = 'ACTIVE' AND party.deleted_at IS NULL
              JOIN documents d ON d.org_id = g.org_id AND d.project_id = g.project_id AND d.id = $3
              JOIN document_versions dv
                ON dv.org_id = d.org_id AND dv.project_id = d.project_id AND dv.document_id = d.id
@@ -400,9 +405,11 @@ export class DocumentsService {
           throw new ForbiddenException('GUEST_UPLOAD_SCOPE_REQUIRED');
         }
         const { rows: grants } = await client.query(
-          `SELECT scope_json, capabilities FROM guest_grants
-            WHERE org_id = $1 AND project_id = $2 AND id = $3
-              AND status = 'ACTIVE' AND expires_at > now() FOR SHARE`,
+          `SELECT g.scope_json, g.capabilities FROM guest_grants g
+            JOIN parties party ON party.org_id = g.org_id AND party.id = g.party_id
+              AND party.status = 'ACTIVE' AND party.deleted_at IS NULL
+            WHERE g.org_id = $1 AND g.project_id = $2 AND g.id = $3
+              AND g.status = 'ACTIVE' AND g.expires_at > now() FOR SHARE OF g, party`,
           [ctx.orgId, projectId, guestGrantId],
         );
         const grant = grants[0];
