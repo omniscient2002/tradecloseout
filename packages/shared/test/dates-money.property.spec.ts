@@ -1,4 +1,4 @@
-import { isIndiaQuietHour, sumPaise } from '../src/business-rules';
+import { isIndiaQuietHour, sumPaise, parseInrToPaise } from '../src/business-rules';
 import { canonicalJson } from '../src/canonical-json';
 
 describe('Production money totals and India quiet-hour rules', () => {
@@ -11,6 +11,21 @@ describe('Production money totals and India quiet-hour rules', () => {
   });
   it('SHARED-05: rejects negative bigint amounts', () => {
     expect(() => sumPaise([10n, -1n])).toThrow('INVALID_PAISE');
+  });
+  it.each([
+    ['0', '0'], ['1', '100'], ['2.5', '250'], ['0.01', '1'],
+    ['145000000.25', '14500000025'],
+    ['90071992547409.91', '9007199254740991'],
+  ])('PH2-G05-011: exact INR parsing %s', (input, expected) => {
+    expect(parseInrToPaise(input)).toBe(expected);
+  });
+  it.each(['', '-1', '1.234', '1e12', 'NaN', '1,000', '0.001', 'Infinity', '01'])(
+    'PH2-G05-011: refuses malformed INR %s', input => {
+      expect(() => parseInrToPaise(input)).toThrow('INVALID_INR_AMOUNT');
+    },
+  );
+  it('PH2-G05-011: rejects amounts exceeding signed BIGINT capacity', () => {
+    expect(() => parseInrToPaise('92233720368547759')).toThrow('INR_AMOUNT_OUT_OF_RANGE');
   });
   it('SHARED-05: seeded property — splitting and permuting totals preserves integer paise (seed 281)', () => {
     let state = 281;
