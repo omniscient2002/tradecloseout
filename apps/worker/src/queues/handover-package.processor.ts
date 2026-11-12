@@ -1,5 +1,5 @@
-import { HeadObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import { Pool } from 'pg';
+import { HeadObjectCommand, GetObjectCommand, PutObjectCommand, DeleteObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { Pool, PoolClient } from 'pg';
 import { createHash } from 'crypto';
 import { createReadStream, createWriteStream } from 'fs';
 import { mkdtemp, rm, stat } from 'fs/promises';
@@ -9,6 +9,7 @@ import { pipeline } from 'stream/promises';
 import { Readable } from 'stream';
 import { uuidv7 } from 'uuidv7';
 import { compileHandoverDossierStreamingQpdf } from './pdf-stream-compiler';
+import { isImmutableStorageVersion } from '@tradecloseout/shared';
 
 type PackageJob = { orgId: string; projectId?: string; packageId?: string; entityId?: string; entityType?: string; eventId?: string };
 
@@ -43,12 +44,30 @@ export async function compileAndPersistHandoverPackage(
   job: PackageJob,
   jobId: string,
   qpdfAvailable: boolean,
+  attemptOwner: string = `PACKAGE_ATTEMPT:${uuidv7()}`,
 ): Promise<Record<string, unknown>> {
   const packageId = job.packageId || (job.entityId && job.entityType === 'HANDOVER_PACKAGE' ? job.entityId : undefined);
   const orgId = job.orgId;
   if (!packageId || !orgId) throw new Error('PACKAGE_IDENTITY_REQUIRED');
 
-  const owner = `PACKAGE_JOB:${jobId}`;
+  // A BullMQ job ID identifies the logical command, not a worker attempt.
+  // Hold an exclusive PostgreSQL session lock across read, file compilation,
+  // S3 upload, and publication. Session death releases the lock on crashes.
+  // This also allows a subsequent attempt to reclaim stale GENERATING rows.
+  const owner = attemptOwner;
+  if (!/^PACKAGE_ATTEMPT:[0-9a-f-]{36}$/i.test(owner)) {
+    throw new Error('PACKAGE_ATTEMPT_OWNER_INVALID');
+  }
+  const lockClient = await pool.connect();
+  let locked = false;
+  try {
+    const lock = await lockClient.query(
+      `SELECT pg_try_advisory_lock(hashtext($1::text), hashtext($2::text)) AS acquired`,
+      [orgId, packageId],
+    );
+    locked = lock.rows[0]?.acquired === true;
+    if (!locked) throw new Error('PACKAGE_BUILD_ALREADY_RUNNING');
+
   const client = await pool.connect();
   let packageMeta: any;
   let packageRequirements: any[] = [];
@@ -61,25 +80,12 @@ export async function compileAndPersistHandoverPackage(
     );
     const { rows: packages } = await client.query(
       `SELECT hp.id, hp.org_id, hp.project_id, hp.version_no, hp.status,
-              hp.snapshot_checksum, hp.created_at, hp.updated_at, hp.requested_by,
-              hp.error_code, hp.pdf_object_id,
-              p.code AS project_code, p.name AS project_name,
-              o.display_name AS org_name,
-              COALESCE(contract.contract_ref, contract.reference, '') AS contract_ref,
-              COALESCE(party.name, '') AS client_name
-         FROM handover_packages hp
-         JOIN projects p ON p.org_id = hp.org_id AND p.id = hp.project_id
-         JOIN organisations o ON o.id = hp.org_id
-         LEFT JOIN LATERAL (
-           SELECT c.contract_ref, c.reference, c.party_id
-             FROM contracts c
-            WHERE c.org_id = hp.org_id AND c.project_id = hp.project_id AND c.status = 'ACTIVE'
-            ORDER BY c.created_at DESC
-            LIMIT 1
-         ) contract ON true
-         LEFT JOIN parties party ON party.org_id = hp.org_id AND party.id = contract.party_id
-        WHERE hp.org_id = $1 AND hp.id = $2
-        FOR UPDATE OF hp`,
+               hp.manifest_format_version, hp.snapshot_id, hp.snapshot_checksum,
+               hp.metadata_snapshot_json, hp.created_at, hp.updated_at, hp.requested_by,
+               hp.error_code, hp.pdf_object_id, hp.package_purpose
+          FROM handover_packages hp
+         WHERE hp.org_id = $1 AND hp.id = $2
+         FOR UPDATE OF hp`,
       [orgId, packageId],
     );
     packageMeta = packages[0];
@@ -88,11 +94,50 @@ export async function compileAndPersistHandoverPackage(
       await client.query('COMMIT');
       return { packageId, status: 'READY', replayed: true };
     }
-    if (packageMeta.status === 'GENERATING' && packageMeta.error_code !== owner &&
-        new Date(packageMeta.updated_at).getTime() > Date.now() - 30 * 60 * 1000) {
+    if (packageMeta.manifest_format_version !== 2 || packageMeta.package_purpose !== 'FULL_HANDOVER') {
+      // A historical unpinned QUEUED/GENERATING row can never be repaired by
+      // reading the current document pointer: quarantine it and surface an
+      // explicit regeneration instruction instead of leaving it QUEUED forever.
+      if (['QUEUED', 'GENERATING'].includes(packageMeta.status)) {
+        await client.query(
+          `UPDATE handover_packages SET status = 'FAILED',
+              error_code = 'PACKAGE_LEGACY_MANIFEST_UNPINNED',
+              error_detail = 'Generate a new full-handover package with frozen evidence receipts.',
+              row_version = row_version + 1, updated_at = now()
+            WHERE org_id = $1 AND id = $2
+              AND status IN ('QUEUED', 'GENERATING')`,
+          [orgId, packageId],
+        );
+        await client.query('COMMIT');
+        return {
+          packageId, status: 'FAILED', manualRegenerationRequired: true,
+          errorCode: 'PACKAGE_LEGACY_MANIFEST_UNPINNED',
+        };
+      }
       await client.query('COMMIT');
-      return { packageId, status: 'GENERATING', skipped: 'Another worker owns this package build.' };
+      return { packageId, status: packageMeta.status, skipped: 'Historical unpinned manifest is not buildable.' };
     }
+    const cover = typeof packageMeta.metadata_snapshot_json === 'string'
+      ? JSON.parse(packageMeta.metadata_snapshot_json)
+      : packageMeta.metadata_snapshot_json;
+    if (!cover || typeof cover !== 'object' ||
+        typeof cover.orgName !== 'string' || !cover.orgName.trim() ||
+        typeof cover.projectCode !== 'string' || !cover.projectCode.trim() ||
+        typeof cover.projectName !== 'string' || !cover.projectName.trim() ||
+        typeof cover.clientName !== 'string' || typeof cover.contractRef !== 'string') {
+      throw new Error('PACKAGE_FROZEN_METADATA_INVALID');
+    }
+    // The PDF cover must describe the project and contractual counterparty at
+    // manifest selection time, not a later mutable name or active contract.
+    packageMeta.org_name = cover.orgName;
+    packageMeta.project_code = cover.projectCode;
+    packageMeta.project_name = cover.projectName;
+    packageMeta.client_name = cover.clientName;
+    packageMeta.contract_ref = cover.contractRef;
+    // Advisory session ownership excludes a live competing attempt even when
+    // BullMQ redelivers the same job ID. Reclaim a stalled GENERATING row only
+    // after holding that lock; the former owner can no longer publish.
+    // A truly active attempt causes PACKAGE_BUILD_ALREADY_RUNNING above.
     const claimed = await client.query(
       `UPDATE handover_packages
           SET status = 'GENERATING', error_code = $3, error_detail = NULL,
@@ -109,16 +154,8 @@ export async function compileAndPersistHandoverPackage(
     const { rows: requirements } = await client.query(
       `SELECT pr.requirement_key, pr.title, pr.asset_tag, pr.doc_type_key,
               pr.status_at_generation, pr.decision, pr.decided_by, pr.decision_method,
-              COALESCE(dv.revision_code, 'v' || dv.version_no::text, 'R0') AS revision_code
+              pr.revision_code_at_generation AS revision_code
          FROM package_requirements pr
-         LEFT JOIN LATERAL (
-           SELECT dv2.revision_code, dv2.version_no
-             FROM document_requirements dr
-             JOIN document_versions dv2 ON dv2.document_id = dr.document_id AND dv2.org_id = pr.org_id
-             JOIN package_items pi ON pi.document_version_id = dv2.id AND pi.package_id = pr.package_id
-            WHERE dr.requirement_id = pr.requirement_id
-            ORDER BY dv2.created_at DESC LIMIT 1
-         ) dv ON true
         WHERE pr.org_id = $1 AND pr.project_id = $2 AND pr.package_id = $3
         ORDER BY pr.requirement_key, pr.scope_key, pr.id`,
       [orgId, packageMeta.project_id, packageId],
@@ -133,18 +170,15 @@ export async function compileAndPersistHandoverPackage(
     );
     const { rows: items } = await client.query(
       `SELECT pi.document_version_id, pi.section_key, pi.sort_order,
-              dv.document_id, dv.version_no, dv.revision_code,
-              d.title, so.bucket, so.object_key, so.mime, so.size_bytes,
-              so.observed_size_bytes, so.provider_version_id, so.sha256, so.status AS object_status
+              pi.source_document_id AS document_id, pi.source_object_id AS object_id,
+              pi.source_revision_code AS revision_code, pi.source_title AS title,
+              pi.source_bucket AS bucket, pi.source_object_key AS object_key,
+              pi.source_mime AS mime, pi.source_size_bytes AS size_bytes,
+              pi.source_size_bytes AS observed_size_bytes,
+              pi.source_provider_version_id AS provider_version_id,
+              pi.source_sha256 AS sha256,
+              CASE WHEN pi.source_object_id IS NOT NULL THEN 'READY' ELSE 'UNPINNED' END AS object_status
          FROM package_items pi
-         JOIN document_versions dv
-           ON dv.org_id = pi.org_id AND dv.project_id = pi.project_id AND dv.id = pi.document_version_id
-          AND dv.deleted_at IS NULL
-         JOIN documents d
-           ON d.org_id = dv.org_id AND d.project_id = dv.project_id AND d.id = dv.document_id
-          AND d.deleted_at IS NULL
-         JOIN storage_objects so
-           ON so.org_id = dv.org_id AND so.id = dv.object_id
         WHERE pi.org_id = $1 AND pi.project_id = $2 AND pi.package_id = $3 AND pi.included = true
         ORDER BY pi.sort_order, pi.id`,
       [orgId, packageMeta.project_id, packageId],
@@ -164,7 +198,11 @@ export async function compileAndPersistHandoverPackage(
   const maxSourceBytes = configuredLimit('PACKAGE_MAX_SOURCE_BYTES', DEFAULT_MAX_SOURCE_BYTES);
   let totalSourceBytes = 0;
   for (const source of sourceRows) {
-    if (source.object_status !== 'READY' || !source.provider_version_id || !source.sha256 ||
+    if (source.object_status !== 'READY' || !source.object_id || !source.document_id ||
+        !source.bucket || !source.object_key || !source.title ||
+        !isImmutableStorageVersion(source.provider_version_id) ||
+        !/^[a-f0-9]{64}$/i.test(String(source.sha256 || '')) ||
+        !Number.isSafeInteger(Number(source.size_bytes)) || Number(source.size_bytes) <= 0 ||
         Number(source.observed_size_bytes) !== Number(source.size_bytes)) {
       throw new Error(`PACKAGE_SOURCE_NOT_VERIFIED:${source.document_version_id}`);
     }
@@ -272,20 +310,93 @@ export async function compileAndPersistHandoverPackage(
       ServerSideEncryption: process.env.S3_KMS_KEY_ID ? 'aws:kms' : undefined,
       SSEKMSKeyId: process.env.S3_KMS_KEY_ID || undefined,
     }));
-    if (!putResult.VersionId) throw new Error('PACKAGE_STORAGE_VERSION_ID_MISSING');
+    if (!isImmutableStorageVersion(putResult.VersionId)) throw new Error('PACKAGE_STORAGE_VERSION_ID_MISSING');
     const head = await s3.send(new HeadObjectCommand({ Bucket: bucket, Key: objectKey, VersionId: putResult.VersionId }));
     if (head.ContentLength !== outputStats.size || head.VersionId !== putResult.VersionId ||
         head.Metadata?.sha256 !== actualOutputSha) {
       throw new Error('PACKAGE_STORAGE_VERIFICATION_FAILED');
     }
 
-    const persistClient = await pool.connect();
+    let persistClient: PoolClient | undefined;
+    let committedReady = false;
     try {
+      persistClient = await pool.connect();
       await persistClient.query('BEGIN');
       await persistClient.query(
         `SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`,
         [orgId],
       );
+      // Publish only if the final project and active checklist still permit
+      // the pinned dossier. Lock in the same order as project closure
+      // (project then package), so closure cannot overtake publication.
+      const { rows: publishProjects } = await persistClient.query(
+        `SELECT id, status FROM projects
+          WHERE org_id = $1 AND id = $2 FOR UPDATE`,
+        [orgId, packageMeta.project_id],
+      );
+      if (!['ACTIVE', 'HANDOVER'].includes(publishProjects[0]?.status)) {
+        throw new Error('PACKAGE_PROJECT_NOT_ACTIVE_AT_PUBLICATION');
+      }
+      const { rows: liveSnapshots } = await persistClient.query(
+        `SELECT id FROM checklist_snapshots
+          WHERE org_id = $1 AND project_id = $2 AND id = $3
+            AND status = 'ACTIVE' AND checksum = $4 FOR SHARE`,
+        [orgId, packageMeta.project_id, packageMeta.snapshot_id, packageMeta.snapshot_checksum],
+      );
+      if (liveSnapshots.length !== 1) throw new Error('PACKAGE_SNAPSHOT_SUPERSEDED');
+
+      // Locks on live document, version, and object rows fence a concurrent
+      // deletion/review or quarantine until publication commits. The bytes
+      // themselves were already fetched from the immutable pinned version.
+      const { rows: stillCurrentSources } = await persistClient.query(
+        `SELECT pi.document_version_id
+           FROM package_items pi
+           JOIN document_versions dv
+             ON dv.org_id = pi.org_id AND dv.project_id = pi.project_id
+            AND dv.id = pi.document_version_id AND dv.deleted_at IS NULL
+            AND dv.superseded_at IS NULL
+            AND dv.review_status = 'APPROVED' AND dv.file_status = 'READY'
+            AND (dv.expiry_date IS NULL OR dv.expiry_date >= CURRENT_DATE)
+           JOIN documents d
+             ON d.org_id = dv.org_id AND d.project_id = dv.project_id
+            AND d.id = pi.source_document_id AND d.id = dv.document_id
+            AND d.deleted_at IS NULL AND d.status = 'ACTIVE'
+            AND d.current_approved_version_id = dv.id
+           JOIN storage_objects so
+             ON so.org_id = pi.org_id AND so.id = pi.source_object_id
+            AND so.id = dv.object_id AND so.status = 'READY'
+            AND so.bucket = pi.source_bucket AND so.object_key = pi.source_object_key
+            AND so.provider_version_id = pi.source_provider_version_id
+            AND so.sha256 = pi.source_sha256 AND so.size_bytes = pi.source_size_bytes
+            AND so.observed_size_bytes = pi.source_size_bytes
+          WHERE pi.org_id = $1 AND pi.project_id = $2 AND pi.package_id = $3
+            AND pi.included = true
+          FOR SHARE OF dv, d, so, pi`,
+        [orgId, packageMeta.project_id, packageId],
+      );
+      if (stillCurrentSources.length !== sourceRows.length) {
+        throw new Error('PACKAGE_SOURCE_REVOKED_OR_CHANGED');
+      }
+      const expectedWaivers = packageRequirements.filter((r: any) => r.decision !== null);
+      const { rows: currentWaivers } = await persistClient.query(
+        `SELECT pr.id
+           FROM package_requirements pr
+           JOIN waivers w ON w.org_id = pr.org_id AND w.project_id = pr.project_id
+            AND w.requirement_id = pr.requirement_id AND w.id = pr.waiver_id_at_generation
+            AND w.status = 'ACTIVE' AND w.type = pr.decision
+            AND w.approved_by::text = pr.decided_by AND w.approved_at = pr.decided_at
+            AND (NOT pr.mandatory OR
+              (w.second_approved_by IS NOT NULL AND w.second_approved_by <> w.approved_by
+                AND w.second_approved_by = pr.second_approved_by_at_generation))
+          WHERE pr.org_id = $1 AND pr.project_id = $2 AND pr.package_id = $3
+            AND pr.waiver_id_at_generation IS NOT NULL
+          FOR SHARE OF w, pr`,
+        [orgId, packageMeta.project_id, packageId],
+      );
+      if (currentWaivers.length !== expectedWaivers.length) {
+        throw new Error('PACKAGE_WAIVER_REVOKED_OR_CHANGED');
+      }
+
       const { rows: current } = await persistClient.query(
         `SELECT status, error_code FROM handover_packages
           WHERE org_id = $1 AND project_id = $2 AND id = $3 FOR UPDATE`,
@@ -335,6 +446,7 @@ export async function compileAndPersistHandoverPackage(
           String(job.eventId || jobId)],
       );
       await persistClient.query('COMMIT');
+      committedReady = true;
       return {
         packageId,
         status: 'READY',
@@ -345,13 +457,41 @@ export async function compileAndPersistHandoverPackage(
         includedSourceCount: sourceRows.length,
       };
     } catch (error) {
-      await persistClient.query('ROLLBACK').catch(() => undefined);
+      await persistClient?.query('ROLLBACK').catch(() => undefined);
       throw error;
     } finally {
-      persistClient.release();
+      persistClient?.release();
+      if (!committedReady) {
+        // The key is unique to this attempt, so remove only the unpublished
+        // immutable version. A failed cleanup is visible for reconciliation.
+        // Crash-after-upload still needs an independent orphan sweeper.
+        try {
+          await s3.send(new DeleteObjectCommand({
+            Bucket: bucket, Key: objectKey, VersionId: putResult.VersionId,
+          }));
+        } catch (cleanupError) {
+          console.error('PACKAGE_UNPUBLISHED_OBJECT_CLEANUP_FAILED', {
+            packageId, artifactId, objectKey,
+            reason: String((cleanupError as Error)?.message || 'provider error').slice(0, 150),
+          });
+        }
+      }
     }
   } finally {
     await rm(tempDir, { recursive: true, force: true });
+  }
+  } finally {
+    if (locked) {
+      try {
+        await lockClient.query(
+          `SELECT pg_advisory_unlock(hashtext($1::text), hashtext($2::text))`,
+          [orgId, packageId],
+        );
+      } catch {
+        // A disconnected PostgreSQL session has already lost its advisory lock.
+      }
+    }
+    lockClient.release();
   }
 }
 
@@ -360,9 +500,10 @@ export async function markHandoverPackageFailed(
   job: PackageJob,
   jobId: string,
   error: unknown,
+  attemptOwner: string,
 ): Promise<void> {
   const packageId = job.packageId || (job.entityId && job.entityType === 'HANDOVER_PACKAGE' ? job.entityId : undefined);
-  if (!packageId || !job.orgId) return;
+  if (!packageId || !job.orgId || !/^PACKAGE_ATTEMPT:[0-9a-f-]{36}$/i.test(attemptOwner)) return;
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -375,7 +516,7 @@ export async function markHandoverPackageFailed(
           SET status = 'FAILED', error_code = 'PACKAGE_BUILD_FAILED',
               error_detail = $4, row_version = row_version + 1, updated_at = now()
         WHERE org_id = $1 AND id = $2 AND status = 'GENERATING' AND error_code = $3`,
-      [job.orgId, packageId, `PACKAGE_JOB:${jobId}`,
+      [job.orgId, packageId, attemptOwner,
         String((error as Error)?.message || 'Package build failed').slice(0, 1000)],
     );
     await client.query('COMMIT');

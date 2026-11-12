@@ -12,7 +12,7 @@ import { uuidv7 } from 'uuidv7';
 import { createHash } from 'crypto';
 import { withTenantTransaction, consumePlanQuota, TenantActorContext } from '@tradecloseout/db/tenant-tx';
 import { S3StorageService } from '../documents/s3-storage.service';
-import { canonicalJson } from '@tradecloseout/shared';
+import { canonicalJson, isImmutableStorageVersion } from '@tradecloseout/shared';
 import { evaluateReadinessInTransaction } from './closeout-readiness';
 
 @Injectable()
@@ -43,87 +43,88 @@ export class HandoverService {
       excludedRequirementIds?: Array<{ requirementId: string; reason: string }>;
     },
   ) {
-    const readiness = await this.evaluateProjectReadiness(ctx, projectId);
-    if (!readiness.readyWithoutOverride) {
+    // The only supported scope is a complete handover. Unknown fields, wrong
+    // types and ignored exclusions can mislead the requester about disclosure.
+    if (input === null || typeof input !== 'object' || Array.isArray(input) ||
+        Object.keys(input).some((key) => key !== 'excludedRequirementIds')) {
       throw new UnprocessableEntityException({
-        code: 'READINESS_BLOCKERS_PRESENT',
-        title: 'Mandatory requirements are missing or expired',
-        detail: 'Resolve blockers or record an authorised waiver/not-applicable decision before requesting a final handover package.',
+        code: 'PACKAGE_SCOPE_UNSUPPORTED',
+        detail: 'Only a full-project handover with no excluded requirements is supported.',
       });
     }
-
+    if (input.excludedRequirementIds !== undefined &&
+        !Array.isArray(input.excludedRequirementIds)) {
+      throw new UnprocessableEntityException({ code: 'PACKAGE_EXCLUSIONS_INVALID' });
+    }
+    // Exclusions are not applied to the immutable manifest in this release.
+    // Silently ignoring them can disclose evidence the requester intended to omit.
+    if (input.excludedRequirementIds?.length) {
+      throw new UnprocessableEntityException({
+        code: 'PACKAGE_EXCLUSIONS_NOT_SUPPORTED',
+        detail: 'Partial-package exclusions are not supported. No evidence has been excluded or exported.',
+      });
+    }
     return withTenantTransaction(this.pool, ctx, async (client, emit) => {
-      // Recheck in the package-creation transaction so a concurrent review or evidence
-      // change cannot invalidate the readiness result calculated immediately above.
-      const { rows: configuredRows } = await client.query(
-        `SELECT s.resolved_payload_json
-           FROM checklist_snapshots s
-          WHERE s.org_id = $1 AND s.project_id = $2 AND s.status = 'ACTIVE'
-            AND EXISTS (
-              SELECT 1 FROM requirements r
-               WHERE r.org_id = s.org_id AND r.project_id = s.project_id
-                 AND r.current_snapshot_id = s.id AND r.superseded_at IS NULL
-                 AND r.mandatory = true
-            )
-          LIMIT 1`,
+      // Project closure and handover generation share this row lock.
+      // Canonical readiness and source selection use one REPEATABLE READ snapshot.
+      const { rows: projects } = await client.query(
+        `SELECT id, status FROM projects
+           WHERE org_id = $1 AND id = $2 FOR UPDATE`,
         [ctx.orgId, projectId],
       );
-      const rawSnapshot = configuredRows[0]?.resolved_payload_json;
-      const configuredSnapshot = typeof rawSnapshot === 'string' ? JSON.parse(rawSnapshot) : rawSnapshot;
-      if (!Array.isArray(configuredSnapshot?.requirements) ||
-          configuredSnapshot.requirements.length === 0) {
-        throw new UnprocessableEntityException({
-          code: 'NO_APPLICABLE_MANDATORY_CHECKLIST',
-          detail: 'The project needs an active, non-empty checklist with mandatory requirements before handover.',
+      if (!projects.length) {
+        throw new NotFoundException({ code: 'PROJECT_NOT_FOUND' });
+      }
+      if (!['ACTIVE', 'HANDOVER'].includes(projects[0].status)) {
+        throw new ConflictException({
+          code: 'PACKAGE_PROJECT_LIFECYCLE_BLOCKED',
+          detail: 'Final handover generation requires an active or handover project.',
         });
       }
-      const { rows: blockerRows } = await client.query(
-        `SELECT r.id
-           FROM requirements r
-          WHERE r.org_id = $1 AND r.project_id = $2
-            AND r.superseded_at IS NULL AND r.mandatory = true
-            AND NOT EXISTS (
-              SELECT 1 FROM waivers w
-               WHERE w.org_id = r.org_id AND w.project_id = r.project_id
-                 AND w.requirement_id = r.id AND w.status = 'ACTIVE'
-                 AND w.type IN ('WAIVE', 'NOT_APPLICABLE')
-                 AND w.second_approved_by IS NOT NULL AND w.second_approved_by <> w.approved_by
-            )
-            AND NOT EXISTS (
-              SELECT 1
-                FROM document_requirements dr
-                JOIN documents d
-                  ON d.org_id = dr.org_id AND d.project_id = dr.project_id AND d.id = dr.document_id
-                 AND d.deleted_at IS NULL AND d.status = 'ACTIVE'
-              AND d.doc_type_key = r.doc_type_key
-                JOIN document_versions dv
-                  ON dv.org_id = d.org_id AND dv.project_id = d.project_id
-                 AND dv.document_id = d.id AND dv.id = d.current_approved_version_id
-                 AND dv.deleted_at IS NULL AND dv.superseded_at IS NULL
-                 AND dv.review_status = 'APPROVED' AND dv.file_status = 'READY'
-                 AND (dv.expiry_date IS NULL OR dv.expiry_date >= CURRENT_DATE)
-                JOIN storage_objects so
-                  ON so.org_id = dv.org_id AND so.id = dv.object_id
-                 AND so.status = 'READY' AND so.sha256 IS NOT NULL
-                 AND so.observed_size_bytes = so.size_bytes
-                 AND so.provider_version_id IS NOT NULL
-               WHERE dr.org_id = r.org_id AND dr.project_id = r.project_id
-                 AND dr.requirement_id = r.id
-                 AND NOT EXISTS (
-                   SELECT 1 FROM evidence_revalidations er
-                    WHERE er.org_id = dv.org_id AND er.project_id = dv.project_id
-                      AND er.document_version_id = dv.id
-                      AND (r.scope_key IS NULL OR r.scope_key NOT LIKE 'asset:%' OR er.asset_id::text = substring(r.scope_key from 7))
-                      AND er.status IN ('PENDING', 'MISMATCH')
-                 )
-            )
-          LIMIT 1`,
+      // Freeze the identity and contract facts shown in the dossier cover.
+      // Never synthesize them later from whichever contract is active then.
+      const { rows: coverRows } = await client.query(
+        `SELECT p.code AS project_code, p.name AS project_name,
+                o.display_name AS org_name,
+                COALESCE(contract.contract_ref, contract.reference, '') AS contract_ref,
+                COALESCE(client_party.name, '') AS client_name
+           FROM projects p
+           JOIN organisations o ON o.id = p.org_id
+           LEFT JOIN LATERAL (
+             SELECT c.contract_ref, c.reference, c.party_id
+               FROM contracts c
+              WHERE c.org_id = p.org_id AND c.project_id = p.id
+                AND c.status = 'ACTIVE'
+              ORDER BY c.created_at DESC, c.id DESC LIMIT 1
+           ) contract ON true
+           LEFT JOIN parties client_party ON client_party.org_id = p.org_id
+             AND client_party.id = contract.party_id
+          WHERE p.org_id = $1 AND p.id = $2`,
         [ctx.orgId, projectId],
       );
-      if (blockerRows.length > 0) {
+      const cover = coverRows[0];
+      if (!cover || !cover.project_code || !cover.project_name || !cover.org_name) {
         throw new UnprocessableEntityException({
-          code: 'READINESS_CHANGED',
-          detail: 'Mandatory evidence changed while the package request was being created. Refresh readiness and resolve the current blockers.',
+          code: 'PACKAGE_METADATA_NOT_QUALIFIED',
+          detail: 'Project and organisation identity must be fully configured for a final dossier.',
+        });
+      }
+      const metadataSnapshot = {
+        orgName: cover.org_name,
+        projectCode: cover.project_code,
+        projectName: cover.project_name,
+        contractRef: cover.contract_ref || '',
+        clientName: cover.client_name || '',
+      };
+      const readiness = await evaluateReadinessInTransaction(client, ctx.orgId, projectId);
+      if (!readiness.readyWithoutOverride) {
+        throw new UnprocessableEntityException({
+          code: 'READINESS_BLOCKERS_PRESENT',
+          title: 'Mandatory requirements are missing or expired',
+          detail: 'Resolve blockers or record an authorised waiver/not-applicable decision before requesting a final handover package.',
+          configurationBlocker: readiness.configurationBlocker,
+          missingMandatoryCount: readiness.blockers.missingMandatoryCount,
+          expiredMandatoryCount: readiness.blockers.expiredMandatoryCount,
         });
       }
 
@@ -133,13 +134,14 @@ export class HandoverService {
       const { rows: snapRows } = await client.query(
         `SELECT id, checksum FROM checklist_snapshots
           WHERE org_id = $1 AND project_id = $2 AND status = 'ACTIVE'
-          LIMIT 1`,
+          ORDER BY created_at DESC, id DESC
+          LIMIT 2`,
         [ctx.orgId, projectId],
       );
-      if (snapRows.length === 0) {
+      if (snapRows.length !== 1) {
         throw new UnprocessableEntityException({
-          code: 'NO_ACTIVE_SNAPSHOT',
-          detail: 'Project has no active checklist snapshot.',
+          code: snapRows.length ? 'MULTIPLE_ACTIVE_SNAPSHOTS' : 'NO_ACTIVE_SNAPSHOT',
+          detail: 'Exactly one active checklist snapshot is required for final handover.',
         });
       }
       const activeSnapshot = snapRows[0];
@@ -156,8 +158,9 @@ export class HandoverService {
       await client.query(
         `INSERT INTO handover_packages
           (id, org_id, project_id, version_no, status, snapshot_id, snapshot_checksum,
-           override_reason, requested_by, package_purpose)
-         VALUES ($1, $2, $3, $4, 'QUEUED', $5, $6, $7, $8, 'FULL_HANDOVER')`,
+           override_reason, requested_by, package_purpose, manifest_format_version,
+           metadata_snapshot_json)
+         VALUES ($1, $2, $3, $4, 'QUEUED', $5, $6, $7, $8, 'FULL_HANDOVER', 2, $9::jsonb)`,
         [
           packageId,
           ctx.orgId,
@@ -167,6 +170,7 @@ export class HandoverService {
           activeSnapshot.checksum,
           null,
           ctx.userId,
+          JSON.stringify(metadataSnapshot),
         ],
       );
 
@@ -177,15 +181,13 @@ export class HandoverService {
                 r.mandatory, r.status, r.due_at,
                 evidence.version_ids,
                 evidence.has_valid_evidence,
-                evidence.has_expired_evidence,
-                (
-                  SELECT w.type FROM waivers w
-                   WHERE w.org_id = r.org_id AND w.project_id = r.project_id
-                     AND w.requirement_id = r.id AND w.status = 'ACTIVE'
-                     AND w.type IN ('WAIVE', 'NOT_APPLICABLE')
-                     AND (NOT r.mandatory OR (w.second_approved_by IS NOT NULL AND w.second_approved_by <> w.approved_by))
-                   ORDER BY w.approved_at DESC, w.id DESC LIMIT 1
-                ) AS valid_waiver_type,
+                evidence.has_expired_evidence, evidence.revision_code,
+                waiver.type AS valid_waiver_type,
+                waiver.id AS valid_waiver_id,
+                waiver.reason AS valid_waiver_reason,
+                waiver.approved_by AS valid_waiver_approved_by,
+                waiver.approved_at AS valid_waiver_approved_at,
+                waiver.second_approved_by AS valid_waiver_second_approved_by,
                 a.tag AS asset_tag
            FROM requirements r
            LEFT JOIN LATERAL (
@@ -195,7 +197,11 @@ export class HandoverService {
                    (dv.expiry_date IS NULL OR dv.expiry_date >= CURRENT_DATE)), ARRAY[]::uuid[]) AS version_ids,
                COALESCE(bool_or(dv.id IS NOT NULL AND
                    (dv.expiry_date IS NULL OR dv.expiry_date >= CURRENT_DATE)), false) AS has_valid_evidence,
-               COALESCE(bool_or(dv.id IS NOT NULL AND dv.expiry_date < CURRENT_DATE), false) AS has_expired_evidence
+               COALESCE(bool_or(dv.id IS NOT NULL AND dv.expiry_date < CURRENT_DATE), false) AS has_expired_evidence,
+               (array_agg(COALESCE(dv.revision_code, 'v' || dv.version_no::text)
+                  ORDER BY dv.version_no DESC)
+                FILTER (WHERE dv.id IS NOT NULL AND
+                  (dv.expiry_date IS NULL OR dv.expiry_date >= CURRENT_DATE)))[1] AS revision_code
              FROM document_requirements dr
              JOIN documents d
                ON d.org_id = dr.org_id AND d.project_id = dr.project_id AND d.id = dr.document_id
@@ -208,9 +214,11 @@ export class HandoverService {
               AND dv.review_status = 'APPROVED' AND dv.file_status = 'READY'
              JOIN storage_objects so
                ON so.org_id = dv.org_id AND so.id = dv.object_id
-              AND so.status = 'READY' AND so.sha256 IS NOT NULL
-              AND so.observed_size_bytes = so.size_bytes
+              AND so.status = 'READY'
+              AND so.sha256 ~ '^[a-fA-F0-9]{64}$'
+              AND so.size_bytes > 0 AND so.observed_size_bytes = so.size_bytes
               AND so.provider_version_id IS NOT NULL
+              AND btrim(lower(so.provider_version_id)) NOT IN ('', 'null', 'undefined', 'none', 'unversioned')
              WHERE dr.org_id = r.org_id AND dr.project_id = r.project_id
                AND dr.requirement_id = r.id
                AND NOT EXISTS (
@@ -221,12 +229,34 @@ export class HandoverService {
                     AND er.status IN ('PENDING', 'MISMATCH')
                )
            ) evidence ON true
+           LEFT JOIN LATERAL (
+             SELECT w.id, w.type, w.reason, w.approved_by,
+                    w.approved_at, w.second_approved_by
+               FROM waivers w
+              WHERE w.org_id = r.org_id AND w.project_id = r.project_id
+                AND w.requirement_id = r.id AND w.status = 'ACTIVE'
+                AND w.type IN ('WAIVE', 'NOT_APPLICABLE')
+                AND (NOT r.mandatory OR
+                  (w.second_approved_by IS NOT NULL AND w.second_approved_by <> w.approved_by))
+              ORDER BY w.approved_at DESC, w.id DESC LIMIT 1
+           ) waiver ON true
            LEFT JOIN assets a
              ON r.scope_key = ('asset:' || a.id::text) AND a.org_id = r.org_id AND a.project_id = r.project_id
           WHERE r.org_id = $1 AND r.project_id = $2 AND r.superseded_at IS NULL
           ORDER BY r.group_key, r.requirement_key`,
         [ctx.orgId, projectId],
       );
+
+      // Canonical readiness and manifest selection MUST agree under
+      // the same repeatable-read snapshot. Missing evidence cannot silently
+      // yield a complete dossier even if its cached status says APPROVED.
+      if (!reqRows.length || reqRows.some((r: any) =>
+        r.mandatory && !r.valid_waiver_type && r.has_valid_evidence !== true)) {
+        throw new UnprocessableEntityException({
+          code: 'PACKAGE_MANIFEST_READINESS_MISMATCH',
+          detail: 'Mandatory evidence or a valid decision is missing from the frozen manifest.',
+        });
+      }
 
       const exclusionMap = new Map(
         (input.excludedRequirementIds ?? []).map((e) => [e.requirementId, e.reason]),
@@ -262,8 +292,12 @@ export class HandoverService {
           `INSERT INTO package_requirements
             (id, org_id, project_id, package_id, requirement_id, requirement_key,
              scope_key, title, doc_type_key, mandatory, status_at_generation,
-             due_at_at_generation, asset_tag)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+             due_at_at_generation, asset_tag, revision_code_at_generation,
+             decision, decided_by, decided_at, decision_method,
+             waiver_id_at_generation, waiver_reason_at_generation,
+             second_approved_by_at_generation)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+                   $14, $15, $16, $17, $18, $19, $20, $21)`,
           [
             uuidv7(),
             ctx.orgId,
@@ -278,6 +312,14 @@ export class HandoverService {
             effectiveStatus,
             req.due_at,
             req.asset_tag ?? null,
+            req.revision_code ?? null,
+            req.valid_waiver_type ?? null,
+            req.valid_waiver_approved_by?.toString() ?? null,
+            req.valid_waiver_approved_at ?? null,
+            req.valid_waiver_type ? 'WAIVED' : null,
+            req.valid_waiver_id ?? null,
+            req.valid_waiver_reason ?? null,
+            req.valid_waiver_second_approved_by ?? null,
           ],
         );
 
@@ -294,24 +336,74 @@ export class HandoverService {
         }
       }
 
+      // Freeze exact evidence storage receipts at the same snapshot as decisions.
+      // No later worker may re-resolve a different source version or object.
+      const selectedVersionIds = [...packageEvidence.keys()];
+      const { rows: pinnedSourceRows } = selectedVersionIds.length
+        ? await client.query(
+          `SELECT dv.id AS document_version_id, dv.document_id,
+                  COALESCE(dv.revision_code, 'v' || dv.version_no::text) AS revision_code,
+                  d.title, so.id AS object_id, so.bucket, so.object_key, so.mime,
+                  so.size_bytes, so.sha256, so.provider_version_id
+             FROM document_versions dv
+             JOIN documents d ON d.org_id = dv.org_id AND d.project_id = dv.project_id
+               AND d.id = dv.document_id AND d.deleted_at IS NULL AND d.status = 'ACTIVE'
+               AND d.current_approved_version_id = dv.id
+             JOIN storage_objects so ON so.org_id = dv.org_id AND so.id = dv.object_id
+            WHERE dv.org_id = $1 AND dv.project_id = $2 AND dv.id = ANY($3::uuid[])
+              AND dv.deleted_at IS NULL AND dv.superseded_at IS NULL
+              AND dv.review_status = 'APPROVED' AND dv.file_status = 'READY'
+              AND (dv.expiry_date IS NULL OR dv.expiry_date >= CURRENT_DATE)
+              AND so.status = 'READY' AND so.size_bytes > 0
+              AND so.observed_size_bytes = so.size_bytes
+              AND so.sha256 ~ '^[a-fA-F0-9]{64}$'
+              AND so.provider_version_id IS NOT NULL
+              AND btrim(lower(so.provider_version_id))
+                  NOT IN ('', 'null', 'undefined', 'none', 'unversioned')`,
+          [ctx.orgId, projectId, selectedVersionIds],
+        )
+        : { rows: [] as any[] };
+      const pinnedSources = new Map<string, any>(
+        pinnedSourceRows.map((source: any) => [String(source.document_version_id), source]),
+      );
+      if (pinnedSources.size !== selectedVersionIds.length) {
+        throw new UnprocessableEntityException({
+          code: 'PACKAGE_MANIFEST_SOURCE_NOT_PINNED',
+          detail: 'A selected evidence version could not be pinned to approved immutable bytes.',
+        });
+      }
+
       let sortOrder = 1;
       for (const [documentVersionId, item] of packageEvidence) {
-        const exclusionReason = item.included ? null : [...item.reasons].join('; ') || 'No included requirement references this evidence.';
+        const pinned = pinnedSources.get(documentVersionId);
+        if (!pinned || !isImmutableStorageVersion(pinned.provider_version_id) ||
+            !/^[a-fA-F0-9]{64}$/.test(String(pinned.sha256)) ||
+            !Number.isSafeInteger(Number(pinned.size_bytes)) || Number(pinned.size_bytes) <= 0) {
+          throw new UnprocessableEntityException({ code: 'PACKAGE_MANIFEST_SOURCE_NOT_VERIFIED' });
+        }
+        if (pinned.mime !== 'application/pdf') {
+          throw new UnprocessableEntityException({
+            code: 'PACKAGE_SOURCE_FORMAT_UNSUPPORTED',
+            detail: 'Only verified PDF sources are supported until approved conversion is enabled.',
+          });
+        }
+        const exclusionReason = item.included ? null : [...item.reasons].join('; ') ||
+          'No included requirement references this evidence.';
         await client.query(
           `INSERT INTO package_items
               (id, org_id, project_id, package_id, document_version_id,
-               section_key, sort_order, included, exclusion_reason)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+               section_key, sort_order, included, exclusion_reason,
+               source_document_id, source_object_id, source_title,
+               source_revision_code, source_bucket, source_object_key,
+               source_mime, source_size_bytes, source_sha256, source_provider_version_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+                     $12, $13, $14, $15, $16, $17, $18, $19)`,
           [
-            uuidv7(),
-            ctx.orgId,
-            projectId,
-            packageId,
-            documentVersionId,
-            item.sectionKey,
-            sortOrder++,
-            item.included,
-            exclusionReason,
+            uuidv7(), ctx.orgId, projectId, packageId, documentVersionId,
+            item.sectionKey, sortOrder++, item.included, exclusionReason,
+            pinned.document_id, pinned.object_id, pinned.title, pinned.revision_code,
+            pinned.bucket, pinned.object_key, pinned.mime, pinned.size_bytes,
+            pinned.sha256, pinned.provider_version_id,
           ],
         );
       }
@@ -333,6 +425,169 @@ export class HandoverService {
         status: 'QUEUED',
         snapshotChecksum: activeSnapshot.checksum,
       };
+    }, { isolationLevel: 'REPEATABLE READ' });
+  }
+
+  /**
+   * PH4-G14-001/003: explicit cancellation before READY.
+   * Cancellation is durable and fences the worker's READY compare-and-set.
+   * No provider delivery or successful artifact is implied.
+   */
+  async cancelHandoverPackage(
+    ctx: TenantActorContext,
+    projectId: string,
+    packageId: string,
+    input: { expectedRowVersion: number; reason: string },
+  ) {
+    if (!Number.isSafeInteger(input?.expectedRowVersion) || input.expectedRowVersion < 1 ||
+        typeof input.reason !== 'string' || input.reason.trim().length < 10 ||
+        input.reason.length > 1000) {
+      throw new UnprocessableEntityException({ code: 'PACKAGE_CANCELLATION_INPUT_INVALID' });
+    }
+    return withTenantTransaction(this.pool, ctx, async (client) => {
+      const { rows: projects } = await client.query(
+        `SELECT id, status FROM projects
+          WHERE org_id = $1 AND id = $2 FOR UPDATE`,
+        [ctx.orgId, projectId],
+      );
+      if (!projects.length) throw new NotFoundException({ code: 'PROJECT_NOT_FOUND' });
+      if (!['ACTIVE', 'HANDOVER'].includes(projects[0].status)) {
+        throw new ConflictException({ code: 'PACKAGE_PROJECT_LIFECYCLE_BLOCKED' });
+      }
+      const { rows } = await client.query(
+        `SELECT id, status, row_version, pdf_object_id, package_purpose
+           FROM handover_packages
+          WHERE org_id = $1 AND project_id = $2 AND id = $3 FOR UPDATE`,
+        [ctx.orgId, projectId, packageId],
+      );
+      const pkg = rows[0];
+      if (!pkg) throw new NotFoundException({ code: 'HANDOVER_PACKAGE_NOT_FOUND' });
+      if (pkg.row_version !== input.expectedRowVersion) {
+        throw new ConflictException({ code: 'PACKAGE_ROW_VERSION_CONFLICT' });
+      }
+      if (pkg.package_purpose !== 'FULL_HANDOVER' ||
+          !['QUEUED', 'GENERATING', 'FAILED'].includes(pkg.status) || pkg.pdf_object_id) {
+        throw new ConflictException({ code: 'PACKAGE_NOT_CANCELLABLE' });
+      }
+      const { rows: submitted } = await client.query(
+        `SELECT id FROM submissions
+          WHERE org_id = $1 AND project_id = $2 AND package_id = $3 LIMIT 1`,
+        [ctx.orgId, projectId, packageId],
+      );
+      if (submitted.length) throw new ConflictException({ code: 'PACKAGE_ALREADY_SUBMITTED' });
+      const { rows: updated } = await client.query(
+        `UPDATE handover_packages
+            SET status = 'CANCELLED', error_code = 'PACKAGE_CANCELLED',
+                error_detail = $4, row_version = row_version + 1, updated_at = now()
+          WHERE org_id = $1 AND project_id = $2 AND id = $3
+            AND row_version = $5 AND status IN ('QUEUED', 'GENERATING', 'FAILED')
+          RETURNING id, status, row_version`,
+        [ctx.orgId, projectId, packageId, input.reason.trim(), input.expectedRowVersion],
+      );
+      if (!updated.length) throw new ConflictException({ code: 'PACKAGE_CANCEL_CONFLICT' });
+      // Cancellation is an audit-only domain decision. Do not enqueue an
+      // unsupported worker dispatch event, which would poison the outbox.
+      await client.query(
+        `INSERT INTO audit_events
+          (id, org_id, project_id, actor_type, actor_user_id, action, entity_type, entity_id,
+           before_json, after_json, ip, user_agent, request_id, created_at)
+         VALUES ($1, $2, $3, $4, $5, 'HANDOVER_PACKAGE_CANCELLED',
+                 'HANDOVER_PACKAGE', $6, $7::jsonb, $8::jsonb, $9, $10, $11, now())`,
+        [
+          uuidv7(), ctx.orgId, projectId, ctx.actorType === 'MEMBER' ? 'USER' : ctx.actorType,
+          ctx.userId, packageId,
+          JSON.stringify({ status: pkg.status, rowVersion: pkg.row_version }),
+          JSON.stringify({ status: 'CANCELLED', reason: input.reason.trim(),
+            rowVersion: updated[0].row_version }),
+          ctx.ip, ctx.userAgent, ctx.requestId,
+        ],
+      );
+      return updated[0];
+    });
+  }
+
+  /**
+   * PH4-G14-003: explicit authorised retry of a FAILED frozen package. The
+   * original version and immutable receipts remain; quota is not charged twice.
+   * Re-enqueue a distinct worker command, never resurrect CANCELLED or READY.
+   */
+  async retryHandoverPackage(
+    ctx: TenantActorContext,
+    projectId: string,
+    packageId: string,
+    input: { expectedRowVersion: number; reason: string },
+  ) {
+    if (!Number.isSafeInteger(input?.expectedRowVersion) || input.expectedRowVersion < 1 ||
+        typeof input.reason !== 'string' || input.reason.trim().length < 10 ||
+        input.reason.length > 1000) {
+      throw new UnprocessableEntityException({ code: 'PACKAGE_RETRY_INPUT_INVALID' });
+    }
+    return withTenantTransaction(this.pool, ctx, async (client, emit) => {
+      const { rows: projects } = await client.query(
+        `SELECT id, status FROM projects
+          WHERE org_id = $1 AND id = $2 FOR UPDATE`,
+        [ctx.orgId, projectId],
+      );
+      if (!projects.length) throw new NotFoundException({ code: 'PROJECT_NOT_FOUND' });
+      if (!['ACTIVE', 'HANDOVER'].includes(projects[0].status)) {
+        throw new ConflictException({ code: 'PACKAGE_PROJECT_LIFECYCLE_BLOCKED' });
+      }
+      const { rows: packages } = await client.query(
+        `SELECT id, status, row_version, version_no, pdf_object_id,
+                snapshot_id, snapshot_checksum, package_purpose, manifest_format_version
+           FROM handover_packages
+          WHERE org_id = $1 AND project_id = $2 AND id = $3 FOR UPDATE`,
+        [ctx.orgId, projectId, packageId],
+      );
+      const pkg = packages[0];
+      if (!pkg) throw new NotFoundException({ code: 'HANDOVER_PACKAGE_NOT_FOUND' });
+      if (pkg.row_version !== input.expectedRowVersion) {
+        throw new ConflictException({ code: 'PACKAGE_ROW_VERSION_CONFLICT' });
+      }
+      if (pkg.status !== 'FAILED' || pkg.pdf_object_id ||
+          pkg.package_purpose !== 'FULL_HANDOVER' || pkg.manifest_format_version !== 2) {
+        throw new ConflictException({ code: 'PACKAGE_NOT_RETRYABLE' });
+      }
+      const { rows: submitted } = await client.query(
+        `SELECT id FROM submissions
+          WHERE org_id = $1 AND project_id = $2 AND package_id = $3 LIMIT 1`,
+        [ctx.orgId, projectId, packageId],
+      );
+      if (submitted.length) throw new ConflictException({ code: 'PACKAGE_ALREADY_SUBMITTED' });
+      const { rows: liveSnapshots } = await client.query(
+        `SELECT id FROM checklist_snapshots
+          WHERE org_id = $1 AND project_id = $2 AND id = $3
+            AND checksum = $4 AND status = 'ACTIVE' FOR SHARE`,
+        [ctx.orgId, projectId, pkg.snapshot_id, pkg.snapshot_checksum],
+      );
+      if (!liveSnapshots.length) {
+        throw new ConflictException({ code: 'PACKAGE_SNAPSHOT_SUPERSEDED' });
+      }
+      const readiness = await evaluateReadinessInTransaction(client, ctx.orgId, projectId);
+      if (!readiness.readyWithoutOverride) {
+        throw new ConflictException({ code: 'PACKAGE_RETRY_READINESS_BLOCKED' });
+      }
+      const { rows: updated } = await client.query(
+        `UPDATE handover_packages
+            SET status = 'QUEUED', error_code = NULL, error_detail = NULL,
+                row_version = row_version + 1, updated_at = now()
+          WHERE org_id = $1 AND project_id = $2 AND id = $3
+            AND row_version = $4 AND status = 'FAILED'
+          RETURNING id, status, row_version`,
+        [ctx.orgId, projectId, packageId, input.expectedRowVersion],
+      );
+      if (!updated.length) throw new ConflictException({ code: 'PACKAGE_RETRY_CONFLICT' });
+      emit({
+        eventType: 'HANDOVER_PACKAGE_QUEUED',
+        projectId, entityType: 'HANDOVER_PACKAGE', entityId: packageId,
+        beforeJson: { status: 'FAILED', rowVersion: pkg.row_version },
+        afterJson: {
+          status: 'QUEUED', retry: true, versionNo: pkg.version_no,
+          reason: input.reason.trim(), snapshotChecksum: pkg.snapshot_checksum,
+          rowVersion: updated[0].row_version,
+        },
+      });
+      return { ...updated[0], packageId, retried: true };
     });
   }
 
@@ -623,9 +878,11 @@ export class HandoverService {
             AND dv.deleted_at IS NULL AND dv.superseded_at IS NULL
            JOIN storage_objects so
              ON so.org_id = dv.org_id AND so.id = dv.object_id
-            AND so.status = 'READY' AND so.sha256 IS NOT NULL
-            AND so.observed_size_bytes = so.size_bytes
-            AND so.provider_version_id IS NOT NULL
+            AND so.status = 'READY'
+              AND so.sha256 ~ '^[a-fA-F0-9]{64}$'
+              AND so.size_bytes > 0 AND so.observed_size_bytes = so.size_bytes
+              AND so.provider_version_id IS NOT NULL
+              AND btrim(lower(so.provider_version_id)) NOT IN ('', 'null', 'undefined', 'none', 'unversioned')
            LEFT JOIN assets a
              ON r.scope_key = ('asset:' || a.id::text) AND a.org_id = r.org_id AND a.project_id = r.project_id
           WHERE r.org_id = $1 AND r.project_id = $2
@@ -818,7 +1075,7 @@ export class HandoverService {
       const row = rows[0];
       if (!['READY', 'SUBMITTED', 'PARTIALLY_ACCEPTED', 'ACCEPTED'].includes(row.status) ||
           row.object_status !== 'READY' || row.mime !== 'application/pdf' ||
-          !row.provider_version_id || !row.sha256 || row.sha256 !== row.checksum ||
+          !isImmutableStorageVersion(row.provider_version_id) || !row.sha256 || row.sha256 !== row.checksum ||
           Number(row.observed_size_bytes) !== Number(row.size_bytes)) {
         throw new UnprocessableEntityException({
           code: 'PACKAGE_ARTIFACT_NOT_VERIFIED',
@@ -865,6 +1122,30 @@ export class HandoverService {
         detail: 'A handover submission must identify at least one required approver.',
       });
     }
+    const seenEmails = new Set<string>();
+    const seenRequiredParties = new Set<string>();
+    for (const recipient of dto.recipients) {
+      if (!recipient || typeof recipient.email !== 'string' ||
+          typeof recipient.name !== 'string' || !recipient.name.trim() ||
+          recipient.name.length > 200 ||
+          !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient.email.trim()) ||
+          recipient.email.length > 254 ||
+          (recipient.isRequiredApprover !== undefined &&
+            typeof recipient.isRequiredApprover !== 'boolean') ||
+          (recipient.partyId !== undefined &&
+            !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(recipient.partyId))) {
+        throw new UnprocessableEntityException('HANDOVER_RECIPIENT_INVALID');
+      }
+      const email = recipient.email.trim().toLowerCase();
+      if (seenEmails.has(email)) throw new UnprocessableEntityException('HANDOVER_RECIPIENT_DUPLICATE');
+      seenEmails.add(email);
+      if (recipient.isRequiredApprover !== false) {
+        if (!recipient.partyId || seenRequiredParties.has(recipient.partyId)) {
+          throw new UnprocessableEntityException('HANDOVER_REQUIRED_PARTY_INVALID');
+        }
+        seenRequiredParties.add(recipient.partyId);
+      }
+    }
     return withTenantTransaction(this.pool, ctx, async (client, emit) => {
       // The legacy packages/:id/submit route supplies only a package ID.
       // Resolve the project from that tenant-owned package, never from a
@@ -908,6 +1189,21 @@ export class HandoverService {
         });
       }
       const packageId = latest.id;
+      // Locking the latest package above serializes duplicate commands for this revision.
+      // A resend requires an explicit documented transition, not a second live submission.
+      const { rows: existingSubmission } = await client.query(
+        `SELECT id FROM submissions
+          WHERE org_id = $1 AND project_id = $2 AND package_id = $3
+            AND status NOT IN ('REJECTED', 'CANCELLED')
+          LIMIT 1`,
+        [ctx.orgId, targetProjectId, packageId],
+      );
+      if (existingSubmission.length) {
+        throw new ConflictException({
+          code: 'HANDOVER_SUBMISSION_ALREADY_EXISTS',
+          detail: 'This handover revision already has a submission. Use its current delivery and decision state.',
+        });
+      }
       const submissionId = uuidv7();
       await client.query(
         `INSERT INTO submissions (id, org_id, project_id, package_id, status, submitted_by, submitted_at, cover_note)
@@ -926,8 +1222,8 @@ export class HandoverService {
             targetProjectId,
             submissionId,
             rec.partyId || null,
-            rec.name,
-            rec.email,
+            rec.name.trim(),
+            rec.email.trim().toLowerCase(),
             rec.role || 'CLIENT',
             rec.isRequiredApprover ?? true,
           ],
@@ -946,6 +1242,7 @@ export class HandoverService {
         submissionId,
         packageId,
         status: 'SUBMITTED',
+        deliveryStatus: 'PENDING_DELIVERY',
         recipientsCount: dto.recipients.length,
       };
     });
@@ -1314,7 +1611,7 @@ export class HandoverService {
       if (record.status === 'COMPLETED' && this.storage) {
         const artifact = record.verification_receipt_json?.artifact;
         // Security Invariant (V06 / F06): Require verified immutable artifact identity; forbid unversioned fallback
-        if (!artifact?.objectId || !artifact?.objectKey || !artifact?.providerVersionId) {
+        if (!artifact?.objectId || !artifact?.objectKey || !isImmutableStorageVersion(artifact?.providerVersionId)) {
           throw new ConflictException({
             code: 'ARCHIVE_ARTIFACT_INTEGRITY_MISSING',
             detail: `Completed archive export ${exportId} lacks immutable artifact objectId, objectKey or providerVersionId.`,
@@ -1344,8 +1641,7 @@ export class HandoverService {
         // Security Invariant (Gap 3 / PA12): READY row must possess non-null provider_version_id, bucket, key,
         // authoritative observed_size_bytes matching declared size_bytes, and matching sha
         if (
-          !so.provider_version_id ||
-          so.provider_version_id === 'null' ||
+          !isImmutableStorageVersion(so.provider_version_id) ||
           !so.bucket ||
           !so.object_key ||
           !so.sha256 ||

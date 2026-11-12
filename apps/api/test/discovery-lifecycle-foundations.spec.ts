@@ -351,7 +351,9 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
         backdatingReason: 'OEM letter issued in physical dispatch package',
       });
 
-      expect(result.status).toBe('CONFIRMED');
+      expect(result.status).toBe('RECORDED');
+      expect(result.coverageUpdated).toBe(false);
+      expect(result.requiresIndependentVerification).toBe(true);
       expect(insertedWarrantyParams).toContain('DATE');
       expect(insertedWarrantyParams).toContain('OEM letter issued in physical dispatch package');
     });

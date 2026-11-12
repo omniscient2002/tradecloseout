@@ -2,6 +2,7 @@ import { Injectable, Optional, NotFoundException, UnprocessableEntityException }
 import { Pool } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { withTenantTransaction, TenantActorContext } from '@tradecloseout/db/tenant-tx';
+import { isImmutableStorageVersion } from '@tradecloseout/shared';
 
 export interface GspEinvoiceClient {
   generateIrn(payload: {
@@ -194,27 +195,51 @@ export class GstEinvoiceTdsService {
     certificateObjectId: string,
   ) {
     return withTenantTransaction(this.pool, ctx, async (client, emit) => {
-      const { rowCount } = await client.query(
+      const reference = form16aCertificateRef?.trim().toUpperCase();
+      if (!reference || reference.length > 160) {
+        throw new UnprocessableEntityException('FORM16A_REFERENCE_REQUIRED');
+      }
+      const { rows: tdsRows } = await client.query(
+        `SELECT id, status FROM invoice_tds WHERE org_id = $1 AND id = $2 FOR UPDATE`,
+        [ctx.orgId, tdsId],
+      );
+      if (!tdsRows.length) {
+        throw new NotFoundException({ code: 'NOT_FOUND', detail: 'TDS deduction record not found.' });
+      }
+      if (tdsRows[0].status === 'RECONCILED') {
+        throw new UnprocessableEntityException('FORM16A_ALREADY_RECONCILED');
+      }
+      const { rows: objects } = await client.query(
+        `SELECT status, mime, size_bytes, observed_size_bytes, sha256, provider_version_id
+           FROM storage_objects
+          WHERE org_id = $1 AND id = $2`,
+        [ctx.orgId, certificateObjectId],
+      );
+      const cert = objects[0];
+      if (!cert || cert.status !== 'READY' || cert.mime !== 'application/pdf' ||
+          !/^[a-f0-9]{64}$/i.test(String(cert.sha256 || '')) ||
+          !isImmutableStorageVersion(cert.provider_version_id) ||
+          !Number.isSafeInteger(Number(cert.size_bytes)) || Number(cert.size_bytes) <= 0 ||
+          Number(cert.observed_size_bytes) !== Number(cert.size_bytes)) {
+        throw new UnprocessableEntityException('FORM16A_CERTIFICATE_NOT_VERIFIED');
+      }
+      // Byte verification is necessary but NOT an independent tax-period/authority review.
+      // Keep this as uploaded evidence, not a legally reconciled tax deduction.
+      await client.query(
         `UPDATE invoice_tds
             SET certificate_reference = $3,
                 certificate_object_id = $4,
-                status = 'RECONCILED'
+                status = 'CERTIFICATE_UPLOADED'
           WHERE org_id = $1 AND id = $2`,
-        [ctx.orgId, tdsId, form16aCertificateRef.trim().toUpperCase(), certificateObjectId],
+        [ctx.orgId, tdsId, reference, certificateObjectId],
       );
-
-      if (rowCount === 0) {
-        throw new NotFoundException({ code: 'NOT_FOUND', detail: 'TDS deduction record not found.' });
-      }
-
       emit({
-        eventType: 'INVOICE_TDS_FORM16A_RECONCILED',
+        eventType: 'INVOICE_TDS_FORM16A_UPLOADED',
         entityType: 'INVOICE_TDS',
         entityId: tdsId,
-        afterJson: { form16aCertificateRef, status: 'RECONCILED' },
+        afterJson: { certificateReference: reference, certificateObjectId, status: 'CERTIFICATE_UPLOADED' },
       });
-
-      return { tdsId, status: 'RECONCILED', form16aCertificateRef };
+      return { tdsId, status: 'CERTIFICATE_UPLOADED', form16aCertificateRef: reference };
     });
   }
 

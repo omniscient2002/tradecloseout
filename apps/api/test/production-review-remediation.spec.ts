@@ -40,6 +40,7 @@ describe('Production Review Remediation Suite (NP01..NP06, NP09, NP10)', () => {
       const mockPool: any = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
+            if (sql.includes('SELECT id, status FROM projects')) return { rows: [{ id: projectId, status: 'ACTIVE' }] };
             if (sql.includes('SELECT * FROM quality_inspections')) {
               return {
                 rows: [
@@ -107,6 +108,7 @@ describe('Production Review Remediation Suite (NP01..NP06, NP09, NP10)', () => {
       const mockPool: any = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string) => {
+            if (sql.includes('SELECT id, status FROM projects')) return { rows: [{ id: projectId, status: 'ACTIVE' }] };
             if (sql.includes('SELECT * FROM seasonal_commissioning_schedules')) {
               return {
                 rows: [
@@ -140,6 +142,7 @@ describe('Production Review Remediation Suite (NP01..NP06, NP09, NP10)', () => {
       const mockPool: any = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
+            if (sql.includes('SELECT id, status FROM projects')) return { rows: [{ id: projectId, status: 'ACTIVE' }] };
             if (sql.includes('SELECT * FROM seasonal_commissioning_schedules')) {
               return {
                 rows: [
@@ -155,7 +158,11 @@ describe('Production Review Remediation Suite (NP01..NP06, NP09, NP10)', () => {
             }
             if (sql.includes('UPDATE seasonal_commissioning_schedules')) {
               updatedStatus = params[3];
-              return { rows: [] };
+              return { rows: [{
+                status: updatedStatus,
+                completed_at: '2026-11-12T09:00:00.000Z',
+                test_results_json: JSON.parse(params[4]),
+              }] };
             }
             return { rows: [] };
           }),
@@ -174,11 +181,45 @@ describe('Production Review Remediation Suite (NP01..NP06, NP09, NP10)', () => {
       expect(updatedStatus).toBe('PERFORMED');
     });
 
+    it('PH4-G13-004: refuses terminal seasonal reset without overwriting the accepted outcome', async () => {
+      let updates = 0;
+      const pool: any = { connect: jest.fn().mockResolvedValue({
+        query: jest.fn().mockImplementation(async (sql: string) => {
+          if (sql.includes('SELECT id, status FROM projects'))
+            return { rows: [{ id: projectId, status: 'ACTIVE' }] };
+          if (sql.includes('SELECT * FROM seasonal_commissioning_schedules'))
+            return { rows: [{ id: uuidv7(), status: 'PERFORMED',
+              completed_at: '2026-11-09T15:00:00.000Z', test_results_json: { cop: 4.8 } }] };
+          if (sql.includes('UPDATE seasonal_commissioning_schedules')) updates++;
+          return { rows: [] };
+        }),
+        release: jest.fn(),
+      }) };
+      await expect(new CommissioningService(pool).updateSeasonalSchedule(ctx, projectId, uuidv7(), {
+        status: 'SCHEDULED', notes: 'Invalid backwards transition',
+      })).rejects.toThrow(ConflictException);
+      expect(updates).toBe(0);
+    });
+
+    it('PH4-G13-004: denies arbitrary objects, nonfinite numbers and prototype state values', async () => {
+      const service = new CommissioningService({ connect: jest.fn() } as any);
+      for (const testResults of [{ value: 'pass' }, { cop: Infinity },
+        { 'script;alert': 23 }, {}, { cop: 1e20 }]) {
+        await expect(service.updateSeasonalSchedule(ctx, projectId, uuidv7(), {
+          status: 'PERFORMED', testResults,
+        })).rejects.toThrow(BadRequestException);
+      }
+      await expect(service.updateSeasonalSchedule(ctx, projectId, uuidv7(), {
+        status: '__proto__',
+      })).rejects.toThrow(BadRequestException);
+    });
+
     it('requires notes or reason when moving status to DEFERRED or WAIVED', async () => {
       const scheduleId = uuidv7();
       const mockPool: any = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string) => {
+            if (sql.includes('SELECT id, status FROM projects')) return { rows: [{ id: projectId, status: 'ACTIVE' }] };
             if (sql.includes('SELECT * FROM seasonal_commissioning_schedules')) {
               return {
                 rows: [
@@ -211,7 +252,7 @@ describe('Production Review Remediation Suite (NP01..NP06, NP09, NP10)', () => {
   // NP03: Warranty Events & Effective Asset Dates
   // --------------------------------------------------------------------------
   describe('NP03: Warranty Event Date Derivation and Coverage', () => {
-    it('extends effective warranty_end on assets when an EXTENSION event is confirmed', async () => {
+    it('records an unverified OEM extension without expanding asset coverage', async () => {
       const assetId = uuidv7();
       let updatedEnd = '';
       const mockPool: any = {
@@ -251,9 +292,12 @@ describe('Production Review Remediation Suite (NP01..NP06, NP09, NP10)', () => {
         basis: 'HANDOVER',
       });
 
-      expect(res.status).toBe('CONFIRMED');
+      expect(res.status).toBe('RECORDED');
       expect(res.hasBasisConflict).toBe(false);
-      expect(updatedEnd).toBe('2028-11-07');
+      expect(res.hasDateConflict).toBe(false);
+      expect(res.coverageUpdated).toBe(false);
+      expect(res.requiresIndependentVerification).toBe(true);
+      expect(updatedEnd).toBe('');
     });
 
     it('does not alter asset warranty dates when a CLAIM event is recorded', async () => {

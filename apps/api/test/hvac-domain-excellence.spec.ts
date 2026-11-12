@@ -309,8 +309,8 @@ describe('HVAC Domain Excellence Suite (XP11..XP18)', () => {
       const mockPool: any = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
-            if (sql.includes('SELECT id FROM projects')) {
-              return { rows: [{ id: projectId }] };
+            if (sql.includes('SELECT id, status FROM projects')) {
+              return { rows: [{ id: projectId, status: 'ACTIVE' }] };
             }
             if (sql.includes('INSERT INTO tab_worksheets')) {
               insertedRow = params;
@@ -341,12 +341,35 @@ describe('HVAC Domain Excellence Suite (XP11..XP18)', () => {
       expect(insertedRow).toBeDefined();
     });
 
+    it('PH4-G13-001: project closure lock rejects a new TAB record on CLOSED project', async () => {
+      const query = jest.fn().mockImplementation(async (sql: string) => {
+        if (sql.includes('SELECT id, status FROM projects')) {
+          expect(sql).toContain('FOR UPDATE');
+          return { rows: [{ id: projectId, status: 'CLOSED' }] };
+        }
+        if (sql.includes('INSERT INTO tab_worksheets')) {
+          throw new Error('ILLEGAL_CLOSED_PROJECT_WRITE');
+        }
+        return { rows: [] };
+      });
+      const mockPool: any = { connect: jest.fn().mockResolvedValue({
+        query,
+        release: jest.fn(),
+      }) };
+      await expect(new CommissioningService(mockPool).recordTabWorksheet(mockCtx, projectId, {
+        systemType: 'AIR_SIDE',
+        worksheetType: 'CLOSED_PROJECT_TEST',
+        readings: [{ terminalOrTag: 'AHU-001', designFlow: 500, actualFlow: 500, unit: 'CFM' }],
+      })).rejects.toMatchObject({ response: { code: 'PROJECT_COMMISSIONING_LIFECYCLE_BLOCKED' } });
+      expect(query.mock.calls.some(([sql]) => sql.includes('INSERT INTO tab_worksheets'))).toBe(false);
+    });
+
     it('sets status to NEEDS_REBALANCING when a reading exceeds allowable tolerance', async () => {
       const mockPool: any = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string) => {
-            if (sql.includes('SELECT id FROM projects')) {
-              return { rows: [{ id: projectId }] };
+            if (sql.includes('SELECT id, status FROM projects')) {
+              return { rows: [{ id: projectId, status: 'ACTIVE' }] };
             }
             if (sql.includes('INSERT INTO tab_worksheets')) {
               return { rowCount: 1 };
@@ -380,8 +403,8 @@ describe('HVAC Domain Excellence Suite (XP11..XP18)', () => {
       const mockPool: any = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
-            if (sql.includes('SELECT id FROM projects')) {
-              return { rows: [{ id: projectId }] };
+            if (sql.includes('SELECT id, status FROM projects')) {
+              return { rows: [{ id: projectId, status: 'ACTIVE' }] };
             }
             if (sql.includes('INSERT INTO quality_inspections')) {
               return { rowCount: 1 };
@@ -446,8 +469,8 @@ describe('HVAC Domain Excellence Suite (XP11..XP18)', () => {
       const mockPool: any = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string) => {
-            if (sql.includes('SELECT id FROM projects')) {
-              return { rows: [{ id: projectId }] };
+            if (sql.includes('SELECT id, status FROM projects')) {
+              return { rows: [{ id: projectId, status: 'ACTIVE' }] };
             }
             if (sql.includes('INSERT INTO seasonal_commissioning_schedules')) {
               return { rowCount: 1 };
@@ -997,14 +1020,14 @@ describe('HVAC Domain Excellence Suite (XP11..XP18)', () => {
 
         // Seed unrelated/generic storage object (manual without asset binding)
         await admin.query(`
-          INSERT INTO storage_objects (id, org_id, bucket, object_key, size_bytes, observed_size_bytes, mime, sha256, status, provider_version_id)
-          VALUES ($1, $2, 'vault', $3, 512, 512, 'application/pdf', $4, 'READY', 'v1')
+          INSERT INTO storage_objects (id, org_id, bucket, object_key, size_bytes, observed_size_bytes, mime, sha256, status, provider_version_id, av_scanned_at)
+          VALUES ($1, $2, 'vault', $3, 512, 512, 'application/pdf', $4, 'READY', 'v1', now())
         `, [otherEvidenceId, orgIdA, `orgs/${orgIdA}/projects/${projectA0}/manuals/general.pdf`, 'f'.repeat(64)]);
 
         // Seed remedy evidence storage object bound to defect in object_key
         await admin.query(`
-          INSERT INTO storage_objects (id, org_id, bucket, object_key, size_bytes, observed_size_bytes, mime, sha256, status, provider_version_id)
-          VALUES ($1, $2, 'vault', $3, 1024, 1024, 'image/jpeg', $4, 'READY', 'v1')
+          INSERT INTO storage_objects (id, org_id, bucket, object_key, size_bytes, observed_size_bytes, mime, sha256, status, provider_version_id, av_scanned_at)
+          VALUES ($1, $2, 'vault', $3, 1024, 1024, 'image/jpeg', $4, 'READY', 'v1', now())
         `, [remedyEvidenceId, orgIdA, `orgs/${orgIdA}/projects/${projectA0}/defects/${defectId}/photo.jpg`, 'e'.repeat(64)]);
 
         await admin.query(`
@@ -1016,6 +1039,17 @@ describe('HVAC Domain Excellence Suite (XP11..XP18)', () => {
           INSERT INTO document_versions (id, org_id, project_id, document_id, version_no, revision_code, object_id, file_status, review_status, issue_date, uploaded_by)
           VALUES ($1, $2, $3, $4, 1, 'R0', $5, 'READY', 'APPROVED', CURRENT_DATE, $6)
         `, [remedyVerId, orgIdA, projectA0, remedyDocId, remedyEvidenceId, seededUserId]);
+
+        // Link this immutable remedy to a current approved document version
+        // and the exact asset; the matching S3 key is intentionally irrelevant.
+        await admin.query(`
+          UPDATE documents SET current_approved_version_id = $1
+           WHERE org_id = $2 AND project_id = $3 AND id = $4
+        `, [remedyVerId, orgIdA, projectA0, remedyDocId]);
+        await admin.query(`
+          INSERT INTO document_assets (id, org_id, project_id, document_id, asset_id)
+          VALUES ($1, $2, $3, $4, $5)
+        `, [uuidv7(), orgIdA, projectA0, remedyDocId, assetA0]);
 
         // Insert OPEN critical defect bound to assetA0
         await admin.query(`

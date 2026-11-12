@@ -54,6 +54,10 @@ const RESOURCE_ROUTES: Array<[string,string,string[]]> = [
   ['/documents/','documents',['documentId','id']],
   ['/requirements/','requirements',['requirementId','id']],
   ['/assets/','assets',['assetId','id']],
+  // The legacy /defects/:id aliases have no explicit projectId. Resolve the
+  // actual defect before evaluating member/guest authority, never default to
+  // an organisation-wide grant for an unscoped mutation.
+  ['/defects/','defects',['defectId','id']],
   ['/reviews/','reviews',['reviewId','id']],
   ['/packages/','handover_packages',['packageId','id']],
   ['/guest-grants/','guest_grants',['grantId','id']],

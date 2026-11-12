@@ -48,9 +48,11 @@ export async function evaluateReadinessInTransaction(
               AND dv.review_status = 'APPROVED' AND dv.file_status = 'READY'
              JOIN storage_objects so
                ON so.org_id = dv.org_id AND so.id = dv.object_id
-              AND so.status = 'READY' AND so.sha256 IS NOT NULL
-              AND so.observed_size_bytes = so.size_bytes
+              AND so.status = 'READY'
+              AND so.sha256 ~ '^[a-fA-F0-9]{64}$'
+              AND so.size_bytes > 0 AND so.observed_size_bytes = so.size_bytes
               AND so.provider_version_id IS NOT NULL
+              AND btrim(lower(so.provider_version_id)) NOT IN ('', 'null', 'undefined', 'none', 'unversioned')
              WHERE dr.org_id = r.org_id AND dr.project_id = r.project_id
                AND dr.requirement_id = r.id
                AND NOT EXISTS (

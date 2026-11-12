@@ -337,6 +337,7 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
         orgId,
         userId: uuidv7(),
         actorType: 'MEMBER',
+        projectRole: 'R-QC',
         requestId: 'req-defect-1',
         ip: '127.0.0.1',
         userAgent: 'jest',
@@ -357,6 +358,10 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
       const mockPool: any = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
+            if (sql.includes('FROM projects') && sql.includes('FOR UPDATE')) {
+              return { rows: [{ id: projectId, status: 'ACTIVE',
+                closed_at: null, purged_at: null }] };
+            }
             if (sql.includes('FROM defects d')) {
               return {
                 rows: [
@@ -378,6 +383,11 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
                     id: closureEvidenceId,
                     status: 'READY',
                     object_key: `orgs/${orgId}/projects/${otherProjectId}/${closureEvidenceId}/source`,
+                    provider_version_id: 'immutable-version-1',
+                    sha256: 'a'.repeat(64),
+                    size_bytes: 512,
+                    observed_size_bytes: 512,
+                    av_scanned_at: '2026-11-12T10:00:00.000Z',
                     linked_in_project: false,
                     linked_in_other_project: true,
                   },
@@ -395,6 +405,7 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
         orgId,
         userId: uuidv7(),
         actorType: 'MEMBER',
+        projectRole: 'R-QC',
         requestId: 'req-defect-proj-mismatch',
         ip: '127.0.0.1',
         userAgent: 'jest',
@@ -414,6 +425,10 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
       const mockPool: any = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
+            if (sql.includes('FROM projects') && sql.includes('FOR UPDATE')) {
+              return { rows: [{ id: projectId, status: 'ACTIVE',
+                closed_at: null, purged_at: null }] };
+            }
             if (sql.includes('FROM defects d')) {
               return {
                 rows: [
@@ -439,6 +454,7 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
         orgId,
         userId: uuidv7(),
         actorType: 'MEMBER',
+        projectRole: 'R-QC',
         requestId: 'req-defect-version',
         ip: '127.0.0.1',
         userAgent: 'jest',
@@ -459,6 +475,10 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
       const mockPool: any = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
+            if (sql.includes('FROM projects') && sql.includes('FOR UPDATE')) {
+              return { rows: [{ id: projectId, status: 'ACTIVE',
+                closed_at: null, purged_at: null }] };
+            }
             if (sql.includes('FROM defects d')) {
               return {
                 rows: [
@@ -484,6 +504,7 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
         orgId,
         userId: assigneeUserId,
         actorType: 'MEMBER',
+        projectRole: 'R-QC',
         requestId: 'req-defect-self-close',
         ip: '127.0.0.1',
         userAgent: 'jest',
@@ -499,6 +520,7 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
       const projectId = uuidv7();
       const defectId = uuidv7();
       const remedyEvidenceId = uuidv7();
+      const remedyVersionId = uuidv7();
       const assigneeUserId = uuidv7();
       const independentVerifierId = uuidv7();
 
@@ -510,11 +532,21 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
         row_version: 1,
         assigned_user_id: assigneeUserId,
         closure_evidence_object_id: null as string | null,
+        remedy_document_version_id: null as string | null,
+        remedy_sha256: null as string | null,
+        remedy_provider_version_id: null as string | null,
+        remedy_size_bytes: null as number | null,
+        remedy_scanned_at: null as string | null,
+        remedy_asset_scope_ids: null as string[] | null,
       };
 
       const mockPool: any = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
+            if (sql.includes('FROM projects') && sql.includes('FOR UPDATE')) {
+              return { rows: [{ id: projectId, status: 'ACTIVE',
+                closed_at: null, purged_at: null }] };
+            }
             if (sql.includes('FROM defects d')) {
               return { rows: [{ ...currentDefect }] };
             }
@@ -525,12 +557,22 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
                     id: remedyEvidenceId,
                     status: 'READY',
                     object_key: `orgs/${orgId}/projects/${projectId}/${remedyEvidenceId}/source`,
+                    provider_version_id: 'immutable-version-1',
+                    sha256: 'a'.repeat(64),
+                    size_bytes: 512,
+                    observed_size_bytes: 512,
+                    av_scanned_at: '2026-11-12T10:00:00.000Z',
                     linked_in_project: true,
-                    linked_in_other_project: false,
+                    linked_to_defect_asset: true,
                   },
                 ],
               };
             }
+            if (sql.includes('FROM document_versions dv')) {
+              return { rows: [{ id: remedyVersionId, document_id: uuidv7(),
+                metadata_json: {remedyDefectId: defectId} }] };
+            }
+            if (sql.includes('FROM document_assets da')) return { rows: [] };
             if (sql.includes('UPDATE defects')) {
               if (sql.includes("status = 'RECTIFIED'")) {
                 currentDefect = {
@@ -538,6 +580,12 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
                   status: 'RECTIFIED',
                   row_version: 2,
                   closure_evidence_object_id: remedyEvidenceId,
+                  remedy_document_version_id: remedyVersionId,
+                  remedy_sha256: params[7],
+                  remedy_provider_version_id: params[8],
+                  remedy_size_bytes: params[9],
+                  remedy_scanned_at: params[10],
+                  remedy_asset_scope_ids: params[11],
                 };
                 return { rowCount: 1 };
               }
@@ -580,6 +628,7 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
         orgId,
         userId: independentVerifierId,
         actorType: 'MEMBER',
+        projectRole: 'R-QC',
         requestId: 'req-close-1',
         ip: '127.0.0.1',
         userAgent: 'jest',

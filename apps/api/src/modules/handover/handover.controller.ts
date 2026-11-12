@@ -56,6 +56,38 @@ export class HandoverController {
     return this.handoverService.requestHandoverPackageGeneration(req.userContext, projectId, dto);
   }
 
+  /** Cancel a queued/active/failed package before any READY publication. */
+  @Post('projects/:projectId/packages/:id/cancel')
+  @UseGuards(SessionCsrfGuard, PermissionGuard)
+  @RequirePermission('package.generate')
+  @RequireIdempotency()
+  async cancelHandoverPackage(
+    @Req() req: any,
+    @Param('projectId') projectId: string,
+    @Param('id') packageId: string,
+    @Body() dto: { expectedRowVersion: number; reason: string },
+  ) {
+    return this.handoverService.cancelHandoverPackage(
+      req.userContext, projectId, packageId, dto,
+    );
+  }
+
+  /** Re-queue a failed immutable full-handover manifest; never replay accepted output. */
+  @Post('projects/:projectId/packages/:id/retry')
+  @UseGuards(SessionCsrfGuard, PermissionGuard)
+  @RequirePermission('package.generate')
+  @RequireIdempotency()
+  async retryHandoverPackage(
+    @Req() req: any,
+    @Param('projectId') projectId: string,
+    @Param('id') packageId: string,
+    @Body() dto: { expectedRowVersion: number; reason: string },
+  ) {
+    return this.handoverService.retryHandoverPackage(
+      req.userContext, projectId, packageId, dto,
+    );
+  }
+
   /**
    * API-111: GET /api/v1/packages/:id
    */

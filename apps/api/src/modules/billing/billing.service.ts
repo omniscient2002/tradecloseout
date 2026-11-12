@@ -133,17 +133,37 @@ export class BillingService {
       certificateReference?: string;
     },
   ) {
+    if (!Number.isSafeInteger(dto.amountPaise) || dto.amountPaise <= 0 ||
+        !Number.isInteger(dto.rateBps) || dto.rateBps < 0 || dto.rateBps > 10000 ||
+        !['194J_A_2PCT', '194J_B_10PCT', '194C'].includes(dto.section)) {
+      throw new BadRequestException('INVALID_TDS_DEDUCTION');
+    }
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+      // Serialise every deduction for this invoice using its row lock.
       const invRes = await client.query(
-        `SELECT * FROM invoices WHERE org_id = $1 AND id = $2`,
+        `SELECT total_paise, status FROM invoices WHERE org_id = $1 AND id = $2 FOR UPDATE`,
         [ctx.orgId, invoiceId],
       );
       if (!invRes.rows.length) {
         throw new NotFoundException('INVOICE_NOT_FOUND');
       }
+      const invoice = invRes.rows[0];
+      if (['VOID', 'CANCELLED', 'REFUNDED'].includes(invoice.status)) {
+        throw new ConflictException('INVOICE_NOT_ELIGIBLE_FOR_TDS');
+      }
+      const invoiceTotal = BigInt(invoice.total_paise);
+      const { rows: [totals] } = await client.query(
+        `SELECT COALESCE(SUM(amount_paise), 0)::text AS amount_paise
+           FROM invoice_tds WHERE org_id = $1 AND invoice_id = $2`,
+        [ctx.orgId, invoiceId],
+      );
+      if (invoiceTotal <= 0n || BigInt(totals.amount_paise) + BigInt(dto.amountPaise) > invoiceTotal) {
+        throw new BadRequestException('TDS_EXCEEDS_INVOICE_BALANCE');
+      }
 
       const tdsId = uuidv7();
-      const status = dto.certificateReference ? 'CERTIFICATE_UPLOADED' : 'PENDING_CERTIFICATE';
+      // A typed customer reference is not proof of a reviewed Form 16A PDF.
+      const status = 'PENDING_CERTIFICATE';
 
       const res = await client.query(
         `INSERT INTO invoice_tds (

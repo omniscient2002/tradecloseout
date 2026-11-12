@@ -1,4 +1,4 @@
-import { PDFDocument, StandardFonts, rgb, PDFName, PDFString, PDFDict } from 'pdf-lib';
+import { PDFDocument, StandardFonts, rgb, PDFName, PDFString, PDFDict, PDFArray } from 'pdf-lib';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { createHash } from 'crypto';
@@ -67,6 +67,79 @@ function drawSafePdfText(
     font,
     color: options.color,
   });
+}
+
+/**
+ * Fail closed on active actions before merging third-party source PDFs.
+ * The original immutable source remains in storage; unsafe PDFs must never
+ * reach a generated customer dossier, even if qpdf's page copying preserves
+ * page-level additional actions (/AA).
+ */
+export async function assertPdfHasNoActiveActions(pdfPath: string, qpdfAvailable: boolean): Promise<void> {
+  const unsafeKeys = new Set([
+    '/AA', '/OpenAction', '/JS', '/JavaScript', '/Launch', '/EmbeddedFiles',
+    '/RichMedia', '/XFA', '/AcroForm', '/Movie', '/Sound', '/Rendition',
+    '/SubmitForm', '/ImportData', '/ResetForm',
+  ]);
+  if (qpdfAvailable) {
+    const { stdout } = await execFileAsync('qpdf', ['--json', pdfPath], {
+      timeout: 25_000,
+      maxBuffer: 32 * 1024 * 1024,
+    });
+    // Parse structural keys, never scan raw PDF strings for action words.
+    const data: unknown = JSON.parse(stdout);
+    const stack: unknown[] = [data];
+    let visited = 0;
+    while (stack.length) {
+      if (++visited > 250_000) throw new Error('PDF_STRUCTURE_COMPLEXITY_LIMIT');
+      const current = stack.pop();
+      if (!current || typeof current !== 'object') continue;
+      if (Array.isArray(current)) {
+        stack.push(...current);
+        continue;
+      }
+      for (const [key, value] of Object.entries(current)) {
+        if (unsafeKeys.has(key) || (key === '/A' && value != null)) {
+          throw new Error('PDF_ACTIVE_CONTENT_REJECTED');
+        }
+        if (value && typeof value === 'object') stack.push(value);
+      }
+    }
+    return;
+  }
+
+  const bytes = await readFile(pdfPath);
+  if (bytes.length > 128 * 1024 * 1024) throw new Error('PACKAGE_QPDF_REQUIRED_FOR_LARGE_INPUT');
+  const doc = await PDFDocument.load(bytes, { ignoreEncryption: false });
+  if (doc.isEncrypted) throw new Error('PDF_ENCRYPTED_REJECTED');
+  if (doc.getPageCount() < 1 || doc.getPageCount() > 1000 ||
+      doc.context.enumerateIndirectObjects().length > 25000) {
+    throw new Error('PDF_STRUCTURE_LIMIT_EXCEEDED');
+  }
+  const visited = new Set<unknown>();
+  const stack: unknown[] = [doc.catalog, ...doc.getPages().map(page => page.node),
+    ...doc.context.enumerateIndirectObjects().map(([, obj]) => obj)];
+  let inspected = 0;
+  while (stack.length) {
+    const current = stack.pop();
+    if (visited.has(current)) continue;
+    visited.add(current);
+    if (++inspected > 250_000) throw new Error('PDF_STRUCTURE_COMPLEXITY_LIMIT');
+    if (current instanceof PDFDict) {
+      for (const [key, value] of current.entries()) {
+        if (unsafeKeys.has(key.toString()) || key.toString() === '/A') {
+          throw new Error('PDF_ACTIVE_CONTENT_REJECTED');
+        }
+        const resolved = doc.context.lookup(value);
+        if (resolved instanceof PDFDict || resolved instanceof PDFArray) stack.push(resolved);
+      }
+    } else if (current instanceof PDFArray) {
+      for (let i = 0; i < current.size(); i++) {
+        const value = doc.context.lookup(current.get(i));
+        if (value instanceof PDFDict || value instanceof PDFArray) stack.push(value);
+      }
+    }
+  }
 }
 
 export interface PdfBombAndSanitizeResult {
@@ -140,24 +213,10 @@ export async function sanitizeAndCheckPdfBomb(
       };
     }
 
-    // 4. Inspect JSON structure for active content (/JS, /JavaScript, /Launch, /OpenAction, /AA) (TC2-028)
-    const { stdout: jsonOut } = await execFileAsync('qpdf', ['--json', inputPath], {
-      timeout: 25_000,
-      maxBuffer: 32 * 1024 * 1024,
-    });
-    const dangerousMatches =
-      jsonOut.match(/"\/(JS|JavaScript|Launch|EmbeddedFiles|RichMedia)"/g) ?? [];
-
-    if (jsonOut.includes('"/Launch"') || jsonOut.includes('"/OpenAction"')) {
-      return {
-        safe: false,
-        pageCount,
-        objectCount: objectLines,
-        strippedScriptsCount: dangerousMatches.length,
-        failureCode: 'MALICIOUS_PDF_ACTIVE_CONTENT',
-        failureDetail: 'Executable launch or active OpenAction detected in PDF.',
-      };
-    }
+    // 4. Inspect the structured object tree; no qpdf rewrite is assumed safe.
+    // A qpdf rewrite is NOT sanitization: it can preserve /AA JavaScript actions.
+    // Reject unsafe input instead of reporting a fictitious removed-script count.
+    await assertPdfHasNoActiveActions(inputPath, true);
 
     // 5. Rewrite & linearize PDF via qpdf, flattening annotations and removing attachments
     await execFileAsync(
@@ -172,11 +231,12 @@ export async function sanitizeAndCheckPdfBomb(
       { timeout: 60_000 },
     );
 
+    await assertPdfHasNoActiveActions(sanitizedOutputPath, true);
     return {
       safe: true,
       pageCount,
       objectCount: objectLines,
-      strippedScriptsCount: dangerousMatches.length,
+      strippedScriptsCount: 0,
     };
   } catch (err: any) {
     if (err.code === 'ENOENT') {
@@ -218,10 +278,12 @@ export async function sanitizeAndCheckPdfBomb(
           };
         }
 
-        // Strip active content in fallback (OpenAction, AA, JavaScript, Names, Launch, Annotations, Chained actions) (FV04, FV07)
+        // Never attest to a sanitized PDF if the original contained executable actions.
+        await assertPdfHasNoActiveActions(inputPath, false);
         sanitizePdfDoc(doc);
 
         await writeFile(sanitizedOutputPath, await doc.save({ useObjectStreams: true }));
+        await assertPdfHasNoActiveActions(sanitizedOutputPath, false);
         return {
           safe: true,
           pageCount: count,
@@ -285,12 +347,14 @@ export async function compileHandoverDossierStreamingQpdf(
           timeout: 10_000,
         });
         sourcePageCounts.push(parseInt(stdout.trim(), 10) || 1);
+        await assertPdfHasNoActiveActions(src.localPath, true);
       } catch (err: any) {
         if (err.code === 'ENOENT') {
           qpdfAvailable = false;
           const bytes = await readFile(src.localPath);
           const doc = await PDFDocument.load(bytes);
           sourcePageCounts.push(doc.getPageCount());
+          await assertPdfHasNoActiveActions(src.localPath, false);
         } else {
           throw err;
         }
@@ -485,6 +549,8 @@ export async function compileHandoverDossierStreamingQpdf(
         // The artifact itself remains valid; bookmarks are a navigation enhancement.
       }
     }
+    // A second structural inspection is mandatory after merge and bookmark injection.
+    await assertPdfHasNoActiveActions(outputPath, qpdfAvailable);
     const finalPdfSha256 = fileStats.size <= 64 * 1024 * 1024
       ? await streamSha256(outputPath)
       : pdfSha256;

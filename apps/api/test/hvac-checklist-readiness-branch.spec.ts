@@ -159,7 +159,7 @@ describe('HVAC checklist and readiness release gates', () => {
     const svc = new HandoverService(pool, {} as any);
     await expect(svc.createSubmission(ctx, projectId, {
       packageId: 'pkg-1',
-      recipients: [{ name: 'Client', email: 'client@example.com', isRequiredApprover: true }],
+      recipients: [{ name: 'Client', partyId: '0192e3a0-4000-7000-8000-000000000004', email: 'client@example.com', isRequiredApprover: true }],
     })).rejects.toThrow(ConflictException);
   });
 
@@ -176,7 +176,7 @@ describe('HVAC checklist and readiness release gates', () => {
     const svc = new HandoverService(pool, {} as any);
     const res = await svc.createSubmission(ctx, '', {
       packageId: 'pkg-1',
-      recipients: [{ name: 'Client', email: 'client@example.com', isRequiredApprover: true }],
+      recipients: [{ name: 'Client', partyId: '0192e3a0-4000-7000-8000-000000000004', email: 'client@example.com', isRequiredApprover: true }],
     });
     expect(res.status).toBe('SUBMITTED');
     const insert = client.query.mock.calls.find(([sql]: any[]) => sql.includes('INSERT INTO submissions'));

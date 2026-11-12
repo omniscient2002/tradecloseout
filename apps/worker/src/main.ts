@@ -1,4 +1,5 @@
 import { Pool } from 'pg';
+import { uuidv7 } from 'uuidv7';
 import Redis from 'ioredis';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
@@ -302,7 +303,8 @@ async function bootWorker() {
               await client.query(
                 `UPDATE storage_objects
                     SET status = 'READY',
-                        sha256 = COALESCE($3, sha256),
+                        sha256 = $3,
+                        av_scanned_at = now(),
                         updated_at = now()
                   WHERE id = $1 AND org_id = $2 AND status = 'PROCESSING'
                     AND provider_version_id = $4`,
@@ -376,11 +378,16 @@ async function bootWorker() {
     'pdf-compilation',
     async (job) => {
       console.log(`[BullMQ] Compiling PDF package job ${job.id}`);
+      const attemptOwner = `PACKAGE_ATTEMPT:${uuidv7()}`;
       try {
-        return await compileAndPersistHandoverPackage(pool, s3, job.data, String(job.id), qpdfAvailable);
+        return await compileAndPersistHandoverPackage(
+          pool, s3, job.data, String(job.id), qpdfAvailable, attemptOwner,
+        );
       } catch (err) {
         if (job.attemptsMade + 1 >= Number(job.opts.attempts || 1)) {
-          await markHandoverPackageFailed(pool, job.data, String(job.id), err);
+          // CAS only the owner of this specific attempt. A stalled retry must
+          // never mark another live worker's package as failed.
+          await markHandoverPackageFailed(pool, job.data, String(job.id), err, attemptOwner);
         }
         throw err;
       }
@@ -461,9 +468,8 @@ async function bootWorker() {
   });
   pdfWorker.on('failed', (job, err) => {
     console.error(`Job ${job?.id} failed:`, err);
-    if (job && job.attemptsMade >= Number(job.opts.attempts || 1)) {
-      void markHandoverPackageFailed(pool, job.data, String(job.id), err);
-    }
+    // The processor catch handles terminal failure with its unique attempt
+    // owner. An event listener lacks that token and must not mutate a package.
   });
   formatWorker.on('failed', (job, err) => console.error(`Job ${job?.id} failed:`, err));
 

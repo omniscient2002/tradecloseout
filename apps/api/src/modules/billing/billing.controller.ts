@@ -130,7 +130,7 @@ export class BillingController {
 
   @Get('projects/:id/defects')
   @UseGuards(SessionCsrfGuard, PermissionGuard)
-  @RequirePermission('document.read')
+  @RequirePermission('defect.manage')
   async listDefects(@Req() req: any, @Param('id') projectId: string) {
     return this.warrantyAndBillingService.listDefects(req.userContext, projectId);
   }
@@ -146,8 +146,11 @@ export class BillingController {
       title: string;
       description?: string;
       assetId?: string;
-      severity?: 'MINOR' | 'MAJOR' | 'CRITICAL';
+      severity?: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' | 'MINOR' | 'MAJOR';
       location?: string;
+      caseType?: 'CLOSEOUT' | 'AFTERCARE';
+      postHandoverReason?: string;
+      aftercareReference?: string;
     },
   ) {
     return this.warrantyAndBillingService.createDefect(req.userContext, projectId, dto);
@@ -186,6 +189,99 @@ export class BillingController {
       defectId,
       dto.closureEvidenceObjectId,
       dto.expectedRowVersion,
+    );
+  }
+
+  @Post('projects/:projectId/defects/:id/assign')
+  @UseGuards(SessionCsrfGuard, PermissionGuard)
+  @RequirePermission('defect.manage')
+  async assignDefect(
+    @Req() req: any,
+    @Param('projectId') projectId: string,
+    @Param('id') defectId: string,
+    @Body() dto: {
+      expectedRowVersion: number;
+      assignedUserId?: string | null;
+      assignedPartyId?: string | null;
+      dueAt?: string | null;
+      reason?: string;
+    },
+  ) {
+    return this.warrantyAndBillingService.assignDefect(
+      req.userContext, projectId, defectId, dto,
+    );
+  }
+
+  @Post('projects/:projectId/defects/:id/severity')
+  @UseGuards(SessionCsrfGuard, PermissionGuard)
+  @RequirePermission('defect.manage')
+  async updateDefectSeverity(
+    @Req() req: any,
+    @Param('projectId') projectId: string,
+    @Param('id') defectId: string,
+    @Body() dto: {
+      expectedRowVersion: number;
+      severity: 'LOW'|'MEDIUM'|'HIGH'|'CRITICAL'|'MINOR'|'MAJOR';
+      reason: string;
+    },
+  ) {
+    return this.warrantyAndBillingService.updateDefectSeverity(
+      req.userContext, projectId, defectId, dto,
+    );
+  }
+
+  @Post('projects/:projectId/defects/:id/reject-remedy')
+  @UseGuards(SessionCsrfGuard, PermissionGuard)
+  @RequirePermission('defect.manage')
+  async rejectDefectRemedy(
+    @Req() req: any,
+    @Param('projectId') projectId: string,
+    @Param('id') defectId: string,
+    @Body() dto: { expectedRowVersion: number; reason: string },
+  ) {
+    return this.warrantyAndBillingService.rejectDefectRemedy(
+      req.userContext, projectId, defectId, dto,
+    );
+  }
+
+  @Post('projects/:projectId/defects/:id/waive')
+  @UseGuards(SessionCsrfGuard, PermissionGuard)
+  @RequirePermission('defect.manage')
+  async waiveDefect(
+    @Req() req: any,
+    @Param('projectId') projectId: string,
+    @Param('id') defectId: string,
+    @Body() dto: { expectedRowVersion: number; reason: string },
+  ) {
+    return this.warrantyAndBillingService.waiveDefect(
+      req.userContext, projectId, defectId, dto,
+    );
+  }
+
+  @Post('projects/:projectId/defects/:id/reopen')
+  @UseGuards(SessionCsrfGuard, PermissionGuard)
+  @RequirePermission('defect.manage')
+  async reopenDefect(
+    @Req() req: any,
+    @Param('projectId') projectId: string,
+    @Param('id') defectId: string,
+    @Body() dto: { expectedRowVersion: number; reason: string },
+  ) {
+    return this.warrantyAndBillingService.reopenDefect(
+      req.userContext, projectId, defectId, dto,
+    );
+  }
+
+  @Get('projects/:projectId/defects/:id/history')
+  @UseGuards(SessionCsrfGuard, PermissionGuard)
+  @RequirePermission('defect.manage')
+  async listDefectTransitions(
+    @Req() req: any,
+    @Param('projectId') projectId: string,
+    @Param('id') defectId: string,
+  ) {
+    return this.warrantyAndBillingService.listDefectTransitions(
+      req.userContext, projectId, defectId,
     );
   }
 

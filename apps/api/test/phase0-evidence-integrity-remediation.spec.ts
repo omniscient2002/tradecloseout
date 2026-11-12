@@ -398,6 +398,12 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
             executedQueries.push({ sql, params });
+            if (sql.includes('SELECT id, status, closed_at, purged_at') &&
+                sql.includes('FROM projects')) {
+              expect(sql).toContain('FOR UPDATE');
+              return { rows: [{ id: projectId, status: 'ACTIVE',
+                closed_at: null, purged_at: null }] };
+            }
             if (sql.includes('SELECT d.*, a.tag AS asset_tag')) {
               return { rows: [{ id: 'def-1', title: 'Damper stuck', raised_at: new Date() }] };
             }
@@ -644,7 +650,7 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
       expect(passport.readiness.isDlpReady).toBe(true);
     });
 
-    it('evaluates commercial readiness and gates retention release on accepted handover and 0 defects', async () => {
+    it('reports informational readiness without granting unreviewed retention release', async () => {
       const mockPool = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string) => {
@@ -661,7 +667,17 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
                 ],
               };
             }
-            if (sql.includes('COUNT(*) FILTER (WHERE mandatory = true)')) {
+            if (sql.includes('FROM checklist_snapshots')) {
+              return { rows: [{ resolved_payload_json: { requirements: [{ key: 'DOC-01' }] } }] };
+            }
+            if (sql.includes('FROM requirements r') &&
+                !sql.includes('COUNT(*) FILTER')) {
+              return { rows: [{
+                mandatory: true, status: 'APPROVED', has_approved_evidence: true,
+                has_valid_waiver: false, has_expired_approved_evidence: false,
+              }] };
+            }
+            if (sql.includes('COUNT(*) FILTER (WHERE r.mandatory = true)')) {
               return {
                 rows: [
                   {
@@ -696,8 +712,10 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
       const billingService = new WarrantyAndBillingService(mockPool);
       const readiness = await billingService.getCommercialReadiness(mockTenantActorCtx, projectId);
 
-      expect(readiness.commercialReadiness.isRetentionEligible).toBe(true);
-      expect(readiness.commercialReadiness.releaseStatus).toBe('ELIGIBLE');
+      expect(readiness.commercialReadiness.isRetentionEligible).toBe(false);
+      expect(readiness.commercialReadiness.advisoryPreconditionsMet).toBe(true);
+      expect(readiness.commercialReadiness.releaseStatus).toBe('INFORMATIONAL_ONLY');
+      expect(readiness.commercialReadiness.financeApprovalVerified).toBe(false);
       expect(readiness.mandatoryRequirements.satisfactionPercentage).toBe(100);
       expect(readiness.handover.hasAcceptedSubmission).toBe(true);
     });
