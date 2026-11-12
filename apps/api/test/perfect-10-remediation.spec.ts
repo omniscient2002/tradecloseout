@@ -183,19 +183,18 @@ describe('Perfect 10 Remediation & Hardening Test Suite', () => {
   // FIX 3 & Bug 2: Quota Soft Check & Accurate Storage Reconciliation
   // --------------------------------------------------------------------------
   describe('Fix 3 & Bug 2: Accurate Storage Quota Reconciliation', () => {
-    it('createUploadIntent performs soft check and rejects when ceiling exceeded', async () => {
+    it('createUploadIntent accounts for pending capacity and rejects when ceiling exceeded', async () => {
       const mockPool = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation((sql: string) => {
-            if (sql.includes('SELECT uc.value AS current_storage')) {
-              return Promise.resolve({
-                rows: [
-                  {
-                    current_storage: '950000000', // ~950 MB used
-                    limits_json: { maxStorageBytes: 1000000000 }, // 1 GB ceiling
-                  },
-                ],
-              });
+            if (sql.includes("maxStorageBytes' AS max_storage_bytes")) {
+              return Promise.resolve({ rows: [{ max_storage_bytes: '1000000000' }] });
+            }
+            if (sql.includes("metric='STORAGE_BYTES'") && sql.includes('FOR UPDATE')) {
+              return Promise.resolve({ rows: [{ value: '950000000' }] });
+            }
+            if (sql.includes('SUM(size_bytes)')) {
+              return Promise.resolve({ rows: [{ reserved_bytes: '0' }] });
             }
             return Promise.resolve({ rows: [] });
           }),
