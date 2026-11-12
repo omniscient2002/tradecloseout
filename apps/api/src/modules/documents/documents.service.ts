@@ -87,12 +87,24 @@ export class DocumentsService {
          JOIN document_versions dv
            ON dv.org_id = g.org_id AND dv.project_id = g.project_id
           AND dv.uploaded_by_grant_id = g.id AND dv.id = $3
-         JOIN document_requirements dr
-           ON dr.org_id = dv.org_id AND dr.project_id = dv.project_id AND dr.document_id = dv.document_id
+         JOIN documents d ON d.org_id = dv.org_id AND d.project_id = dv.project_id
+          AND d.id = dv.document_id AND d.deleted_at IS NULL
+         JOIN projects p ON p.org_id = d.org_id AND p.id = d.project_id
         WHERE g.org_id = $1 AND g.id = $2 AND g.status = 'ACTIVE' AND g.expires_at > now()
-          AND g.capabilities @> ARRAY[$4]::text[]
-          AND COALESCE(g.scope_json->'requirementIds', '[]'::jsonb) ? dr.requirement_id::text
-        LIMIT 1`,
+          AND dv.deleted_at IS NULL AND g.capabilities @> ARRAY[$4]::text[]
+          AND ($4 <> 'document.upload' OR p.status IN ('ACTIVE', 'HANDOVER'))
+          AND jsonb_typeof(g.scope_json->'requirementIds') = 'array'
+          AND EXISTS (
+            SELECT 1 FROM document_requirements dr
+             WHERE dr.org_id = d.org_id AND dr.project_id = d.project_id
+               AND dr.document_id = d.id)
+          AND NOT EXISTS (
+            SELECT 1 FROM document_requirements dr
+             WHERE dr.org_id = d.org_id AND dr.project_id = d.project_id
+               AND dr.document_id = d.id
+               AND NOT (g.scope_json->'requirementIds' ? dr.requirement_id::text))
+        LIMIT 1
+        FOR SHARE OF g, p`,
       [ctx.orgId, ctx.guestGrantId, versionId, capability],
     );
     if (!rows.length) throw new NotFoundException('VERSION_NOT_FOUND');
@@ -243,11 +255,20 @@ export class DocumentsService {
              JOIN document_versions dv
                ON dv.org_id = d.org_id AND dv.project_id = d.project_id AND dv.document_id = d.id
               AND dv.uploaded_by_grant_id = g.id AND dv.deleted_at IS NULL
-             JOIN document_requirements dr
-               ON dr.org_id = d.org_id AND dr.project_id = d.project_id AND dr.document_id = d.id
+             JOIN projects p ON p.org_id = d.org_id AND p.id = d.project_id
             WHERE g.org_id = $1 AND g.id = $2 AND g.status = 'ACTIVE' AND g.expires_at > now()
-              AND g.capabilities @> ARRAY['document.upload']::text[] AND d.deleted_at IS NULL
-              AND COALESCE(g.scope_json->'requirementIds', '[]'::jsonb) ? dr.requirement_id::text
+              AND g.capabilities @> ARRAY['document.upload']::text[]
+              AND d.deleted_at IS NULL AND p.status NOT IN ('CANCELLED', 'SUSPENDED')
+              AND jsonb_typeof(g.scope_json->'requirementIds') = 'array'
+              AND EXISTS (
+                SELECT 1 FROM document_requirements dr
+                 WHERE dr.org_id = d.org_id AND dr.project_id = d.project_id
+                   AND dr.document_id = d.id)
+              AND NOT EXISTS (
+                SELECT 1 FROM document_requirements dr
+                 WHERE dr.org_id = d.org_id AND dr.project_id = d.project_id
+                   AND dr.document_id = d.id
+                   AND NOT (g.scope_json->'requirementIds' ? dr.requirement_id::text))
             ORDER BY dv.version_no DESC`,
           [ctx.orgId, ctx.guestGrantId, documentId],
         );
