@@ -42,6 +42,17 @@ describe('PH3-G10-002 — immutable provider receipt contract', () => {
     },
   );
 
+  it('does not refresh multipart upload URLs when bucket versioning was suspended', async () => {
+    const send = jest.fn(async (command: any) => {
+      if (command instanceof GetBucketVersioningCommand) return { Status: 'Suspended' };
+      throw new Error('NO_MULTIPART_URL_EXPECTED');
+    });
+    await expect(storage(send).refreshUploadUrls({
+      objectKey: 'test/evidence.pdf', uploadId: 'upload-1', sizeBytes: 10 * 1024 * 1024,
+    })).rejects.toThrow('OBJECT_STORAGE_VERSIONING_NOT_ENABLED');
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
   it.each([undefined, null, '', 'null', ' NULL '])(
     'rejects a same-size single-part object without a pinned version %p', async (version) => {
       const send = jest.fn(async (command: any) => {
