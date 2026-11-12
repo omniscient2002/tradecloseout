@@ -61,7 +61,7 @@ export class WorkItemsService {
         (query.type && !validTypes.has(query.type)) ||
         (query.priority && !validPriorities.has(query.priority)) ||
         (query.limit !== undefined && (!Number.isSafeInteger(query.limit) || query.limit < 1 || query.limit > 100)) ||
-        (query.offset !== undefined && (!Number.isSafeInteger(query.offset) || query.offset < 0))) {
+        (query.offset !== undefined && (!Number.isSafeInteger(query.offset) || query.offset < 0 || query.offset > 1_000_000))) {
       throw new BadRequestException('INVALID_WORK_QUEUE_FILTER');
     }
     const limit = query.limit ?? 50;
@@ -421,7 +421,13 @@ export class WorkItemsService {
         )
         SELECT totals.*,
           COALESCE((
-            SELECT jsonb_agg(to_jsonb(page))
+            SELECT jsonb_agg(
+              to_jsonb(page)
+              ORDER BY CASE page.priority
+                WHEN 'CRITICAL' THEN 1 WHEN 'HIGH' THEN 2
+                WHEN 'MEDIUM' THEN 3 ELSE 4 END,
+                page.created_at DESC, page.entity_id DESC
+            )
               FROM (
                 SELECT * FROM visible
                  ORDER BY CASE priority
