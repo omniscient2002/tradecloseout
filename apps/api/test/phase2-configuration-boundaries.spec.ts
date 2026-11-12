@@ -70,6 +70,30 @@ describe('Phase 2 configuration fail-closed boundaries', () => {
     ]));
   });
 
+  it('does not treat differently ordered locked JSON objects as a policy change', () => {
+    const platform = layer('PLATFORM', { 'security.allowed_mime_types': [
+      { mime: 'application/pdf', reviewed: true },
+    ] });
+    const project = layer('PROJECT', { 'security.allowed_mime_types': [
+      { reviewed: true, mime: 'application/pdf' },
+    ] });
+    const result = resolveConfigV021({ PLATFORM: platform, PROJECT: project });
+    expect(result.conflicts).toHaveLength(0);
+    expect(result.provenance['security.allowed_mime_types']).toMatchObject({
+      level: 'PLATFORM',
+    });
+  });
+
+  it('does not allow a source layer to omit or forge its immutable version identity', () => {
+    const result = resolveConfigV021({
+      PROJECT: { ...layer('PROJECT', { 'naming.pattern': 'unsafe' }), versionId: '' },
+    });
+    expect(result.payload['naming.pattern']).toBeUndefined();
+    expect(result.conflicts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: '$versionId' }),
+    ]));
+  });
+
   it('keeps authoritative provenance when a child restates a locked requirement identically', () => {
     const protectedRequirement = {
       key: 'SAFE-DOC', locked: true, mandatory: true,
