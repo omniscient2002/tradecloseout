@@ -80,6 +80,10 @@ export class IdentityController {
       });
     }
 
+    // Reject missing key configuration before consuming a rate-limit budget or
+    // issuing a challenge. Never mint an offline-brute-forceable fallback hash.
+    const otpKey = this.otpHmacKey();
+
     // Rate limit: max 5 OTP requests / hour / identifier (10 §10), atomic Lua increment and expiry
     const isProductionLike = process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging';
     const isExplicitDebug = process.env.ENABLE_DEBUG_OTP === 'true' && !isProductionLike;
@@ -99,7 +103,7 @@ export class IdentityController {
     const challengeId = uuidv7();
     const otp = String(randomInt(100000, 999999));
     const salt = randomBytes(16).toString('hex');
-    const otpMac = createHmac('sha256', this.otpHmacKey())
+    const otpMac = createHmac('sha256', otpKey)
       .update(`tradecloseout:otp:v1:${challengeId}:${salt}:${otp}`).digest('hex');
     const challengePayload = JSON.stringify({ id: challengeId, identifier: rawId, salt, otpMac, attempts: 0 });
 
