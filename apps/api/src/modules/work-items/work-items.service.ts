@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Pool } from 'pg';
-import { withTenantTransaction, TenantActorContext } from '@tradecloseout/db/tenant-tx';
+import { withTenantTransaction, TenantActorContext, assertValidMemberProjectScope } from '@tradecloseout/db/tenant-tx';
 import { hasPermission } from '@tradecloseout/shared';
 
 export interface WorkItem {
@@ -65,6 +65,49 @@ export class WorkItemsService {
       if (query.projectId) {
         projectFilterClause = `AND p.id = $${paramIdx}`;
         queryParams.push(query.projectId);
+        paramIdx++;
+      }
+
+      // Work-item projections must not bypass the same defect authority
+      // enforced by scoped defect reads. A project.read permission alone does
+      // not grant visibility of arbitrary contractor defect assignments.
+      const canManageDefects = hasPermission({
+        orgRole: ctx.orgRole, projectRole: ctx.projectRole,
+      }, 'defect.manage').allowed;
+      const unrestrictedDefects = ctx.orgRole === 'R-OWNER' ||
+        ctx.orgRole === 'R-ADMIN' || ctx.actorType === 'SYSTEM';
+      if (!unrestrictedDefects) {
+        try { assertValidMemberProjectScope(ctx.projectScope); }
+        catch { throw new NotFoundException({ code: 'DEFECT_WORK_SCOPE_INVALID' }); }
+      }
+      const scope = unrestrictedDefects ? undefined : ctx.projectScope;
+      let defectVisibility = canManageDefects ? '' : 'AND false';
+      if (!unrestrictedDefects &&
+          ['R-SITE','R-SUBCONTRACTOR'].includes(ctx.projectRole || '')) {
+        defectVisibility += isScoped ? ' AND d.assigned_user_id = $2' : ' AND false';
+      }
+      if (scope?.assetIds !== undefined) {
+        defectVisibility += ` AND d.asset_id = ANY(${paramIdx}::uuid[])`;
+        queryParams.push(scope.assetIds);
+        paramIdx++;
+      }
+      if (scope?.assetCategories !== undefined) {
+        defectVisibility += ` AND EXISTS (
+          SELECT 1 FROM assets da WHERE da.org_id = d.org_id
+            AND da.project_id = d.project_id AND da.id = d.asset_id
+            AND da.category_key = ANY(${paramIdx}::text[])
+        )`;
+        queryParams.push(scope.assetCategories);
+        paramIdx++;
+      }
+      if (scope?.startDate !== undefined) {
+        defectVisibility += ` AND d.raised_at::date >= ${paramIdx}::date`;
+        queryParams.push(scope.startDate);
+        paramIdx++;
+      }
+      if (scope?.endDate !== undefined) {
+        defectVisibility += ` AND d.raised_at::date <= ${paramIdx}::date`;
+        queryParams.push(scope.endDate);
         paramIdx++;
       }
 
@@ -161,6 +204,7 @@ export class WorkItemsService {
           JOIN projects p ON p.id = d.project_id AND p.org_id = d.org_id
          WHERE d.org_id = $1
            AND d.status IN ('OPEN', 'IN_PROGRESS', 'RECTIFIED')
+           ${defectVisibility}
            ${scopeClause}
            ${projectFilterClause}
       `;
