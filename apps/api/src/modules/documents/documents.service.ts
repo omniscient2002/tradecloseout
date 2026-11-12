@@ -427,10 +427,22 @@ export class DocumentsService {
         const existingId = dto.documentId || existingDocumentId;
         if (existingId) {
           const owned = await client.query(
-            `SELECT 1 FROM document_versions
-              WHERE org_id = $1 AND project_id = $2 AND document_id = $3
-                AND uploaded_by_grant_id = $4 AND deleted_at IS NULL LIMIT 1`,
-            [ctx.orgId, projectId, existingId, guestGrantId],
+            `SELECT 1 FROM document_versions dv
+                JOIN documents d ON d.org_id = dv.org_id AND d.project_id = dv.project_id
+                  AND d.id = dv.document_id AND d.deleted_at IS NULL
+              WHERE dv.org_id = $1 AND dv.project_id = $2 AND dv.document_id = $3
+                AND dv.uploaded_by_grant_id = $4 AND dv.deleted_at IS NULL
+                AND EXISTS (
+                  SELECT 1 FROM document_requirements dr
+                   WHERE dr.org_id = d.org_id AND dr.project_id = d.project_id
+                     AND dr.document_id = d.id)
+                AND NOT EXISTS (
+                  SELECT 1 FROM document_requirements dr
+                   WHERE dr.org_id = d.org_id AND dr.project_id = d.project_id
+                     AND dr.document_id = d.id
+                     AND NOT (dr.requirement_id::text = ANY($5::text[])))
+              LIMIT 1`,
+            [ctx.orgId, projectId, existingId, guestGrantId, allowedRequirements],
           );
           if (!owned.rows.length) throw new NotFoundException('DOCUMENT_NOT_FOUND_IN_PROJECT');
         }
