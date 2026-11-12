@@ -800,7 +800,12 @@ async function drainLockedUploadQueue(
       const transient = offline || isTransientUploadFailure(err);
       if (authBlocked) {
         item.status = 'BLOCKED_SCOPE';
-        item.terminalFailure = true;
+        // An epoch rotation without any recorded send attempt is a recoverable
+        // local-only draft. A real 401/403 or a request already dispatched
+        // requires external authorization/reconciliation instead.
+        item.terminalFailure = error !== 'UPLOAD_ACTOR_CONTEXT_CHANGED' ||
+          Boolean(item.uploadIntentRequestedAt || item.uploadIntent ||
+            item.completionRequestedAt || item.uploadedParts.length > 0);
         item.lastError = 'Authentication or access changed. This draft cannot be replayed automatically.';
       } else if (pendingCompletion) {
         // Never re-send the original bytes just because the /complete response
