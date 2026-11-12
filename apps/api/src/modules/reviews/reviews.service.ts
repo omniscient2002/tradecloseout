@@ -16,6 +16,7 @@ import { uuidv7 } from 'uuidv7';
 import { STANDARD_COMPANION_RULES } from '@tradecloseout/db';
 import { TenantDbService, ExecutionContext } from '../../database/tenant-db.service';
 import { ExternalApprovalDto } from './dto/external-approval.dto';
+import { resolveLiveReviewAuthority, assertReviewDocumentScope } from './review-live-authority';
 
 export function isExpiredOnIndiaDate(expiryDate: string | Date, now = new Date()): boolean {
   const expiry = expiryDate instanceof Date ? expiryDate.toISOString().slice(0, 10) : String(expiryDate).slice(0, 10);
@@ -583,6 +584,11 @@ export class ReviewsService {
         throw new ForbiddenException('REVIEW_ASSIGNMENT_REQUIRED');
       }
 
+      // G02-002/008/009: assigned review != current permission. Lock and verify
+      // live account, organisation, membership, project and member role/scope
+      // inside the command transaction before any business mutation.
+      const currentAuthority = await resolveLiveReviewAuthority(client, ctx, review.project_id);
+
       // 2. Lock document_version FOR UPDATE via document_version_id (CB-005, AUD-007)
       const verRes = await client.query(
         `SELECT * FROM document_versions WHERE org_id = $1 AND id = $2 FOR UPDATE`,
@@ -619,6 +625,10 @@ export class ReviewsService {
         [ctx.orgId, version.document_id],
       );
       const doc = docRes.rows[0];
+      if (!doc || doc.project_id !== review.project_id || version.project_id !== review.project_id) {
+        throw new NotFoundException('REVIEW_DOCUMENT_NOT_FOUND');
+      }
+      await assertReviewDocumentScope(client, currentAuthority, ctx, review.project_id, doc);
 
       // 4. Verify version is latest
       if (doc.latest_version_id && doc.latest_version_id !== version.id) {
@@ -639,8 +649,8 @@ export class ReviewsService {
         [ctx.orgId, version.project_id, doc.id],
       );
       const authorityRoles = new Set([
-        (ctx as any).orgRole as string | undefined,
-        (ctx as any).projectRole as string | undefined,
+        currentAuthority.orgRole,
+        currentAuthority.projectRole,
       ].filter(Boolean));
       if (linkedRequirements.rows.some((row: any) => !authorityRoles.has(row.reviewer_role))) {
         throw new ForbiddenException('REVIEWER_ROLE_REQUIRED');
