@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, ServiceUnavailableException } from '@nestjs/common';
 import { normalizeInspectionWitnessAssignments } from '../src/modules/commissioning/commissioning.service';
 import { requireImmutableObjectVersionId } from '../src/modules/documents/s3-storage.service';
+import { isImmutableEvidenceVersion } from '../src/modules/documents/documents.service';
 import { assertReviewVersionNotTerminal } from '../src/modules/reviews/reviews.service';
 
 describe('Phase 3 fail-closed evidence integrity contracts', () => {
@@ -23,6 +24,17 @@ describe('Phase 3 fail-closed evidence integrity contracts', () => {
     Array.from({ length: 21 }, () => ({ partyName: 'A', representativeName: 'B', role: 'C' })),
   ])('PH3-G12-001: rejects untrusted witness payload %#', (value) => {
     expect(() => normalizeInspectionWitnessAssignments(value)).toThrow(BadRequestException);
+  });
+
+  it.each([undefined, null, '', ' ', 'null', 'NULL', ' Null '])(
+    'PH3-G10-002: blocks legacy mutable evidence version %p from downloads',
+    (version) => {
+      expect(isImmutableEvidenceVersion(version)).toBe(false);
+    },
+  );
+
+  it('PH3-G10-002: permits an actual pinned provider version for download', () => {
+    expect(isImmutableEvidenceVersion('3Lg3u34X')).toBe(true);
   });
 
   it('PH3-G10-002: accepts a real opaque provider version', () => {
