@@ -213,11 +213,7 @@ export async function sanitizeAndCheckPdfBomb(
       };
     }
 
-    // 4. Inspect JSON structure for active content (/JS, /JavaScript, /Launch, /OpenAction, /AA) (TC2-028)
-    const { stdout: jsonOut } = await execFileAsync('qpdf', ['--json', inputPath], {
-      timeout: 25_000,
-      maxBuffer: 32 * 1024 * 1024,
-    });
+    // 4. Inspect the structured object tree; no qpdf rewrite is assumed safe.
     // A qpdf rewrite is NOT sanitization: it can preserve /AA JavaScript actions.
     // Reject unsafe input instead of reporting a fictitious removed-script count.
     await assertPdfHasNoActiveActions(inputPath, true);
@@ -346,18 +342,19 @@ export async function compileHandoverDossierStreamingQpdf(
       if (actualSha.toLowerCase() !== src.sha256.toLowerCase()) {
         throw new Error(`INTEGRITY_ERROR: SHA-256 mismatch on version ${src.documentVersionId}`);
       }
-      await assertPdfHasNoActiveActions(src.localPath, qpdfAvailable);
       try {
         const { stdout } = await execFileAsync('qpdf', ['--show-npages', src.localPath], {
           timeout: 10_000,
         });
         sourcePageCounts.push(parseInt(stdout.trim(), 10) || 1);
+        await assertPdfHasNoActiveActions(src.localPath, true);
       } catch (err: any) {
         if (err.code === 'ENOENT') {
           qpdfAvailable = false;
           const bytes = await readFile(src.localPath);
           const doc = await PDFDocument.load(bytes);
           sourcePageCounts.push(doc.getPageCount());
+          await assertPdfHasNoActiveActions(src.localPath, false);
         } else {
           throw err;
         }
