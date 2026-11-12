@@ -1,6 +1,7 @@
 import { ConflictException } from '@nestjs/common';
 import { uuidv7 } from 'uuidv7';
 import { ReviewsService } from '../src/modules/reviews/reviews.service';
+import { executeReviewDecision } from '../src/modules/reviews/review-decision.service';
 import { TenantDbService } from '../src/database/tenant-db.service';
 import { withDisposableDatabase } from '../../../packages/db/test/helpers/disposable-database';
 import { seedTenants } from '../../../packages/db/test/helpers/fixtures';
@@ -188,4 +189,34 @@ describe('PH3-G11-001 — exactly one terminal review decision per document vers
       expect(rejected.audits).toHaveLength(1);
     });
   });
+  it.each(['APPROVED', 'REJECTED', 'CHANGES_REQUESTED', 'SUPERSEDED', 'WITHDRAWN'])(
+    'legacy external decision helper rejects already terminal version %s without writes',
+    async (status) => {
+      const statements: string[] = [];
+      const client = {
+        query: jest.fn(async (sql: string) => {
+          statements.push(sql);
+          if (sql.includes('SELECT dv.id')) {
+            return { rows: [{
+              id: uuidv7(), document_id: uuidv7(), version_no: 1,
+              file_status: 'READY', review_status: status, uploaded_by: uuidv7(),
+              row_version: 1, current_approved_version_id: null,
+            }] };
+          }
+          return { rows: [] };
+        }),
+      };
+      await expect(executeReviewDecision(client as any, {
+        userId: uuidv7(), activeOrgId: uuidv7(), orgRole: 'R-QC',
+        projectRoles: ['R-QC'], ip: '127.0.0.1', userAgent: 'test',
+        requestId: 'phase3-legacy',
+      }, {
+        projectId: uuidv7(), documentVersionId: uuidv7(), expectedRowVersion: 1,
+        method: 'EXTERNAL', decision: 'APPROVE',
+      })).rejects.toThrow(ConflictException);
+      expect(statements).toContain('ROLLBACK');
+      expect(statements.some(sql => sql.startsWith('UPDATE '))).toBe(false);
+      expect(statements).not.toContain('COMMIT');
+    },
+  );
 });
