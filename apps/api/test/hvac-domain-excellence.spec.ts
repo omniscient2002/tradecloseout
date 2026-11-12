@@ -1020,14 +1020,14 @@ describe('HVAC Domain Excellence Suite (XP11..XP18)', () => {
 
         // Seed unrelated/generic storage object (manual without asset binding)
         await admin.query(`
-          INSERT INTO storage_objects (id, org_id, bucket, object_key, size_bytes, observed_size_bytes, mime, sha256, status, provider_version_id)
-          VALUES ($1, $2, 'vault', $3, 512, 512, 'application/pdf', $4, 'READY', 'v1')
+          INSERT INTO storage_objects (id, org_id, bucket, object_key, size_bytes, observed_size_bytes, mime, sha256, status, provider_version_id, av_scanned_at)
+          VALUES ($1, $2, 'vault', $3, 512, 512, 'application/pdf', $4, 'READY', 'v1', now())
         `, [otherEvidenceId, orgIdA, `orgs/${orgIdA}/projects/${projectA0}/manuals/general.pdf`, 'f'.repeat(64)]);
 
         // Seed remedy evidence storage object bound to defect in object_key
         await admin.query(`
-          INSERT INTO storage_objects (id, org_id, bucket, object_key, size_bytes, observed_size_bytes, mime, sha256, status, provider_version_id)
-          VALUES ($1, $2, 'vault', $3, 1024, 1024, 'image/jpeg', $4, 'READY', 'v1')
+          INSERT INTO storage_objects (id, org_id, bucket, object_key, size_bytes, observed_size_bytes, mime, sha256, status, provider_version_id, av_scanned_at)
+          VALUES ($1, $2, 'vault', $3, 1024, 1024, 'image/jpeg', $4, 'READY', 'v1', now())
         `, [remedyEvidenceId, orgIdA, `orgs/${orgIdA}/projects/${projectA0}/defects/${defectId}/photo.jpg`, 'e'.repeat(64)]);
 
         await admin.query(`
