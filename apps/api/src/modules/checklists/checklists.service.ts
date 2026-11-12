@@ -643,6 +643,16 @@ export class ChecklistsService {
         if (prior.obligation_row_version == null) {
           throw new ConflictException('WAIVER_LEGACY_INTENT_REQUALIFICATION_REQUIRED');
         }
+        // Identical bytes are not a valid retry once the actual contractual
+        // requirement has moved to a different revision or outcome.
+        const expectedStatus = prior.status === WaiverStatus.PENDING_SECOND_APPROVAL
+          ? RequirementStatus.PENDING_WAIVER
+          : prior.type === 'WAIVE' ? RequirementStatus.WAIVED : RequirementStatus.NOT_APPLICABLE;
+        const expectedVersion = prior.obligation_row_version +
+          (prior.status === WaiverStatus.ACTIVE && prior.is_mandatory_item ? 2 : 1);
+        if (req.status !== expectedStatus || req.row_version !== expectedVersion) {
+          throw new ConflictException('WAIVER_CURRENT_OBLIGATION_CHANGED');
+        }
         if (options.expectedRowVersion !== undefined &&
             options.expectedRowVersion !== prior.obligation_row_version &&
             options.expectedRowVersion !== req.row_version) {
