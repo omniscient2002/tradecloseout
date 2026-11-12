@@ -15,6 +15,12 @@
 - Additional evidence eligibility consumers (`apps/api/src/modules/reviews/reviews.service.ts`, `apps/api/src/modules/assets/assets.service.ts`, `apps/api/src/modules/billing/warranty-and-billing.service.ts`, `apps/api/src/modules/parties/parties.service.ts`) now fail closed on legacy blank/`null` version IDs rather than letting a mutable object count as reviewed, qualified, commercially ready or supplier-accepted evidence.
 - Abort cleanup only attempts to delete a concrete immutable version. No fallback to unversioned provider operations is introduced.
 
+### Follow-up: abort cleanup ownership fencing
+
+- `apps/api/src/modules/documents/s3-storage.service.ts` no longer performs unversioned `HEAD(latest)` followed by deletion of the discovered current version when a single-part upload is aborted or a multipart abort fails. An immutable VersionId proves object version identity, **not ownership by the aborted upload**. A newer version might have been written after the aborted attempt, and deleting it would destroy unrelated data.
+- Multipart aborts now send only `AbortMultipartUpload` for the exact upload ID; expired/no-such-upload responses are handled without object deletion. Unexpected S3 errors propagate. Single-part abort performs no unowned object deletion and relies on explicit authenticated orphan reconciliation (PH3-G10-006).
+- Four new cases in `apps/api/test/phase3-storage-versioning.spec.ts`: no S3 actions on single-part abort, exact multipart ID abort, no `HEAD`/`DELETE` after upload expiry/overwrite, and propagated unexpected provider errors. This does not establish physical orphan cleanup or completed-multipart recovery. Record on exact-head CI below.
+
 ## Regression evidence added/updated
 
 1. `apps/api/test/phase3-storage-versioning.spec.ts`: shared predicate positive/negative matrix; suspended/unverified bucket rejection; single-part null/pinned-HEAD mismatch; multipart Complete receipt exact binding and lost-response/current-key overwrite rejection; signing/fetch source guards; upload-adapter DB/scan-outbox rollback; legitimate receipt; handover and archive download URL denial of historical mutable versions.
