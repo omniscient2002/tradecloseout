@@ -57,6 +57,30 @@ describe('PH4-G17-004: supplier defect authority must be scoped to live assignme
       .rejects.toMatchObject({ response: { code: 'DEFECT_NOT_ASSIGNED_TO_SUPPLIER' } });
   });
 
+  it('rejects a read-only guest grant even if defect.manage is present in old capabilities', async () => {
+    const {service, statements} = mockDb({
+      assignedPartyId: supplierPartyId,
+      scope: {assetIds: [assetId], readOnly: true},
+    });
+    await expect(service.submitDefectRemedy(
+      guest, projectId, defectId, randomUUID(), 1,
+    )).rejects.toMatchObject({response: {code: 'DEFECT_GUEST_SCOPE_READ_ONLY'}});
+    expect(statements.some(x => x.sql.includes('UPDATE defects'))).toBe(false);
+    expect(statements.some(x => x.sql.includes("p.status = 'ACTIVE'") &&
+      x.sql.includes("'defect.manage' = ANY(g.capabilities)"))).toBe(true);
+  });
+
+  it('rejects a supplier grant with an excluded asset category', async () => {
+    const {service, statements} = mockDb({
+      assignedPartyId: supplierPartyId,
+      scope: {assetCategories: ['CHILLER']},
+    });
+    await expect(service.submitDefectRemedy(
+      guest, projectId, defectId, randomUUID(), 1,
+    )).rejects.toMatchObject({response: {code: 'DEFECT_NOT_ASSIGNED_TO_SUPPLIER'}});
+    expect(statements.some(x => x.sql.includes('UPDATE defects'))).toBe(false);
+  });
+
   it('denies a revoked or expired grant in the transaction', async () => {
     const { service } = mockDb({ assignedPartyId: supplierPartyId, grantStatus: 'REVOKED' });
     await expect(service.submitDefectRemedy(guest, projectId, defectId, randomUUID(), 1))
