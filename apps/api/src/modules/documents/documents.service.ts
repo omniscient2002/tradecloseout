@@ -19,6 +19,7 @@ import { PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { TenantDbService, ExecutionContext } from '../../database/tenant-db.service';
 import { BulkImportStatus, FileVersionStatus } from '@tradecloseout/shared';
+import { resolveLiveProjectCommandAuthority, assertReviewDocumentScope } from '../reviews/review-live-authority';
 
 import { Pool } from 'pg';
 import { S3StorageService } from './s3-storage.service';
@@ -990,11 +991,52 @@ export class DocumentsService {
   }
 
   /**
+   * G02-001/009: resolve the actual document and recheck current writable
+   * permission, stored member scope and project lifecycle in the SAME
+   * transaction as the delete/restore. Never trust the HTTP guard's snapshot.
+   */
+  private async assertDocumentLifecycleAuthority(
+    client: PoolClient,
+    ctx: ExecutionContext,
+    documentId: string,
+    restoring: boolean,
+  ): Promise<void> {
+    const missing = restoring ? 'DOCUMENT_NOT_FOUND_OR_NOT_DELETED' : 'DOCUMENT_NOT_FOUND_OR_DELETED';
+    if (typeof documentId !== 'string' ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(documentId)) {
+      throw new NotFoundException(missing);
+    }
+    const deletedPredicate = restoring ? 'IS NOT NULL' : 'IS NULL';
+    const candidate = await client.query(
+      `SELECT project_id FROM documents
+        WHERE org_id=$1 AND id=$2 AND deleted_at ${deletedPredicate}`,
+      [ctx.orgId, documentId],
+    );
+    if (candidate.rows.length !== 1) throw new NotFoundException(missing);
+    const projectId: string = candidate.rows[0].project_id;
+    const authority = await resolveLiveProjectCommandAuthority(client, ctx, projectId, 'document.delete');
+    // Serialize competing lifecycle changes and verify the resource still
+    // belongs to the same project after acquiring the authority locks.
+    const locked = await client.query(
+      `SELECT id, project_id, doc_type_key, category_key, created_at
+         FROM documents
+        WHERE org_id=$1 AND id=$2 AND deleted_at ${deletedPredicate}
+        FOR UPDATE`,
+      [ctx.orgId, documentId],
+    );
+    if (locked.rows.length !== 1 || locked.rows[0].project_id !== projectId) {
+      throw new NotFoundException(missing);
+    }
+    await assertReviewDocumentScope(client, authority, ctx, projectId, locked.rows[0]);
+  }
+
+  /**
    * API-090 DELETE /documents/:id (Soft-delete)
    * Refunds STORAGE_BYTES quota on soft-delete (Bug 2: 10.0/10)
    */
   async deleteDocument(ctx: ExecutionContext, documentId: string) {
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+      await this.assertDocumentLifecycleAuthority(client, ctx, documentId, false);
       const res = await client.query(
         `UPDATE documents
             SET deleted_at = now(), row_version = row_version + 1
@@ -1033,6 +1075,7 @@ export class DocumentsService {
    */
   async restoreDocument(ctx: ExecutionContext, documentId: string) {
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+      await this.assertDocumentLifecycleAuthority(client, ctx, documentId, true);
       const res = await client.query(
         `UPDATE documents
             SET deleted_at = NULL, row_version = row_version + 1
