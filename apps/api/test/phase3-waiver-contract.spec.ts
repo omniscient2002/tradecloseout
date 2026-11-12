@@ -3,6 +3,7 @@ import { uuidv7 } from 'uuidv7';
 import { withDisposableDatabase } from '../../../packages/db/test/helpers/disposable-database';
 import { seedTenants } from '../../../packages/db/test/helpers/fixtures';
 import { ChecklistsService } from '../src/modules/checklists/checklists.service';
+import { HandoverService } from '../src/modules/handover/handover.service';
 
 jest.setTimeout(180_000);
 
@@ -80,6 +81,17 @@ describe('PH3-G07-001/002/003 — canonical waiver lifecycle and retries', () =>
       expect(accepted).toMatchObject({status:'ACTIVE',requirementStatus:'NOT_APPLICABLE'});
       const acceptedReplay=await f.service.countersignWaiver(f.second,pending.waiverId);
       expect(acceptedReplay).toMatchObject({idempotentReplay:true,requirementStatus:'NOT_APPLICABLE'});
+      const readiness = new HandoverService(app, {} as any);
+      const afterApproval = await readiness.evaluateProjectReadiness(f.primary, f.projectId);
+      expect(afterApproval.blockers.missingMandatoryCount).toBe(1);
+      // A material requirement revision must immediately invalidate an older
+      // waiver for BOTH readiness and handover package qualification.
+      await admin.query(
+        'UPDATE requirements SET row_version=row_version+1 WHERE id=$1',
+        [mandatory.id],
+      );
+      const afterRevision = await readiness.evaluateProjectReadiness(f.primary, f.projectId);
+      expect(afterRevision.blockers.missingMandatoryCount).toBe(2);
       const rows=await admin.query(
         `SELECT w.type,w.status,w.is_mandatory_item,w.obligation_row_version,r.status AS requirement_status
           FROM waivers w JOIN requirements r ON r.id=w.requirement_id
