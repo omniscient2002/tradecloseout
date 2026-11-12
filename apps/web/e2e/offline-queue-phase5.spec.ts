@@ -229,8 +229,8 @@ test('same completion idempotency key is retried only after server confirms inte
     await q.drainOfflineUploadQueue();
     return { keys, remaining: (await q.listOfflineUploadDrafts()).length };
   });
-  expect(result.keys).toEqual(['complete_' + result.keys[0].slice('complete_'.length),
-    'complete_' + result.keys[0].slice('complete_'.length)]);
-  expect(result.keys[0]).toMatch(/^complete_/);
+  expect(result.keys).toHaveLength(2);
+  expect(result.keys[0]).toMatch(/^complete_[a-z0-9-]+$/i);
+  expect(result.keys[1]).toBe(result.keys[0]);
   expect(result.remaining).toBe(0);
 });
