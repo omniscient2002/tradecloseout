@@ -6,6 +6,7 @@ import { PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { TenantDbService, ExecutionContext } from '../../database/tenant-db.service';
 import { isIndiaQuietHour } from '@tradecloseout/shared';
+import { getProjectCommercialSummary, paiseToSafeInr } from '../projects/project-commercial-summary';
 
 @Injectable()
 export class NotificationsService {
@@ -182,46 +183,41 @@ export class NotificationsService {
       }
       const proj = projRes.rows[0];
 
-      // Fetch blocking requirements grouped by milestone
-      const reqRes = await client.query(
-        `SELECT milestone_key, count(*) as count
-         FROM requirements
-         WHERE org_id = $1 AND project_id = $2 AND mandatory = true AND status IN ('NOT_STARTED', 'MISSING', 'EXPIRED', 'CHANGES_REQUESTED')
-         GROUP BY milestone_key`,
+      // PH2-G20-009: due-date-based indicators only; closeout acceptance
+      // still depends on the independent verified-evidence readiness check.
+      // Future NOT_STARTED obligations and superseded rows are not overdue.
+      const { rows: dueRows } = await client.query(
+        `SELECT milestone_key, COUNT(*)::int AS count
+           FROM requirements
+          WHERE org_id=$1 AND project_id=$2 AND mandatory=true
+            AND superseded_at IS NULL AND status <> 'NOT_APPLICABLE'
+            AND (status='EXPIRED' OR
+              (due_at IS NOT NULL AND due_at < now() AND
+               status NOT IN ('APPROVED','APPROVED_EXTERNAL','WAIVED','NOT_APPLICABLE','HANDED_OVER')))
+          GROUP BY milestone_key ORDER BY milestone_key`,
         [ctx.orgId, projectId],
       );
-
-      // Contract value in paise (integer) and retention basis points from project columns (T19, Finding N21)
-      const contractValuePaise = proj.contract_value_paise != null
-        ? BigInt(proj.contract_value_paise)
-        : (proj.site_json?.contract_value_inr != null ? BigInt(Math.round(Number(proj.site_json.contract_value_inr) * 100)) : null);
-
-      const retentionBps = proj.retention_bps != null
-        ? Number(proj.retention_bps)
-        : (proj.site_json?.retention_percent != null ? Math.round(Number(proj.site_json.retention_percent) * 100) : null);
-
-      const retentionMoneyGatedPaise = contractValuePaise != null && retentionBps != null
-        ? (contractValuePaise * BigInt(retentionBps)) / 10000n
-        : null;
-
-      const contractValueInr = contractValuePaise != null
-        ? Number(contractValuePaise) / 100
-        : null;
-
-      const retentionMoneyGatedInr = retentionMoneyGatedPaise != null
-        ? Number(retentionMoneyGatedPaise) / 100
-        : null;
+      const commercial = await getProjectCommercialSummary(client, ctx.orgId, projectId, proj);
+      const contractValuePaise = commercial.contractValuePaise;
+      const informationalRetentionExposurePaise = commercial.informationalRetentionExposurePaise;
 
       return {
         projectId: proj.id,
         projectCode: proj.code,
         projectName: proj.name,
         currency: 'INR',
-        contractValuePaise: contractValuePaise?.toString() || null,
-        contractValueInr,
-        retentionMoneyGatedPaise: retentionMoneyGatedPaise?.toString() || null,
-        retentionMoneyGatedInr,
-        blockingRequirementsByMilestone: reqRes.rows,
+        contractValuePaise,
+        contractValueInr: paiseToSafeInr(contractValuePaise),
+        financialSummaryBasis: commercial.basis,
+        informationalRetentionExposurePaise,
+        informationalRetentionExposureInr: paiseToSafeInr(informationalRetentionExposurePaise),
+        // A contractual estimate is NOT evidence that payment or retention
+        // has actually been withheld. Keep the deprecated "gated" fields NULL
+        // until a separately verified financial event establishes that fact.
+        retentionMoneyGatedPaise: null,
+        retentionMoneyGatedInr: null,
+        blockingRequirementsByMilestone: dueRows,
+        overdueOrExpiredRequirementsByMilestone: dueRows,
         generatedAt: new Date(),
         recipientRole: 'R-OWNER',
       };
