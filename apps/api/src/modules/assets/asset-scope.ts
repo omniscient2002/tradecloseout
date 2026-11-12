@@ -88,3 +88,42 @@ export function assertAssetInScope(
     }
   }
 }
+
+/**
+ * Apply the same resource predicate in PostgreSQL before sorting, counting or
+ * paginating rows. Keep assertAssetInScope as a second guard against callers
+ * accidentally projecting rows from other queries.
+ *
+ * The asset table is intentionally fixed: callers cannot supply SQL identifiers.
+ * Dynamic values are only passed as PostgreSQL query parameters.
+ */
+export function assetScopeSqlPredicate(
+  scopeInput: unknown,
+  firstParameter: number,
+): { sql: string; values: unknown[] } {
+  const scope = validateAssetProjectScope(scopeInput);
+  if (!Number.isInteger(firstParameter) || firstParameter < 1) {
+    throw new Error('INVALID_ASSET_SCOPE_PARAMETER_OFFSET');
+  }
+  const clauses: string[] = [];
+  const values: unknown[] = [];
+  const bind = (value: unknown): string => {
+    values.push(value);
+    return `$${firstParameter + values.length - 1}`;
+  };
+
+  if (scope.assetIds !== undefined) {
+    clauses.push(`assets.id = ANY(${bind(scope.assetIds)}::uuid[])`);
+  }
+  if (scope.assetCategories !== undefined) {
+    clauses.push(`assets.category_key = ANY(${bind(scope.assetCategories)}::text[])`);
+  }
+  if (typeof scope.startDate === 'string') {
+    clauses.push(`assets.created_at >= ${bind(scope.startDate + 'T00:00:00.000Z')}::timestamptz`);
+  }
+  if (typeof scope.endDate === 'string') {
+    const endExclusive = new Date(Date.parse(scope.endDate + 'T00:00:00.000Z') + 86_400_000);
+    clauses.push(`assets.created_at < ${bind(endExclusive.toISOString())}::timestamptz`);
+  }
+  return { sql: clauses.length ? ` AND ${clauses.join(' AND ')}` : '', values };
+}
