@@ -7,6 +7,10 @@ export interface OfflineQueuedUpload {
   // Session-generation fence is not a credential. Legacy drafts with no
   // generation cannot be silently uploaded after this migration.
   actorEpoch?: string;
+  // Marks drafts captured after the durable pre-network request checkpoint
+  // contract was introduced. Legacy entries lacking this cannot prove an
+  // upload-intent request was never dispatched.
+  recoveryContractVersion?: number;
   projectId: string;
   requirementId: string;
   /** Captured canonical obligation version; absence forbids old-session rebind. */
@@ -94,7 +98,8 @@ export interface OfflineUploadDraftSummary {
 
 /** A lost intent POST is unknowable without its durable pre-network marker. */
 function isProvablyLocalOnly(item: OfflineQueuedUpload): boolean {
-  return Boolean(item.actorEpoch) &&
+  return item.recoveryContractVersion === 1 &&
+    Boolean(item.actorEpoch) &&
     Number.isSafeInteger(item.requirementRowVersion) &&
     (item.requirementRowVersion as number) > 0 &&
     ['QUEUED_OFFLINE', 'BLOCKED_SCOPE'].includes(item.status) &&
@@ -527,6 +532,7 @@ export async function enqueueFieldUpload(params: {
     queueId: crypto.randomUUID(),
     actorPartition,
     actorEpoch,
+    recoveryContractVersion: 1,
     projectId: params.projectId,
     requirementId: params.requirementId,
     requirementRowVersion: params.requirementRowVersion,
