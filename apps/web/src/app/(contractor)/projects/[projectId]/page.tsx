@@ -45,6 +45,7 @@ import { RequestWaiverModal } from "@/components/modals/request-waiver-modal";
 import { AddRequirementModal } from "@/components/modals/add-requirement-modal";
 import { ExternalApprovalModal } from "@/components/modals/external-approval-modal";
 import { apiFetch, ApiProblemError } from "@/lib/api-client";
+import { downloadCsv } from "@/lib/csv-export";
 
 /* -------------------------------------------------------------------------- */
 /* TYPES & CONSTANTS                                                          */
@@ -545,19 +546,9 @@ export default function ProjectWorkspacePage() {
     }
   };
 
-  // Export CSV Helper
-  const exportCsv = (filename: string, headers: string[], rows: (string | number)[][]) => {
-    const csvContent =
-      "data:text/csv;charset=utf-8," +
-      [headers.join(","), ...rows.map((e) => e.map((val) => `"${String(val).replace(/"/g, '""')}"`).join(","))].join("\n");
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", filename);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
+  // Export only the rows already authorized for this project; the serializer
+  // also neutralizes spreadsheet formulas without corrupting CSV delimiters.
+  const exportCsv = downloadCsv;
 
   const progressPercent = summary && summary.counts.applicableTotal > 0
     ? Math.round(
