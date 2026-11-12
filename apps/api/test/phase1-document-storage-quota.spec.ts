@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { DocumentsService } from '../src/modules/documents/documents.service';
 import { TenantDbService } from '../src/database/tenant-db.service';
 
@@ -5,19 +6,27 @@ describe('PH1-G26-002/G24-007: document storage counter remains BIGINT on lifecy
   it('persists both delete/refund and restore/recharge inside the document transaction', async () => {
     let counter = 1000n;
     let deleted = false;
+    const documentId = randomUUID();
+    const projectId = randomUUID();
     const statements: string[] = [];
     const client = {
       query: jest.fn(async (sql: string, params: unknown[] = []) => {
         statements.push(sql);
+        if (sql.includes('SELECT project_id FROM documents')) return { rows: [{ project_id: projectId }] };
+        if (sql.includes('SELECT m.role AS org_role')) return { rows: [{ org_role: 'R-OWNER' }] };
+        if (sql.includes('SELECT status FROM projects')) return { rows: [{ status: 'ACTIVE' }] };
+        if (sql.includes('SELECT id, project_id, doc_type_key')) {
+          return { rows: [{ id: documentId, project_id: projectId, doc_type_key: 'DT-001', created_at: new Date() }] };
+        }
         if (sql.includes('UPDATE documents') && sql.includes('SET deleted_at = now()')) {
           if (deleted) return { rows: [] };
           deleted = true;
-          return { rows: [{ id: 'document' }] };
+          return { rows: [{ id: documentId }] };
         }
         if (sql.includes('UPDATE documents') && sql.includes('SET deleted_at = NULL')) {
           if (!deleted) return { rows: [] };
           deleted = false;
-          return { rows: [{ id: 'document' }] };
+          return { rows: [{ id: documentId }] };
         }
         if (sql.includes('SUM(so.size_bytes)')) return { rows: [{ total_bytes: '234' }] };
         if (sql.includes('UPDATE usage_counters')) {
@@ -38,17 +47,17 @@ describe('PH1-G26-002/G24-007: document storage counter remains BIGINT on lifecy
       {} as any,
     );
     const ctx = {
-      orgId: 'org',
-      userId: 'user',
+      orgId: randomUUID(),
+      userId: randomUUID(),
       actorType: 'USER' as const,
       requestId: 'req',
     };
-    await expect(service.deleteDocument(ctx, 'document')).resolves.toMatchObject({
+    await expect(service.deleteDocument(ctx, documentId)).resolves.toMatchObject({
       deleted: true,
       refundedBytes: 234,
     });
     expect(counter).toBe(766n);
-    await expect(service.restoreDocument(ctx, 'document')).resolves.toMatchObject({
+    await expect(service.restoreDocument(ctx, documentId)).resolves.toMatchObject({
       restored: true,
       readdedBytes: 234,
     });
