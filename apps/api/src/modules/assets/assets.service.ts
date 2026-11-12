@@ -1098,7 +1098,7 @@ export class AssetsService {
                      ON so.org_id = dv.org_id AND so.id = dv.object_id
                     AND so.status = 'READY' AND so.sha256 IS NOT NULL
                     AND so.observed_size_bytes = so.size_bytes
-                    AND so.provider_version_id IS NOT NULL
+                    AND so.provider_version_id IS NOT NULL AND btrim(so.provider_version_id) <> '' AND lower(btrim(so.provider_version_id)) <> 'null'
                   WHERE dr.org_id = r.org_id AND dr.project_id = r.project_id
                     AND dr.requirement_id = r.id
                     AND NOT EXISTS (
