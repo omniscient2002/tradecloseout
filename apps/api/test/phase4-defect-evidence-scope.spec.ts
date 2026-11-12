@@ -14,7 +14,11 @@ describe('PH4-G17-002 exact remedy scope qualification', () => {
     const client = {
       query: jest.fn(async (sql: string, params: any[] = []) => {
         queries.push(sql);
-        if (sql.includes('FROM defects d')) return { rows: [{
+        if (sql.includes('FROM projects') && sql.includes('FOR UPDATE')) {
+              return { rows: [{ id: projectId, status: 'ACTIVE',
+                closed_at: null, purged_at: null }] };
+            }
+            if (sql.includes('FROM defects d')) return { rows: [{
           id: defectId, org_id: orgId, project_id: projectId, asset_id: assetId,
           status: 'OPEN', row_version: 1,
         }] };
@@ -48,7 +52,11 @@ describe('PH4-G17-002 exact remedy scope qualification', () => {
     const pool: any = { connect: jest.fn(async () => ({
       query: jest.fn(async (sql: string) => {
         queries.push(sql);
-        if (sql.includes('FROM defects d')) return { rows: [{
+        if (sql.includes('FROM projects') && sql.includes('FOR UPDATE')) {
+              return { rows: [{ id: projectId, status: 'ACTIVE',
+                closed_at: null, purged_at: null }] };
+            }
+            if (sql.includes('FROM defects d')) return { rows: [{
           id: defectId, org_id: orgId, project_id: projectId,
           asset_id: assetId, status: 'RECTIFIED', row_version: 2,
           closure_evidence_object_id: objectId, remedy_document_version_id: versionId,
@@ -87,7 +95,11 @@ describe('PH4-G17-002 exact remedy scope qualification', () => {
     const pool: any = { connect: jest.fn(async () => ({
       query: jest.fn(async (sql: string) => {
         queries.push(sql);
-        if (sql.includes('FROM defects d')) return { rows: [{
+        if (sql.includes('FROM projects') && sql.includes('FOR UPDATE')) {
+              return { rows: [{ id: projectId, status: 'ACTIVE',
+                closed_at: null, purged_at: null }] };
+            }
+            if (sql.includes('FROM defects d')) return { rows: [{
           id: defectId, org_id: orgId, project_id: projectId, asset_id: assetId,
           status: 'RECTIFIED', row_version: 2, remedied_by: randomUUID(),
           closure_evidence_object_id: objectId, remedy_document_version_id: original,
