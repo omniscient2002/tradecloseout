@@ -1102,6 +1102,8 @@ export class WarrantyAndBillingService {
       const { rows: defectRows } = await client.query(
         `SELECT
             COUNT(*) FILTER (WHERE status <> 'CLOSED' AND status <> 'WAIVED') AS open_defects,
+            COUNT(*) FILTER (WHERE defect_context = 'CLOSEOUT' AND status <> 'CLOSED' AND status <> 'WAIVED') AS open_closeout_defects,
+            COUNT(*) FILTER (WHERE defect_context = 'AFTERCARE' AND status <> 'CLOSED' AND status <> 'WAIVED') AS open_aftercare_defects,
             COUNT(*) FILTER (WHERE mandatory = true AND status <> 'CLOSED' AND status <> 'WAIVED' AND severity IN ('HIGH', 'CRITICAL')) AS critical_defects
            FROM defects
           WHERE org_id = $1 AND project_id = $2`,
@@ -1109,6 +1111,8 @@ export class WarrantyAndBillingService {
       );
       const defectStats = defectRows[0] || {};
       const openDefects = Number(defectStats.open_defects || 0);
+      const openCloseoutDefects = Number(defectStats.open_closeout_defects || 0);
+      const openAftercareDefects = Number(defectStats.open_aftercare_defects || 0);
       const criticalDefects = Number(defectStats.critical_defects || 0);
       // Commercial estimates cannot bypass the canonical live closeout check.
       // An empty or missing checklist baseline is UNKNOWN, not 100% complete.
@@ -1176,6 +1180,8 @@ export class WarrantyAndBillingService {
         },
         defects: {
           open: openDefects,
+          closeoutOpen: openCloseoutDefects,
+          aftercareOpen: openAftercareDefects,
           critical: criticalDefects,
         },
         handover: {
