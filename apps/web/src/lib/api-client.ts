@@ -93,7 +93,18 @@ export async function apiFetch<T>(
     ) {
       window.location.href = '/login';
     }
-    throw new ApiProblemError(data);
+    // HTTP status is authoritative even when the server sends an incomplete
+    // Problem+JSON envelope; this matters for offline actor/permission fences.
+    const problem = data && typeof data === 'object' && !Array.isArray(data)
+      ? data as Record<string, unknown> : {};
+    throw new ApiProblemError({
+      title: typeof problem.title === 'string' ? problem.title : undefined,
+      detail: typeof problem.detail === 'string' ? problem.detail : undefined,
+      code: typeof problem.code === 'string' ? problem.code : undefined,
+      requestId: typeof problem.requestId === 'string' ? problem.requestId : undefined,
+      fieldErrors: Array.isArray(problem.fieldErrors) ? problem.fieldErrors : undefined,
+      status: res.status,
+    });
   }
 
   return data as T;
