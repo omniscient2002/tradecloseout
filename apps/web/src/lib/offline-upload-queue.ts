@@ -63,7 +63,7 @@ export function isTransientUploadFailure(error: unknown): boolean {
   }
   if (error instanceof TypeError) return true; // fetch network rejection
   const message = error instanceof Error ? error.message : '';
-  return /^UPLOAD_PART_HTTP_(408|429|5\\d\\d)$/.test(message) ||
+  return /^UPLOAD_PART_HTTP_(408|429|5[0-9][0-9])$/.test(message) ||
     /^(NetworkError|Failed to fetch)$/.test(message);
 }
 
