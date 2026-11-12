@@ -2,7 +2,6 @@ import {
   AbortMultipartUploadCommand,
   CompleteMultipartUploadCommand,
   CreateMultipartUploadCommand,
-  DeleteObjectCommand,
   GetObjectCommand,
   GetBucketVersioningCommand,
   HeadObjectCommand,
@@ -219,30 +218,26 @@ export class S3StorageService implements ObjectStoragePresigner {
 
   async abortUpload(params: { objectKey: string; uploadId: string | null }): Promise<void> {
     this.assertConfigured();
-    if (params.uploadId) {
-      try {
-        await this.client.send(new AbortMultipartUploadCommand({
-          Bucket: this.bucket,
-          Key: params.objectKey,
-          UploadId: params.uploadId,
-        }));
-        return;
-      } catch {
-        // Completion may have succeeded before the DB receipt was committed; inspect and remove
-        // that exact version below rather than leaving a reusable pending object behind.
-      }
+    if (!params.uploadId) {
+      // A signed single-part PUT may have been retried, overwritten or used
+      // by a concurrent caller. HEAD(latest) cannot establish ownership of
+      // any version; never delete an object merely because it is versioned.
+      // Durable orphan reconciliation belongs to PH3-G10-006.
+      return;
     }
     try {
-      const current = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: params.objectKey }));
-      if (isImmutableObjectVersionId(current.VersionId)) {
-        await this.client.send(new DeleteObjectCommand({
-          Bucket: this.bucket,
-          Key: params.objectKey,
-          VersionId: current.VersionId,
-        }));
-      }
+      await this.client.send(new AbortMultipartUploadCommand({
+        Bucket: this.bucket,
+        Key: params.objectKey,
+        UploadId: params.uploadId,
+      }));
     } catch (err: any) {
-      if (err?.$metadata?.httpStatusCode !== 404 && err?.name !== 'NotFound' && err?.name !== 'NoSuchKey') throw err;
+      // A completed/expired multipart upload no longer has an abortable
+      // upload ID. Do not adopt and delete whatever currently occupies the
+      // key. An object with independently pinned ownership must be cleaned
+      // through a separate authenticated reconciliation workflow.
+      if (err?.name === 'NoSuchUpload' || err?.$metadata?.httpStatusCode === 404) return;
+      throw err;
     }
   }
 
