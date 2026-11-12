@@ -58,7 +58,16 @@ describe('G01 secret-bearing idempotency contract', () => {
     expect(containsCredentialReceiptData({ recovery_codes: ['sensitive'] })).toBe(true);
     expect(containsCredentialReceiptData({ uploadUrl: 'https://example.invalid/upload' })).toBe(true);
     expect(containsCredentialReceiptData({ href: 'https://example.invalid/?X-Amz-Signature=abc' })).toBe(true);
+    expect(containsCredentialReceiptData({ value: 'otpauth://totp/tradecloseout:user?secret=SECRETKEY&issuer=tradecloseout' })).toBe(true);
+    expect(containsCredentialReceiptData({ note: 'Authorization: Bearer abcdefghijklmnopqrstuvxyz' })).toBe(true);
+    expect(containsCredentialReceiptData({ text: '-----BEGIN PRIVATE KEY-----\\nBASE64SECRET\\n-----END PRIVATE KEY-----' })).toBe(true);
+    expect(containsCredentialReceiptData({ nested: { href: 'https://example.invalid/?api_key=private-value' } })).toBe(true);
+    expect(containsCredentialReceiptData({ credentials: 'masked' })).toBe(true);
+    expect(containsCredentialReceiptData({ api_key: 'masked' })).toBe(true);
+    expect(containsCredentialReceiptData({ text: 'ghp_abcdefghijklmnopqrstuvwxyz012345' })).toBe(true);
+    expect(containsCredentialReceiptData({ note: 'sk-live-abcdefghijklmnop' })).toBe(true);
     expect(containsCredentialReceiptData({ id: 'safe', items: [{ status: 'READY', count: 3 }] })).toBe(false);
+    expect(containsCredentialReceiptData({ href: 'https://example.invalid/docs?version=3', note: 'ready', sessionStatus: 'active' })).toBe(false);
     const cyclic: Record<string, unknown> = {};
     cyclic.self = cyclic;
     expect(containsCredentialReceiptData(cyclic)).toBe(true);
