@@ -17,8 +17,86 @@ import { compileAndPersistPortableArchive } from '../src/queues/portable-archive
 import { BoundedByteStream } from '../src/queues/bounded-stream';
 import { OUTBOX_EVENT_REGISTRY } from '../src/event-registry';
 import { storageServer } from './helpers/storage-server';
+import { jobFingerprint, reportWorkerFailure, safeWorkerErrorCategory } from '../src/safe-worker-errors';
+import { markHandoverPackageFailed } from '../src/queues/handover-package.processor';
 
 const exec = promisify(execFile);
+
+void test('PH1-G27-005: worker diagnostic egress and package failure persistence are secret-free', async t => {
+  const secret = 'postgres://admin:super-secret@internal-host/private?token=very-sensitive';
+  await t.test('raw errors, stack traces and untrusted job identifiers are never logged', () => {
+    const logs: string[] = [];
+    const originalError = console.error;
+    console.error = (...args: unknown[]) => { logs.push(args.map(String).join(' ')); };
+    try {
+      const databaseError = Object.assign(new Error(secret), { code: '23505' });
+      databaseError.stack = `Stacktrace: ${secret}`;
+      reportWorkerFailure('OUTBOX_EVENT_DISPATCH_FAILED', databaseError, secret);
+      const malicious = {
+        message: secret,
+        get code(): string { throw new Error(secret); },
+      };
+      reportWorkerFailure('SCHEDULER_LOCK_RELEASE_FAILED', malicious, secret);
+      assert.equal(safeWorkerErrorCategory(databaseError), 'DB_UNIQUE_CONFLICT');
+      assert.equal(safeWorkerErrorCategory(malicious), 'UNCLASSIFIED');
+      assert.equal(jobFingerprint(secret)?.length, 16);
+      assert(!logs.join(' ').includes(secret));
+      assert(logs.some(row => row.includes('OUTBOX_EVENT_DISPATCH_FAILED')));
+      assert(logs.some(row => row.includes('DB_UNIQUE_CONFLICT')));
+      assert(logs.every(row => !row.includes('Stacktrace:')));
+      assert(logs.every(row => !row.includes('internal-host')));
+    } finally {
+      console.error = originalError;
+    }
+  });
+
+  await t.test('terminal package DB status stores only a fixed, non-sensitive failure detail', async () => {
+    const queries: Array<{ sql: string; params?: unknown[] }> = [];
+    const client = {
+      query: async (sql: string, params?: unknown[]) => {
+        queries.push({ sql, params });
+        return { rowCount: 1 };
+      },
+      release: () => undefined,
+    };
+    const pool = { connect: async () => client };
+    await markHandoverPackageFailed(
+      pool as any, { orgId: randomUUID(), packageId: randomUUID() } as any,
+      randomUUID(), new Error(secret),
+    );
+    const update = queries.find(q => q.sql.includes('UPDATE handover_packages'));
+    assert(update, 'the status mutation must have been attempted');
+    assert.equal(update.params?.[3],
+      'Package generation failed. Review the processing status and retry after resolving the worker issue.');
+    assert(!JSON.stringify(queries).includes(secret));
+    assert(queries.some(q => q.sql === 'COMMIT'));
+  });
+
+  await t.test('database write failure logs a fixed category, not the thrown provider secret', async () => {
+    const logs: string[] = [];
+    const originalError = console.error;
+    console.error = (...args: unknown[]) => { logs.push(args.map(String).join(' ')); };
+    const client = {
+      query: async (sql: string) => {
+        if (sql.includes('UPDATE handover_packages')) throw new Error(secret);
+        return { rowCount: 1 };
+      },
+      release: () => undefined,
+    };
+    try {
+      await markHandoverPackageFailed(
+        { connect: async () => client } as any,
+        { orgId: randomUUID(), packageId: randomUUID() } as any,
+        randomUUID(), new Error(secret),
+      );
+      assert(logs.some(row => row.includes('PACKAGE_FAILURE_PERSIST_FAILED')));
+      assert(!logs.join(' ').includes(secret));
+    } finally {
+      console.error = originalError;
+    }
+  });
+});
+
 void test('Isolated worker DB/Redis and storage HTTP contract regressions', async t => {
   await withDisposableDatabase(async ({ admin, app }) => {
     const { userId, tenants: [a, b] } = await seedTenants(admin);
