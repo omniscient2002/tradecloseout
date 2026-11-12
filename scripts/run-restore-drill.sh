@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# TRADECLOSEOUT v0.2.1 — PRE-INVOICE DATABASE + STORAGE RESTORE DRILL (15 §7 & §16, TC-F027)
+# TRADECLOSEOUT v0.2.1 — ISOLATED STAGING DATABASE RESTORE MECHANICS (NOT PHYSICAL OBJECT RESTORE)
 # ==============================================================================
 set -euo pipefail
 umask 077
@@ -98,7 +98,7 @@ if [ "$BROKEN_AUDIT_COUNT" -gt 0 ]; then
   echo "FAIL: Detected $BROKEN_AUDIT_COUNT broken audit hash chain events in restored snapshot!" >&2
   exit 1
 fi
-echo "✓ Audit hash chain intact."
+echo "✓ Restored audit inter-event linkage valid; independent genesis and external anchor verification remain outstanding."
 
 echo "Recomputing cryptographic SHA-256 payload digests for audit events..."
 CORRUPT_PAYLOAD_COUNT=$(psql -X -v ON_ERROR_STOP=1 "${DRILL_DB_URL}" -t -A -c "
@@ -131,7 +131,7 @@ if [ "$CORRUPT_PAYLOAD_COUNT" -gt 0 ]; then
 fi
 echo "✓ All audit payload SHA-256 cryptographic digests recomputed and verified."
 
-echo "Checking storage object verification state..."
+echo "Checking restored storage object metadata (not recovered provider bytes)..."
 UNVERIFIED_STORAGE=$(psql -X -v ON_ERROR_STOP=1 "${DRILL_DB_URL}" -t -A -c "
   SELECT COUNT(*)
     FROM storage_objects
@@ -143,7 +143,7 @@ if [ "$UNVERIFIED_STORAGE" -gt 0 ]; then
   echo "FAIL: Detected $UNVERIFIED_STORAGE unverified READY storage objects in restored snapshot!" >&2
   exit 1
 fi
-echo "✓ Storage object verified records intact."
+echo "✓ Restored storage object metadata checks passed; object bytes and KMS recovery are not verified."
 
 echo "Checking that all public tenant tables enforce enabled and forced row security in pg_class..."
 INVALID_RLS_TABLES=$(psql -X -v ON_ERROR_STOP=1 "${DRILL_DB_URL}" -t -A -c "
