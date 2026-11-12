@@ -337,6 +337,7 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
         orgId,
         userId: uuidv7(),
         actorType: 'MEMBER',
+        projectRole: 'R-QC',
         requestId: 'req-defect-1',
         ip: '127.0.0.1',
         userAgent: 'jest',
@@ -357,6 +358,10 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
       const mockPool: any = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
+            if (sql.includes('FROM projects') && sql.includes('FOR UPDATE')) {
+              return { rows: [{ id: projectId, status: 'ACTIVE',
+                closed_at: null, purged_at: null }] };
+            }
             if (sql.includes('FROM defects d')) {
               return {
                 rows: [
@@ -399,6 +404,7 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
         orgId,
         userId: uuidv7(),
         actorType: 'MEMBER',
+        projectRole: 'R-QC',
         requestId: 'req-defect-proj-mismatch',
         ip: '127.0.0.1',
         userAgent: 'jest',
@@ -418,6 +424,10 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
       const mockPool: any = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
+            if (sql.includes('FROM projects') && sql.includes('FOR UPDATE')) {
+              return { rows: [{ id: projectId, status: 'ACTIVE',
+                closed_at: null, purged_at: null }] };
+            }
             if (sql.includes('FROM defects d')) {
               return {
                 rows: [
@@ -443,6 +453,7 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
         orgId,
         userId: uuidv7(),
         actorType: 'MEMBER',
+        projectRole: 'R-QC',
         requestId: 'req-defect-version',
         ip: '127.0.0.1',
         userAgent: 'jest',
@@ -463,6 +474,10 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
       const mockPool: any = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
+            if (sql.includes('FROM projects') && sql.includes('FOR UPDATE')) {
+              return { rows: [{ id: projectId, status: 'ACTIVE',
+                closed_at: null, purged_at: null }] };
+            }
             if (sql.includes('FROM defects d')) {
               return {
                 rows: [
@@ -488,6 +503,7 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
         orgId,
         userId: assigneeUserId,
         actorType: 'MEMBER',
+        projectRole: 'R-QC',
         requestId: 'req-defect-self-close',
         ip: '127.0.0.1',
         userAgent: 'jest',
@@ -521,6 +537,10 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
       const mockPool: any = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
+            if (sql.includes('FROM projects') && sql.includes('FOR UPDATE')) {
+              return { rows: [{ id: projectId, status: 'ACTIVE',
+                closed_at: null, purged_at: null }] };
+            }
             if (sql.includes('FROM defects d')) {
               return { rows: [{ ...currentDefect }] };
             }
@@ -595,6 +615,7 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
         orgId,
         userId: independentVerifierId,
         actorType: 'MEMBER',
+        projectRole: 'R-QC',
         requestId: 'req-close-1',
         ip: '127.0.0.1',
         userAgent: 'jest',
