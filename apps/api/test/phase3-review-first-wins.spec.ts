@@ -3,6 +3,7 @@ import { uuidv7 } from 'uuidv7';
 import { ReviewsService } from '../src/modules/reviews/reviews.service';
 import { executeReviewDecision } from '../src/modules/reviews/review-decision.service';
 import { TenantDbService } from '../src/database/tenant-db.service';
+import { evaluateReadinessInTransaction } from '../src/modules/handover/closeout-readiness';
 import { withDisposableDatabase } from '../../../packages/db/test/helpers/disposable-database';
 import { seedTenants } from '../../../packages/db/test/helpers/fixtures';
 
@@ -31,7 +32,7 @@ describe('PH3-G11-001 — exactly one terminal review decision per document vers
         `INSERT INTO checklist_snapshots
            (id, org_id, project_id, version_no, status, resolved_payload_json,
             provenance_json, source_json, checksum, created_by)
-           VALUES ($1, $2, $3, 1, 'ACTIVE', '{}'::jsonb, '{}'::jsonb,
+           VALUES ($1, $2, $3, 1, 'ACTIVE', '{"requirements":[{"requirementKey":"REQ-SERIAL"}]}'::jsonb, '{}'::jsonb,
                    '{}'::jsonb, $4, $5)`,
         [snapshotId, orgId, projectId, 'a'.repeat(64), firstUser],
       );
@@ -129,6 +130,11 @@ describe('PH3-G11-001 — exactly one terminal review decision per document vers
       expect(approved.reviews.map(r => r.status).sort()).toEqual(['APPROVED', 'CANCELLED']);
       expect(approved.reviews.find(r => r.status === 'CANCELLED')?.row_version).toBe(2);
       expect(approved.audits).toHaveLength(1);
+      const acceptedReadiness = await new TenantDbService(app).withTenantContext(
+        contexts[0], async client => evaluateReadinessInTransaction(client, orgId, projectId),
+      );
+      expect(acceptedReadiness.readyWithoutOverride).toBe(true);
+      expect(acceptedReadiness.blockers.missingMandatoryCount).toBe(0);
       await expect(service.submitReview(contexts[0], serial.requirementId, {
         documentVersionId: serial.versionId,
       })).rejects.toThrow(ConflictException);
@@ -187,6 +193,13 @@ describe('PH3-G11-001 — exactly one terminal review decision per document vers
       expect(rejected.requirement.status).toBe('REJECTED');
       expect(rejected.reviews.map(r => r.status).sort()).toEqual(['CANCELLED','REJECTED']);
       expect(rejected.audits).toHaveLength(1);
+      const rejectedReadiness = await new TenantDbService(app).withTenantContext(
+        contexts[0], async client => evaluateReadinessInTransaction(client, orgId, projectId),
+      );
+      expect(rejectedReadiness.readyWithoutOverride).toBe(false);
+      expect(rejectedReadiness.blockers.missingMandatory.some(
+        (row: any) => row.id === declined.requirementId && !row.hasApprovedEvidence,
+      )).toBe(true);
 
       // Commit-acknowledgement loss: PostgreSQL COMMIT succeeds, but the
       // application never receives a successful response. A different
