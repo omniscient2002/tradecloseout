@@ -713,11 +713,16 @@ export class ChecklistsService {
     if (input.secondApproverUserId || input.evidenceObjectId) {
       throw new ConflictException('USE_EXPLICIT_WAIVER_COUNTERSIGN_AND_EVIDENCE_REVIEW');
     }
-    const target = await this.requestWaiver(ctx, requirementId, input.reason, input.type);
-    // The project ID was not trusted for the canonical write. Verify it
-    // before returning any details on this compatibility entry point.
-    if (!projectId) throw new NotFoundException('PROJECT_NOT_FOUND');
-    return target;
+    // Do not allow the older project-qualified caller to mutate an obligation
+    // in a different project. Validate before invoking the canonical command.
+    const belongs = await withTenantTransaction(this.pool, ctx, async (client: PoolClient) =>
+      client.query(
+        `SELECT id FROM requirements WHERE org_id = $1 AND project_id = $2 AND id = $3`,
+        [ctx.orgId, projectId, requirementId],
+      ),
+    );
+    if (!belongs.rows.length) throw new NotFoundException('REQUIREMENT_NOT_FOUND');
+    return this.requestWaiver(ctx, requirementId, input.reason, input.type);
   }
 
   /**
