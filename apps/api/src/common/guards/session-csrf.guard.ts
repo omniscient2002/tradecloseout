@@ -315,6 +315,7 @@ export class SessionCsrfGuard implements CanActivate {
       // path, header or caller-provided execution context.
       sessionId: session.session_id,
       sessionTokenHash: tokenHash,
+      mfaVerified: authData.mfaVerified,
       requestId: authData.requestId,
       orgRole,
       projectRole,
