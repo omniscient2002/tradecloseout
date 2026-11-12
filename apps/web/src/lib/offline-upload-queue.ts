@@ -173,15 +173,19 @@ async function refreshOutstandingParts(item: OfflineQueuedUpload): Promise<void>
 }
 
 type VerifiedUploadState = 'READY' | 'REJECTED' | 'PROCESSING' | 'PENDING_UPLOAD' | 'UNKNOWN';
-async function checkDocumentProcessingState(item: OfflineQueuedUpload): Promise<VerifiedUploadState> {
+async function checkDocumentProcessingState(item: OfflineQueuedUpload, intentionalDiscard = false): Promise<VerifiedUploadState> {
   if (!item.uploadIntent) throw new Error('UPLOAD_INTENT_MISSING');
-  assertSameActor(item);
+  // During deliberate discard, a returning original user may inspect a
+  // prior epoch, but MUST NOT replay its upload automatically.
+  if (intentionalDiscard) assertSameActorIdentity(item);
+  else assertSameActor(item);
   const status = await apiFetch<{
     versionId: string;
     fileStatus: string;
     storageStatus: string;
   }>(`/api/v1/document-versions/${encodeURIComponent(item.uploadIntent.versionId)}/upload-state`);
-  assertSameActor(item);
+  if (intentionalDiscard) assertSameActorIdentity(item);
+  else assertSameActor(item);
   if (status.versionId !== item.uploadIntent.versionId) throw new Error('UPLOAD_STATUS_VERSION_MISMATCH');
   if (['QUARANTINED', 'FAILED', 'DELETED', 'ABORTED'].includes(status.storageStatus) ||
       ['QUARANTINED', 'FAILED'].includes(status.fileStatus)) return 'REJECTED';
@@ -292,7 +296,7 @@ export async function discardOfflineUploadDraft(queueId: string): Promise<void> 
           // A 409 permits local discard ONLY if the authoritative version is
           // terminally rejected. Never interpret 401/403/404 as proof of abort.
           if (!(error instanceof ApiProblemError) || error.status !== 409 ||
-              await checkDocumentProcessingState(item) !== 'REJECTED') {
+              await checkDocumentProcessingState(item, true) !== 'REJECTED') {
             throw error;
           }
         }
