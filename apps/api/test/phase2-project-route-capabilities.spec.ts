@@ -18,6 +18,12 @@ describe('PH2-G05-008: exact capabilities on project/contract write routes', () 
     expect(hasPermission({ orgRole:'R-OWNER' }, 'project.close').allowed).toBe(true);
   });
 
+  it('requires commercial authority to list contractual values', () => {
+    expect(routePermission('listContracts')).toBe('contract.manage');
+    expect(hasPermission({ orgRole:'R-SITE', projectRole:'R-SITE' }, 'project.read').allowed).toBe(true);
+    expect(hasPermission({ orgRole:'R-SITE', projectRole:'R-SITE' }, 'contract.manage').allowed).toBe(false);
+  });
+
   it('requires contract.manage for contract, variation and specification mutation', () => {
     expect(routePermission('createContract')).toBe('contract.manage');
     expect(routePermission('createVariation')).toBe('contract.manage');
