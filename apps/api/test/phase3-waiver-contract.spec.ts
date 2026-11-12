@@ -161,6 +161,44 @@ describe('PH3-G07-001/002/003 — canonical waiver lifecycle and retries', () =>
     });
   });
 
+  it('rolls back waiver, requirement and decision history on a durable event failure', async () => {
+    await withDisposableDatabase(async ({admin,app})=>{
+      const f=await setup(admin,app);
+      const id=f.byKey['MANDATORY-WAIVE'].id;
+      const originalVersion=f.byKey['MANDATORY-WAIVE'].row_version;
+      await admin.query(`
+        CREATE FUNCTION phase3_fail_waiver_outbox() RETURNS trigger AS $waiver$
+        BEGIN
+          IF NEW.event_type = 'WAIVER_REQUESTED' THEN
+            RAISE EXCEPTION 'TEST_WAIVER_OUTBOX_FAILURE';
+          END IF;
+          RETURN NEW;
+        END;
+        $waiver$ LANGUAGE plpgsql
+      `);
+      await admin.query(`
+        CREATE TRIGGER phase3_fail_waiver_outbox
+          BEFORE INSERT ON outbox_events
+          FOR EACH ROW EXECUTE FUNCTION phase3_fail_waiver_outbox()
+      `);
+      await expect(f.service.requestWaiver(
+        f.primary,id,'Documented factory test exception','WAIVE',
+      )).rejects.toThrow('TEST_WAIVER_OUTBOX_FAILURE');
+      const rollback=await admin.query(
+        `SELECT r.status,r.row_version,
+           (SELECT count(*)::int FROM waivers w WHERE w.requirement_id=r.id) AS waivers
+           FROM requirements r WHERE r.id=$1`,[id],
+      );
+      expect(rollback.rows[0]).toMatchObject({
+        status:'NOT_STARTED',row_version:originalVersion,waivers:0,
+      });
+      await admin.query('DROP TRIGGER phase3_fail_waiver_outbox ON outbox_events');
+      await admin.query('DROP FUNCTION phase3_fail_waiver_outbox()');
+      const after=await f.service.requestWaiver(f.primary,id,'Documented factory test exception','WAIVE');
+      expect(after).toMatchObject({status:'PENDING_SECOND_APPROVAL',idempotentReplay:false});
+    });
+  });
+
   it('denies stale HTTP ownership and suspended second approvers', async () => {
     await withDisposableDatabase(async ({admin,app})=>{
       const f=await setup(admin,app);
