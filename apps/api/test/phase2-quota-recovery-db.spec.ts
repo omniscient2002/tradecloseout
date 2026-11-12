@@ -198,7 +198,7 @@ describe('Phase 2 real quota boundary and recovery transactions',()=>{
     });
   });
 
-  it('reserves generated artifact bytes before provider work and reuses a matching unpublished retry',async()=>{
+  it('reserves generated artifact bytes before provider work and retains replaced unpublished objects',async()=>{
     await withDisposableDatabase(async({admin,app})=>{
       const t=await tenant(admin),limits={maxSeats:1,maxActiveProjects:1,maxStorageBytes:1000,maxPackageGenerationsPerMonth:1};
       await syntheticOffer(admin,t.orgId,limits);
@@ -215,7 +215,12 @@ describe('Phase 2 real quota boundary and recovery transactions',()=>{
       const winner=result.findIndex(x=>x.status==='fulfilled');
       const first=(result[winner] as PromiseFulfilledResult<{id:string;objectKey:string;reused:boolean}>).value;
       const retried=await reservePackageArtifact(app,inputs[winner]);
-      expect(retried).toEqual({...first,reused:true});
+      expect(retried.reused).toBe(false);
+      expect(retried.id).not.toBe(first.id);
+      expect(retried.objectKey).not.toBe(first.objectKey);
+      const replaced=(await admin.query('SELECT status,upload_cleanup_requested_at FROM storage_objects WHERE id=$1',[first.id])).rows[0];
+      expect(replaced.status).toBe('ABORTED');
+      expect(replaced.upload_cleanup_requested_at).toBeTruthy();
       expect((await admin.query("SELECT count(*)::int AS n FROM storage_objects WHERE org_id=$1 AND status='PENDING'",[t.orgId])).rows[0].n).toBe(1);
       expect((await admin.query('SELECT pdf_object_id FROM handover_packages WHERE id=$1',[inputs[winner].packageId])).rows[0].pdf_object_id).toBeNull();
       await expect(reservePackageArtifact(app,{...inputs[winner],owner:'STALE-BUILD'})).rejects.toThrow('PACKAGE_BUILD_LEASE_LOST');

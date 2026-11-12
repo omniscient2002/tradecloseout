@@ -11,8 +11,8 @@ async function bind(client:PoolClient,orgId:string) {
   await client.query(`SELECT set_config('app.current_org',$1,true),set_config('app.current_org_id',$1,true)`,[orgId]);
 }
 
-/** The actual compiler calls this before any provider PUT. A retry reuses an
- * unchanged unpublished reservation; published evidence is never overwritten. */
+/** Reserve before PUT. Each attempt gets a new object key because an expired
+ * owner may still have a provider request in flight. Retain cleanup tombstones. */
 export async function reservePackageArtifact(pool:Pool,input:ArtifactReservation) {
   if(!Number.isSafeInteger(input.sizeBytes)||input.sizeBytes<1||!/^[a-f0-9]{64}$/.test(input.sha256))throw new Error('PACKAGE_ARTIFACT_METADATA_INVALID');
   const client=await pool.connect();let destroy=false;
@@ -31,12 +31,6 @@ export async function reservePackageArtifact(pool:Pool,input:ArtifactReservation
     if(packages[0].build_object_id) {
       const {rows:prior}=await client.query(`SELECT id,status,expected_sha256,size_bytes,bucket,object_key,original_filename FROM storage_objects
         WHERE org_id=$1 AND id=$2 FOR UPDATE`,[input.orgId,packages[0].build_object_id]);
-      if(prior[0]?.status==='PENDING'&&prior[0].expected_sha256===input.sha256&&BigInt(prior[0].size_bytes)===BigInt(input.sizeBytes)
-        &&prior[0].bucket===input.bucket&&prior[0].original_filename===input.filename) {
-        if(occupied.totalBytes>BigInt(effective.limits.maxStorageBytes))throw new Error('STORAGE_QUOTA_EXCEEDED');
-        await client.query('COMMIT');
-        return {id:prior[0].id as string,objectKey:prior[0].object_key as string,reused:true};
-      }
       if(prior[0]?.status==='READY')throw new Error('PACKAGE_ARTIFACT_ALREADY_PUBLISHED');
       await client.query(`UPDATE storage_objects SET status='ABORTED',upload_cleanup_requested_at=COALESCE(upload_cleanup_requested_at,now()),
         upload_failure_code='UNPUBLISHED_PACKAGE_ARTIFACT_REPLACED',updated_at=now()

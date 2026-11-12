@@ -6,6 +6,7 @@ import { PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { TenantDbService, ExecutionContext } from '../../database/tenant-db.service';
 import { isIndiaQuietHour } from '@tradecloseout/shared';
+import { boundedJsonObject } from '../../common/validation/bounded-json';
 import { getProjectCommercialSummary, paiseToSafeInr } from '../projects/project-commercial-summary';
 
 @Injectable()
@@ -46,6 +47,11 @@ export class NotificationsService {
       isUrgent?: boolean;
     },
   ) {
+    if (!dto || typeof dto !== 'object' || Array.isArray(dto) ||
+        !['IN_APP','EMAIL','SMS','WHATSAPP'].includes(dto.channel) ||
+        (dto.isUrgent !== undefined && typeof dto.isUrgent !== 'boolean')) {
+      throw new UnprocessableEntityException({ code: 'INVALID_NOTIFICATION_INPUT' });
+    }
     // PH2-G20-001: external delivery is an internal template-only workflow.
     // A user cannot turn arbitrary JSON into an email or SMS by changing channel.
     if (dto.channel !== 'IN_APP' && ctx.actorType !== 'SYSTEM') {
@@ -61,7 +67,13 @@ export class NotificationsService {
           !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(dto.projectId)))) {
       throw new UnprocessableEntityException({ code: 'INVALID_NOTIFICATION_INPUT' });
     }
-    const canonicalPayload = this.canonicalNotificationJson(dto.payload);
+    let payload: Record<string, unknown>;
+    try { payload = boundedJsonObject(dto.payload, 4096); }
+    catch (error) {
+      throw new UnprocessableEntityException({ code: (error as Error).message === 'JSON_TOO_LARGE'
+        ? 'NOTIFICATION_PAYLOAD_TOO_LARGE' : 'INVALID_NOTIFICATION_INPUT' });
+    }
+    const canonicalPayload = this.canonicalNotificationJson(payload);
     if (Buffer.byteLength(canonicalPayload, 'utf8') > 4096) {
       throw new UnprocessableEntityException({ code: 'NOTIFICATION_PAYLOAD_TOO_LARGE' });
     }

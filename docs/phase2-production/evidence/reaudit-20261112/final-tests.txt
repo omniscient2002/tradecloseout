@@ -1,0 +1,9 @@
+PASS test/phase2-quota-recovery-db.spec.ts (16.895 s)
+PASS test/phase2-package-artifact-publication-db.spec.ts (5.866 s)
+PASS test/phase2-entitlements.spec.ts
+
+Test Suites: 3 passed, 3 total
+Tests:       40 passed, 40 total
+Snapshots:   0 total
+Time:        25.082 s
+Ran all test suites matching /test\/phase2-package-artifact-publication-db.spec.ts|test\/phase2-quota-recovery-db.spec.ts|test\/phase2-entitlements.spec.ts/i.

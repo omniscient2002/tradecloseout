@@ -1,0 +1,16 @@
+PASS test/phase2-notification-visibility.spec.ts
+PASS test/phase2-project-money-variations-db.spec.ts (5.836 s)
+PASS test/phase2-policy-upgrade-and-org-lock-db.spec.ts (6.428 s)
+PASS test/phase2-project-members-db.spec.ts
+PASS test/phase2-project-route-capabilities.spec.ts
+PASS test/phase2-notification-project-authority-db.spec.ts
+PASS test/phase2-project-lifecycle-lock.spec.ts
+PASS test/g03-organisation-validation.spec.ts
+PASS test/phase2-easy-ten-db.spec.ts
+PASS test/phase2-easy-ten.spec.ts
+
+Test Suites: 10 passed, 10 total
+Tests:       51 passed, 51 total
+Snapshots:   0 total
+Time:        27.132 s
+Ran all test suites matching /test\/phase2-easy-ten.spec.ts|test\/phase2-easy-ten-db.spec.ts|test\/phase2-project-money-variations-db.spec.ts|test\/phase2-project-lifecycle-lock.spec.ts|test\/phase2-project-members-db.spec.ts|test\/phase2-project-route-capabilities.spec.ts|test\/phase2-notification-visibility.spec.ts|test\/phase2-notification-project-authority-db.spec.ts|test\/phase2-policy-upgrade-and-org-lock-db.spec.ts|test\/g03-organisation-validation.spec.ts/i.

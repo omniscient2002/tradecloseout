@@ -1,0 +1,279 @@
+$ jest --runInBand
+PASS test/hvac-domain-excellence.spec.ts (15.386 s)
+PASS test/production-reaudit-remediation.spec.ts
+  ● Console
+
+    console.error
+      AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE
+
+      340 |   lastAuthDenialDiagnosticAt = now;
+      341 |   // No exception string, HTTP request data, raw source or credentials.
+    > 342 |   console.error('AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE');
+          |           ^
+      343 | }
+      344 |
+      345 | /**
+
+      at reportAuthDenialPersistenceFailure (src/modules/identity/auth-security.ts:342:11)
+      at recordDeniedAuthenticationEvent (src/modules/identity/auth-security.ts:483:5)
+      at async PermissionGuard.canActivate (src/common/guards/permission.guard.ts:236:9)
+      at async Object.<anonymous> (test/production-reaudit-remediation.spec.ts:578:7)
+
+PASS test/discovery-lifecycle-foundations.spec.ts
+PASS test/phase0-evidence-integrity-remediation.spec.ts
+PASS test/hvac-production-reaudit-remediation.spec.ts
+PASS test/g01-authentication-security.spec.ts
+  ● Console
+
+    console.error
+      AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE
+
+      340 |   lastAuthDenialDiagnosticAt = now;
+      341 |   // No exception string, HTTP request data, raw source or credentials.
+    > 342 |   console.error('AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE');
+          |           ^
+      343 | }
+      344 |
+      345 | /**
+
+      at reportAuthDenialPersistenceFailure (src/modules/identity/auth-security.ts:342:11)
+      at recordDeniedAuthenticationEvent (src/modules/identity/auth-security.ts:483:5)
+      at SessionCsrfGuard.canActivate (src/common/guards/session-csrf.guard.ts:91:46)
+      at async Object.<anonymous> (test/g01-authentication-security.spec.ts:284:7)
+
+PASS test/contractor-user-journey.spec.ts
+PASS test/perfect-10-remediation.spec.ts
+PASS test/pr1-independent-db-acceptance.spec.ts (26.809 s)
+PASS test/g01-mfa-db.spec.ts (21.369 s)
+PASS test/production-review-remediation.spec.ts
+FAIL test/g01-two-api-http.spec.ts (33.088 s)
+  ● G01 actual two-API strict-mode HTTP: shared budgets, MFA, lost response and crash rollback
+
+    G01_API_STARTUP_FAILED: /tmp/tco-phase2-reaudit/apps/api/dist/apps/api/src/modules/identity/auth-security.js:68
+            throw new Error(`BOOT_AUTH_CONFIG_MISSING: ${missing.join(', ')}`);
+                  ^
+
+    Error: BOOT_AUTH_CONFIG_MISSING: REDIS_URL
+
+      66 |     ].filter(k => !env[k]);
+      67 |     if (missing.length)
+    > 68 |         throw new Error(`BOOT_AUTH_CONFIG_MISSING: ${missing.join(', ')}`);
+         |               ^
+      69 |     if (!env.MAIL_API_KEY && !env.SENDGRID_API_KEY) {
+      70 |         throw new Error('BOOT_AUTH_MAIL_CREDENTIAL_MISSING');
+      71 |     }
+
+      at validateAuthenticationConfig (dist/apps/api/src/modules/identity/auth-security.js:68:15)
+      at bootstrap (dist/apps/api/src/main.js:17:54)
+      at Object.<anonymous> (dist/apps/api/src/main.js:54:1)
+      Node.js v22.23.5
+      /tmp/tco-phase2-reaudit/apps/api/dist/apps/api/src/modules/identity/auth-security.js:68
+              throw new Error(`BOOT_AUTH_CONFIG_MISSING: ${missing.join(', ')}`);
+                    ^
+      Error: BOOT_AUTH_CONFIG_MISSING: REDIS_URL
+      at validateAuthenticationConfig (dist/apps/api/src/modules/identity/auth-security.js:68:15)
+      at bootstrap (dist/apps/api/src/main.js:17:54)
+      at Object.<anonymous> (dist/apps/api/src/main.js:54:1)
+      Node.js v22.23.5
+      at ready (test/g01-two-api-http.spec.ts:99:14)
+          at async Promise.all (index 0)
+      at async /tmp/tco-phase2-reaudit/apps/api/test/g01-two-api-http.spec.ts:100:7
+      at async withDisposableDatabase (../../packages/db/test/helpers/disposable-database.ts:107:5)
+      at async Object.<anonymous> (test/g01-two-api-http.spec.ts:74:5)
+
+PASS test/phase2-configuration-boundaries.spec.ts
+PASS test/g01-invitation-db.spec.ts (6.949 s)
+PASS test/g01-member-invitation-authority-db.spec.ts
+PASS test/g01-auth-denial-budget-db.spec.ts (21.904 s)
+  ● Console
+
+    console.error
+      AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE
+
+      340 |   lastAuthDenialDiagnosticAt = now;
+      341 |   // No exception string, HTTP request data, raw source or credentials.
+    > 342 |   console.error('AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE');
+          |           ^
+      343 | }
+      344 |
+      345 | /**
+
+      at reportAuthDenialPersistenceFailure (src/modules/identity/auth-security.ts:342:11)
+      at recordDeniedAuthenticationEvent (src/modules/identity/auth-security.ts:483:5)
+      at async /tmp/tco-phase2-reaudit/apps/api/test/g01-auth-denial-budget-db.spec.ts:146:9
+      at async withDisposableDatabase (../../packages/db/test/helpers/disposable-database.ts:107:5)
+      at async Object.<anonymous> (test/g01-auth-denial-budget-db.spec.ts:135:5)
+
+PASS test/pr4-authorization-evidence-gates.spec.ts (5.524 s)
+  ● Console
+
+    console.error
+      AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE
+
+      340 |   lastAuthDenialDiagnosticAt = now;
+      341 |   // No exception string, HTTP request data, raw source or credentials.
+    > 342 |   console.error('AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE');
+          |           ^
+      343 | }
+      344 |
+      345 | /**
+
+      at reportAuthDenialPersistenceFailure (src/modules/identity/auth-security.ts:342:11)
+      at recordDeniedAuthenticationEvent (src/modules/identity/auth-security.ts:483:5)
+      at async PermissionGuard.canActivate (src/common/guards/permission.guard.ts:236:9)
+      at async Object.<anonymous> (test/pr4-authorization-evidence-gates.spec.ts:82:7)
+
+PASS test/g01-external-document-attestation-db.spec.ts
+PASS test/g02-authorization-db.spec.ts (6.639 s)
+PASS test/g01-delivery-reconciliation-db.spec.ts (9.268 s)
+PASS test/g02-authorization-contract.spec.ts
+  ● Console
+
+    console.error
+      AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE
+
+      340 |   lastAuthDenialDiagnosticAt = now;
+      341 |   // No exception string, HTTP request data, raw source or credentials.
+    > 342 |   console.error('AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE');
+          |           ^
+      343 | }
+      344 |
+      345 | /**
+
+      at reportAuthDenialPersistenceFailure (src/modules/identity/auth-security.ts:342:11)
+      at recordDeniedAuthenticationEvent (src/modules/identity/auth-security.ts:483:5)
+      at async PermissionGuard.canActivate (src/common/guards/permission.guard.ts:236:9)
+      at async Object.<anonymous> (test/g02-authorization-contract.spec.ts:149:7)
+
+PASS test/hvac-checklist-readiness-branch.spec.ts
+PASS test/g01-identity-recovery-db.spec.ts
+PASS test/g01-reviewer-operations.spec.ts
+PASS test/g01-independent-party-approval-db.spec.ts
+PASS test/sol-integrity-verification.spec.ts
+PASS test/remaining-production-gaps.spec.ts (14.18 s)
+PASS test/phase2-owner-digest-commercial-db.spec.ts
+PASS test/g01-guest-principal-db.spec.ts (6.499 s)
+PASS test/document-download-boundaries.spec.ts
+PASS test/phase2-hvac-governance-db.spec.ts
+PASS test/review-authority-boundaries.spec.ts
+PASS test/g01-privileged-route-inventory.spec.ts
+  ● Console
+
+    console.error
+      AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE
+
+      340 |   lastAuthDenialDiagnosticAt = now;
+      341 |   // No exception string, HTTP request data, raw source or credentials.
+    > 342 |   console.error('AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE');
+          |           ^
+      343 | }
+      344 |
+      345 | /**
+
+      at reportAuthDenialPersistenceFailure (src/modules/identity/auth-security.ts:342:11)
+      at recordDeniedAuthenticationEvent (src/modules/identity/auth-security.ts:483:5)
+      at SessionCsrfGuard.canActivate (src/common/guards/session-csrf.guard.ts:91:46)
+      at async /tmp/tco-phase2-reaudit/apps/api/test/g01-privileged-route-inventory.spec.ts:53:14
+
+PASS test/modules/documents-reviews.spec.ts
+PASS test/g01-session-guard-db.spec.ts
+PASS test/modules/parties-projects.spec.ts
+PASS test/g01-external-authority-db.spec.ts
+PASS test/g01-delivery-redirect-boundaries.spec.ts
+PASS test/g01-distributed-rate-budgets.spec.ts (6.872 s)
+PASS test/phase2-two-party-ownership-db.spec.ts
+PASS test/modules/handover-billing-system.spec.ts
+PASS test/phase1-tenant-event-boundaries.spec.ts
+PASS test/g01-legacy-external-migration-upgrade-db.spec.ts
+PASS test/phase2-storage-reservation-db.spec.ts
+PASS test/concurrency.spec.ts
+PASS test/phase2-checklist-change-decision-db.spec.ts
+PASS test/guest-session-boundaries.spec.ts
+PASS test/phase2-organisation-offboarding-db.spec.ts
+PASS test/phase1-live-session-eligibility-db.spec.ts
+PASS test/g01-org-switch-review-regressions.spec.ts
+PASS test/g01-auth-session-transaction-fence-db.spec.ts
+PASS test/modules/nfr-quality-attributes.spec.ts
+PASS test/rbac-matrix.spec.ts
+PASS test/g01-guest-project-party-db.spec.ts
+PASS test/modules/config-checklists-assets.spec.ts
+PASS test/modules/auth-iam.spec.ts
+PASS test/phase1-notification-producer-db.spec.ts
+PASS test/phase2-org-dashboard-visibility-db.spec.ts
+PASS test/phase2-org-audit-authority-db.spec.ts
+PASS test/g01-device-session-revocation-db.spec.ts
+PASS test/v021-edge-cases.e2e-spec.ts
+PASS test/idempotency-cleanup-replay.spec.ts
+PASS test/phase2-subscription-price-precision-db.spec.ts
+PASS test/g01-request-id-privacy.spec.ts
+PASS test/remaining-dossier-delivery.spec.ts
+PASS test/phase2-public-plan-policy.spec.ts
+PASS test/phase1-tenantdb-rollback.spec.ts
+PASS test/phase1-error-leakage.spec.ts
+PASS test/idempotency-expired-claim.spec.ts
+PASS test/phase1-mfa-idempotency-boundary.spec.ts
+PASS test/g01-auth-route-audit-db.spec.ts
+PASS test/phase2-quota-recovery-db.spec.ts (19.997 s)
+PASS test/phase2-policy-upgrade-and-org-lock-db.spec.ts (7.536 s)
+PASS test/phase2-project-money-variations-db.spec.ts (5.097 s)
+PASS test/rls-and-integrity.spec.ts
+PASS test/phase2-package-artifact-publication-db.spec.ts
+PASS test/phase2-notification-visibility.spec.ts
+PASS test/phase2-easy-ten-db.spec.ts
+PASS test/phase2-entitlements.spec.ts
+PASS test/phase2-project-members-db.spec.ts
+PASS test/phase2-notification-project-authority-db.spec.ts
+PASS test/rls-isolation.spec.ts
+PASS test/phase2-project-route-capabilities.spec.ts
+PASS test/security-invariants.e2e-spec.ts
+PASS test/phase2-easy-ten.spec.ts
+PASS test/phase2-project-lifecycle-lock.spec.ts
+PASS test/g03-organisation-validation.spec.ts
+
+Summary of all failing tests
+FAIL test/g01-two-api-http.spec.ts (33.088 s)
+  ● G01 actual two-API strict-mode HTTP: shared budgets, MFA, lost response and crash rollback
+
+    G01_API_STARTUP_FAILED: /tmp/tco-phase2-reaudit/apps/api/dist/apps/api/src/modules/identity/auth-security.js:68
+            throw new Error(`BOOT_AUTH_CONFIG_MISSING: ${missing.join(', ')}`);
+                  ^
+
+    Error: BOOT_AUTH_CONFIG_MISSING: REDIS_URL
+
+      66 |     ].filter(k => !env[k]);
+      67 |     if (missing.length)
+    > 68 |         throw new Error(`BOOT_AUTH_CONFIG_MISSING: ${missing.join(', ')}`);
+         |               ^
+      69 |     if (!env.MAIL_API_KEY && !env.SENDGRID_API_KEY) {
+      70 |         throw new Error('BOOT_AUTH_MAIL_CREDENTIAL_MISSING');
+      71 |     }
+
+      at validateAuthenticationConfig (dist/apps/api/src/modules/identity/auth-security.js:68:15)
+      at bootstrap (dist/apps/api/src/main.js:17:54)
+      at Object.<anonymous> (dist/apps/api/src/main.js:54:1)
+      Node.js v22.23.5
+      /tmp/tco-phase2-reaudit/apps/api/dist/apps/api/src/modules/identity/auth-security.js:68
+              throw new Error(`BOOT_AUTH_CONFIG_MISSING: ${missing.join(', ')}`);
+                    ^
+      Error: BOOT_AUTH_CONFIG_MISSING: REDIS_URL
+      at validateAuthenticationConfig (dist/apps/api/src/modules/identity/auth-security.js:68:15)
+      at bootstrap (dist/apps/api/src/main.js:17:54)
+      at Object.<anonymous> (dist/apps/api/src/main.js:54:1)
+      Node.js v22.23.5
+      at ready (test/g01-two-api-http.spec.ts:99:14)
+          at async Promise.all (index 0)
+      at async /tmp/tco-phase2-reaudit/apps/api/test/g01-two-api-http.spec.ts:100:7
+      at async withDisposableDatabase (../../packages/db/test/helpers/disposable-database.ts:107:5)
+      at async Object.<anonymous> (test/g01-two-api-http.spec.ts:74:5)
+
+
+Test Suites: 1 failed, 86 passed, 87 total
+Tests:       1 failed, 530 passed, 531 total
+Snapshots:   0 total
+Time:        324.59 s
+Ran all test suites.
+[ELIFECYCLE] Test failed. See above for more details.
+Error: ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL
+
+  × "pnpm recursive run" failed in /tmp/tco-phase2-reaudit/apps/api
+

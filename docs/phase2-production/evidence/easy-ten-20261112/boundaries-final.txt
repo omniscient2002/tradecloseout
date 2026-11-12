@@ -1,0 +1,24 @@
+PASS test/phase2-easy-ten.spec.ts (7.736 s)
+  Phase2 easiest ten: pre-database runtime boundaries
+    ✓ B01 forwards the supplied project start date to the canonical validator/writer (8 ms)
+    ✓ B02 rejects invalid closure date 2027-02-30 before SQL (3 ms)
+    ✓ B02 rejects invalid closure date 2027-13-01 before SQL (1 ms)
+    ✓ B02 rejects invalid closure date yesterday before SQL (1 ms)
+    ✓ B02 rejects invalid closure date  before SQL (2 ms)
+    ✓ B02 rejects invalid closure date null before SQL (1 ms)
+    ✓ B02 rejects invalid closure date 3 before SQL (1 ms)
+    ✓ B03 rejects control characters in project renames consistently with creation (2 ms)
+    ✓ B06 rejects oversized variation scope before SQL (2 ms)
+    ✓ B07 rejects malformed notification envelopes (2 ms)
+    ✓ B07 rejects malformed notification envelopes (1 ms)
+    ✓ B07 rejects malformed notification envelopes (1 ms)
+    ✓ B07 rejects cyclic or excessively deep notification payloads before SQL (3 ms)
+    ✓ B06/B07 accepts bounded nested JSON without invoking getters or silently serializing non-JSON values (37 ms)
+    ✓ B08 cannot enable self-approval through a branding/profile edit (2 ms)
+    ✓ B10 rejects a profile PATCH naming a different organisation through controller and service wrapper (2 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       16 passed, 16 total
+Snapshots:   0 total
+Time:        7.814 s
+Ran all test suites matching /test\/phase2-easy-ten.spec.ts/i.

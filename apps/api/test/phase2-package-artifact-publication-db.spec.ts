@@ -1,7 +1,8 @@
 import {createHash} from 'crypto';
 import {uuidv7} from 'uuidv7';
+import {Readable} from 'stream';
 import {PDFDocument} from 'pdf-lib';
-import {PutObjectCommand,S3Client} from '@aws-sdk/client-s3';
+import {GetObjectCommand,PutObjectCommand,S3Client} from '@aws-sdk/client-s3';
 import {withDisposableDatabase} from '../../../packages/db/test/helpers/disposable-database';
 import {attachSyntheticEntitlementPolicy} from '../../../packages/db/test/helpers/synthetic-entitlement-policy';
 import {storageServer} from '../../worker/test/helpers/storage-server';
@@ -49,8 +50,10 @@ describe('Phase2 generated artifact admission through the actual compiler',()=>{
         return {orgId:org,projectId:project,packageId:id,eventId:uuidv7()};
       };
       await offer(0);const job=await makePackage(1);
-      await expect(compileAndPersistHandoverPackage(app,storage.s3,job,'synthetic-job-1',true)).rejects.toThrow('STORAGE_QUOTA_EXCEEDED');
+      await expect(compileAndPersistHandoverPackage(app,storage.s3,job,'synthetic-job-1',true,false)).rejects.toThrow('STORAGE_QUOTA_EXCEEDED');
       expect(storage.uploads).toHaveLength(0);
+      expect((await admin.query('SELECT status,error_code FROM handover_packages WHERE id=$1',[job.packageId])).rows[0])
+        .toEqual({status:'QUEUED',error_code:null});
       await offer(50_000_000);
       const built=await compileAndPersistHandoverPackage(app,storage.s3,job,'synthetic-job-1',true);
       expect(built.status).toBe('READY');
@@ -64,15 +67,74 @@ describe('Phase2 generated artifact admission through the actual compiler',()=>{
       expect(storage.uploads).toHaveLength(1);
 
       const stale=await makePackage(2);
-      const takeover={send:async(command:any)=>{
-        const response=await storage.s3.send(command);
-        if(command instanceof PutObjectCommand)await admin.query("UPDATE handover_packages SET error_code='INDEPENDENT_REPLACEMENT_BUILD' WHERE id=$1",[stale.packageId]);
-        return response;
-      }} as S3Client;
-      await expect(compileAndPersistHandoverPackage(app,takeover,stale,'synthetic-stale-job',true)).rejects.toThrow('PACKAGE_BUILD_LEASE_LOST');
-      const denied=(await admin.query('SELECT status,pdf_object_id,build_object_id FROM handover_packages WHERE id=$1',[stale.packageId])).rows[0];
-      expect(denied.status).toBe('GENERATING');expect(denied.pdf_object_id).toBeNull();expect(denied.build_object_id).toBeTruthy();
-      expect((await admin.query('SELECT status FROM storage_objects WHERE id=$1',[denied.build_object_id])).rows[0].status).toBe('PENDING');
+      let signalPut!:()=>void, releasePut!:()=>void;
+      const atPut=new Promise<void>(resolve=>{signalPut=resolve;});
+      const resumePut=new Promise<void>(resolve=>{releasePut=resolve;});
+      const stalled={send:async(command:any)=>{
+        if(command instanceof PutObjectCommand){signalPut();await resumePut;}
+        return storage.s3.send(command);
+      }} as unknown as S3Client;
+      const original=compileAndPersistHandoverPackage(app,stalled,stale,'same-queue-job',true);
+      // Attach a rejection handler before unblocking so failures cannot escape Jest.
+      const originalResult=original.then(value=>({value,error:null}),error=>({value:null,error}));
+      try {
+        await Promise.race([atPut,originalResult.then(result=>{throw result.error || new Error('BUILD_FINISHED_BEFORE_PUT');})]);
+        const first=(await admin.query('SELECT error_code,build_object_id FROM handover_packages WHERE id=$1',[stale.packageId])).rows[0];
+        await expect(compileAndPersistHandoverPackage(app,storage.s3,stale,'same-queue-job',true))
+          .rejects.toThrow('PACKAGE_BUILD_IN_PROGRESS');
+        expect((await admin.query('SELECT error_code FROM handover_packages WHERE id=$1',[stale.packageId])).rows[0].error_code).toBe(first.error_code);
+        // Model a crashed/stalled owner's lease using DB time, then redeliver the SAME job.
+        await admin.query("UPDATE handover_packages SET updated_at=now()-interval '31 minutes' WHERE id=$1",[stale.packageId]);
+        const recovered=await compileAndPersistHandoverPackage(app,storage.s3,stale,'same-queue-job',true);
+        expect(recovered.status).toBe('READY');
+        const current=(await admin.query('SELECT pdf_object_id FROM handover_packages WHERE id=$1',[stale.packageId])).rows[0];
+        expect(current.pdf_object_id).not.toBe(first.build_object_id);
+        const abandoned=(await admin.query('SELECT status,upload_cleanup_requested_at FROM storage_objects WHERE id=$1',[first.build_object_id])).rows[0];
+        expect(abandoned.status).toBe('ABORTED');expect(abandoned.upload_cleanup_requested_at).toBeTruthy();
+        releasePut();
+        expect((await originalResult).error?.message).toBe('PACKAGE_BUILD_LEASE_LOST');
+        const final=(await admin.query('SELECT status,pdf_object_id,error_code FROM handover_packages WHERE id=$1',[stale.packageId])).rows[0];
+        expect(final).toEqual({status:'READY',pdf_object_id:current.pdf_object_id,error_code:null});
+        expect(new Set(storage.uploads.map(upload=>upload.key)).size).toBe(storage.uploads.length);
+      } finally { releasePut();await originalResult; }
+
+      const failed=await makePackage(3);
+      const failing={send:async()=>{throw new Error('SYNTHETIC_SOURCE_UNAVAILABLE');}} as unknown as S3Client;
+      await expect(compileAndPersistHandoverPackage(app,failing,failed,'terminal-attempt',true)).rejects.toThrow('SYNTHETIC_SOURCE_UNAVAILABLE');
+      expect((await admin.query('SELECT status,error_code FROM handover_packages WHERE id=$1',[failed.packageId])).rows[0])
+        .toEqual({status:'FAILED',error_code:'PACKAGE_BUILD_FAILED'});
+      const oversized=await makePackage(4);
+      let consumed=0;
+      const putsBefore=storage.uploads.length;
+      const oversizedSource={send:async(command:any)=>{
+        if(command instanceof GetObjectCommand)return {Body:Readable.from((async function*(){
+          for(let i=0;i<100;i++){consumed++;yield bytes;}
+        })())};
+        return storage.s3.send(command);
+      }} as unknown as S3Client;
+      await expect(compileAndPersistHandoverPackage(app,oversizedSource,oversized,'oversized-source',false))
+        .rejects.toThrow('STREAM_SIZE_LIMIT_EXCEEDED');
+      expect(consumed).toBeLessThan(100);
+      expect(storage.uploads).toHaveLength(putsBefore);
+      expect((await admin.query('SELECT status,pdf_object_id FROM handover_packages WHERE id=$1',[oversized.packageId])).rows[0])
+        .toEqual({status:'FAILED',pdf_object_id:null});
+
+      const interrupted=await makePackage(5);
+      const previousTimeout=process.env.PACKAGE_TRANSFER_TIMEOUT_MS;
+      const stalledBody=new Readable({read(){}});
+      try {
+        process.env.PACKAGE_TRANSFER_TIMEOUT_MS='25';
+        const unavailable={send:async()=>({Body:stalledBody})} as unknown as S3Client;
+        await expect(compileAndPersistHandoverPackage(app,unavailable,interrupted,'interrupted-source',false))
+          .rejects.toThrow('The operation was aborted');
+        expect(stalledBody.destroyed).toBe(true);
+        expect(storage.uploads).toHaveLength(putsBefore);
+      } finally {
+        stalledBody.destroy();
+        if(previousTimeout===undefined)delete process.env.PACKAGE_TRANSFER_TIMEOUT_MS;
+        else process.env.PACKAGE_TRANSFER_TIMEOUT_MS=previousTimeout;
+      }
+
     });} finally {
       await storage.close();if(previousBucket===undefined)delete process.env.S3_BUCKET;else process.env.S3_BUCKET=previousBucket;
     }

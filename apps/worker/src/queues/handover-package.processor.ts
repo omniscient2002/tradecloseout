@@ -2,6 +2,7 @@ import { HeadObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from 
 import { Pool } from 'pg';
 import {lockStorageCapacity,reconcileStorageCapacity,resolveEffectiveEntitlements} from '@tradecloseout/db';
 import {reservePackageArtifact} from './package-artifact-capacity';
+import { BoundedByteStream } from './bounded-stream';
 import { createHash } from 'crypto';
 import { createReadStream, createWriteStream } from 'fs';
 import { mkdtemp, rm, stat } from 'fs/promises';
@@ -45,12 +46,26 @@ export async function compileAndPersistHandoverPackage(
   job: PackageJob,
   jobId: string,
   qpdfAvailable: boolean,
+  terminalAttempt = true,
+): Promise<Record<string, unknown>> {
+  // Queue IDs survive retries and stalled redelivery; ownership must not.
+  const owner = `PACKAGE_ATTEMPT:${uuidv7()}`;
+  try {
+    return await compilePackageAttempt(pool, s3, job, jobId, qpdfAvailable, owner);
+  } catch (error) {
+    await settlePackageAttempt(pool, job, owner, terminalAttempt);
+    throw error;
+  }
+}
+
+async function compilePackageAttempt(
+  pool: Pool, s3: S3Client, job: PackageJob, jobId: string,
+  qpdfAvailable: boolean, owner: string,
 ): Promise<Record<string, unknown>> {
   const packageId = job.packageId || (job.entityId && job.entityType === 'HANDOVER_PACKAGE' ? job.entityId : undefined);
   const orgId = job.orgId;
   if (!packageId || !orgId) throw new Error('PACKAGE_IDENTITY_REQUIRED');
 
-  const owner = `PACKAGE_JOB:${jobId}`;
   const client = await pool.connect();
   let destroyInitial=false;
   let packageMeta: any;
@@ -65,6 +80,7 @@ export async function compileAndPersistHandoverPackage(
     const { rows: packages } = await client.query(
       `SELECT hp.id, hp.org_id, hp.project_id, hp.version_no, hp.status,
               hp.snapshot_checksum, hp.created_at, hp.updated_at, hp.requested_by,
+              hp.updated_at > statement_timestamp() - interval '30 minutes' AS lease_active,
               hp.error_code, hp.pdf_object_id,
               p.code AS project_code, p.name AS project_name,
               o.display_name AS org_name,
@@ -91,10 +107,8 @@ export async function compileAndPersistHandoverPackage(
       await client.query('COMMIT');
       return { packageId, status: 'READY', replayed: true };
     }
-    if (packageMeta.status === 'GENERATING' && packageMeta.error_code !== owner &&
-        new Date(packageMeta.updated_at).getTime() > Date.now() - 30 * 60 * 1000) {
-      await client.query('COMMIT');
-      return { packageId, status: 'GENERATING', skipped: 'Another worker owns this package build.' };
+    if (packageMeta.status === 'GENERATING' && packageMeta.lease_active) {
+      throw new Error('PACKAGE_BUILD_IN_PROGRESS');
     }
     const claimed = await client.query(
       `UPDATE handover_packages
@@ -164,6 +178,7 @@ export async function compileAndPersistHandoverPackage(
     client.release(destroyInitial);
   }
 
+  const transferTimeoutMs = configuredLimit('PACKAGE_TRANSFER_TIMEOUT_MS', 120_000);
   const maxSourceBytes = configuredLimit('PACKAGE_MAX_SOURCE_BYTES', DEFAULT_MAX_SOURCE_BYTES);
   let totalSourceBytes = 0;
   for (const source of sourceRows) {
@@ -196,15 +211,21 @@ export async function compileAndPersistHandoverPackage(
     for (let index = 0; index < sourceRows.length; index++) {
       const source = sourceRows[index];
       const localPath = path.join(tempDir, `source-${index + 1}.pdf`);
+      const transferSignal = AbortSignal.timeout(transferTimeoutMs);
       const stored = await s3.send(new GetObjectCommand({
         Bucket: source.bucket,
         Key: source.object_key,
         VersionId: source.provider_version_id,
-      }));
+      }), { abortSignal: transferSignal });
       if (!stored.Body) throw new Error(`PACKAGE_SOURCE_EMPTY:${source.document_version_id}`);
+      // Use the SDK's Node stream directly: wrapping a stalled async iterator
+      // can leave its pending next() alive after pipeline cancellation.
+      if (!(stored.Body instanceof Readable)) throw new Error('PACKAGE_SOURCE_STREAM_UNSUPPORTED');
       await pipeline(
-        Readable.from(stored.Body as AsyncIterable<Uint8Array>),
+        stored.Body,
+        new BoundedByteStream(Number(source.size_bytes)),
         createWriteStream(localPath, { flags: 'wx', mode: 0o600 }),
+        { signal: transferSignal },
       );
       const fileStats = await stat(localPath);
       if (fileStats.size !== Number(source.size_bytes)) {
@@ -264,10 +285,11 @@ export async function compileAndPersistHandoverPackage(
     const reservation=await reservePackageArtifact(pool,{orgId,projectId:packageMeta.project_id,packageId,owner,bucket,
       filename:`handover-${packageMeta.project_code}-v${packageMeta.version_no}.pdf`,sizeBytes:outputStats.size,sha256:actualOutputSha});
     const artifactId=reservation.id,objectKey=reservation.objectKey;
+    const artifactStream = createReadStream(outputPath);
     const putResult = await s3.send(new PutObjectCommand({
       Bucket: bucket,
       Key: objectKey,
-      Body: createReadStream(outputPath),
+      Body: artifactStream,
       ContentLength: outputStats.size,
       ContentType: 'application/pdf',
       ChecksumAlgorithm: 'SHA256',
@@ -275,9 +297,11 @@ export async function compileAndPersistHandoverPackage(
       Metadata: { sha256: actualOutputSha, packageid: packageId },
       ServerSideEncryption: process.env.S3_KMS_KEY_ID ? 'aws:kms' : undefined,
       SSEKMSKeyId: process.env.S3_KMS_KEY_ID || undefined,
-    }));
+    }), { abortSignal: AbortSignal.timeout(transferTimeoutMs) })
+      .finally(() => artifactStream.destroy());
     if (!putResult.VersionId) throw new Error('PACKAGE_STORAGE_VERSION_ID_MISSING');
-    const head = await s3.send(new HeadObjectCommand({ Bucket: bucket, Key: objectKey, VersionId: putResult.VersionId }));
+    const head = await s3.send(new HeadObjectCommand({ Bucket: bucket, Key: objectKey, VersionId: putResult.VersionId }),
+      { abortSignal: AbortSignal.timeout(transferTimeoutMs) });
     if (head.ContentLength !== outputStats.size || head.VersionId !== putResult.VersionId ||
         head.Metadata?.sha256 !== actualOutputSha) {
       throw new Error('PACKAGE_STORAGE_VERIFICATION_FAILED');
@@ -365,15 +389,16 @@ export async function compileAndPersistHandoverPackage(
   }
 }
 
-export async function markHandoverPackageFailed(
+async function settlePackageAttempt(
   pool: Pool,
   job: PackageJob,
-  jobId: string,
-  error: unknown,
+  owner: string,
+  terminalAttempt: boolean,
 ): Promise<void> {
   const packageId = job.packageId || (job.entityId && job.entityType === 'HANDOVER_PACKAGE' ? job.entityId : undefined);
   if (!packageId || !job.orgId) return;
   const client = await pool.connect();
+  let destroy = false;
   try {
     await client.query('BEGIN');
     await client.query(
@@ -382,17 +407,16 @@ export async function markHandoverPackageFailed(
     );
     await client.query(
       `UPDATE handover_packages
-          SET status = 'FAILED', error_code = 'PACKAGE_BUILD_FAILED',
-              error_detail = $4, row_version = row_version + 1, updated_at = now()
+          SET status = $4, error_code = CASE WHEN $4 = 'FAILED' THEN 'PACKAGE_BUILD_FAILED' ELSE NULL END,
+              error_detail = NULL, row_version = row_version + 1, updated_at = now()
         WHERE org_id = $1 AND id = $2 AND status = 'GENERATING' AND error_code = $3`,
-      [job.orgId, packageId, `PACKAGE_JOB:${jobId}`,
-        String((error as Error)?.message || 'Package build failed').slice(0, 1000)],
+      [job.orgId, packageId, owner, terminalAttempt ? 'FAILED' : 'QUEUED'],
     );
     await client.query('COMMIT');
   } catch (persistError) {
-    await client.query('ROLLBACK').catch(() => undefined);
-    console.error(`Could not persist package failure for ${packageId}:`, persistError);
+    try { await client.query('ROLLBACK'); } catch { destroy = true; }
+    console.error('PACKAGE_ATTEMPT_SETTLEMENT_FAILED');
   } finally {
-    client.release();
+    client.release(destroy);
   }
 }

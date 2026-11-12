@@ -1,0 +1,7 @@
+{
+  "apps/worker/src/main.ts": "5915498996f437c9006485f4acd5f9cb45cdbc589ab0d84c3295dbb382fa1a5f",
+  "apps/worker/src/queues/handover-package.processor.ts": "6ffff99f3406b5428300a24c2fedd642cba2d365059032c48d092ce45f82d2d6",
+  "apps/worker/src/queues/package-artifact-capacity.ts": "aeb9886d738b133169a3c1dfd6ae64573ad6ce85133f2acbf218c4da6e9461bb",
+  "apps/api/test/phase2-package-artifact-publication-db.spec.ts": "c57ec87c5a5ed5a6ce986cbbb6bc7b8f83ae69900a674e4ca7cf6e0e4289d7dd",
+  "apps/api/test/phase2-quota-recovery-db.spec.ts": "676210b0dfd5de691578f386934aad8e84b3536a830e0b90139ace5e974ed955"
+}

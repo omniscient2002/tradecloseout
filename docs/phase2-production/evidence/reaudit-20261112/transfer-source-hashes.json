@@ -1,0 +1,4 @@
+{
+  "apps/worker/src/queues/handover-package.processor.ts": "d20989ec033f2ddc9d98f848417c024eb065490c9cb110e72ac132b4185b3b55",
+  "apps/api/test/phase2-package-artifact-publication-db.spec.ts": "872f61a4705e6eeb24ae040a80d31b1a2282ad90c2ec9c22d04bdbbed999a16c"
+}
