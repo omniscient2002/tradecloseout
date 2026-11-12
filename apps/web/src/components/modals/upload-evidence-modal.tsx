@@ -13,6 +13,7 @@ import {
   enqueueFieldUpload,
   listOfflineUploadDrafts,
   discardOfflineUploadDraft,
+  recoverOfflineUploadDraft,
   MAX_UPLOAD_FILE_BYTES,
   type OfflineUploadDraftSummary,
 } from "../../lib/offline-upload-queue";
@@ -48,6 +49,7 @@ export function UploadEvidenceModal({
   const [drafts, setDrafts] = useState<OfflineUploadDraftSummary[]>([]);
   const [draftsError, setDraftsError] = useState<string | null>(null);
   const [discardingId, setDiscardingId] = useState<string | null>(null);
+  const [recoveringId, setRecoveringId] = useState<string | null>(null);
 
   const refreshDrafts = useCallback(async () => {
     try {
@@ -72,6 +74,21 @@ export function UploadEvidenceModal({
       setDraftsError(error instanceof Error ? error.message : "Draft could not be discarded.");
     } finally {
       setDiscardingId(null);
+    }
+  };
+
+  const recoverDraft = async (draft: OfflineUploadDraftSummary) => {
+    if (!window.confirm("Recover " + draft.filename +
+        " from your previous session? The server will recheck your identity, project and upload permission. No remote upload will be started by this action.")) return;
+    setRecoveringId(draft.queueId);
+    setDraftsError(null);
+    try {
+      await recoverOfflineUploadDraft(draft.queueId);
+      await refreshDrafts();
+    } catch (error) {
+      setDraftsError(error instanceof Error ? error.message : "Draft could not be recovered.");
+    } finally {
+      setRecoveringId(null);
     }
   };
 
@@ -231,12 +248,22 @@ export function UploadEvidenceModal({
                     </span>
                     {draft.lastError && <span className="block text-red-700">{draft.lastError}</span>}
                   </div>
-                  <button type="button"
-                    disabled={discardingId !== null || draft.status === "PROCESSING"}
-                    onClick={() => void discardDraft(draft)}
-                    className="shrink-0 text-red-700 font-semibold underline disabled:opacity-50">
-                    {discardingId === draft.queueId ? "Discarding…" : "Discard"}
-                  </button>
+                  <div className="flex shrink-0 gap-2">
+                    {draft.status === "BLOCKED_SCOPE" && !draft.hasActiveIntent && (
+                      <button type="button"
+                        disabled={recoveringId !== null || discardingId !== null}
+                        onClick={() => void recoverDraft(draft)}
+                        className="text-indigo-700 font-semibold underline disabled:opacity-50">
+                        {recoveringId === draft.queueId ? "Checking…" : "Recover"}
+                      </button>
+                    )}
+                    <button type="button"
+                      disabled={discardingId !== null || recoveringId !== null || draft.status === "PROCESSING"}
+                      onClick={() => void discardDraft(draft)}
+                      className="text-red-700 font-semibold underline disabled:opacity-50">
+                      {discardingId === draft.queueId ? "Discarding…" : "Discard"}
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>
