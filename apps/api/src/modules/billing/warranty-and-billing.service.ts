@@ -200,26 +200,40 @@ export class WarrantyAndBillingService {
 
       // 2. Validate remedy evidence exists, is in READY status, and is positively project/asset-qualified
       const { rows: soRows } = await client.query(
-        `SELECT so.id, so.status, so.object_key, so.sha256,
+        `SELECT so.id, so.status, so.sha256,
                 so.provider_version_id, so.size_bytes, so.observed_size_bytes,
                 EXISTS (
-                  SELECT 1 FROM document_versions dv
-                   WHERE dv.org_id = so.org_id AND dv.project_id = $2 AND dv.object_id = so.id
+                  SELECT 1
+                    FROM document_versions dv
+                    JOIN documents d ON d.org_id = dv.org_id AND d.project_id = dv.project_id
+                                    AND d.id = dv.document_id
+                   WHERE dv.org_id = so.org_id AND dv.project_id = $2
+                     AND dv.object_id = so.id
+                     AND dv.deleted_at IS NULL AND dv.superseded_at IS NULL
+                     AND dv.file_status = 'READY' AND dv.review_status = 'APPROVED'
+                     AND (dv.expiry_date IS NULL OR dv.expiry_date >= CURRENT_DATE)
+                     AND d.deleted_at IS NULL AND d.status = 'ACTIVE'
+                     AND d.current_approved_version_id = dv.id
                 ) AS linked_in_project,
                 EXISTS (
-                  SELECT 1 FROM document_versions dv
-                   WHERE dv.org_id = so.org_id AND dv.project_id != $2 AND dv.object_id = so.id
-                ) AS linked_in_other_project,
-                (
-                  SELECT da.asset_id
+                  SELECT 1
                     FROM document_versions dv
-                    JOIN document_assets da ON da.org_id = dv.org_id AND da.project_id = dv.project_id AND da.document_id = dv.document_id
-                   WHERE dv.org_id = so.org_id AND dv.object_id = so.id
-                   LIMIT 1
-                ) AS linked_asset_id
+                    JOIN documents d ON d.org_id = dv.org_id AND d.project_id = dv.project_id
+                                    AND d.id = dv.document_id
+                    JOIN document_assets da ON da.org_id = d.org_id AND da.project_id = d.project_id
+                                           AND da.document_id = d.id
+                   WHERE dv.org_id = so.org_id AND dv.project_id = $2
+                     AND dv.object_id = so.id AND da.asset_id = $4
+                     AND dv.deleted_at IS NULL AND dv.superseded_at IS NULL
+                     AND dv.file_status = 'READY' AND dv.review_status = 'APPROVED'
+                     AND (dv.expiry_date IS NULL OR dv.expiry_date >= CURRENT_DATE)
+                     AND d.deleted_at IS NULL AND d.status = 'ACTIVE'
+                     AND d.current_approved_version_id = dv.id
+                ) AS linked_to_defect_asset
            FROM storage_objects so
-          WHERE so.org_id = $1 AND so.id = $3`,
-        [ctx.orgId, targetProjectId, remedyEvidenceObjectId],
+          WHERE so.org_id = $1 AND so.id = $3
+          FOR SHARE OF so`,
+        [ctx.orgId, targetProjectId, remedyEvidenceObjectId, defect.asset_id || null],
       );
 
       if (!soRows.length || soRows[0].status !== 'READY') {
@@ -239,28 +253,20 @@ export class WarrantyAndBillingService {
           detail: 'Remedy and closure evidence must reference immutable, size-checked and SHA-256 verified bytes.',
         });
       }
-      const isProjectKey = Boolean(so.object_key && so.object_key.includes(`/projects/${targetProjectId}`));
-      const isOtherProjectInKey = Boolean(so.object_key && so.object_key.includes('/projects/') && !isProjectKey);
-
-      if (isOtherProjectInKey || so.linked_in_other_project || (!so.linked_in_project && !isProjectKey)) {
+      // Storage-key text is routing metadata, never authority. A current,
+      // reviewed document version must link this object to the exact project,
+      // and asset-bound defects additionally need an exact document_assets link.
+      if (so.linked_in_project !== true) {
         throw new ConflictException({
           code: 'CLOSURE_EVIDENCE_PROJECT_MISMATCH',
-          detail: 'Remedy evidence object is associated with another project or not positively linked to this project.',
+          detail: 'Evidence needs a current approved document version in this project.',
         });
       }
-
-      // Security Invariant (Gap 5): Generic project manuals without asset binding cannot remedy an asset-bound defect
-      const isDefectOrAssetKey = Boolean(
-        so.object_key &&
-        (so.object_key.includes(`/defects/${defectId}`) || (defect.asset_id && so.object_key.includes(`/assets/${defect.asset_id}`))),
-      );
-      if (defect.asset_id && !isDefectOrAssetKey) {
-        if (!so.linked_asset_id || so.linked_asset_id !== defect.asset_id) {
-          throw new ConflictException({
-            code: 'CLOSURE_EVIDENCE_ASSET_MISMATCH',
-            detail: `Remedy evidence must be positively linked to asset ${defect.asset_id}; generic project evidence or manuals cannot remedy an asset-bound defect.`,
-          });
-        }
+      if (defect.asset_id && so.linked_to_defect_asset !== true) {
+        throw new ConflictException({
+          code: 'CLOSURE_EVIDENCE_ASSET_MISMATCH',
+          detail: 'Evidence must explicitly link the exact defect asset.',
+        });
       }
 
       const updateRes = await client.query(
@@ -390,26 +396,40 @@ export class WarrantyAndBillingService {
       }
 
       const { rows: soRows } = await client.query(
-        `SELECT so.id, so.status, so.object_key, so.sha256,
+        `SELECT so.id, so.status, so.sha256,
                 so.provider_version_id, so.size_bytes, so.observed_size_bytes,
                 EXISTS (
-                  SELECT 1 FROM document_versions dv
-                   WHERE dv.org_id = so.org_id AND dv.project_id = $2 AND dv.object_id = so.id
+                  SELECT 1
+                    FROM document_versions dv
+                    JOIN documents d ON d.org_id = dv.org_id AND d.project_id = dv.project_id
+                                    AND d.id = dv.document_id
+                   WHERE dv.org_id = so.org_id AND dv.project_id = $2
+                     AND dv.object_id = so.id
+                     AND dv.deleted_at IS NULL AND dv.superseded_at IS NULL
+                     AND dv.file_status = 'READY' AND dv.review_status = 'APPROVED'
+                     AND (dv.expiry_date IS NULL OR dv.expiry_date >= CURRENT_DATE)
+                     AND d.deleted_at IS NULL AND d.status = 'ACTIVE'
+                     AND d.current_approved_version_id = dv.id
                 ) AS linked_in_project,
                 EXISTS (
-                  SELECT 1 FROM document_versions dv
-                   WHERE dv.org_id = so.org_id AND dv.project_id != $2 AND dv.object_id = so.id
-                ) AS linked_in_other_project,
-                (
-                  SELECT da.asset_id
+                  SELECT 1
                     FROM document_versions dv
-                    JOIN document_assets da ON da.org_id = dv.org_id AND da.project_id = dv.project_id AND da.document_id = dv.document_id
-                   WHERE dv.org_id = so.org_id AND dv.object_id = so.id
-                   LIMIT 1
-                ) AS linked_asset_id
+                    JOIN documents d ON d.org_id = dv.org_id AND d.project_id = dv.project_id
+                                    AND d.id = dv.document_id
+                    JOIN document_assets da ON da.org_id = d.org_id AND da.project_id = d.project_id
+                                           AND da.document_id = d.id
+                   WHERE dv.org_id = so.org_id AND dv.project_id = $2
+                     AND dv.object_id = so.id AND da.asset_id = $4
+                     AND dv.deleted_at IS NULL AND dv.superseded_at IS NULL
+                     AND dv.file_status = 'READY' AND dv.review_status = 'APPROVED'
+                     AND (dv.expiry_date IS NULL OR dv.expiry_date >= CURRENT_DATE)
+                     AND d.deleted_at IS NULL AND d.status = 'ACTIVE'
+                     AND d.current_approved_version_id = dv.id
+                ) AS linked_to_defect_asset
            FROM storage_objects so
-          WHERE so.org_id = $1 AND so.id = $3`,
-        [ctx.orgId, targetProjectId, closureEvidenceObjectId],
+          WHERE so.org_id = $1 AND so.id = $3
+          FOR SHARE OF so`,
+        [ctx.orgId, targetProjectId, closureEvidenceObjectId, defect.asset_id || null],
       );
 
       if (!soRows.length || soRows[0].status !== 'READY') {
@@ -429,27 +449,20 @@ export class WarrantyAndBillingService {
           detail: 'Remedy and closure evidence must reference immutable, size-checked and SHA-256 verified bytes.',
         });
       }
-      const isProjectKey = Boolean(so.object_key && so.object_key.includes(`/projects/${targetProjectId}`));
-      const isOtherProjectInKey = Boolean(so.object_key && so.object_key.includes('/projects/') && !isProjectKey);
-
-      if (isOtherProjectInKey || so.linked_in_other_project || (!so.linked_in_project && !isProjectKey)) {
+      // Storage-key text is routing metadata, never authority. A current,
+      // reviewed document version must link this object to the exact project,
+      // and asset-bound defects additionally need an exact document_assets link.
+      if (so.linked_in_project !== true) {
         throw new ConflictException({
           code: 'CLOSURE_EVIDENCE_PROJECT_MISMATCH',
-          detail: 'Closure evidence object is associated with another project or not positively linked to this project.',
+          detail: 'Evidence needs a current approved document version in this project.',
         });
       }
-
-      const isDefectOrAssetKey = Boolean(
-        so.object_key &&
-        (so.object_key.includes(`/defects/${defectId}`) || (defect.asset_id && so.object_key.includes(`/assets/${defect.asset_id}`))),
-      );
-      if (defect.asset_id && !isDefectOrAssetKey) {
-        if (!so.linked_asset_id || so.linked_asset_id !== defect.asset_id) {
-          throw new ConflictException({
-            code: 'CLOSURE_EVIDENCE_ASSET_MISMATCH',
-            detail: `Closure evidence must be positively linked to asset ${defect.asset_id}; generic project evidence or manuals cannot close an asset-bound defect.`,
-          });
-        }
+      if (defect.asset_id && so.linked_to_defect_asset !== true) {
+        throw new ConflictException({
+          code: 'CLOSURE_EVIDENCE_ASSET_MISMATCH',
+          detail: 'Evidence must explicitly link the exact defect asset.',
+        });
       }
 
       const updateRes = await client.query(
