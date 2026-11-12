@@ -1,0 +1,12 @@
+{
+  "asset-final.log": "1aeb663220a4c99e918413bde0abc2dfdf9d460edb50305551caeac5afd7afc9",
+  "build.log": "211f5519cc2dd68f080caf976c298906efe81ed37ca5c2766ccda1370fcac3de",
+  "migrations.log": "749d9c6ce16880f99ff3873f713b37318b8290e31022595508f4ceaf826cac16",
+  "production-http-probe.cjs": "82c7f72fd0f352ed429fb283b9acc0e22c8c0602818c74fcfcdbdbb93186dd0e",
+  "production-http.json": "162ebb3cc7b0329ebd70a0e9ddd7db40169433f7a744dcb2ad873caf0d9d4d25",
+  "rbac.log": "e865d8a7effa1d2dc2fe1f612996be9b83cb50d43925b939ab3491c75ff0489e",
+  "security.log": "ca1f4d4e9ca0dd32f447bdc349c36a8acef9e8608247bbf21bfc78c409a12438",
+  "source-sha256.json": "a366ac3de9181fd36346fddbd7e5ca3a07ba69ee724da20d66bccabfdaeb995a",
+  "typecheck.log": "8935e75360eaccba7ec1fee2d68b076e23856327a92e0b3f4f7ff0f2147b6b54",
+  "workspace-tests.log": "96d4d46d24699c9b62f0ec514c202a1510c2f58e438c5fdd605a100a7331345e"
+}

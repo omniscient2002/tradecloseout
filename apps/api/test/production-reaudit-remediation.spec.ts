@@ -827,6 +827,9 @@ describe('Production Re-Audit Remediation Suite (PROD-001..PROD-018)', () => {
     });
 
     it('FV03: enforces rate limit of 5 requests per hour in in-memory OTP store', async () => {
+      const oldHmacKey = process.env.AUTH_OTP_HMAC_KEY;
+      process.env.AUTH_OTP_HMAC_KEY = 'test-only-otp-hmac-key-for-unit-regressions-000000000';
+      try {
       const inMemoryRedis = new InMemoryRedis();
       const mockPool: any = {};
       const mockSms: any = { sendOtpSms: jest.fn().mockResolvedValue({ delivered: true }) };
@@ -845,6 +848,10 @@ describe('Production Re-Audit Remediation Suite (PROD-001..PROD-018)', () => {
       await expect(controller.requestOtp({ identifier }, {} as any)).rejects.toMatchObject({
         status: HttpStatus.TOO_MANY_REQUESTS,
       });
+      } finally {
+        if (oldHmacKey === undefined) delete process.env.AUTH_OTP_HMAC_KEY;
+        else process.env.AUTH_OTP_HMAC_KEY = oldHmacKey;
+      }
     });
   });
 
@@ -1172,6 +1179,8 @@ describe('Production Re-Audit Remediation Suite (PROD-001..PROD-018)', () => {
     });
 
     it('FV06: in-memory OTP store rejects expired challenges after 301 seconds', async () => {
+      const previousKey = process.env.AUTH_OTP_HMAC_KEY;
+      process.env.AUTH_OTP_HMAC_KEY = 'test-only-otp-hmac-key-for-unit-regressions-000000000';
       process.env.NODE_ENV = 'test';
       process.env.ENABLE_DEBUG_OTP = 'true';
       delete process.env.REDIS_URL;
@@ -1218,6 +1227,8 @@ describe('Production Re-Audit Remediation Suite (PROD-001..PROD-018)', () => {
         expect(threwExpired).toBe(true);
       } finally {
         Date.now = originalNow;
+        if (previousKey === undefined) delete process.env.AUTH_OTP_HMAC_KEY;
+        else process.env.AUTH_OTP_HMAC_KEY = previousKey;
       }
     });
 

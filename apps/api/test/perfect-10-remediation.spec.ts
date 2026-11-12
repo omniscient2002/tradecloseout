@@ -187,6 +187,11 @@ describe('Perfect 10 Remediation & Hardening Test Suite', () => {
       const mockPool = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation((sql: string) => {
+            // A storage-ceiling test requires a currently eligible member; an
+            // empty membership fixture would rightfully fail live authority
+            // before the quota code under test is reached.
+            if (sql.includes('SELECT m.role AS org_role')) return Promise.resolve({ rows: [{ org_role: 'R-OWNER' }] });
+            if (sql.includes('SELECT status FROM projects')) return Promise.resolve({ rows: [{ status: 'ACTIVE' }] });
             if (sql.includes('SELECT uc.value AS current_storage')) {
               return Promise.resolve({
                 rows: [
@@ -233,6 +238,20 @@ describe('Perfect 10 Remediation & Hardening Test Suite', () => {
       const mockPool = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation((sql: string, params: any[]) => {
+            // Exercise the real authorization path. A deleted-document fixture
+            // without live account/membership/project rows is not valid.
+            if (sql.includes('SELECT project_id FROM documents')) {
+              return Promise.resolve({ rows: [{ project_id: projectId }] });
+            }
+            if (sql.includes('SELECT m.role AS org_role')) {
+              return Promise.resolve({ rows: [{ org_role: 'R-OWNER' }] });
+            }
+            if (sql.includes('SELECT status FROM projects')) {
+              return Promise.resolve({ rows: [{ status: 'ACTIVE' }] });
+            }
+            if (sql.includes('SELECT id, project_id, doc_type_key')) {
+              return Promise.resolve({ rows: [{ id: docId, project_id: projectId, doc_type_key: 'DT-001', category_key: 'DOC', created_at: new Date() }] });
+            }
             if (sql.includes('UPDATE documents') && sql.includes('deleted_at = now()')) {
               return Promise.resolve({ rows: [{ id: docId }] });
             }
@@ -240,8 +259,13 @@ describe('Perfect 10 Remediation & Hardening Test Suite', () => {
               return Promise.resolve({ rows: [{ total_bytes: '52428800' }] }); // 50 MB
             }
             if (sql.includes('UPDATE usage_counters') && sql.includes('STORAGE_BYTES')) {
+              // The successful fixture must model the hardened conditional
+              // UPDATE affecting exactly one row. A missing row is a denial,
+              // independently covered by phase1-document-storage-quota.
+              expect(sql).toContain('value >= $2::bigint');
+              expect(params[1]).toBe('52428800');
               quotaDeducted = true;
-              return Promise.resolve({ rows: [] });
+              return Promise.resolve({ rows: [], rowCount: 1 });
             }
             return Promise.resolve({ rows: [] });
           }),
@@ -329,8 +353,14 @@ describe('Perfect 10 Remediation & Hardening Test Suite', () => {
         }),
       ).rejects.toThrow('Simulated SQL error');
 
-      expect(mockClient.query).toHaveBeenCalledWith('SAVEPOINT sp_test');
-      expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK TO SAVEPOINT sp_test');
+      const calls = (mockClient.query as jest.Mock).mock.calls.map((call: [string]) => call[0]);
+      const savepoint = calls.find((sql: string) => sql.startsWith('SAVEPOINT '));
+      expect(savepoint).toMatch(/^SAVEPOINT sp_[A-Za-z0-9_]+$/);
+      expect(savepoint!.length).toBeLessThanOrEqual(73);
+      const name = savepoint!.slice('SAVEPOINT '.length);
+      expect(name.length).toBeLessThanOrEqual(63);
+      expect(calls).toContain(`ROLLBACK TO SAVEPOINT ${name}`);
+      expect(calls).toContain(`RELEASE SAVEPOINT ${name}`);
     });
   });
 

@@ -1,0 +1,131 @@
+TAP version 13
+# OWNER_DIGEST_CONNECTION_UNSAFE
+# Subtest: gateway rejects unsafe configuration and unbounded/unmatched receipts without credential forwarding
+ok 1 - gateway rejects unsafe configuration and unbounded/unmatched receipts without credential forwarding
+  ---
+  duration_ms: 60.184788
+  type: 'test'
+  ...
+# Subtest: missing qpdf prevents production/staging startup with secret-free diagnostics
+ok 2 - missing qpdf prevents production/staging startup with secret-free diagnostics
+  ---
+  duration_ms: 0.752082
+  type: 'test'
+  ...
+# Subtest: runDailyExpiryJob: destroys connection on uncertain BEGIN without masking the command failure
+ok 3 - runDailyExpiryJob: destroys connection on uncertain BEGIN without masking the command failure
+  ---
+  duration_ms: 0.538613
+  type: 'test'
+  ...
+# Subtest: runDailyExpiryJob: destroys connection on uncertain STATEMENT_ROLLBACK without masking the command failure
+ok 4 - runDailyExpiryJob: destroys connection on uncertain STATEMENT_ROLLBACK without masking the command failure
+  ---
+  duration_ms: 0.191316
+  type: 'test'
+  ...
+# Subtest: runDailyExpiryJob: destroys connection on uncertain COMMIT without masking the command failure
+ok 5 - runDailyExpiryJob: destroys connection on uncertain COMMIT without masking the command failure
+  ---
+  duration_ms: 0.27277
+  type: 'test'
+  ...
+# Subtest: runWeeklyOwnerRetentionAtRiskDigest: destroys connection on uncertain BEGIN without masking the command failure
+ok 6 - runWeeklyOwnerRetentionAtRiskDigest: destroys connection on uncertain BEGIN without masking the command failure
+  ---
+  duration_ms: 17.808743
+  type: 'test'
+  ...
+# Subtest: runWeeklyOwnerRetentionAtRiskDigest: destroys connection on uncertain STATEMENT_ROLLBACK without masking the command failure
+ok 7 - runWeeklyOwnerRetentionAtRiskDigest: destroys connection on uncertain STATEMENT_ROLLBACK without masking the command failure
+  ---
+  duration_ms: 0.791793
+  type: 'test'
+  ...
+# Subtest: runWeeklyOwnerRetentionAtRiskDigest: destroys connection on uncertain COMMIT without masking the command failure
+ok 8 - runWeeklyOwnerRetentionAtRiskDigest: destroys connection on uncertain COMMIT without masking the command failure
+  ---
+  duration_ms: 1.693474
+  type: 'test'
+  ...
+# Subtest: verifyAuditHashChainIntegrity: destroys connection on uncertain BEGIN without masking the command failure
+ok 9 - verifyAuditHashChainIntegrity: destroys connection on uncertain BEGIN without masking the command failure
+  ---
+  duration_ms: 0.548188
+  type: 'test'
+  ...
+# Subtest: verifyAuditHashChainIntegrity: destroys connection on uncertain STATEMENT_ROLLBACK without masking the command failure
+ok 10 - verifyAuditHashChainIntegrity: destroys connection on uncertain STATEMENT_ROLLBACK without masking the command failure
+  ---
+  duration_ms: 0.440595
+  type: 'test'
+  ...
+# Subtest: verifyAuditHashChainIntegrity: destroys connection on uncertain COMMIT without masking the command failure
+ok 11 - verifyAuditHashChainIntegrity: destroys connection on uncertain COMMIT without masking the command failure
+  ---
+  duration_ms: 0.197935
+  type: 'test'
+  ...
+# Subtest: runStorageLifecycleCleanup: destroys connection on uncertain BEGIN without masking the command failure
+ok 12 - runStorageLifecycleCleanup: destroys connection on uncertain BEGIN without masking the command failure
+  ---
+  duration_ms: 0.276047
+  type: 'test'
+  ...
+# Subtest: runStorageLifecycleCleanup: destroys connection on uncertain STATEMENT_ROLLBACK without masking the command failure
+ok 13 - runStorageLifecycleCleanup: destroys connection on uncertain STATEMENT_ROLLBACK without masking the command failure
+  ---
+  duration_ms: 0.253935
+  type: 'test'
+  ...
+# Subtest: runStorageLifecycleCleanup: destroys connection on uncertain COMMIT without masking the command failure
+ok 14 - runStorageLifecycleCleanup: destroys connection on uncertain COMMIT without masking the command failure
+  ---
+  duration_ms: 0.153075
+  type: 'test'
+  ...
+# Subtest: reconcileIdempotencyClaims: destroys connection on uncertain BEGIN without masking the command failure
+ok 15 - reconcileIdempotencyClaims: destroys connection on uncertain BEGIN without masking the command failure
+  ---
+  duration_ms: 0.20266
+  type: 'test'
+  ...
+# Subtest: reconcileIdempotencyClaims: destroys connection on uncertain STATEMENT_ROLLBACK without masking the command failure
+ok 16 - reconcileIdempotencyClaims: destroys connection on uncertain STATEMENT_ROLLBACK without masking the command failure
+  ---
+  duration_ms: 0.169532
+  type: 'test'
+  ...
+# Subtest: reconcileIdempotencyClaims: destroys connection on uncertain COMMIT without masking the command failure
+ok 17 - reconcileIdempotencyClaims: destroys connection on uncertain COMMIT without masking the command failure
+  ---
+  duration_ms: 0.123655
+  type: 'test'
+  ...
+# Subtest: dispatchQueuedNotifications: destroys connection on uncertain BEGIN without masking the command failure
+ok 18 - dispatchQueuedNotifications: destroys connection on uncertain BEGIN without masking the command failure
+  ---
+  duration_ms: 0.540219
+  type: 'test'
+  ...
+# Subtest: dispatchQueuedNotifications: destroys connection on uncertain STATEMENT_ROLLBACK without masking the command failure
+ok 19 - dispatchQueuedNotifications: destroys connection on uncertain STATEMENT_ROLLBACK without masking the command failure
+  ---
+  duration_ms: 0.26716
+  type: 'test'
+  ...
+# Subtest: dispatchQueuedNotifications: destroys connection on uncertain COMMIT without masking the command failure
+ok 20 - dispatchQueuedNotifications: destroys connection on uncertain COMMIT without masking the command failure
+  ---
+  duration_ms: 0.233728
+  type: 'test'
+  ...
+1..20
+# tests 20
+# suites 0
+# pass 20
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 313.708595

@@ -26,6 +26,14 @@ describe('Sol Integrity & Audit Invariants Suite', () => {
       const mockClient = {
         query: jest.fn(async (sql: string) => {
           executedQueries.push(sql);
+          if (sql.includes('SELECT m.role AS org_role')) return { rows: [{ org_role: 'R-OWNER' }] };
+          if (sql.includes('SELECT status FROM projects')) return { rows: [{ status: 'ACTIVE' }] };
+          if (sql.includes('SELECT id, project_id, doc_type_key, category_key, created_at')) {
+            return { rows: [{
+              id: existingDocId, project_id: projectId, doc_type_key: 'DT-001',
+              category_key: 'HANDOVER_DOCS', created_at: new Date('2026-01-01T00:00:00Z'),
+            }] };
+          }
           if (sql.includes('SELECT uc.value AS current_storage')) {
             return { rows: [] };
           }
@@ -86,13 +94,17 @@ describe('Sol Integrity & Audit Invariants Suite', () => {
       const mockClient = {
         query: jest.fn(async (sql: string) => {
           executedQueries.push(sql);
+          if (sql.includes('SELECT m.role AS org_role')) return { rows: [{ org_role: 'R-OWNER' }] };
+          if (sql.includes('SELECT status FROM projects')) return { rows: [{ status: 'ACTIVE' }] };
           if (sql.includes('SELECT dv.*, so.id AS storage_id') || sql.includes('FROM document_versions dv')) {
             return {
               rows: [{
                 id: 'ver-1',
                 org_id: actor.orgId,
                 project_id: projectId,
-                doc_id: existingDocId,
+                doc_id: existingDocId, document_id: existingDocId,
+                doc_type_key: 'DT-001', category_key: 'HANDOVER_DOCS',
+                document_created_at: new Date('2026-01-01T00:00:00Z'),
                 storage_id: 'so-1',
                 file_status: 'PENDING_UPLOAD',
                 storage_status: 'PENDING',

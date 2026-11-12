@@ -1,3 +1,4 @@
+import { withAssetAuthorityFixture } from './helpers/asset-authority-fixture';
 // apps/api/test/discovery-lifecycle-foundations.spec.ts
 // Comprehensive Test Suite for Second-Pass Discovery & Lifecycle Foundations:
 // 1. Asset Identity Revisions & Evidence Revalidation (Top 25 Item 3 / Future Domain Model §5)
@@ -116,7 +117,7 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
         connect: jest.fn().mockResolvedValue(mockClient),
       } as any;
 
-      const assetsService = new AssetsService(mockPool);
+      const assetsService = new AssetsService(withAssetAuthorityFixture(mockPool));
 
       const result = await assetsService.updateAsset(mockTenantActorCtx, projectId, assetId, {
         model: '19XR-1200',
@@ -179,7 +180,7 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
                   id: assetId,
                   tag: 'CH-01',
                   name: 'Water Cooled Chiller',
-                  status: 'MAINTENANCE',
+                  status: 'RETIRED',
                   row_version: 2,
                 },
               ],
@@ -194,10 +195,10 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
         connect: jest.fn().mockResolvedValue(mockClient),
       } as any;
 
-      const assetsService = new AssetsService(mockPool);
+      const assetsService = new AssetsService(withAssetAuthorityFixture(mockPool));
 
       const result = await assetsService.updateAsset(mockTenantActorCtx, projectId, assetId, {
-        status: 'MAINTENANCE',
+        status: 'RETIRED',
       });
 
       expect(result.identityRevision).toBeNull();
@@ -360,6 +361,8 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
         withTenantContext: jest.fn().mockImplementation(async (ctx, fn) => {
           const client = {
             query: jest.fn().mockImplementation(async (sql: string, params?: any[]) => {
+              if (sql.includes('SELECT m.role AS org_role')) return { rows: [{ org_role: 'R-OWNER' }] };
+              if (sql.includes('SELECT status FROM projects')) return { rows: [{ status: 'ACTIVE' }] };
               if (sql.includes('SELECT * FROM reviews WHERE org_id = $1 AND id = $2')) {
                 return {
                   rows: [
@@ -379,6 +382,7 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
                     {
                       id: versionId,
                       document_id: 'doc-pressure-test',
+                      project_id: projectId,
                       file_status: 'READY',
                       review_status: 'IN_REVIEW',
                       uploaded_by: 'another-user-id',
@@ -392,6 +396,7 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
                   rows: [
                     {
                       id: 'doc-pressure-test',
+                      project_id: projectId,
                       category_key: 'DT-018', // Pressure / Hydrostatic Test Report
                       latest_version_id: versionId,
                     },
@@ -427,6 +432,8 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
         withTenantContext: jest.fn().mockImplementation(async (ctx, fn) => {
           const client = {
             query: jest.fn().mockImplementation(async (sql: string, params?: any[]) => {
+              if (sql.includes('SELECT m.role AS org_role')) return { rows: [{ org_role: 'R-OWNER' }] };
+              if (sql.includes('SELECT status FROM projects')) return { rows: [{ status: 'ACTIVE' }] };
               if (sql.includes('SELECT * FROM reviews WHERE org_id = $1 AND id = $2')) {
                 return {
                   rows: [
@@ -446,6 +453,7 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
                     {
                       id: versionId,
                       document_id: 'doc-pressure-test',
+                      project_id: projectId,
                       file_status: 'READY',
                       review_status: 'IN_REVIEW',
                       uploaded_by: 'another-user-id',
@@ -459,6 +467,7 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
                   rows: [
                     {
                       id: 'doc-pressure-test',
+                      project_id: projectId,
                       category_key: 'DT-018',
                       latest_version_id: versionId,
                     },
@@ -679,7 +688,7 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
       };
 
       const mockPool = { connect: jest.fn().mockResolvedValue(mockClient) } as any;
-      const assetsService = new AssetsService(mockPool);
+      const assetsService = new AssetsService(withAssetAuthorityFixture(mockPool));
 
       const res = await assetsService.matchAssetCandidates(mockTenantActorCtx, projectId, {
         filename: 'Carrier_Chiller_CH-01_Factory_Test_Report.pdf',

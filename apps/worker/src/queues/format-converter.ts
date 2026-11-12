@@ -33,14 +33,17 @@ export async function convertSupportingFormatToPdf(params: {
     let isJpeg = detectedMime === 'image/jpeg';
 
     if (detectedMime === 'image/webp') {
+      const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'webp-conv-'));
       try {
-        const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'webp-conv-'));
         const tmpPng = path.join(tmpDir, 'converted.png');
         await execFileAsync('convert', [sourcePath, tmpPng], { timeout: 10_000 });
         finalImgBytes = await readFile(tmpPng);
-        await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
-      } catch (convErr) {
-        throw new Error(`UNSUPPORTED_IMAGE_FORMAT: WebP format could not be converted to PNG: ${(convErr as Error).message}`);
+      } catch {
+        // Converter stderr can contain a source path, environment details or
+        // injected payload. Do not persist it in a failed BullMQ job.
+        throw new Error('UNSUPPORTED_IMAGE_FORMAT: WebP conversion failed');
+      } finally {
+        await rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
       }
     }
 

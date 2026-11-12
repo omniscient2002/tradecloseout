@@ -1,0 +1,19 @@
+PASS test/phase1-next-asset-authority.spec.ts (16.495 s)
+  ✓ enforces asset scope on mutation, detail, list, export, matches, history and passport without trusting a stale Owner context (1478 ms)
+  ✓ denies a command admitted by real session/permission guards after project-member removal; CLOSED writes and unqualified revalidation fail (1378 ms)
+  ✓ holds the shared project and membership locks through the admitted write boundary (1780 ms)
+  ✓ atomic import uses one connection, commits together, and rolls back earlier assets/audit/outbox if a later insert fails (2411 ms)
+  ✓ rejects invalid restrictive scope without widening: null (2 ms)
+  ✓ rejects invalid restrictive scope without widening: [] (1 ms)
+  ✓ rejects invalid restrictive scope without widening: {"readOnly":"true"} (1 ms)
+  ✓ rejects invalid restrictive scope without widening: {"assetIds":["bad"]} (1 ms)
+  ✓ rejects invalid restrictive scope without widening: {"categoryKeys":[3]} (1 ms)
+  ✓ rejects invalid restrictive scope without widening: {"unknown":true} (1 ms)
+  ✓ rejects invalid restrictive scope without widening: {"startDate":"2026-02-30"} (1 ms)
+  ✓ rejects invalid restrictive scope without widening: {"assetIds":["ee659a65-8bf5-4442-9f3c-66857549c108",null]} (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       12 passed, 12 total
+Snapshots:   0 total
+Time:        16.636 s
+Ran all test suites matching /test\/phase1-next-asset-authority.spec.ts/i.
