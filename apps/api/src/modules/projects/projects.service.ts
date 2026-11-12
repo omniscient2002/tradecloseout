@@ -22,6 +22,22 @@ import { evaluateReadinessInTransaction } from '../handover/closeout-readiness';
 export class ProjectsService {
   constructor(private readonly pool: Pool) {}
 
+  // PH2-G05-005: serialize commercial reference writers with project closure.
+  // A writer waiting for the closure lock must recheck the state after acquiring it.
+  private async lockEditableCommercialProject(client: PoolClient, orgId: string, projectId: string) {
+    const { rows } = await client.query(
+      `SELECT status, purged_at FROM projects WHERE org_id = $1 AND id = $2 FOR UPDATE`,
+      [orgId, projectId],
+    );
+    if (!rows.length) throw new NotFoundException('PROJECT_NOT_FOUND');
+    if (rows[0].purged_at != null || !['DRAFT', 'ACTIVE'].includes(rows[0].status)) {
+      throw new ConflictException({
+        code: 'PROJECT_COMMERCIAL_WRITES_LOCKED',
+        detail: 'Commercial records cannot be modified in this project lifecycle state.',
+      });
+    }
+  }
+
   /**
    * API-031: POST /api/v1/projects
    * Creates a new project in DRAFT state and assigns the creator as Project Manager (WF-03).
@@ -724,6 +740,7 @@ export class ProjectsService {
     },
   ) {
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+      await this.lockEditableCommercialProject(client, ctx.orgId, projectId);
       const contractId = uuidv7();
       const res = await client.query(
         `INSERT INTO contracts (
@@ -759,6 +776,7 @@ export class ProjectsService {
     dto: { variationRef: string; title: string; costDeltaPaise: number | bigint; scopeDeltaJson?: any },
   ) {
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+      await this.lockEditableCommercialProject(client, ctx.orgId, projectId);
       const varId = uuidv7();
       const res = await client.query(
         `INSERT INTO variations (
@@ -806,6 +824,7 @@ export class ProjectsService {
     dto: { specNumber: string; title: string; division?: string; documentId?: string },
   ) {
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+      await this.lockEditableCommercialProject(client, ctx.orgId, projectId);
       const specId = uuidv7();
       const res = await client.query(
         `INSERT INTO specification_refs (
