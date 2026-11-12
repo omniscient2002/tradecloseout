@@ -16,7 +16,7 @@ const queueSource = readFileSync(resolve(process.cwd(), 'src/lib/offline-upload-
   `)
   .replace(/\bexport\s+/g, '');
 const queueScript = ts.transpileModule(
-  hashSource + '\n' + queueSource + '\nwindow.__queue = { enqueueFieldUpload, drainOfflineUploadQueue, setOfflineActorPartition, listOfflineUploadDrafts, discardOfflineUploadDraft, assertOfflineDraftBudget };',
+  hashSource + '\n' + queueSource + '\nwindow.__queue = { enqueueFieldUpload, drainOfflineUploadQueue, setOfflineActorPartition, listOfflineUploadDrafts, discardOfflineUploadDraft, assertOfflineDraftBudget, ApiProblemError };',
   { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } },
 ).outputText;
 
@@ -262,4 +262,56 @@ test('browser storage write failure does not claim a saved original or delete pr
   expect(result.previous).toBe(1);
   expect(result.after).toBe(1);
   expect(result.error).toContain('Simulated storage quota exhaustion');
+});
+
+
+test('remote abort already committed can be reconciled before local discard', async ({ page }) => {
+  await fixture(page, false);
+  const result = await page.evaluate(async () => {
+    const q = (window as any).__queue;
+    const oldApi = (window as any).__apiFetch;
+    let abortCalls = 0;
+    (window as any).__apiFetch = async (url: string, opts?: {method?: string}) => {
+      if (url.endsWith('/complete')) throw new Error('Lost completion request');
+      if (url.endsWith('/abort-upload')) {
+        abortCalls++;
+        const error = new q.ApiProblemError('Already aborted by server');
+        error.status = 409;
+        throw error;
+      }
+      if (url.includes('/documents/doc-one')) {
+        return { versions: [{ id: 'version-one', file_status: 'FAILED' }] };
+      }
+      return oldApi(url, opts);
+    };
+    await q.drainOfflineUploadQueue();
+    const drafts = await q.listOfflineUploadDrafts();
+    await q.discardOfflineUploadDraft(drafts[0].queueId);
+    return { abortCalls, remaining: (await q.listOfflineUploadDrafts()).length };
+  });
+  expect(result).toEqual({ abortCalls: 1, remaining: 0 });
+});
+
+test('remote abort forbidden never deletes local original', async ({ page }) => {
+  await fixture(page, false);
+  const result = await page.evaluate(async () => {
+    const q = (window as any).__queue;
+    const oldApi = (window as any).__apiFetch;
+    (window as any).__apiFetch = async (url: string, opts?: { method?: string }) => {
+      if (url.endsWith('/complete')) throw new Error('Lost completion request');
+      if (url.endsWith('/abort-upload')) {
+        const error = new q.ApiProblemError('Grant revoked');
+        error.status = 403;
+        throw error;
+      }
+      return oldApi(url, opts);
+    };
+    await q.drainOfflineUploadQueue();
+    const drafts = await q.listOfflineUploadDrafts();
+    let refused = false;
+    try { await q.discardOfflineUploadDraft(drafts[0].queueId); }
+    catch { refused = true; }
+    return { refused, remaining: (await q.listOfflineUploadDrafts()).length };
+  });
+  expect(result).toEqual({ refused: true, remaining: 1 });
 });
