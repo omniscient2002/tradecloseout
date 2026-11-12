@@ -90,16 +90,37 @@ export class WarrantyAndBillingService {
       backdatingReason?: string;
     },
   ) {
-    if (new Date(input.warrantyEnd) < new Date(input.warrantyStart)) {
+    const validDay = (date: unknown): date is string =>
+      typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) &&
+      !Number.isNaN(Date.parse(date)) &&
+      new Date(date).toISOString().slice(0, 10) === date;
+    const eventTypes = ['REGISTRATION', 'CONFIRMATION', 'CLAIM', 'EXTENSION'];
+    const bases = ['COMMISSIONING', 'HANDOVER', 'ACCEPTANCE', 'SUPPLY'];
+    if (!input || !eventTypes.includes(input.eventType) ||
+        !bases.includes(input.basis) ||
+        typeof input.assetId !== 'string' ||
+        typeof input.oemReference !== 'string' ||
+        !input.oemReference.trim() || input.oemReference.length > 180 ||
+        !validDay(input.registeredAt) || !validDay(input.warrantyStart) ||
+        !validDay(input.warrantyEnd) ||
+        input.warrantyEnd < input.warrantyStart ||
+        (input.occurredAt !== undefined &&
+          (typeof input.occurredAt !== 'string' ||
+            !Number.isFinite(Date.parse(input.occurredAt)))) ||
+        (input.occurredAtPrecision !== undefined &&
+          !['INSTANT', 'DATE', 'UNKNOWN'].includes(input.occurredAtPrecision)) ||
+        (input.backdatingReason !== undefined &&
+          (typeof input.backdatingReason !== 'string' ||
+            input.backdatingReason.length > 1000))) {
       throw new UnprocessableEntityException({
-        code: 'VALIDATION_FAILED',
-        detail: 'warrantyEnd must be on or after warrantyStart (WF-24).',
+        code: 'WARRANTY_EVENT_INVALID',
+        detail: 'Warranty event requires valid ordered coverage dates, a basis and an OEM reference.',
       });
     }
 
     return withTenantTransaction(this.pool, ctx, async (client, emit) => {
       const { rows: assetRows } = await client.query(
-        `SELECT id, tag, warranty_start_basis, warranty_start
+        `SELECT id, tag, warranty_start_basis, warranty_start, warranty_end
            FROM assets
           WHERE org_id = $1 AND project_id = $2 AND id = $3
           FOR UPDATE`,
@@ -109,12 +130,27 @@ export class WarrantyAndBillingService {
         throw new UnprocessableEntityException({ code: 'NOT_FOUND', detail: 'Asset not found.' });
       }
       const asset = assetRows[0];
-
-      // Detect basis mismatch between OEM certificate and contract (WF-24 Step 3)
+      // Same-basis, contradictory dates are as important as a basis mismatch.
+      // The asset's current dates are only comparison data, never automatic
+      // evidence that a new OEM assertion has been independently verified.
+      const storedStart = asset.warranty_start == null
+        ? null : String(asset.warranty_start).slice(0, 10);
+      const storedEnd = asset.warranty_end == null
+        ? null : String(asset.warranty_end).slice(0, 10);
       const hasBasisConflict = asset.warranty_start_basis !== input.basis;
-      const eventStatus = hasBasisConflict ? 'DISPUTED' : 'CONFIRMED';
+      const hasDateConflict =
+        (storedStart !== null && storedStart !== input.warrantyStart) ||
+        (storedEnd !== null && (
+          input.eventType === 'EXTENSION'
+            ? input.warrantyEnd < storedEnd
+            : storedEnd !== input.warrantyEnd
+        ));
+      const eventStatus = hasBasisConflict || hasDateConflict ? 'DISPUTED' : 'RECORDED';
       const warrantyEventId = uuidv7();
-
+      // Even a nonempty evidenceObjectId is only an unreviewed reference.
+      // Independent OEM authority and a version-pinned, reviewed certificate
+      // must be established by a separate approval workflow before any
+      // authoritative coverage/extension is confirmed.
       await client.query(
         `INSERT INTO warranty_events
           (id, org_id, project_id, asset_id, event_type, status, oem_reference,
@@ -123,66 +159,30 @@ export class WarrantyAndBillingService {
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, now(), $16)`,
         [
           warrantyEventId,
-          ctx.orgId,
-          projectId,
-          input.assetId,
-          input.eventType,
-          eventStatus,
-          input.oemReference.trim(),
-          input.registeredAt,
-          input.warrantyStart,
-          input.warrantyEnd,
-          input.basis,
-          input.evidenceObjectId ?? null,
+          ctx.orgId, projectId, input.assetId, input.eventType, eventStatus,
+          input.oemReference.trim(), input.registeredAt, input.warrantyStart,
+          input.warrantyEnd, input.basis, input.evidenceObjectId ?? null,
           ctx.userId,
           input.occurredAt ? new Date(input.occurredAt) : new Date(input.registeredAt),
-          input.occurredAtPrecision || 'DATE',
-          input.backdatingReason || null,
+          input.occurredAtPrecision || 'DATE', input.backdatingReason || null,
         ],
       );
-
-      // Update asset dates if confirmed and no prior warranty_start exists (FR-AST-012, NP03)
-      if (!hasBasisConflict) {
-        if (input.eventType === 'EXTENSION') {
-          await client.query(
-            `UPDATE assets
-                SET warranty_end = CASE
-                      WHEN warranty_end IS NULL THEN $4::date
-                      WHEN $4::date > warranty_end THEN $4::date
-                      ELSE warranty_end
-                    END,
-                    row_version = row_version + 1,
-                    updated_at = now()
-              WHERE org_id = $1 AND project_id = $2 AND id = $3`,
-            [ctx.orgId, projectId, input.assetId, input.warrantyEnd],
-          );
-        } else if (input.eventType === 'REGISTRATION' || input.eventType === 'CONFIRMATION') {
-          await client.query(
-            `UPDATE assets
-                SET warranty_start = COALESCE(warranty_start, $4::date),
-                    warranty_end = COALESCE(warranty_end, $5::date),
-                    row_version = row_version + 1,
-                    updated_at = now()
-              WHERE org_id = $1 AND project_id = $2 AND id = $3`,
-            [ctx.orgId, projectId, input.assetId, input.warrantyStart, input.warrantyEnd],
-          );
-        }
-        // Notice: eventType === 'CLAIM' does not create or expand warranty coverage
-      }
-
+      // Intentionally no UPDATE assets: a contractor's assertion must not
+      // manufacture or extend authoritative warranty coverage.
       emit({
         eventType: 'WARRANTY_EVENT_RECORDED',
         projectId,
         entityType: 'WARRANTY_EVENT',
         entityId: warrantyEventId,
         afterJson: {
-          assetTag: asset.tag,
-          status: eventStatus,
-          hasBasisConflict,
+          assetTag: asset.tag, status: eventStatus, hasBasisConflict, hasDateConflict,
+          coverageUpdated: false, independentOemVerification: false,
         },
       });
-
-      return { warrantyEventId, status: eventStatus, hasBasisConflict };
+      return {
+        warrantyEventId, status: eventStatus, hasBasisConflict, hasDateConflict,
+        coverageUpdated: false, requiresIndependentVerification: true,
+      };
     });
   }
 
