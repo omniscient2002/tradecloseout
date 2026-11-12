@@ -30,3 +30,15 @@ export function parseInrToPaise(input: string): string {
   if (amount > 9223372036854775807n) throw new Error('INR_AMOUNT_OUT_OF_RANGE');
   return amount.toString();
 }
+
+/** Canonical calendar month for IST-based monthly package reservations. */
+export function quotaMonthIndia(date: Date = new Date()): string {
+  if (!Number.isFinite(date.getTime())) throw new Error('INVALID_QUOTA_DATE');
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit',
+  }).formatToParts(date);
+  const year = parts.find(part => part.type === 'year')?.value;
+  const month = parts.find(part => part.type === 'month')?.value;
+  if (!year || !month) throw new Error('INVALID_QUOTA_DATE');
+  return `${year}-${month}`;
+}
