@@ -23,6 +23,7 @@ describe('PH1-G01 privileged MFA gate and secret-bearing endpoint contract', () 
     const member = { role: opts.role ?? 'R-OWNER', membership_status: 'ACTIVE' };
     const session = {
       session_id: 'session-123', user_id: 'user-123', active_org_id: 'org-123',
+      mfa_enabled_at: opts.verified ? '2026-11-12T00:00:00.000Z' : null,
       csrf_token_hash: createHash('sha256').update(csrf).digest('hex'),
       expires_at: '2099-12-31', guest_grant_id: null,
       user_name: 'Member', user_status: 'ACTIVE', org_status: 'ACTIVE',
@@ -85,6 +86,25 @@ describe('PH1-G01 privileged MFA gate and secret-bearing endpoint contract', () 
 
     const ordinary = fixture({ role: 'R-SITE' });
     await expect(ordinary.guard.canActivate(ordinary.context)).resolves.toBe(true);
+  });
+
+  it('does not trust a legacy verified flag without a live enrolled MFA factor', async () => {
+    const fixtureWithMfaFlag = fixture({ verified: true });
+    const { guard, context, req } = fixtureWithMfaFlag;
+    // The selected session may be marked verified by an old code path. The
+    // current user enrollment is separately required by the HTTP guard.
+    const originalQuery = (guard as any).pool.query as jest.Mock;
+    originalQuery.mockResolvedValueOnce({ rows: [{
+      session_id: 'session-123', user_id: 'user-123', active_org_id: 'org-123',
+      csrf_token_hash: createHash('sha256').update('correct-csrf').digest('hex'),
+      expires_at: '2099-12-31', guest_grant_id: null,
+      user_name: 'Member', user_status: 'ACTIVE', org_status: 'ACTIVE',
+      mfa_verified: true, mfa_enabled_at: null,
+    }] });
+    await expect(guard.canActivate(context)).rejects.toMatchObject({
+      response: { code: 'MFA_STEP_UP_REQUIRED' },
+    });
+    expect(req.auth).toBeUndefined();
   });
 
   it('does not let a missing CSRF header bypass protection on MFA actions', async () => {
