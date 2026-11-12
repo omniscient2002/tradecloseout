@@ -107,6 +107,24 @@ describe('PH4-G17-005/006 Pass 2 defect revisions and recovery', () => {
     expect(event[11]).toBe(partyId);
   });
 
+  it('requires an attributable reassignment reason and keeps the previous assignment snapshot', async () => {
+    const {service, calls} = fixture();
+    await expect(service.assignDefect(pm(), projectId, defectId, {
+      expectedRowVersion: 1, assignedUserId: reviewerId,
+    })).rejects.toMatchObject({response: {code: 'DEFECT_REASSIGNMENT_REASON_REQUIRED'}});
+    expect(actions(calls)).toHaveLength(0);
+    const reassigned = await service.assignDefect(pm(), projectId, defectId, {
+      expectedRowVersion: 1, assignedUserId: reviewerId,
+      reason: 'Project supervisor transferred ownership after site handover.',
+    });
+    expect(reassigned.rowVersion).toBe(2);
+    const snapshot = actions(calls)[0].params;
+    expect(snapshot[10]).toBe(reviewerId);
+    expect(snapshot[18]).toBe(assigneeId);
+    expect(calls.some(c => c.sql.includes('JOIN memberships m') &&
+      c.sql.includes("m.status = 'ACTIVE'"))).toBe(true);
+  });
+
   it('rejects inactive assignees and parties and preserves the old row/version', async () => {
     for (const options of [{inactiveMember: true}, {inactiveParty: true}]) {
       const {service, calls, state} = fixture(options);
