@@ -65,6 +65,34 @@ describe('PH2-G05-001/002/005 canonical money and variation integrity', () => {
         status:'DRAFT',approved_by:null,cost_delta_paise:'-200',scope_delta_json:{},
       });
 
+      const updated = await service.updateProject(ctx,large.projectId,{
+        name:'Large integer contract amended',
+      });
+      expect(updated.name).toBe('Large integer contract amended');
+      const specification = await service.createSpecification(ctx,large.projectId,{
+        specNumber:'SPEC-001',title:'Reviewed mechanical specification',
+      });
+      expect(specification.spec_number).toBe('SPEC-001');
+      // Domain events and immutable audit rows are created in the SAME
+      // committed tenant transaction as each commercial/metadata mutation.
+      const { rows: audit } = await admin.query(
+        `SELECT action,COUNT(*)::int AS count FROM audit_events
+          WHERE org_id=$1 AND project_id=$2 AND action=ANY($3::text[])
+          GROUP BY action`,
+        [orgId,large.projectId,[
+          'PROJECT_METADATA_UPDATED','CONTRACT_CREATED',
+          'VARIATION_DRAFT_CREATED','PROJECT_SPECIFICATION_ADDED',
+        ]],
+      );
+      expect(Object.fromEntries(audit.map((row: any) => [row.action,row.count]))).toEqual({
+        PROJECT_METADATA_UPDATED:1,CONTRACT_CREATED:1,
+        VARIATION_DRAFT_CREATED:1,PROJECT_SPECIFICATION_ADDED:1,
+      });
+
+      await admin.query(`UPDATE projects SET status='HANDOVER' WHERE id=$1`,[large.projectId]);
+      await expect(service.updateProject(ctx,large.projectId,{name:'Unsafe handover edit'}))
+        .rejects.toMatchObject({response:expect.objectContaining({code:'PROJECT_IMMUTABLE'})});
+
       await expect(service.createVariation(ctx,large.projectId,contract.id,{
         variationRef:'VAR-INVALID',title:'Invalid scope',costDeltaPaise:1n,
         scopeDeltaJson:[] as any,
