@@ -2,7 +2,8 @@ import {
   GetBucketVersioningCommand, HeadObjectCommand, ListPartsCommand,
   CompleteMultipartUploadCommand, GetObjectCommand,
 } from '@aws-sdk/client-s3';
-import { ConflictException, ServiceUnavailableException } from '@nestjs/common';
+import { ConflictException, ServiceUnavailableException, UnprocessableEntityException } from '@nestjs/common';
+import { HandoverService } from '../src/modules/handover/handover.service';
 import { isImmutableObjectVersionId } from '@tradecloseout/shared';
 import { S3StorageService } from '../src/modules/documents/s3-storage.service';
 import { DocumentsService } from '../src/modules/documents/documents.service';
@@ -196,4 +197,76 @@ describe('PH3-G10-002 — immutable provider receipt contract', () => {
       sql.includes('INSERT INTO outbox_events') &&
       JSON.parse(args?.[3] || '{}').providerVersionId === 'pinned-v2')).toBe(true);
   });
+
+  it.each([undefined, null, '', 'null', ' Null '])(
+    'denies handover package downloads with mutable artifact version %p', async (providerVersion) => {
+      const checksum = 'a'.repeat(64);
+      const pool: any = { connect: jest.fn(async () => ({
+        query: jest.fn(async (sql: string) => {
+          if (sql.includes('SELECT hp.status, hp.version_no, hp.checksum')) return {
+            rows: [{
+              status: 'READY', object_status: 'READY', version_no: 1,
+              checksum, sha256: checksum, size_bytes: '12', observed_size_bytes: '12',
+              provider_version_id: providerVersion, object_key: 'handover/final.pdf',
+            }],
+          };
+          return { rows: [] };
+        }), release: jest.fn(),
+      })) };
+      const storage: any = { createSignedDownloadUrl: jest.fn() };
+      const handover = new HandoverService(pool, storage);
+      await expect(handover.getPackageDownloadUrl(actor, 'p1', 'package1'))
+        .rejects.toThrow(UnprocessableEntityException);
+      expect(storage.createSignedDownloadUrl).not.toHaveBeenCalled();
+    },
+  );
+
+  it('issues a handover download URL only for an exact immutable artifact version', async () => {
+    const checksum = 'a'.repeat(64);
+    const pool: any = { connect: jest.fn(async () => ({
+      query: jest.fn(async (sql: string) => {
+        if (sql.includes('SELECT hp.status, hp.version_no, hp.checksum')) return {
+          rows: [{
+            status: 'READY', object_status: 'READY', version_no: 1,
+            checksum, sha256: checksum, size_bytes: '12', observed_size_bytes: '12',
+            provider_version_id: 'opaque-version-1', object_key: 'handover/final.pdf',
+          }],
+        };
+        return { rows: [] };
+      }), release: jest.fn(),
+    })) };
+    const storage: any = { createSignedDownloadUrl: jest.fn(async () => 'https://fixture/signed') };
+    const result = await new HandoverService(pool, storage)
+      .getPackageDownloadUrl(actor, 'p1', 'package1');
+    expect(result.downloadUrl).toBe('https://fixture/signed');
+    expect(storage.createSignedDownloadUrl).toHaveBeenCalledWith(
+      expect.objectContaining({ versionId: 'opaque-version-1' }),
+    );
+  });
+
+  it.each([null, 'null', ' NULL '])(
+    'does not sign a historical archive artifact with mutable receipt %p', async (providerVersionId) => {
+      const pool: any = { connect: jest.fn(async () => ({
+        query: jest.fn(async (sql: string) => {
+          if (sql.includes('SELECT * FROM archive_exports')) return {
+            rows: [{
+              id: 'export1', project_id: 'p1', status: 'COMPLETED',
+              verification_receipt_json: {
+                artifact: {
+                  objectId: 'object1', objectKey: 'archive/file.zip',
+                  bucket: 'fixture-bucket', providerVersionId,
+                },
+              },
+            }],
+          };
+          return { rows: [] };
+        }), release: jest.fn(),
+      })) };
+      const storage: any = { createSignedDownloadUrl: jest.fn() };
+      await expect(new HandoverService(pool, storage).getArchiveExport(actor, 'p1', 'export1'))
+        .rejects.toThrow(ConflictException);
+      expect(storage.createSignedDownloadUrl).not.toHaveBeenCalled();
+    },
+  );
+
 });
