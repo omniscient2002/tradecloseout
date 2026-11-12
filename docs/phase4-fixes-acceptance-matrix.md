@@ -46,8 +46,8 @@
 | [PH4-G15-006](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G15.md#ph4-g15-006) | Complete recipient-side viewing and response UX | OPEN | Not yet implemented or independently verified |
 | [PH4-G15-007](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G15.md#ph4-g15-007) | Preserve immutable decision/export records and safe corrections | OPEN | Not yet implemented or independently verified |
 | [PH4-G15-008](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G15.md#ph4-g15-008) | Accept genuine customer handover and recovery operationally | BLOCKED_EXTERNAL | Requires authorized external/domain acceptance |
-| [PH4-G16-001](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G16.md#ph4-g16-001) | Distinguish recorded OEM claims from verified warranty confirmation | OPEN | Not yet implemented or independently verified |
-| [PH4-G16-002](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G16.md#ph4-g16-002) | Detect same-basis date conflicts and version extensions | OPEN | Not yet implemented or independently verified |
+| [PH4-G16-001](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G16.md#ph4-g16-001) | Distinguish recorded OEM claims from verified warranty confirmation | PARTIAL / VERIFY | Contractor entries now use RECORDED or DISPUTED rather than CONFIRMED; asset coverage cannot change from unreviewed assertions. Historical auto-confirmations, OEM reviewer approval and independent acceptance remain open |
+| [PH4-G16-002](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G16.md#ph4-g16-002) | Detect same-basis date conflicts and version extensions | PARTIAL / VERIFY | Same-basis mismatched start/end dates surface DISPUTED; unverified extensions never update asset dates. Approved correction/revision workflow, historical reconciliation and domain acceptance remain open |
 | [PH4-G16-003](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G16.md#ph4-g16-003) | Bind warranty events to actual asset and contractual triggers | OPEN | Not yet implemented or independently verified |
 | [PH4-G16-004](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G16.md#ph4-g16-004) | Complete warranty/claim management and scoped UI | OPEN | Not yet implemented or independently verified |
 | [PH4-G16-005](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G16.md#ph4-g16-005) | Schedule warranty/DLP obligations from qualified dates | OPEN | Not yet implemented or independently verified |
@@ -68,7 +68,7 @@
 - Tax invoices, payment settlement, GST/IRP, actual provider delivery, OEM confirmations and real engineering certification remain **disabled or pending verified integration** where applicable. Do not replace them with pretend states.
 - No independent QA, architecture, HVAC, finance, legal, customer or operations reviewer has accepted the exact candidate. No deployment, merge or production sign-off is claimed.
 
-**Count:** 52 findings; 7 external gates; 20 partial remediation areas; 25 not yet addressed areas.
+**Count:** 52 findings; 7 external gates; 22 partial remediation areas; 23 not yet addressed areas.
 
 ## Dedicated PR and CI constraint
 
@@ -105,3 +105,9 @@ This Phase 4 branch is stacked on the audited Phase 1 candidate. Its preferred r
 - G25-003 follow-up: local image/Office converter rejects generic ZIP and enforces bounded source files, embedded image dimensions, generated output size/page count. Image/Office processor isolation, malicious decompression adversarial tests, and end-to-end conversion provenance remain outstanding; this is not full closure.
 
 - G25-003 additional containment: deployed modes now require a realpath-verified `CONVERSION_STAGING_ROOT` for input/output and reject symlink/path traversal escapes. PNG IHDR dimensions are bounded *before* decompression; WebP command includes memory/map/disk/area limits. Full LibreOffice process isolation, hostile-office fork limits and external format acceptance remain open.
+
+## G16 code-only safeguard (requires independent acceptance)
+
+- G16-001: contractor-reported WARRANTY_EVENT rows are never automatically OEM-confirmed from the match of a user-provided basis/reference. Recording stays `RECORDED` or `DISPUTED`. No asset warranty dates are automatically extended or filled by this untrusted API.
+- G16-002: compare start/end against current recorded asset coverage, surface a disputed same-basis mismatch, validate exact calendar dates and reject malformed events. Unverified `EXTENSION` cannot update effective coverage.
+- **Still open:** independent OEM/contract evidence qualification with reviewer identity/role, legacy auto-confirmed row reconciliation, authoritative trigger anchoring, versioned effective-date correction and browser acceptance. A valid-looking evidenceObjectId does not create an approved confirmation.
