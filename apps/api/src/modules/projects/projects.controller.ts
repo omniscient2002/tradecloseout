@@ -107,8 +107,8 @@ export class ProjectsController {
     return this.projectsService.reopenProject(
       req.userContext,
       id,
-      dto?.expectedRowVersion ?? 1,
-      dto?.reason || 'Reopened for post-closeout amendments',
+      dto?.expectedRowVersion,
+      dto?.reason,
     );
   }
 
