@@ -62,6 +62,16 @@ export class DocumentsController {
     return this.documentsService.createUploadIntent(req.userContext, projectId, dto);
   }
 
+  /**
+   * Minimal issuer-scoped progress for upload-only guests. Never require
+   * document.read to inspect the status of the version this grant uploaded.
+   */
+  @Get('document-versions/:id/upload-state')
+  @RequirePermission('document.upload')
+  async getUploadState(@Req() req: any, @Param('id') id: string) {
+    return this.documentsService.getUploadState(req.userContext, id);
+  }
+
   @Post('document-versions/:id/refresh-upload-urls')
   @RequirePermission('document.upload')
   async refreshUploadUrls(@Req() req: any, @Param('id') id: string) {
