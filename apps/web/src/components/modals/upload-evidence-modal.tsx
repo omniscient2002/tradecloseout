@@ -159,10 +159,11 @@ export function UploadEvidenceModal({
         {/* Revision & Issue Date */}
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
+            <label htmlFor="evidence-revision-code" className="block text-xs font-semibold text-slate-700 mb-1">
               Revision Code
             </label>
             <input
+              id="evidence-revision-code"
               type="text"
               required
               value={revisionCode}
@@ -173,10 +174,11 @@ export function UploadEvidenceModal({
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
+            <label htmlFor="evidence-issue-date" className="block text-xs font-semibold text-slate-700 mb-1">
               Test / Issue Date
             </label>
             <input
+              id="evidence-issue-date"
               type="date"
               required
               value={issueDate}
@@ -188,10 +190,11 @@ export function UploadEvidenceModal({
 
         {/* Remarks / Transmittal Reference */}
         <div>
-          <label className="block text-xs font-semibold text-slate-700 mb-1">
+          <label htmlFor="evidence-external-comment" className="block text-xs font-semibold text-slate-700 mb-1">
             Transmittal Reference or Remarks (Optional)
           </label>
           <input
+            id="evidence-external-comment"
             type="text"
             value={externalComment}
             onChange={(e) => setExternalComment(e.target.value)}
