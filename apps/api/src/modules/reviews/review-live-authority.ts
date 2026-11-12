@@ -56,7 +56,7 @@ export async function resolveLiveProjectCommandAuthority(
   client: PoolClient,
   ctx: ExecutionContext,
   projectId: string,
-  permission: 'review.decide' | 'document.delete' | 'document.read',
+  permission: 'review.decide' | 'document.delete' | 'document.read' | 'document.download',
 ): Promise<LiveReviewAuthority> {
   if (ctx.actorType === 'GUEST' || ctx.guestGrantId || !projectId || !ctx.userId || !ctx.orgId) return denied();
 
@@ -81,7 +81,7 @@ export async function resolveLiveProjectCommandAuthority(
   // Reads of retained evidence remain available in DRAFT/CLOSED/ARCHIVED
   // projects, but cancelled projects do not grant new access. Mutations need
   // an active lifecycle and always respect restrictive member scopes.
-  const isRead = permission === 'document.read';
+  const isRead = permission === 'document.read' || permission === 'document.download';
   if (isRead ? project.rows[0].status === 'CANCELLED' :
     !['ACTIVE', 'HANDOVER'].includes(project.rows[0].status)) return denied();
 
