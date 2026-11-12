@@ -12,12 +12,12 @@
 
 | Finding | Candidate | Changes / outstanding closure |
 |---|---|---|
-| PH5-G23-001 | OPEN | Real end-to-end product journeys remain incomplete |
+| PH5-G23-001 | PARTIAL | Upload modal now reports browser-local draft persistence instead of completed submission; all actual end-to-end product journeys remain incomplete |
 | PH5-G23-002 | PARTIAL | Audit-page missing/metadata-only hashes handled; shared typed DTO/permission integration pending |
 | PH5-G23-003 | OPEN | Server-derived per-action capability UI missing |
 | PH5-G23-004 | PARTIAL | Removed invented warranty/defect defaults; authoritative scoped reporting still missing |
 | PH5-G23-005 | CANDIDATE | Safe UTF-8 CSV/Blob export, formula-prefix policy, regression tests; consumer/large-file acceptance pending |
-| PH5-G23-006 | OPEN | Core keyboard/screen-reader/mobile workflow verification missing |
+| PH5-G23-006 | PARTIAL | Technical evidence upload has associated labels, keyboard-accessible file input and live/error messages; full assistive-tech/mobile journey verification missing |
 | PH5-G23-007 | PARTIAL | Distinct warranty/defect failure, empty/loading/retry states; stale response fence and other pages pending |
 | PH5-G23-008 | BLOCKED_EXTERNAL | Human user/accessibility acceptance |
 | PH5-G22-001 | CANDIDATE | One bounded multipart URL refresh/retry, preserves receipts; real provider and expiry-window tests pending |
@@ -26,7 +26,7 @@
 | PH5-G22-004 | PARTIAL | Stop silent blocked-draft revival; explicit same-identity recovery UI/current-authority challenge pending |
 | PH5-G22-005 | OPEN | Durable quota/error/retention inventory and discard |
 | PH5-G22-006 | OPEN | Chunked bounded-memory hash and device testing |
-| PH5-G22-007 | PARTIAL | No closed-tab provider writes; unsupported lock surfaces fail closed; user-facing scope explanation pending |
+| PH5-G22-007 | PARTIAL | No closed-tab provider writes; unsupported lock surfaces fail closed; upload modal explicitly distinguishes saved draft vs scanned/verified evidence; device/scope acceptance pending |
 | PH5-G22-008 | BLOCKED_EXTERNAL | Real provider, device and interruption acceptance |
 | PH5-G28-001 | PARTIAL (P0 OPEN) | Scoped incident parser, explicit dry-run/execute, restricted-role requirement, backing-storage quarantine, dependent package download denial. No IAM/operator role provisioning, signed-URL revocation, archive/acceptance invalidation or real PG test yet |
 | PH5-G28-002 | OPEN | Validated deployable infrastructure, privilege and network contract |
@@ -67,6 +67,10 @@ pnpm tsx scripts/execute-runbooks.ts RB-09 <org-uuid> <document-version-uuid> "<
 ```
 
 RB09 changes the **storage_objects** state rather than overwriting an APPROVED document version to violate `review_status <> APPROVED OR file_status = READY`. Existing document download/preview/stream endpoints deny non-READY storage objects. Package PDF download now additionally rejects included source evidence whose storage status is not READY. These controls **do not revoke previously distributed provider-signed URLs or copied exports**, and they are not sufficient to close the P0. Real restricted-PG dry-run/execute/replay, audit-chain, package/acceptance/archives propagation and operator IAM must be accepted independently.
+
+## Honest upload-state and accessibility behavior
+
+The technical evidence modal no longer reports a successful upload merely because IndexedDB accepted the original file. It keeps the dialog open, displays an explicit local-only persistence warning and no longer suggests that an unverified draft has been scanned/approved. Labels are now associated with file, revision, date and comment controls. This does not substitute for a queue inventory, expiry/eviction handling, live confirmation or screen-reader acceptance.
 
 ## Database restore drill hardening
 
