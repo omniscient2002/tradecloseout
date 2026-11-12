@@ -53,10 +53,13 @@ describe('PH4-G17-005/006 Pass 2 defect revisions and recovery', () => {
               id: objectId, status: 'READY', sha256: 'a'.repeat(64),
               provider_version_id: 'provider-v1',
               size_bytes: 1024, observed_size_bytes: 1024,
+              av_scanned_at: '2026-11-12T10:00:00.000Z',
               linked_in_project: true, linked_to_defect_asset: true,
             }]};
           if (sql.includes('FROM document_versions dv'))
-            return {rows: [{id: versionId, document_id: randomUUID()}]};
+            return {rows: [{id: versionId, document_id: randomUUID(),
+              metadata_json: {remedyDefectId: defectId}}]};
+          if (sql.includes('FROM document_assets da')) return {rows: []};
           if (sql.includes('UPDATE defects')) {
             if (sql.includes("status = 'IN_PROGRESS'")) state.status = 'IN_PROGRESS';
             if (sql.includes("status = 'RECTIFIED'")) state.status = 'RECTIFIED';
@@ -67,14 +70,25 @@ describe('PH4-G17-005/006 Pass 2 defect revisions and recovery', () => {
             if (sql.includes('assigned_user_id = $4')) state.assigned_user_id = params[3];
             if (sql.includes('assigned_party_id = $5')) state.assigned_party_id = params[4];
             if (sql.includes('SET severity = $4')) state.severity = params[3];
-            if (sql.includes('remedy_document_version_id = $7'))
+            if (sql.includes('remedy_document_version_id = $7')) {
               state.remedy_document_version_id = params[6];
+              state.remedy_sha256 = params[7];
+              state.remedy_provider_version_id = params[8];
+              state.remedy_size_bytes = params[9];
+              state.remedy_scanned_at = params[10];
+              state.remedy_asset_scope_ids = params[11];
+            }
             if (sql.includes('closure_evidence_object_id = $4'))
               state.closure_evidence_object_id = params[3];
             if (sql.includes('remedy_document_version_id = NULL')) {
               state.remedy_document_version_id = null;
               state.closure_evidence_object_id = null;
               state.remedied_by = null;
+              state.remedy_sha256 = null;
+              state.remedy_provider_version_id = null;
+              state.remedy_size_bytes = null;
+              state.remedy_scanned_at = null;
+              state.remedy_asset_scope_ids = null;
             }
             state.row_version++;
             return {rowCount: 1, rows: []};
