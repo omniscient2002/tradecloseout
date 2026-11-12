@@ -31,6 +31,30 @@ void test('PH1-G27-003: nested credentials are removed from audit metadata witho
   assert.equal(source.event.api_key, 'api-secret');
 });
 
+void test('PH1-G27-003: signed URLs and credential values are scrubbed without sensitive key names', () => {
+  const source = {
+    download: {
+      url: 'https://files.example.test/object?X-Amz-Signature=secret-signature',
+      nested: [
+        { value: 'Bearer abcdefghijklmnopqrstuvwxyz1234' },
+        { callback: 'otpauth://totp/tenant?secret=ABCDEF' },
+        { harmlessUrl: 'https://example.test/public/manual.pdf' },
+        { awsSecretAccessKey: 'private-credential', privateKey: 'private-key-data' },
+      ],
+    },
+  };
+  const result = redactSensitiveFields(source);
+  const nested = (result.download as Record<string, unknown>).nested as Array<Record<string, unknown>>;
+  assert.equal((result.download as Record<string, unknown>).url, '[REDACTED]');
+  assert.equal(nested[0].value, '[REDACTED]');
+  assert.equal(nested[1].callback, '[REDACTED]');
+  assert.equal(nested[2].harmlessUrl, 'https://example.test/public/manual.pdf');
+  assert.equal(nested[3].awsSecretAccessKey, '[REDACTED]');
+  assert.equal(nested[3].privateKey, '[REDACTED]');
+  assert(!JSON.stringify(result).includes('secret-signature'));
+  assert(!JSON.stringify(result).includes('abcdefghijklmnopqrstuvwxyz1234'));
+});
+
 void test('PH1-G27-003: redaction terminates on circular structures and bounded nesting', () => {
   const circular: Record<string, unknown> = { name: 'safe' };
   circular.self = circular;
