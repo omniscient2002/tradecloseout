@@ -318,16 +318,19 @@ describe('PH2-G06-006: immutable active baseline against single-layer reimports'
     )).not.toThrow();
   });
 
-  it.each([
+  const forbiddenVariants: Array<Record<string, unknown>[]> = [
     [{ key: 'SAFETY-001', mandatory: false }],
     [{ ...locked, docTypeKey: 'DT-002' }],
     [{ ...locked, locked: false }],
     [],
-  ])('rejects locked requirement removal and changes', requirements => {
-    expect(() => assertLockedChecklistBaselineInvariant(
-      { requirements: [locked] }, { requirements },
-    )).toThrow('Conflict Exception');
-  });
+  ];
+  for (const [caseIndex, requirements] of forbiddenVariants.entries()) {
+    it(`rejects locked obligation removal/changes (case ${caseIndex + 1})`, () => {
+      expect(() => assertLockedChecklistBaselineInvariant(
+        { requirements: [locked] }, { requirements },
+      )).toThrow('Conflict Exception');
+    });
+  }
 
   it('denies an actual checklist snapshot mutation before writing new baseline rows', async () => {
     const projectId = '0192e3a0-1111-7000-8000-000000000001';
