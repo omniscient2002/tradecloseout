@@ -168,3 +168,69 @@ test('other actor cannot list or discard a queued original; owner can discard lo
   expect(result.blocked).toBe('UPLOAD_ACTOR_CONTEXT_CHANGED');
   expect(result.after).toHaveLength(0);
 });
+
+
+test('lost completion response reconciles PROCESSING without a duplicate server command', async ({ page }) => {
+  const puts = await fixture(page, false);
+  const result = await page.evaluate(async () => {
+    const q = (window as any).__queue;
+    const baseApi = (window as any).__apiFetch;
+    let completionRequests = 0;
+    (window as any).__apiFetch = async (url: string, opts?: { method?: string }) => {
+      if (url.endsWith('/complete') && opts?.method === 'POST') {
+        completionRequests++;
+        // Simulates the server committing completion and then the response
+        // being dropped by the network or browser.
+        throw new Error('SIMULATED_LOST_COMPLETION_RESPONSE');
+      }
+      if (url.includes('/documents/doc-one')) {
+        return { versions: [{ id: 'version-one', file_status: 'PROCESSING' }] };
+      }
+      return baseApi(url, opts);
+    };
+    await q.drainOfflineUploadQueue();
+    const first = await q.listOfflineUploadDrafts();
+    await q.drainOfflineUploadQueue();
+    const second = await q.listOfflineUploadDrafts();
+    return {
+      completionRequests, firstStatus: first[0].status,
+      secondStatus: second[0].status, retained: second.length,
+    };
+  });
+  expect(puts).toHaveLength(1);
+  expect(result).toEqual({
+    completionRequests: 1, firstStatus: 'FAILED',
+    secondStatus: 'PROCESSING', retained: 1,
+  });
+});
+
+test('same completion idempotency key is retried only after server confirms intent pending', async ({ page }) => {
+  await fixture(page, false);
+  const result = await page.evaluate(async () => {
+    const q = (window as any).__queue;
+    const baseApi = (window as any).__apiFetch;
+    const keys: string[] = [];
+    let state = 'PENDING_UPLOAD';
+    (window as any).__apiFetch = async (
+      url: string, opts?: { method?: string; idempotencyKey?: string },
+    ) => {
+      if (url.endsWith('/complete') && opts?.method === 'POST') {
+        keys.push(opts.idempotencyKey || '');
+        if (keys.length === 1) throw new Error('SIMULATED_REQUEST_NEVER_ARRIVED');
+        state = 'READY';
+        return {};
+      }
+      if (url.includes('/documents/doc-one')) {
+        return { versions: [{ id: 'version-one', file_status: state }] };
+      }
+      return baseApi(url, opts);
+    };
+    await q.drainOfflineUploadQueue();
+    await q.drainOfflineUploadQueue();
+    return { keys, remaining: (await q.listOfflineUploadDrafts()).length };
+  });
+  expect(result.keys).toEqual(['complete_' + result.keys[0].slice('complete_'.length),
+    'complete_' + result.keys[0].slice('complete_'.length)]);
+  expect(result.keys[0]).toMatch(/^complete_/);
+  expect(result.remaining).toBe(0);
+});
