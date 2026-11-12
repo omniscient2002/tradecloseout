@@ -98,6 +98,25 @@ export class AssetsService {
   }
 
   /**
+   * A visible predecessor can point at a replacement that became hidden
+   * after a scope narrowing. Preserve truthful lineage without disclosing
+   * the protected successor ID to the caller.
+   */
+  private async redactHiddenSuccessor(
+    client: PoolClient, ctx: TenantActorContext, projectId: string,
+    asset: any,
+  ) {
+    if (!asset.replaced_by_asset_id) return asset;
+    try {
+      await this.assertCurrentAssetAccess(client, ctx, projectId, asset.replaced_by_asset_id, false);
+      return asset;
+    } catch (err) {
+      if (!(err instanceof NotFoundException)) throw err;
+      return { ...asset, replaced_by_asset_id: null, replacementRestricted: true };
+    }
+  }
+
+  /**
    * API-071: POST /api/v1/projects/:id/assets
    * Registers an equipment unit and automatically instantiates asset-scoped requirements
    * from the active project checklist snapshot (WF-07, AUD-002).
@@ -304,7 +323,7 @@ export class AssetsService {
          ORDER BY tag ASC`,
         [ctx.orgId, projectId, ...filtered.values],
       );
-      return res.rows.filter((asset: any) => {
+      const visible = res.rows.filter((asset: any) => {
         try {
           assertAssetInScope(scope, {
             id: asset.id, categoryKey: asset.category_key, createdAt: asset.created_at,
@@ -315,6 +334,13 @@ export class AssetsService {
           throw err;
         }
       });
+      // Avoid an N+1 lookup: this full list already contains every accessible
+      // nondeleted successor in the project.
+      const visibleIds = new Set(visible.map((asset: any) => asset.id));
+      return visible.map((asset: any) =>
+        asset.replaced_by_asset_id && !visibleIds.has(asset.replaced_by_asset_id)
+          ? { ...asset, replaced_by_asset_id: null, replacementRestricted: true }
+          : asset);
     });
   }
 
@@ -330,7 +356,7 @@ export class AssetsService {
       );
       if (!res.rows.length) throw new NotFoundException('ASSET_NOT_FOUND');
       await this.assertCurrentAssetAccess(client, ctx, projectId, assetId, false);
-      return res.rows[0];
+      return this.redactHiddenSuccessor(client, ctx, projectId, res.rows[0]);
     });
   }
 
@@ -561,7 +587,7 @@ export class AssetsService {
       );
 
       return {
-        ...res.rows[0],
+        ...await this.redactHiddenSuccessor(client, ctx, projectId, res.rows[0]),
         identityRevision: identityRevisionMeta,
       };
     });
@@ -1025,7 +1051,7 @@ export class AssetsService {
         throw new NotFoundException({ code: 'ASSET_NOT_FOUND', detail: 'Equipment not found.' });
       }
       await this.assertCurrentAssetAccess(client, ctx, projectId, assetId, false);
-      const asset = assetRes.rows[0];
+      const asset = await this.redactHiddenSuccessor(client, ctx, projectId, assetRes.rows[0]);
 
       // 1. Linked Documents & Versions
       const { rows: docs } = await client.query(
