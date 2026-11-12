@@ -217,7 +217,21 @@ export class IdempotencyInterceptor implements NestInterceptor {
         const statusCode = res.statusCode || 200;
         if (statusCode >= 200 && statusCode < 300) {
           persistingReceipt = true;
-          if (containsCredentialReceiptData(responseBody)) {
+          // Inspect the actual serialized receipt as well as the source body.
+          // Nest responses may contain custom toJSON() methods or getters whose
+          // serialized fields are not visible to Object.entries(responseBody).
+          // Never scan one shape and then persist a different, unchecked one.
+          let receiptJson: string;
+          try {
+            receiptJson = JSON.stringify(responseBody ?? {});
+          } catch {
+            throw new ConflictException({
+              code: 'IDEMPOTENCY_RECEIPT_NOT_SERIALIZABLE',
+              detail: 'The command requires a dedicated outcome recovery contract.',
+            });
+          }
+          if (containsCredentialReceiptData(responseBody) ||
+              containsCredentialReceiptData(JSON.parse(receiptJson))) {
             // Leave the claim unresolved so a retry cannot re-run a possibly
             // committed operation. A privileged reconciliation path must
             // resolve the outcome; never write plaintext or invent an ACK.
@@ -230,7 +244,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
             `UPDATE idempotency_keys
                 SET response_status = $1, response_json = $2
               WHERE org_id = $3 AND key = $4 AND endpoint = $5 AND response_status = 0`,
-            [statusCode, JSON.stringify(responseBody ?? {}), orgId, idempotencyKey, endpoint],
+            [statusCode, receiptJson, orgId, idempotencyKey, endpoint],
           ));
           if (saved.rowCount !== 1) {
             throw new Error('IDEMPOTENCY_RECEIPT_WRITE_LOST');
