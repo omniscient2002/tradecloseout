@@ -230,10 +230,10 @@ export class WarrantyAndBillingService {
         });
       }
 
-      if (defect.status === 'CLOSED') {
+      if (!['OPEN', 'IN_PROGRESS'].includes(defect.status)) {
         throw new ConflictException({
-          code: 'DEFECT_ALREADY_CLOSED',
-          detail: `Defect ${defectId} is already closed.`,
+          code: 'DEFECT_REMEDY_TRANSITION_NOT_ALLOWED',
+          detail: 'A submitted remedy is immutable. A rejected remedy requires an audited resubmission transition.',
         });
       }
 
