@@ -1,5 +1,5 @@
-import { HeadObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import { Pool } from 'pg';
+import { HeadObjectCommand, GetObjectCommand, PutObjectCommand, DeleteObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { Pool, PoolClient } from 'pg';
 import { createHash } from 'crypto';
 import { createReadStream, createWriteStream } from 'fs';
 import { mkdtemp, rm, stat } from 'fs/promises';
@@ -297,8 +297,10 @@ export async function compileAndPersistHandoverPackage(
       throw new Error('PACKAGE_STORAGE_VERIFICATION_FAILED');
     }
 
-    const persistClient = await pool.connect();
+    let persistClient: PoolClient | undefined;
+    let committedReady = false;
     try {
+      persistClient = await pool.connect();
       await persistClient.query('BEGIN');
       await persistClient.query(
         `SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`,
@@ -353,6 +355,7 @@ export async function compileAndPersistHandoverPackage(
           String(job.eventId || jobId)],
       );
       await persistClient.query('COMMIT');
+      committedReady = true;
       return {
         packageId,
         status: 'READY',
@@ -363,10 +366,25 @@ export async function compileAndPersistHandoverPackage(
         includedSourceCount: sourceRows.length,
       };
     } catch (error) {
-      await persistClient.query('ROLLBACK').catch(() => undefined);
+      await persistClient?.query('ROLLBACK').catch(() => undefined);
       throw error;
     } finally {
-      persistClient.release();
+      persistClient?.release();
+      if (!committedReady) {
+        // The key is unique to this attempt, so remove only the unpublished
+        // immutable version. A failed cleanup is visible for reconciliation.
+        // Crash-after-upload still needs an independent orphan sweeper.
+        try {
+          await s3.send(new DeleteObjectCommand({
+            Bucket: bucket, Key: objectKey, VersionId: putResult.VersionId,
+          }));
+        } catch (cleanupError) {
+          console.error('PACKAGE_UNPUBLISHED_OBJECT_CLEANUP_FAILED', {
+            packageId, artifactId, objectKey,
+            reason: String((cleanupError as Error)?.message || 'provider error').slice(0, 150),
+          });
+        }
+      }
     }
   } finally {
     await rm(tempDir, { recursive: true, force: true });
