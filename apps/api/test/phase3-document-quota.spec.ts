@@ -64,6 +64,57 @@ describe('PH3-G09-001: typed document quota arithmetic on restricted PostgreSQL'
           WHERE org_id = $1 AND id = $2`,
         [orgId, projectId],
       );
+      const holdId = uuidv7();
+      await admin.query(
+        `INSERT INTO legal_holds (id, org_id, project_id, reason, created_by)
+          VALUES ($1, $2, $3, 'Litigation preservation', $4)`,
+        [holdId, orgId, projectId, userId],
+      );
+      await expect(service.deleteDocument(ctx, documentId)).rejects.toThrow('DOCUMENT_UNDER_LEGAL_HOLD');
+      expect(await readCounter()).toBe(1024n);
+      await admin.query(
+        `UPDATE legal_holds SET released_at = now()
+          WHERE org_id = $1 AND id = $2`,
+        [orgId, holdId],
+      );
+
+      await admin.query(
+        `UPDATE document_versions SET review_status = 'APPROVED'
+          WHERE org_id = $1 AND id = $2`,
+        [orgId, versionId],
+      );
+      await expect(service.deleteDocument(ctx, documentId)).rejects.toThrow('DOCUMENT_RETAINED_EVIDENCE');
+      expect(await readCounter()).toBe(1024n);
+      await admin.query(
+        `UPDATE document_versions SET review_status = 'NOT_SUBMITTED'
+          WHERE org_id = $1 AND id = $2`,
+        [orgId, versionId],
+      );
+
+      const packageId = uuidv7();
+      const packageItemId = uuidv7();
+      await admin.query(
+        `INSERT INTO handover_packages
+          (id, org_id, project_id, version_no, title, status, created_by)
+          VALUES ($1, $2, $3, 1, 'Retained package', 'READY', $4)`,
+        [packageId, orgId, projectId, userId],
+      );
+      await admin.query(
+        `INSERT INTO package_items
+          (id, org_id, project_id, package_id, document_version_id, section_key, sort_order)
+          VALUES ($1, $2, $3, $4, $5, 'DOCUMENTS', 1)`,
+        [packageItemId, orgId, projectId, packageId, versionId],
+      );
+      await expect(service.deleteDocument(ctx, documentId)).rejects.toThrow('DOCUMENT_RETAINED_EVIDENCE');
+      expect(await readCounter()).toBe(1024n);
+      // Explicit exclusion removes the version from this package; no
+      // published package item remains to prevent a draft-only correction.
+      await admin.query(
+        `UPDATE package_items SET included = false
+          WHERE org_id = $1 AND id = $2`,
+        [orgId, packageItemId],
+      );
+
       const deleted = await service.deleteDocument(ctx, documentId);
       expect(deleted.deleted).toBe(true);
       expect(await readCounter()).toBe(0n);
