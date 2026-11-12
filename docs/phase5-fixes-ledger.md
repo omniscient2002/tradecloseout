@@ -13,12 +13,12 @@
 | Finding | Candidate | Changes / outstanding closure |
 |---|---|---|
 | PH5-G23-001 | PARTIAL | Upload modal now reports browser-local draft persistence instead of completed submission; all actual end-to-end product journeys remain incomplete |
-| PH5-G23-002 | PARTIAL | Audit-page missing/metadata-only hashes handled; shared typed DTO/permission integration pending |
+| PH5-G23-002 | PARTIAL | Audit-page metadata-only hashes handled; fail-closed strict checklist DTO parser supports snake/camel fields, exact statuses and row versions; full cross-module typed DTO/permission integration pending |
 | PH5-G23-003 | OPEN | Server-derived per-action capability UI missing |
-| PH5-G23-004 | PARTIAL | Removed invented warranty/defect defaults; authoritative scoped reporting still missing |
+| PH5-G23-004 | PARTIAL | Removed invented warranty/defect defaults and exact BigInt-only INR paise display (invalid money is unavailable, not zero); authoritative scoped reporting/search still missing |
 | PH5-G23-005 | CANDIDATE | Safe UTF-8 CSV/Blob export, formula-prefix policy, regression tests; consumer/large-file acceptance pending |
 | PH5-G23-006 | PARTIAL | Technical evidence upload has associated labels, keyboard-accessible file input and live/error messages; full assistive-tech/mobile journey verification missing |
-| PH5-G23-007 | PARTIAL | Distinct warranty/defect failure, empty/loading/retry states; stale response fence and other pages pending |
+| PH5-G23-007 | PARTIAL | Warranty/defect, equipment, reviews and packages distinguish denied/failed/malformed from valid empty state; affected views have visible retry. Project-route and per-request-generation fences block stale responses across core loads; other pages and full browser denial/timeout replay pending |
 | PH5-G23-008 | BLOCKED_EXTERNAL | Human user/accessibility acceptance |
 | PH5-G22-001 | CANDIDATE | Bounded URL refresh/retry, stable uploaded receipts, backend blocks refresh when intent is no longer PENDING_UPLOAD/PENDING; real provider acceptance pending |
 | PH5-G22-002 | CANDIDATE | Origin-wide Web Locks serialize drains; unsupported environments fail closed; tab crash/mobile coverage pending |
@@ -42,7 +42,7 @@
 
 The browser regression file `apps/web/e2e/offline-queue-phase5.spec.ts` executes the actual queue against a stubbed API client, real Chromium IndexedDB/Web Locks and loopback HTTP PUTs. It covers expired presigned URL refresh, concurrent drains, actor isolation, per-actor/global quota, scoped draft inventory/discard, missing completion responses and same-key retry when the server remains pending, plus injected browser-storage exhaustion. `apps/web/e2e/chunked-sha256.spec.ts` compares original-byte SHA-256 against known empty/abc vectors and Node crypto across padding/segment boundaries. `apps/web/e2e/csv-export.spec.ts` covers Unicode, #/%/CRLF, quoting, formula prefixes and malformed values. Backend regressions check restricted incident SQL privileges and deny refresh of quarantined upload intents. These are fixture/DB mechanics tests, **not** production provider or end-to-end acceptance.
 
-**Latest verified passing engineering head before this ledger edit:** `584184c2bc12d6656a5eaf6d89a44297d5478a4e`, GitHub `verify-and-test` and `group-register` successful, with **281/281 API**, **26/26 Chromium archive-project**, **15/15 security** and **44/44 shared** tests. This head includes real PostgreSQL 16 guarded approval, role isolation and approved-version incident quarantine, but is not independent human/provider acceptance. Later offline retry fixes require new exact-head CI checks; never inherit older green results.
+**Latest verified passing engineering head before this ledger edit:** `f6b430bdf04f40a2bfc8cb886c23ec625f50331d`, GitHub `verify-and-test` and `group-register` successful, with **281/281 API**, **37/37 Chromium archive-project**, **15/15 security** and **44/44 shared** tests. This head includes bounded offline retry, exact money and strict checklist parsing regressions. Later project-page asynchronous error/empty-state fixes require new exact-head CI. Do not infer human/provider acceptance from green fixture tests.
 
 Useful commands on a clean Node 22/pnpm 12.4.1 checkout with isolated PG16/Redis and Chromium:
 ```sh
@@ -62,6 +62,10 @@ pnpm test:e2e
 The browser queue enforces the API's current 100 MiB maximum per file, a 300 MiB per-actor cap, a 500 MiB total cap and 10 active drafts per actor; quota validation and persistence occur within the same IndexedDB readwrite transaction. The upload modal lists only the current actor's drafts; an explicit discard of an unfinished remote intent first asks the server to abort. A lost abort response may be reconciled only against an authoritatively FAILED/QUARANTINED version; a 401/403 never implies permission to delete. Discard refuses a pending scan/processing receipt. These are **logical per-origin controls**, not disk encryption; use separate browser profiles for different people on shared devices. Browser storage may still be evicted. A device-level storage persistence contract, TTL and completed-intent cleanup remain required.
 
 The original-blob SHA-256 digest now uses a streaming incremental implementation reading 1 MiB slices rather than `file.arrayBuffer()`. Known vectors and segment boundaries match Node's SHA-256. Full mobile peak-memory profiling, background-worker offload and cancellation are unaccepted.
+
+## Frontend data-integrity and recoverability checks
+
+The checklist boundary parser preserves the API's actual `UNDER_REVIEW` and `SUPERSEDED` states and rejects missing/unknown status, mandatory, group, document type or row-version fields instead of inventing `NOT_STARTED` or version 1. Contract and retention values in paise are formatted with BigInt, not lossy IEEE-754 conversion; malformed amounts are labeled unavailable, not zero. The equipment/review/package tabs now surface failed or denied loads with accessible alerts and retries rather than presenting an empty result. Per-resource request generations and a current-project fence prevent late old-project responses from overwriting current data. Strict DTO and money parsing have CI tests; actual authenticated route/controller acceptance is still pending.
 
 ## Bounded retry contract
 
