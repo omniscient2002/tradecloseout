@@ -117,6 +117,35 @@ test('other-actor drafts cannot upload or silently reactivate after a switch', a
 });
 
 
+test('a different actor cannot mutate the persisted original or its status during drain', async ({ page }) => {
+  const puts = await fixture(page, false);
+  const result = await page.evaluate(async () => {
+    const q = (window as any).__queue;
+    const persistedStatus = async (): Promise<string> => {
+      const db = await new Promise<IDBDatabase>((resolve, reject) => {
+        const open = indexedDB.open('tradecloseout_field_pwa', 1);
+        open.onsuccess = () => resolve(open.result);
+        open.onerror = () => reject(open.error);
+      });
+      try {
+        return await new Promise<string>((resolve, reject) => {
+          const tx = db.transaction('tc_offline_upload_outbox', 'readonly');
+          const request = tx.objectStore('tc_offline_upload_outbox').getAll();
+          request.onsuccess = () => resolve(request.result[0]?.status);
+          request.onerror = () => reject(request.error);
+        });
+      } finally { db.close(); }
+    };
+    const before = await persistedStatus();
+    q.setOfflineActorPartition('actor-unrelated');
+    await q.drainOfflineUploadQueue();
+    const after = await persistedStatus();
+    return { before, after };
+  });
+  expect(puts).toHaveLength(0);
+  expect(result).toEqual({ before: 'QUEUED_OFFLINE', after: 'QUEUED_OFFLINE' });
+});
+
 test('storage policy rejects oversized, too many and over-budget offline originals', async ({ page }) => {
   await fixture(page, false);
   const outcomes = await page.evaluate(() => {
