@@ -32,3 +32,29 @@ test('bounded SHA-256 rejects memory-unbounded chunk sizes', async () => {
   await expect(sha256BlobChunked(new Blob(['safe']), 0)).rejects.toThrow('SHA256_CHUNK_SIZE_INVALID');
   await expect(sha256BlobChunked(new Blob(['safe']), 9 * 1024 * 1024)).rejects.toThrow('SHA256_CHUNK_SIZE_INVALID');
 });
+
+
+test('mobile capture cancel aborts the bounded hash before and after async Blob reads', async () => {
+  const before = new AbortController();
+  before.abort();
+  await expect(sha256BlobChunked(new Blob(['original']), 64, before.signal))
+    .rejects.toMatchObject({ name: 'AbortError' });
+
+  const during = new AbortController();
+  const bytes = new Blob([new Uint8Array(1024)]);
+  const delayedBlob = {
+    size: bytes.size,
+    slice(start: number, end: number) {
+      const part = bytes.slice(start, end);
+      return {
+        async arrayBuffer() {
+          const buffer = await part.arrayBuffer();
+          during.abort();
+          return buffer;
+        },
+      };
+    },
+  } as unknown as Blob;
+  await expect(sha256BlobChunked(delayedBlob, 128, during.signal))
+    .rejects.toMatchObject({ name: 'AbortError' });
+});
