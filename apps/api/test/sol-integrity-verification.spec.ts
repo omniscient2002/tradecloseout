@@ -115,7 +115,7 @@ describe('Sol Integrity & Audit Invariants Suite', () => {
 
       const mockDb = new TenantDbService({ connect: jest.fn().mockResolvedValue(mockClient) } as any);
       const mockStorage = {
-        finalizeUpload: jest.fn().mockResolvedValue({ providerVersionId: 's3-ver-123', observedSizeBytes: 1024 }),
+        finalizeUpload: jest.fn().mockResolvedValue({ versionId: 's3-ver-123', observedSizeBytes: 1024 }),
       };
 
       const service = new DocumentsService(mockDb, mockStorage as any);
