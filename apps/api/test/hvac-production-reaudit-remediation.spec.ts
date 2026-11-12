@@ -503,6 +503,7 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
       const projectId = uuidv7();
       const defectId = uuidv7();
       const remedyEvidenceId = uuidv7();
+      const remedyVersionId = uuidv7();
       const assigneeUserId = uuidv7();
       const independentVerifierId = uuidv7();
 
@@ -514,6 +515,7 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
         row_version: 1,
         assigned_user_id: assigneeUserId,
         closure_evidence_object_id: null as string | null,
+        remedy_document_version_id: null as string | null,
       };
 
       const mockPool: any = {
@@ -539,6 +541,9 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
                 ],
               };
             }
+            if (sql.includes('FROM document_versions dv')) {
+              return { rows: [{ id: remedyVersionId }] };
+            }
             if (sql.includes('UPDATE defects')) {
               if (sql.includes("status = 'RECTIFIED'")) {
                 currentDefect = {
@@ -546,6 +551,7 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
                   status: 'RECTIFIED',
                   row_version: 2,
                   closure_evidence_object_id: remedyEvidenceId,
+                  remedy_document_version_id: remedyVersionId,
                 };
                 return { rowCount: 1 };
               }
