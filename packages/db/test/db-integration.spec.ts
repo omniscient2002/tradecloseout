@@ -153,6 +153,40 @@ void test('Disposable PostgreSQL migration, isolation and audit regression tests
       await assert.rejects(scoped(app, a.orgId, client => client.query(`INSERT INTO asset_categories (id,org_id,key,name)
         VALUES ($1,NULL,'FORGED','Invalid global')`, [randomUUID()])), (error: any) => error.code === '42501');
     });
+    await t.test('PH1-G26-008: caller-forged audit sequence is ignored and concurrent inserts retain chain order', async () => {
+      const original = (await admin.query(
+        'SELECT chain_seq,hash FROM audit_events WHERE org_id=$1 ORDER BY chain_seq DESC LIMIT 1',
+        [a.orgId],
+      )).rows[0];
+      const forgedSequence = '9223372036854775000';
+      const addEvent = (requestId: string, desiredSeq: string) => scoped(app, a.orgId, client => client.query(
+        `INSERT INTO audit_events (id,org_id,actor_type,action,entity_type,entity_id,request_id,chain_seq)
+         VALUES ($1,$2,'SYSTEM','ORDER_PROBE','PROJECT',$3,$4,$5)
+         RETURNING chain_seq, prev_hash, hash`,
+        [randomUUID(), a.orgId, a.projectIds[0], requestId, desiredSeq],
+      ));
+      const first = (await addEvent('forged-order-test', forgedSequence)).rows[0];
+      assert.notEqual(String(first.chain_seq), forgedSequence, 'caller must not choose the chain order');
+      if (original) {
+        assert(BigInt(first.chain_seq) > BigInt(original.chain_seq));
+        assert.equal(first.prev_hash, original.hash);
+      }
+      const results = await Promise.all([
+        addEvent('parallel-audit-one', '0'),
+        addEvent('parallel-audit-two', '1'),
+      ]);
+      const parallelHashes = new Set(results.map(result => result.rows[0].hash));
+      assert.equal(parallelHashes.size, 2);
+      const chain = (await admin.query(
+        'SELECT chain_seq,prev_hash,hash FROM audit_events WHERE org_id=$1 ORDER BY chain_seq ASC',
+        [a.orgId],
+      )).rows;
+      for (let i = 1; i < chain.length; i++) {
+        assert(BigInt(chain[i].chain_seq) > BigInt(chain[i - 1].chain_seq));
+        assert.equal(chain[i].prev_hash, chain[i - 1].hash);
+      }
+    });
+
     await t.test('AUDIT-02/03/04: nonempty chain rejects update/delete and detects privileged payload tampering', async () => {
       // Earlier partition-boundary tests intentionally append to this same tenant.
       // Verify this test adds three records without assuming an empty initial ledger.
