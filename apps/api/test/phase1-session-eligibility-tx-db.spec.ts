@@ -57,7 +57,7 @@ describe('PH1-G01-004 / PH1-G26-004: session eligibility inside real tenant tran
       }, async () => 'alternate-active-org')).resolves.toBe('alternate-active-org');
 
       await admin.query(
-        "UPDATE memberships SET status='ACTIVE',role='R-VIEWER' WHERE org_id=$1 AND user_id=$2",
+        "UPDATE memberships SET status='ACTIVE',role='R-DOC' WHERE org_id=$1 AND user_id=$2",
         [a.orgId, userId],
       );
       await expect(permitted()).rejects.toThrow('AUTH_SESSION_CONTEXT_CHANGED');
