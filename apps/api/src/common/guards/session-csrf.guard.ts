@@ -107,9 +107,15 @@ export class SessionCsrfGuard implements CanActivate {
 
     if (session.guest_grant_id) {
       const client = await this.pool.connect();
+      let discardConnection = false;
       let gRows: any[];
       try {
+        discardConnection = true;
         await client.query('BEGIN');
+        discardConnection = false;
+        await client.query("SET LOCAL lock_timeout = '5s'");
+        await client.query("SET LOCAL statement_timeout = '15s'");
+        await client.query("SET LOCAL idle_in_transaction_session_timeout = '15s'");
         await client.query(`SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`, [session.active_org_id]);
         const result = await client.query(
           `SELECT project_id, role, capabilities, scope_json, status, expires_at
@@ -119,12 +125,14 @@ export class SessionCsrfGuard implements CanActivate {
           [session.guest_grant_id, session.active_org_id],
         );
         gRows = result.rows;
+        discardConnection = true;
         await client.query('COMMIT');
+        discardConnection = false;
       } catch (err) {
-        await client.query('ROLLBACK').catch(() => {});
+        try { await client.query('ROLLBACK'); } catch { discardConnection = true; }
         throw err;
       } finally {
-        client.release();
+        client.release(discardConnection);
       }
       if (
         gRows.length === 0 ||
@@ -144,8 +152,14 @@ export class SessionCsrfGuard implements CanActivate {
     } else {
       // 2. Query memberships with tenant RLS context set (FR-IAM-007, AUD-014)
       const client = await this.pool.connect();
+      let discardConnection = false;
       try {
+        discardConnection = true;
         await client.query('BEGIN');
+        discardConnection = false;
+        await client.query("SET LOCAL lock_timeout = '5s'");
+        await client.query("SET LOCAL statement_timeout = '15s'");
+        await client.query("SET LOCAL idle_in_transaction_session_timeout = '15s'");
         await client.query(`SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`, [session.active_org_id]);
         await client.query(`SELECT set_config('app.current_user', $1, true)`, [session.user_id]);
 
@@ -156,7 +170,9 @@ export class SessionCsrfGuard implements CanActivate {
             LIMIT 1`,
           [session.active_org_id, session.user_id],
         );
+        discardConnection = true;
         await client.query('COMMIT');
+        discardConnection = false;
 
         if (mRows.length === 0) {
           throw new UnauthorizedException({
@@ -169,10 +185,10 @@ export class SessionCsrfGuard implements CanActivate {
         orgRole = mRows[0].org_role;
         membershipStatus = mRows[0].membership_status;
       } catch (err) {
-        await client.query('ROLLBACK');
+        try { await client.query('ROLLBACK'); } catch { discardConnection = true; }
         throw err;
       } finally {
-        client.release();
+        client.release(discardConnection);
       }
     }
 
@@ -257,8 +273,14 @@ export class SessionCsrfGuard implements CanActivate {
 
     if (targetProjectId && session.user_id && session.active_org_id && !session.guest_grant_id) {
       const client = await this.pool.connect();
+      let discardConnection = false;
       try {
+        discardConnection = true;
         await client.query('BEGIN');
+        discardConnection = false;
+        await client.query("SET LOCAL lock_timeout = '5s'");
+        await client.query("SET LOCAL statement_timeout = '15s'");
+        await client.query("SET LOCAL idle_in_transaction_session_timeout = '15s'");
         await client.query(`SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`, [session.active_org_id]);
         await client.query(`SELECT set_config('app.current_user', $1, true)`, [session.user_id]);
         const pmRes = await client.query(
@@ -271,16 +293,18 @@ export class SessionCsrfGuard implements CanActivate {
           [session.active_org_id, targetProjectId, session.user_id],
         );
         projectRole = pmRes.rows[0]?.role;
+        discardConnection = true;
         await client.query('COMMIT');
+        discardConnection = false;
       } catch (err) {
-        await client.query('ROLLBACK');
+        try { await client.query('ROLLBACK'); } catch { discardConnection = true; }
         throw new ForbiddenException({
           code: 'PROJECT_AUTHORITY_LOOKUP_FAILED',
           title: 'Project access could not be verified',
           detail: 'The request was denied because active project membership could not be established.',
         });
       } finally {
-        client.release();
+        client.release(discardConnection);
       }
     }
 

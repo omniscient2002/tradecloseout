@@ -130,7 +130,7 @@ export class MfaController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const ctx = this.session(req);
-    if (typeof body?.code !== 'string') throw new BadRequestException({ code: 'MFA_CODE_INVALID' });
+    if (typeof body?.code !== 'string' || !/^[0-9]{6}$/.test(body.code)) throw new BadRequestException({ code: 'MFA_CODE_INVALID' });
     await this.budget.reserve(ctx.userId, 'VERIFY');
     const verified = await this.store.verifyFactor(ctx, body.code);
     return this.complete(res, verified);
@@ -143,7 +143,7 @@ export class MfaController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const ctx = this.session(req);
-    if (typeof body?.recoveryCode !== 'string') throw new BadRequestException({ code: 'RECOVERY_CODE_INVALID' });
+    if (typeof body?.recoveryCode !== 'string' || !/^[0-9a-f]{24}$/i.test(body.recoveryCode)) throw new BadRequestException({ code: 'RECOVERY_CODE_INVALID' });
     await this.budget.reserve(ctx.userId, 'RECOVERY');
     const verified = await this.store.useRecoveryCode(ctx, body.recoveryCode);
     return this.complete(res, verified);

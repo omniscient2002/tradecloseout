@@ -1,3 +1,4 @@
+import { withAssetAuthorityFixture } from './helpers/asset-authority-fixture';
 import { uuidv7 } from 'uuidv7';
 import {
   ConflictException,
@@ -48,7 +49,7 @@ describe('HVAC Domain Excellence Suite (XP11..XP18)', () => {
         }),
       };
 
-      const assetsService = new AssetsService(mockPool);
+      const assetsService = new AssetsService(withAssetAuthorityFixture(mockPool));
       const items = [
         { tag: 'CH-01', name: 'Water-Cooled Centrifugal Chiller 1', categoryKey: 'CHILLER' }, // Collides with DB
         { tag: 'AHU-01', name: 'Air Handling Unit 1', categoryKey: 'AHU' },
@@ -78,7 +79,7 @@ describe('HVAC Domain Excellence Suite (XP11..XP18)', () => {
         }),
       };
 
-      const assetsService = new AssetsService(mockPool);
+      const assetsService = new AssetsService(withAssetAuthorityFixture(mockPool));
       const items = [
         { tag: 'CH-01', name: 'Water-Cooled Centrifugal Chiller 1', categoryKey: 'CHILLER' },
       ];
@@ -109,7 +110,7 @@ describe('HVAC Domain Excellence Suite (XP11..XP18)', () => {
         }),
       };
 
-      const assetsService = new AssetsService(mockPool);
+      const assetsService = new AssetsService(withAssetAuthorityFixture(mockPool));
       const items = [
         { tag: 'CH-01', name: 'Water-Cooled Chiller 1', categoryKey: 'CHILLER', make: 'Trane', model: 'CVGF' },
         { tag: 'CT-01', name: 'Cooling Tower 1', categoryKey: 'COOLING_TOWER', make: 'Paharpur', model: 'NC8400' },
@@ -277,7 +278,7 @@ describe('HVAC Domain Excellence Suite (XP11..XP18)', () => {
         }),
       };
 
-      const assetsService = new AssetsService(mockPool);
+      const assetsService = new AssetsService(withAssetAuthorityFixture(mockPool));
       const passport = await assetsService.getEquipmentPassport(mockCtx, projectId, assetId);
 
       expect(passport.asset.tag).toBe('CH-01');
@@ -484,10 +485,14 @@ describe('HVAC Domain Excellence Suite (XP11..XP18)', () => {
         const orgIdB = tB.orgId;
         const projectB0 = tB.projectIds[0];
 
+        await admin.query("INSERT INTO memberships(id,org_id,user_id,role,status) VALUES($1,$2,$3,'R-OWNER','ACTIVE')",[uuidv7(),orgIdA,seededUserId]);
+
         // Seed an independent user for independent verification / approval
         const independentUserId = uuidv7();
         await admin.query(`INSERT INTO users (id, name, status) VALUES ($1, 'Independent Verifier', 'ACTIVE')`, [independentUserId]);
         await admin.query(`INSERT INTO memberships (id, org_id, user_id, role, status) VALUES ($1, $2, $3, 'R-PM', 'ACTIVE')`, [uuidv7(), orgIdA, independentUserId]);
+
+        await admin.query("INSERT INTO project_members(id,org_id,project_id,user_id,role,status,scope_json,added_by) VALUES($1,$2,$3,$4,'R-PM','ACTIVE','{}',$5)",[uuidv7(),orgIdA,projectA0,independentUserId,seededUserId]);
 
         const ctxA: TenantActorContext = {
           orgId: orgIdA,

@@ -1,3 +1,4 @@
+import { withAssetAuthorityFixture } from './helpers/asset-authority-fixture';
 // apps/api/test/discovery-lifecycle-foundations.spec.ts
 // Comprehensive Test Suite for Second-Pass Discovery & Lifecycle Foundations:
 // 1. Asset Identity Revisions & Evidence Revalidation (Top 25 Item 3 / Future Domain Model §5)
@@ -116,7 +117,7 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
         connect: jest.fn().mockResolvedValue(mockClient),
       } as any;
 
-      const assetsService = new AssetsService(mockPool);
+      const assetsService = new AssetsService(withAssetAuthorityFixture(mockPool));
 
       const result = await assetsService.updateAsset(mockTenantActorCtx, projectId, assetId, {
         model: '19XR-1200',
@@ -179,7 +180,7 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
                   id: assetId,
                   tag: 'CH-01',
                   name: 'Water Cooled Chiller',
-                  status: 'MAINTENANCE',
+                  status: 'RETIRED',
                   row_version: 2,
                 },
               ],
@@ -194,10 +195,10 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
         connect: jest.fn().mockResolvedValue(mockClient),
       } as any;
 
-      const assetsService = new AssetsService(mockPool);
+      const assetsService = new AssetsService(withAssetAuthorityFixture(mockPool));
 
       const result = await assetsService.updateAsset(mockTenantActorCtx, projectId, assetId, {
-        status: 'MAINTENANCE',
+        status: 'RETIRED',
       });
 
       expect(result.identityRevision).toBeNull();
@@ -687,7 +688,7 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
       };
 
       const mockPool = { connect: jest.fn().mockResolvedValue(mockClient) } as any;
-      const assetsService = new AssetsService(mockPool);
+      const assetsService = new AssetsService(withAssetAuthorityFixture(mockPool));
 
       const res = await assetsService.matchAssetCandidates(mockTenantActorCtx, projectId, {
         filename: 'Carrier_Chiller_CH-01_Factory_Test_Report.pdf',

@@ -1,3 +1,4 @@
+import { withAssetAuthorityFixture } from './helpers/asset-authority-fixture';
 import { createHash, createHmac, randomBytes } from 'crypto';
 import { uuidv7 } from 'uuidv7';
 import { HttpStatus, ServiceUnavailableException, BadRequestException, NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
@@ -664,7 +665,7 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
         }),
       };
 
-      const assetsService = new AssetsService(mockPool);
+      const assetsService = new AssetsService(withAssetAuthorityFixture(mockPool));
       const ctx: TenantActorContext = {
         orgId,
         userId: uuidv7(),
@@ -678,6 +679,7 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
         assetsService.revalidateEvidence(ctx, projectId, urlAssetId, revalidationId, {
           status: 'CONFIRMED',
           notes: 'Serial verified on site',
+          expectedRowVersion: 1,
         }),
       ).rejects.toThrow(NotFoundException);
     });

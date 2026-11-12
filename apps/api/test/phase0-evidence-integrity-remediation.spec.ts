@@ -1,3 +1,4 @@
+import { withAssetAuthorityFixture } from './helpers/asset-authority-fixture';
 // apps/api/test/phase0-evidence-integrity-remediation.spec.ts
 // Comprehensive Test Suite for Phase 0 & Phase 1 Invariants (TC2-001 to TC2-028)
 
@@ -634,7 +635,7 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
         }),
       } as any;
 
-      const assetsService = new AssetsService(mockPool);
+      const assetsService = new AssetsService(withAssetAuthorityFixture(mockPool));
       const passport = await assetsService.getEquipmentPassport(
         mockTenantActorCtx,
         projectId,

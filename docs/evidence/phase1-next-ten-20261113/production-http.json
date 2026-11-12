@@ -1,0 +1,59 @@
+{
+  "observations": [
+    {
+      "method": "GET",
+      "path": "/projects/PROJECT/assets",
+      "status": 200,
+      "code": null
+    },
+    {
+      "method": "GET",
+      "path": "/projects/PROJECT/assets/DENIED_ASSET",
+      "status": 404,
+      "code": "ASSET_NOT_FOUND"
+    },
+    {
+      "method": "PATCH",
+      "path": "/projects/PROJECT/assets/ALLOWED_ASSET",
+      "status": 403,
+      "code": "ASSET_AUTHORITY_CHANGED"
+    },
+    {
+      "method": "PATCH",
+      "path": "/projects/PROJECT/assets/ALLOWED_ASSET",
+      "status": 200,
+      "code": null
+    },
+    {
+      "method": "PATCH",
+      "path": "/projects/PROJECT/assets/DENIED_ASSET",
+      "status": 404,
+      "code": "ASSET_NOT_FOUND"
+    },
+    {
+      "method": "POST",
+      "path": "/auth/mfa/verify",
+      "status": 400,
+      "code": "MFA_CODE_INVALID"
+    },
+    {
+      "method": "POST",
+      "path": "/auth/mfa/recovery",
+      "status": 400,
+      "code": "RECOVERY_CODE_INVALID"
+    },
+    {
+      "method": "POST",
+      "path": "/reviews/bulk-decisions",
+      "status": 400,
+      "code": "INVALID_REVIEW_IDS"
+    },
+    {
+      "method": "PATCH",
+      "path": "/projects/PROJECT/assets/ALLOWED_ASSET",
+      "status": 403,
+      "code": "ASSET_AUTHORITY_CHANGED"
+    }
+  ],
+  "mode": "production, loopback HTTP, seeded session; no actual OTP/MFA enrollment/provider or engineering evidence acceptance"
+}
