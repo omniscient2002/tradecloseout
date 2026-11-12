@@ -187,6 +187,11 @@ describe('Perfect 10 Remediation & Hardening Test Suite', () => {
       const mockPool = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation((sql: string) => {
+            // A storage-ceiling test requires a currently eligible member; an
+            // empty membership fixture would rightfully fail live authority
+            // before the quota code under test is reached.
+            if (sql.includes('SELECT m.role AS org_role')) return Promise.resolve({ rows: [{ org_role: 'R-OWNER' }] });
+            if (sql.includes('SELECT status FROM projects')) return Promise.resolve({ rows: [{ status: 'ACTIVE' }] });
             if (sql.includes('SELECT uc.value AS current_storage')) {
               return Promise.resolve({
                 rows: [
