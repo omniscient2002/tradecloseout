@@ -32,6 +32,9 @@ export interface OfflineQueuedUpload {
   createdAt: number;
   completedUploadAt?: number;
   completionRequestedAt?: number;
+  retryCount?: number;
+  nextAttemptAt?: number;
+  terminalFailure?: boolean;
 }
 
 const DB_NAME = 'tradecloseout_field_pwa';
@@ -42,6 +45,27 @@ const DRAIN_LOCK_NAME = 'tradecloseout:field-upload-drain';
 // Multipart part URLs expire. One refresh/retry per failed part prevents an
 // unbounded permission-error loop, while preserving receipts already persisted.
 const MAX_PART_URL_REFRESHES = 1;
+const MAX_TRANSIENT_RETRIES = 6;
+const RETRY_BASE_DELAY_MS = 30_000;
+const RETRY_MAX_DELAY_MS = 60 * 60 * 1000;
+
+export function nextUploadRetryDelay(retryCount: number): number {
+  if (!Number.isSafeInteger(retryCount) || retryCount < 1) {
+    throw new Error('UPLOAD_RETRY_COUNT_INVALID');
+  }
+  return Math.min(RETRY_MAX_DELAY_MS,
+    RETRY_BASE_DELAY_MS * Math.pow(2, Math.min(retryCount - 1, 16)));
+}
+
+export function isTransientUploadFailure(error: unknown): boolean {
+  if (error instanceof ApiProblemError) {
+    return error.status === 408 || error.status === 429 || error.status >= 500;
+  }
+  if (error instanceof TypeError) return true; // fetch network rejection
+  const message = error instanceof Error ? error.message : '';
+  return /^UPLOAD_PART_HTTP_(408|429|5\\d\\d)$/.test(message) ||
+    /^(NetworkError|Failed to fetch)$/.test(message);
+}
 
 // The API rejects uploads over 100 MiB. Bound browser-local original evidence
 // and do not imply a later provider upload will succeed for oversized files.
@@ -488,7 +512,12 @@ async function drainLockedUploadQueue(
   });
 
   for (const item of items) {
-    if (item.status === 'COMPLETED') continue;
+    if (item.status === 'COMPLETED' || item.terminalFailure) continue;
+    // Backoff is durable across reloads, online/visibility events and tabs.
+    // Completion uncertainty is reconciled against the server independently
+    // of this part-upload retry budget.
+    if (!item.completionRequestedAt && item.nextAttemptAt &&
+        Date.now() < item.nextAttemptAt) continue;
 
     const currentActorPartition = window.localStorage.getItem(ACTOR_PARTITION_KEY);
     if (!currentActorPartition || item.actorPartition !== currentActorPartition) {
@@ -513,6 +542,7 @@ async function drainLockedUploadQueue(
         }
         if (status === 'REJECTED') {
           item.status = 'FAILED';
+          item.terminalFailure = true;
           item.lastError = 'Server rejected or quarantined the evidence. Do not re-upload without reviewing the failure.';
           await saveQueueItem(db, item);
           continue;
@@ -532,6 +562,7 @@ async function drainLockedUploadQueue(
       }
       item.status = 'UPLOADING';
       item.lastError = undefined;
+      item.nextAttemptAt = undefined;
       await saveQueueItem(db, item);
       // Step 1: Request or reuse S3 multipart upload intent (TC2-030 contract alignment)
       if (!item.uploadIntent) {
@@ -650,6 +681,7 @@ async function drainLockedUploadQueue(
         }
         if (result === 'REJECTED') {
           item.status = 'FAILED';
+          item.terminalFailure = true;
           item.lastError = 'Server rejected or quarantined the evidence.';
           await saveQueueItem(db, item);
           break;
@@ -666,11 +698,36 @@ async function drainLockedUploadQueue(
       if (window.localStorage.getItem(ACTOR_PARTITION_KEY) !== item.actorPartition) {
         continue;
       }
-      item.status = authBlocked ? 'BLOCKED_SCOPE' :
-        (typeof navigator !== 'undefined' && !navigator.onLine ? 'QUEUED_OFFLINE' : 'FAILED');
-      item.lastError = authBlocked
-        ? 'Authentication or access changed. This draft cannot be replayed automatically.'
-        : error;
+      const offline = typeof navigator !== 'undefined' && !navigator.onLine;
+      const pendingCompletion = Boolean(item.completionRequestedAt);
+      const transient = offline || isTransientUploadFailure(err);
+      if (authBlocked) {
+        item.status = 'BLOCKED_SCOPE';
+        item.terminalFailure = true;
+        item.lastError = 'Authentication or access changed. This draft cannot be replayed automatically.';
+      } else if (pendingCompletion) {
+        // Never re-send the original bytes just because the /complete response
+        // is uncertain; the next foreground attempt checks server state first.
+        item.status = 'FAILED';
+        item.lastError = 'Upload completion is uncertain; next attempt checks the authoritative server.';
+      } else if (transient) {
+        item.retryCount = (item.retryCount || 0) + 1;
+        if (item.retryCount >= MAX_TRANSIENT_RETRIES) {
+          item.status = 'FAILED';
+          item.terminalFailure = true;
+          item.lastError = 'UPLOAD_RETRY_LIMIT_REACHED: Original retained. Inspect the connection and server before resubmitting.';
+        } else {
+          item.status = offline ? 'QUEUED_OFFLINE' : 'FAILED';
+          item.nextAttemptAt = Date.now() + nextUploadRetryDelay(item.retryCount);
+          item.lastError = `Temporary upload failure (attempt ${item.retryCount}/${MAX_TRANSIENT_RETRIES}). ${error}`;
+        }
+      } else {
+        // Permission, checksum, invalid receipt, HTTP 4xx and unexpected
+        // contract violations require deliberate intervention, not polling.
+        item.status = 'FAILED';
+        item.terminalFailure = true;
+        item.lastError = error;
+      }
       await saveQueueItem(db, item);
     }
   }
