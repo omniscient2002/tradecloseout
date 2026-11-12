@@ -15,6 +15,31 @@ import {
   DomainOutboxEvent,
 } from '@tradecloseout/db';
 import { hasPermission, ProjectCodeSchema } from '@tradecloseout/shared';
+
+const POSTGRES_BIGINT_MAX = 9223372036854775807n;
+const POSTGRES_BIGINT_MIN = -9223372036854775808n;
+
+/** Never coerce floating point, exponential notation or unsafe JS numbers into money. */
+function exactPaise(value: unknown, allowNegative = false): bigint | undefined {
+  if (value === undefined) return undefined;
+  const valid = typeof value === 'bigint'
+    ? true
+    : typeof value === 'number'
+      ? Number.isSafeInteger(value)
+      : typeof value === 'string' && /^-?\\d{1,19}$/.test(value);
+  if (!valid) throw new UnprocessableEntityException({ code: 'INVALID_MONEY_PAISE' });
+  const amount = BigInt(value as bigint | number | string);
+  if (amount > POSTGRES_BIGINT_MAX || amount < (allowNegative ? POSTGRES_BIGINT_MIN : 0n)) {
+    throw new UnprocessableEntityException({ code: 'INVALID_MONEY_PAISE' });
+  }
+  return amount;
+}
+
+function validProjectDate(value: unknown): value is string {
+  if (typeof value !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/.test(value)) return false;
+  const parsed = new Date(value + 'T00:00:00.000Z');
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
 import { evaluateReadinessInTransaction } from '../handover/closeout-readiness';
 
 @Injectable()
@@ -102,6 +127,27 @@ export class ProjectsService {
       projectType?: string;
     },
   ) {
+    if (typeof input.name !== 'string' || input.name.trim().length < 2 ||
+        input.name.trim().length > 200 || /[\\u0000-\\u001f\\u007f]/.test(input.name)) {
+      throw new UnprocessableEntityException({ code: 'INVALID_PROJECT_NAME' });
+    }
+    const contractValuePaise = exactPaise(input.contractValuePaise);
+    for (const key of ['clientPartyId','mcPartyId','consultantPartyId'] as const) {
+      const val = input[key];
+      if (val !== undefined && (typeof val !== 'string' ||
+          !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(val))) {
+        throw new UnprocessableEntityException({ code: 'INVALID_PROJECT_PARTY_ID' });
+      }
+    }
+    for (const key of ['startDate','targetHandoverDate'] as const) {
+      if (input[key] !== undefined && !validProjectDate(input[key])) {
+        throw new UnprocessableEntityException({ code: 'INVALID_PROJECT_DATE' });
+      }
+    }
+    if (input.startDate && input.targetHandoverDate &&
+        input.targetHandoverDate < input.startDate) {
+      throw new UnprocessableEntityException({ code: 'INVALID_PROJECT_DATE_ORDER' });
+    }
     const parsedCode = ProjectCodeSchema.safeParse(input.code);
     if (!parsedCode.success) {
       throw new UnprocessableEntityException({
@@ -128,14 +174,17 @@ export class ProjectsService {
 
       const settingsJson = {
         ...(input.settingsJson ?? {}),
-        contract_value_paise: input.contractValuePaise ? input.contractValuePaise.toString() : null,
+        // Compatibility-only value. All financial readers use the canonical
+        // projects.contract_value_paise or independently recorded contracts.
+        contract_value_paise: contractValuePaise === undefined ? null : contractValuePaise.toString(),
       };
 
       await client.query(
         `INSERT INTO projects
           (id, org_id, code, name, client_party_id, mc_party_id, consultant_party_id,
-           status, site_json, start_date, target_handover_date, settings_json, created_by, project_type)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 'DRAFT', $8, $9, $10, $11, $12, $13)`,
+           status, site_json, start_date, target_handover_date, settings_json, created_by, project_type,
+           contract_value_paise)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'DRAFT', $8, $9, $10, $11, $12, $13, $14),
         [
           projectId,
           ctx.orgId,
@@ -150,6 +199,7 @@ export class ProjectsService {
           JSON.stringify(settingsJson),
           ctx.userId,
           projectType,
+          contractValuePaise === undefined ? null : contractValuePaise.toString(),
         ],
       );
 
@@ -195,7 +245,7 @@ export class ProjectsService {
       clientPartyId: dto.clientPartyId,
       mcPartyId: dto.mcPartyId,
       consultantPartyId: dto.consultantPartyId,
-      contractValuePaise: dto.contractValuePaise ? BigInt(dto.contractValuePaise) : undefined,
+      contractValuePaise: exactPaise(dto.contractValuePaise),
       targetHandoverDate: dto.targetHandoverDate,
     });
   }
