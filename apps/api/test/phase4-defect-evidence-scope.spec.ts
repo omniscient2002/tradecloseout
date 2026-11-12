@@ -31,7 +31,8 @@ describe('PH4-G17-002 exact remedy scope qualification', () => {
             ...binding,
           }] };
         }
-        if (sql.includes('FROM document_versions dv')) return { rows: [{ id: versionId }] };
+        if (sql.includes('FROM document_versions dv')) return { rows: [{ id: versionId, document_id: randomUUID() }] };
+        if (sql.includes('SELECT id FROM document_assets')) return { rows: [{ id: randomUUID() }] };
         if (sql.includes("UPDATE defects")) return { rowCount: 1 };
         return { rows: [] };
       }),
@@ -77,7 +78,8 @@ describe('PH4-G17-002 exact remedy scope qualification', () => {
           provider_version_id: 'v1', linked_in_project: true,
           linked_to_defect_asset: true,
         }] };
-        if (sql.includes('FROM document_versions dv')) return { rows: [{ id: newer }] };
+        if (sql.includes('FROM document_versions dv')) return { rows: [{ id: newer, document_id: randomUUID() }] };
+        if (sql.includes('SELECT id FROM document_assets')) return { rows: [{ id: randomUUID() }] };
         return { rows: [], rowCount: 0 };
       }),
       release: jest.fn(),
