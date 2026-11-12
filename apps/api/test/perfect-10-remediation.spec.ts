@@ -233,6 +233,15 @@ describe('Perfect 10 Remediation & Hardening Test Suite', () => {
       const mockPool = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation((sql: string, params: any[]) => {
+            if (sql.includes('SELECT project_id FROM documents')) {
+              return Promise.resolve({ rows: [{ project_id: projectId }] });
+            }
+            if (sql.includes('SELECT status FROM projects')) {
+              return Promise.resolve({ rows: [{ status: 'ACTIVE' }] });
+            }
+            if (sql.includes('SELECT id FROM documents') && sql.includes('FOR UPDATE')) {
+              return Promise.resolve({ rows: [{ id: docId }] });
+            }
             if (sql.includes('UPDATE documents') && sql.includes('deleted_at = now()')) {
               return Promise.resolve({ rows: [{ id: docId }] });
             }
