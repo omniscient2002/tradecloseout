@@ -117,18 +117,30 @@ export class IdempotencyInterceptor implements NestInterceptor {
     const ttlHours = endpoint.includes('upload-intents') ? 168 : 24;
     const withTenantClient = async <T>(work: (client: PoolClient) => Promise<T>): Promise<T> => {
       const client = await this.pool.connect();
+      let began = false;
+      let commitAttempted = false;
+      let discardConnection = false;
       try {
         await client.query('BEGIN');
+        began = true;
+        await client.query("SET LOCAL lock_timeout = '5s'");
+        await client.query("SET LOCAL statement_timeout = '60s'");
+        await client.query("SET LOCAL idle_in_transaction_session_timeout = '60s'");
         await client.query(`SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`, [orgId]);
         await client.query(`SELECT set_config('app.current_user', $1, true)`, [actorId === 'anonymous' ? '' : actorId]);
         const result = await work(client);
+        commitAttempted = true;
         await client.query('COMMIT');
         return result;
       } catch (err) {
-        await client.query('ROLLBACK').catch(() => {});
+        discardConnection = !began || commitAttempted;
+        if (began) {
+          try { await client.query('ROLLBACK'); }
+          catch { discardConnection = true; }
+        }
         throw err;
       } finally {
-        client.release();
+        client.release(discardConnection);
       }
     };
 
