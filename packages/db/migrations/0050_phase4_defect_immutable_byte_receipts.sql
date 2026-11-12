@@ -12,7 +12,7 @@ ALTER TABLE defects
   ADD COLUMN remedy_asset_scope_ids UUID[];
 
 ALTER TABLE defects ADD CONSTRAINT defects_remedy_pinned_receipt_valid CHECK (
-  remedy_document_version_id IS NULL OR (
+  remedy_sha256 IS NULL OR (
     remedy_sha256 ~ '^[0-9a-f]{64}$'
     AND remedy_provider_version_id IS NOT NULL
     AND length(btrim(remedy_provider_version_id)) > 0
