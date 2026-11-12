@@ -50,6 +50,7 @@ import { getMemberOfflineActorPartition, setOfflineActorPartition } from "@/lib/
 import { parseProjectRequirementResponse, type ProjectRequirementRow, type RequirementStatus } from "@/lib/project-requirements";
 import { formatInrPaiseExact } from "@/lib/format-money";
 import { requireApiList } from "@/lib/api-list";
+import { parseProjectSummaryResponse, type ProjectSummaryDto } from "@/lib/project-summary";
 
 /* -------------------------------------------------------------------------- */
 /* TYPES & CONSTANTS                                                          */
@@ -57,26 +58,7 @@ import { requireApiList } from "@/lib/api-list";
 
 export type { RequirementStatus } from "@/lib/project-requirements";
 
-export interface ProjectSummaryDto {
-  id: string;
-  code: string;
-  name: string;
-  status: "DRAFT" | "ACTIVE" | "SUSPENDED" | "HANDOVER" | "CLOSED" | "CANCELLED" | "ARCHIVED";
-  clientName: string | null;
-  targetHandoverDate: string | null;
-  retentionAtRiskPaise: string;
-  contractValuePaise?: string;
-  counts: {
-    applicableTotal: number;
-    approvedCount: number;
-    approvedExternalCount: number;
-    waivedCount: number;
-    inReviewCount: number;
-    missingOrExpiredCount: number;
-    expiringSoonCount: number;
-  };
-  rowVersion: number;
-}
+export type { ProjectSummaryDto } from "@/lib/project-summary";
 
 export interface RequirementItemDto extends ProjectRequirementRow {}
 
@@ -306,10 +288,7 @@ export default function ProjectWorkspacePage() {
     try {
       const data = await apiFetch<ProjectSummaryDto>(`/api/v1/projects/${encodeURIComponent(projectId)}/dashboard`);
       if (generation !== requestGeneration.current.summary || viewedProjectRef.current !== projectId) return;
-      if (!data || typeof data !== "object" || typeof data.id !== "string" || data.id !== projectId) {
-        throw new Error("PROJECT_SUMMARY_INVALID: Returned project does not match the requested project.");
-      }
-      setSummary(data);
+      setSummary(parseProjectSummaryResponse(data, projectId));
     } catch (err: any) {
       if (generation !== requestGeneration.current.summary || viewedProjectRef.current !== projectId) return;
       setErrorSummary({
