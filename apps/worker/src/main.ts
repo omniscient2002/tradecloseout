@@ -13,6 +13,7 @@ import { pipeline } from 'stream/promises';
 import { reconcileStorageQuotaOnFileStatusChange } from '@tradecloseout/db/tenant-tx';
 import { TradeCloseoutScheduler } from './scheduler';
 import { TrackedScheduler } from './tracked-scheduler';
+import { drainBeforeClosingDependencies } from './worker-drain';
 import { verifyAndScanUploadedFile } from './queues/file.processor';
 import { convertSupportingFormatToPdf } from './queues/format-converter';
 import { compileAndPersistHandoverPackage, markHandoverPackageFailed } from './queues/handover-package.processor';
@@ -421,6 +422,11 @@ async function bootWorker() {
   archiveWorker.on('failed', (job, err) => reportWorkerFailure('ARCHIVE_JOB_FAILED', err, job?.id));
 
   // 4. Outbox Poller (every 2s) with durable transaction locking (TC2-005)
+  // Track the full async poll: queue.close and pool.end must wait for it.
+  const outboxTasks = new TrackedScheduler<'outbox-poll'>((_task, error) => {
+    reportWorkerFailure('OUTBOX_POLLER_FAILED', error);
+  });
+  let shutdownRequested = false;
   const pollOutbox = async () => {
     try {
       // organisations is the only global discovery surface. Event rows themselves are
@@ -430,6 +436,9 @@ async function bootWorker() {
       );
 
       for (const { id: orgId } of orgRows) {
+        // Finish the current tenant transaction, without claiming a new one
+        // after the shutdown signal.
+        if (shutdownRequested) break;
         const client = await pool.connect();
         try {
           await client.query('BEGIN');
@@ -513,7 +522,9 @@ async function bootWorker() {
     }
   };
 
-  const outboxInterval = setInterval(pollOutbox, 2000);
+  const outboxInterval = setInterval(() => {
+    void outboxTasks.run('outbox-poll', pollOutbox);
+  }, 2000);
 
   console.log('✓ TradeCloseout Worker, BullMQ Queues & Leader-Locked Schedulers are ACTIVE.');
 
