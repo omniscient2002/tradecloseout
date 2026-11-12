@@ -62,9 +62,10 @@ export class DocumentsController {
     @Req() req: any,
     @Param('projectId') projectId: string,
     @Param('requirementId') requirementId: string,
+    @Query('rowVersion') rowVersion: string,
   ) {
     return this.documentsService.validateDraftRecoveryAuthority(
-      req.userContext, projectId, requirementId,
+      req.userContext, projectId, requirementId, Number(rowVersion),
     );
   }
 
