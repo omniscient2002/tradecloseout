@@ -159,22 +159,39 @@ export class TradeCloseoutScheduler {
    */
   async runWeeklyOwnerRetentionAtRiskDigest(): Promise<void> {
     const client = await this.pool.connect();
+    let discardConnection = false;
     try {
+      // PH1-G24-002: membership is tenant-RLS-protected. Cross-tenant
+      // ownership discovery with no app.current_org silently returned zero.
+      // Global organisations is the reviewed discovery surface only.
       const { rows: activeOrgs } = await client.query(
-        `SELECT o.id AS org_id, o.display_name, m.user_id AS owner_user_id
-           FROM organisations o
-           JOIN memberships m ON m.org_id = o.id AND m.role = 'R-OWNER' AND m.status = 'ACTIVE'
-          WHERE o.status = 'ACTIVE'`,
+        `SELECT id AS org_id, display_name FROM organisations
+          WHERE status='ACTIVE' ORDER BY id`,
       );
 
       const weekKey = this.getIndiaSchedulePeriods().week;
-
+      let tenantFailures = 0;
       for (const org of activeOrgs) {
-        await client.query('BEGIN');
+        try {
+          await client.query('BEGIN');
+          await client.query("SET LOCAL lock_timeout = '5s'");
+          await client.query("SET LOCAL statement_timeout = '60s'");
+          await client.query("SET LOCAL idle_in_transaction_session_timeout = '60s'");
         await client.query(
           `SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`,
           [org.org_id],
         );
+        const { rows: owners } = await client.query(
+          `SELECT m.user_id FROM memberships m
+            JOIN users u ON u.id=m.user_id AND u.status='ACTIVE'
+            WHERE m.org_id=$1 AND m.role='R-OWNER' AND m.status='ACTIVE'
+            ORDER BY m.user_id`,
+          [org.org_id],
+        );
+        // Do not silently accept missing owners or pick an arbitrary owner
+        // when the exactly-one-eligible-owner invariant is violated.
+        if (owners.length !== 1) throw new Error('OWNER_DIGEST_OWNER_INVARIANT');
+        const ownerUserId: string = owners[0].user_id;
 
         // Calculate missing/expired counts and retention money gated per active project (RT-029)
         const { rows: projectRisks } = await client.query(
@@ -212,7 +229,7 @@ export class TradeCloseoutScheduler {
           [
             uuidv7(),
             org.org_id,
-            org.owner_user_id,
+            ownerUserId,
             JSON.stringify({
               orgDisplayName: org.display_name,
               totalRetentionAtRiskPaise: totalRetentionAtRiskPaise.toString(),
@@ -228,12 +245,23 @@ export class TradeCloseoutScheduler {
         );
 
         await client.query('COMMIT');
+        } catch {
+          tenantFailures += 1;
+          try {
+            await client.query('ROLLBACK');
+          } catch {
+            // Never move on to the next tenant using a connection of unknown state.
+            discardConnection = true;
+            console.error('OWNER_DIGEST_CONNECTION_UNSAFE');
+            break;
+          }
+          // Keep any tenant identifiers and SQL errors out of operational logs.
+          console.error('OWNER_DIGEST_TENANT_FAILED');
+        }
       }
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
+      if (tenantFailures) throw new Error('OWNER_DIGEST_INCOMPLETE');
     } finally {
-      client.release();
+      client.release(discardConnection);
     }
   }
 
