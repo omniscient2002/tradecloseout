@@ -34,6 +34,9 @@ export interface OfflineQueuedUpload {
   createdAt: number;
   completedUploadAt?: number;
   completionRequestedAt?: number;
+  // Written to IndexedDB BEFORE the first remote intent POST. Its presence
+  // permanently forbids old-session rebind without remote reconciliation.
+  uploadIntentRequestedAt?: number;
   retryCount?: number;
   nextAttemptAt?: number;
   terminalFailure?: boolean;
@@ -339,14 +342,16 @@ export async function recoverOfflineUploadDraft(queueId: string): Promise<void> 
       if (!epoch || (item.actorEpoch && item.actorEpoch === epoch)) {
         throw new Error('UPLOAD_RECOVERY_REQUIRES_OLD_SESSION_DRAFT');
       }
-      // "No local uploadIntent" does NOT prove the POST never reached the
-      // server: its response may have been lost before the browser checkpoint.
-      // Only never-drained, truly offline QUEUED_OFFLINE captures can be
-      // rebound. Any send/retry history demands authoritative reconciliation.
-      if (item.status !== 'QUEUED_OFFLINE' ||
-          item.uploadIntent || item.uploadedParts.length > 0 ||
-          item.completedUploadAt || item.completionRequestedAt ||
-          item.retryCount || item.nextAttemptAt || item.terminalFailure) {
+      // "No uploadIntent" does NOT prove the intent POST never reached the
+      // server. An offline-only original is eligible even if an auth boundary
+      // marked it BLOCKED_SCOPE: the durable pre-POST checkpoint is decisive.
+      // Legacy records whose network history cannot be proven stay blocked.
+      if (!item.actorEpoch || !item.requirementRowVersion ||
+          !['QUEUED_OFFLINE', 'BLOCKED_SCOPE'].includes(item.status) ||
+          item.uploadIntentRequestedAt || item.uploadIntent ||
+          item.uploadedParts.length > 0 || item.completedUploadAt ||
+          item.completionRequestedAt || item.retryCount || item.nextAttemptAt ||
+          item.terminalFailure) {
         throw new Error('UPLOAD_REMOTE_INTENT_RECOVERY_UNSUPPORTED: Inspect or discard the remote intent first.');
       }
 
@@ -650,8 +655,14 @@ async function drainLockedUploadQueue(
       item.lastError = undefined;
       item.nextAttemptAt = undefined;
       await saveQueueItem(db, item);
-      // Step 1: Request or reuse S3 multipart upload intent (TC2-030 contract alignment)
+      // Step 1: Request or reuse a stable idempotent multipart intent.
       if (!item.uploadIntent) {
+        // This checkpoint must commit BEFORE external request dispatch.
+        // A crashed tab or lost response cannot be mistaken for untouched
+        // browser evidence during an eventual same-account reauthentication.
+        item.uploadIntentRequestedAt ??= Date.now();
+        await saveQueueItem(db, item);
+        assertSameActor(item);
         const intentRes = await apiFetch<{
           documentId: string;
           versionId: string;
