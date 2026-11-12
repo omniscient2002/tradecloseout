@@ -170,10 +170,16 @@ export class WarrantyAndBillingService {
       // Same-basis, contradictory dates are as important as a basis mismatch.
       // The asset's current dates are only comparison data, never automatic
       // evidence that a new OEM assertion has been independently verified.
-      const storedStart = asset.warranty_start == null
-        ? null : String(asset.warranty_start).slice(0, 10);
-      const storedEnd = asset.warranty_end == null
-        ? null : String(asset.warranty_end).slice(0, 10);
+      const storedDay = (value: unknown): string | null => {
+        if (value == null) return null;
+        if (value instanceof Date) {
+          return Number.isFinite(value.getTime())
+            ? value.toISOString().slice(0, 10) : null;
+        }
+        return typeof value === 'string' ? value.slice(0, 10) : null;
+      };
+      const storedStart = storedDay(asset.warranty_start);
+      const storedEnd = storedDay(asset.warranty_end);
       const hasBasisConflict = asset.warranty_start_basis !== input.basis;
       const hasDateConflict =
         (storedStart !== null && storedStart !== input.warrantyStart) ||
