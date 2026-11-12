@@ -20,9 +20,9 @@ export function middleware(request: NextRequest) {
 
   // Allow Next.js internals, static assets, and API proxy routes
   if (
-    pathname.startsWith('/_next') ||
-    pathname.startsWith('/api') ||
-    pathname.startsWith('/icons') ||
+    pathname === '/_next' || pathname.startsWith('/_next/') ||
+    pathname === '/api' || pathname.startsWith('/api/') ||
+    pathname === '/icons' || pathname.startsWith('/icons/') ||
     pathname === '/favicon.ico' ||
     pathname === '/manifest.json' ||
     pathname === '/sw.js'
