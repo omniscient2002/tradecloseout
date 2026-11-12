@@ -15,6 +15,7 @@ import {
  */
 export interface MfaEnrollmentSession {
   userId: string;
+  activeOrgId: string;
   sessionId: string;
   sessionTokenHash: string;
 }
@@ -46,6 +47,7 @@ export class MfaEnrollmentStore {
 
   private assertContext(ctx: MfaEnrollmentSession): void {
     if (!ctx || typeof ctx.userId !== 'string' || !ctx.userId ||
+        typeof ctx.activeOrgId !== 'string' || !ctx.activeOrgId ||
         typeof ctx.sessionId !== 'string' || !ctx.sessionId ||
         typeof ctx.sessionTokenHash !== 'string' ||
         !/^[0-9a-f]{64}$/.test(ctx.sessionTokenHash)) {
@@ -67,13 +69,35 @@ export class MfaEnrollmentStore {
     if (accounts.length !== 1) {
       throw new UnauthorizedException({ code: 'ACCOUNT_UNAVAILABLE' });
     }
+    // The supplied org must be the authenticated session's current org,
+    // not just a project ID copied into a client-supplied payload.
+    await client.query(
+      "SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)",
+      [ctx.activeOrgId],
+    );
     const { rows: sessions } = await client.query(
       `SELECT id FROM sessions WHERE id=$1 AND user_id=$2 AND token_hash=$3
-         AND guest_grant_id IS NULL AND revoked_at IS NULL AND expires_at>now()
+         AND active_org_id=$4 AND guest_grant_id IS NULL
+         AND revoked_at IS NULL AND expires_at>now()
          FOR SHARE`,
-      [ctx.sessionId, ctx.userId, ctx.sessionTokenHash],
+      [ctx.sessionId, ctx.userId, ctx.sessionTokenHash, ctx.activeOrgId],
     );
     if (sessions.length !== 1) {
+      throw new UnauthorizedException({ code: 'SESSION_CONTEXT_CHANGED' });
+    }
+    const { rows: orgs } = await client.query(
+      "SELECT id FROM organisations WHERE id=$1 AND status='ACTIVE' FOR SHARE",
+      [ctx.activeOrgId],
+    );
+    if (orgs.length !== 1) {
+      throw new UnauthorizedException({ code: 'SESSION_CONTEXT_CHANGED' });
+    }
+    const { rows: memberships } = await client.query(
+      `SELECT id FROM memberships WHERE org_id=$1 AND user_id=$2
+        AND status='ACTIVE' FOR SHARE`,
+      [ctx.activeOrgId, ctx.userId],
+    );
+    if (memberships.length !== 1) {
       throw new UnauthorizedException({ code: 'SESSION_CONTEXT_CHANGED' });
     }
     return accounts[0];
