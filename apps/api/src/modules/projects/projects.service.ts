@@ -632,6 +632,22 @@ export class ProjectsService {
   }
 
   /**
+   * PH2-G05-011: stable compatibility projection across SQL and web. Do not
+   * fabricate closeout percentages, missing parties or financial totals.
+   */
+  private projectDirectoryDto(row: Record<string, any>) {
+    return {
+      ...row,
+      clientName: row.client_name ?? null,
+      mcName: row.mc_name ?? null,
+      pmcName: row.pmc_name ?? null,
+      targetHandoverDate: row.target_handover_date ?? null,
+      contractValuePaise: row.contract_value_paise == null ? null : String(row.contract_value_paise),
+      rowVersion: row.row_version,
+    };
+  }
+
+  /**
    * API-030 GET /projects
    */
   async listProjects(ctx: TenantActorContext) {
@@ -645,23 +661,39 @@ export class ProjectsService {
       if (ctx.guestGrantId) throw new NotFoundException('PROJECT_NOT_FOUND');
       if (permission.scope === 'S') {
         const res = await client.query(
-          `SELECT p.* FROM projects p
+          `SELECT p.*, client.name AS client_name,
+                  mc.name AS mc_name, consultant.name AS pmc_name
+             FROM projects p
             JOIN project_members pm
               ON pm.org_id = p.org_id AND pm.project_id = p.id
              AND pm.user_id = $2 AND pm.status = 'ACTIVE'
+            LEFT JOIN parties client ON client.org_id=p.org_id
+              AND client.id=p.client_party_id AND client.deleted_at IS NULL
+            LEFT JOIN parties mc ON mc.org_id=p.org_id
+              AND mc.id=p.mc_party_id AND mc.deleted_at IS NULL
+            LEFT JOIN parties consultant ON consultant.org_id=p.org_id
+              AND consultant.id=p.consultant_party_id AND consultant.deleted_at IS NULL
            WHERE p.org_id = $1 AND p.purged_at IS NULL
            ORDER BY p.created_at DESC`,
           [ctx.orgId, ctx.userId],
         );
-        return res.rows;
+        return res.rows.map((row) => this.projectDirectoryDto(row));
       }
       const res = await client.query(
-        `SELECT p.* FROM projects p
-         WHERE p.org_id = $1 AND p.purged_at IS NULL
-         ORDER BY p.created_at DESC`,
+        `SELECT p.*, client.name AS client_name,
+                mc.name AS mc_name, consultant.name AS pmc_name
+           FROM projects p
+           LEFT JOIN parties client ON client.org_id=p.org_id
+             AND client.id=p.client_party_id AND client.deleted_at IS NULL
+           LEFT JOIN parties mc ON mc.org_id=p.org_id
+             AND mc.id=p.mc_party_id AND mc.deleted_at IS NULL
+           LEFT JOIN parties consultant ON consultant.org_id=p.org_id
+             AND consultant.id=p.consultant_party_id AND consultant.deleted_at IS NULL
+          WHERE p.org_id = $1 AND p.purged_at IS NULL
+          ORDER BY p.created_at DESC`,
         [ctx.orgId],
       );
-      return res.rows;
+      return res.rows.map((row) => this.projectDirectoryDto(row));
     });
   }
 
