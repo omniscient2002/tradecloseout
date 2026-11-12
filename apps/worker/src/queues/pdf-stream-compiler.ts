@@ -218,19 +218,9 @@ export async function sanitizeAndCheckPdfBomb(
       timeout: 25_000,
       maxBuffer: 32 * 1024 * 1024,
     });
-    const dangerousMatches =
-      jsonOut.match(/"\/(JS|JavaScript|Launch|EmbeddedFiles|RichMedia)"/g) ?? [];
-
-    if (jsonOut.includes('"/Launch"') || jsonOut.includes('"/OpenAction"')) {
-      return {
-        safe: false,
-        pageCount,
-        objectCount: objectLines,
-        strippedScriptsCount: dangerousMatches.length,
-        failureCode: 'MALICIOUS_PDF_ACTIVE_CONTENT',
-        failureDetail: 'Executable launch or active OpenAction detected in PDF.',
-      };
-    }
+    // A qpdf rewrite is NOT sanitization: it can preserve /AA JavaScript actions.
+    // Reject unsafe input instead of reporting a fictitious removed-script count.
+    await assertPdfHasNoActiveActions(inputPath, true);
 
     // 5. Rewrite & linearize PDF via qpdf, flattening annotations and removing attachments
     await execFileAsync(
@@ -245,11 +235,12 @@ export async function sanitizeAndCheckPdfBomb(
       { timeout: 60_000 },
     );
 
+    await assertPdfHasNoActiveActions(sanitizedOutputPath, true);
     return {
       safe: true,
       pageCount,
       objectCount: objectLines,
-      strippedScriptsCount: dangerousMatches.length,
+      strippedScriptsCount: 0,
     };
   } catch (err: any) {
     if (err.code === 'ENOENT') {
@@ -291,10 +282,12 @@ export async function sanitizeAndCheckPdfBomb(
           };
         }
 
-        // Strip active content in fallback (OpenAction, AA, JavaScript, Names, Launch, Annotations, Chained actions) (FV04, FV07)
+        // Never attest to a sanitized PDF if the original contained executable actions.
+        await assertPdfHasNoActiveActions(inputPath, false);
         sanitizePdfDoc(doc);
 
         await writeFile(sanitizedOutputPath, await doc.save({ useObjectStreams: true }));
+        await assertPdfHasNoActiveActions(sanitizedOutputPath, false);
         return {
           safe: true,
           pageCount: count,
