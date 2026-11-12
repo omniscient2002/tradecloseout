@@ -26,6 +26,17 @@ export function isExpiredOnIndiaDate(expiryDate: string | Date, now = new Date()
   return expiry < `${parts.year}-${parts.month}-${parts.day}`;
 }
 
+/**
+ * The version (not an individual review assignment) owns the terminal
+ * decision. Call only after locking document_versions FOR UPDATE.
+ */
+export function assertReviewVersionNotTerminal(status: unknown): void {
+  if (status === 'APPROVED' || status === 'REJECTED' ||
+      status === 'CHANGES_REQUESTED' || status === 'SUPERSEDED') {
+    throw new ConflictException('DOCUMENT_VERSION_ALREADY_DECIDED');
+  }
+}
+
 export interface DecisionDto {
   decision: 'APPROVE' | 'REQUEST_CHANGES' | 'REJECT';
   comment?: string;
@@ -592,6 +603,9 @@ export class ReviewsService {
         throw new NotFoundException('DOCUMENT_VERSION_NOT_FOUND');
       }
       const version = verRes.rows[0];
+      // All sibling reviewers must serialize on this same row. The first
+      // committed terminal result wins even if another review remains queued.
+      assertReviewVersionNotTerminal(version.review_status);
 
       // Optimistic concurrency check (10 §1 If-Match, NP10)
       if (dto.expectedRowVersion !== undefined && version.row_version !== dto.expectedRowVersion) {
