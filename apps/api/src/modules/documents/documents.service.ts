@@ -84,6 +84,37 @@ export class DocumentsService {
     this.storageAdapter = storageAdapter || new S3StorageService();
   }
 
+  /**
+   * PH3-G09-002: resolve project from persisted document identity, then
+   * lock project BEFORE document. Deletion/restoration of accepted or closed
+   * baseline evidence is not a generic metadata PATCH.
+   */
+  private async assertEditableDocumentProject(
+    client: PoolClient, orgId: string, documentId: string,
+  ): Promise<void> {
+    const { rows: identities } = await client.query(
+      `SELECT project_id FROM documents WHERE org_id = $1 AND id = $2 LIMIT 1`,
+      [orgId, documentId],
+    );
+    if (!identities.length) throw new NotFoundException('DOCUMENT_NOT_FOUND');
+    const projectId = identities[0].project_id;
+    const { rows: projectRows } = await client.query(
+      `SELECT status FROM projects WHERE org_id = $1 AND id = $2
+        AND purged_at IS NULL FOR UPDATE`,
+      [orgId, projectId],
+    );
+    if (!projectRows.length) throw new NotFoundException('PROJECT_NOT_FOUND');
+    if (!['DRAFT', 'ACTIVE'].includes(projectRows[0].status)) {
+      throw new ConflictException('DOCUMENT_PROJECT_NOT_EDITABLE');
+    }
+    const { rows: lockedDocuments } = await client.query(
+      `SELECT id FROM documents WHERE org_id = $1 AND id = $2
+        AND project_id = $3 FOR UPDATE`,
+      [orgId, documentId, projectId],
+    );
+    if (!lockedDocuments.length) throw new NotFoundException('DOCUMENT_NOT_FOUND');
+  }
+
   private async assertGuestVersionScope(client: PoolClient, ctx: ExecutionContext, versionId: string, capability: 'document.upload' | 'document.download') {
     if (ctx.actorType !== 'GUEST' && !ctx.guestGrantId) return;
     if (!ctx.guestGrantId) throw new NotFoundException('VERSION_NOT_FOUND');
@@ -1002,6 +1033,7 @@ export class DocumentsService {
    */
   async deleteDocument(ctx: ExecutionContext, documentId: string) {
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+      await this.assertEditableDocumentProject(client, ctx.orgId, documentId);
       const res = await client.query(
         `UPDATE documents
             SET deleted_at = now(), row_version = row_version + 1
@@ -1040,6 +1072,7 @@ export class DocumentsService {
    */
   async restoreDocument(ctx: ExecutionContext, documentId: string) {
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+      await this.assertEditableDocumentProject(client, ctx.orgId, documentId);
       const res = await client.query(
         `UPDATE documents
             SET deleted_at = NULL, row_version = row_version + 1
