@@ -36,6 +36,38 @@ export interface CreateInspectionInput {
   witnessParties?: Array<{ partyName: string; representativeName: string; role: string }>;
 }
 
+/**
+ * Creation-time witnesses are invitations/assignments, never proof of attendance,
+ * identity or signature. Reject extra fields rather than persisting a forged
+ * trusted attestation alongside legitimate assignments.
+ */
+export function normalizeInspectionWitnessAssignments(value: unknown): CreateInspectionInput['witnessParties'] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 20) {
+    throw new BadRequestException('INVALID_INSPECTION_WITNESS_ASSIGNMENTS');
+  }
+  const allowed = new Set(['partyName', 'representativeName', 'role']);
+  return value.map((entry) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry) ||
+        Object.keys(entry).some((key) => !allowed.has(key))) {
+      throw new BadRequestException('UNTRUSTED_INSPECTION_WITNESS_FIELDS');
+    }
+    const parsed: Record<string, string> = {};
+    for (const field of allowed) {
+      const raw = (entry as Record<string, unknown>)[field];
+      if (typeof raw !== 'string' || raw.trim().length < 1 || raw.trim().length > 160) {
+        throw new BadRequestException('INVALID_INSPECTION_WITNESS_ASSIGNMENT');
+      }
+      parsed[field] = raw.trim();
+    }
+    return {
+      partyName: parsed.partyName,
+      representativeName: parsed.representativeName,
+      role: parsed.role,
+    };
+  });
+}
+
 export interface CreateSeasonalScheduleInput {
   assetId?: string;
   season: 'SUMMER_PEAK' | 'MONSOON_HUMIDITY' | 'WINTER_MINIMUM';
@@ -298,6 +330,8 @@ export class CommissioningService {
       }
     }
 
+    const witnessAssignments = normalizeInspectionWitnessAssignments(input.witnessParties);
+
     const passCount = input.checklistItems.filter((i) => i.result === 'PASS').length;
     const failCount = input.checklistItems.filter((i) => i.result === 'FAIL').length;
     const naCount = input.checklistItems.filter((i) => i.result === 'NA').length;
@@ -350,7 +384,7 @@ export class CommissioningService {
           input.title,
           input.stageKey,
           JSON.stringify(input.checklistItems),
-          JSON.stringify(input.witnessParties || []),
+          JSON.stringify(witnessAssignments),
           outcome,
           ctx.userId,
         ],
@@ -373,7 +407,7 @@ export class CommissioningService {
         stageKey: input.stageKey,
         outcome,
         checklistItems: input.checklistItems,
-        witnessParties: input.witnessParties || [],
+        witnessParties: witnessAssignments,
         inspectedAt: new Date().toISOString(),
       };
     });
