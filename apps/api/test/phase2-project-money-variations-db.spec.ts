@@ -108,7 +108,30 @@ describe('PH2-G05-001/002/005 canonical money and variation integrity', () => {
         specNumber:'BAD-DOC',title:'Unverified document link',documentId:uuidv7(),
       })).rejects.toThrow('SPECIFICATION_DOCUMENT_NOT_FOUND');
 
-      await admin.query(`UPDATE projects SET status='HANDOVER' WHERE id=$1`,[large.projectId]);
+      // A replayed successful handover is a no-op, not another lifecycle
+      // transition, version increment or outbox/audit event.
+      await admin.query(`UPDATE projects SET status='ACTIVE' WHERE id=$1`,[large.projectId]);
+      const previousVersion = Number((await admin.query(
+        'SELECT row_version FROM projects WHERE id=$1',[large.projectId],
+      )).rows[0].row_version);
+      expect(await service.handoverProject(ctx,large.projectId)).toMatchObject({
+        projectId:large.projectId,status:'HANDOVER',
+      });
+      expect(await service.handoverProject(ctx,large.projectId)).toMatchObject({
+        projectId:large.projectId,status:'HANDOVER',
+      });
+      const { rows: [handoverState] }=await admin.query(
+        'SELECT status,row_version FROM projects WHERE id=$1',[large.projectId],
+      );
+      expect(handoverState).toMatchObject({
+        status:'HANDOVER',row_version:previousVersion+1,
+      });
+      expect((await admin.query(
+        `SELECT COUNT(*)::int AS n FROM audit_events
+          WHERE org_id=$1 AND project_id=$2 AND action='PROJECT_HANDOVER_INITIATED'`,
+        [orgId,large.projectId],
+      )).rows[0].n).toBe(1);
+
       await expect(service.createContract(ctx,large.projectId,{
         contractRef:'LATE-01',title:'Handover contract mutation',
       })).rejects.toMatchObject({
