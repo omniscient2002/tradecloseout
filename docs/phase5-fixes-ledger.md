@@ -22,19 +22,19 @@
 | PH5-G23-008 | BLOCKED_EXTERNAL | Human user/accessibility acceptance |
 | PH5-G22-001 | CANDIDATE | Bounded URL refresh/retry, stable uploaded receipts, backend blocks refresh when intent is no longer PENDING_UPLOAD/PENDING; real provider acceptance pending |
 | PH5-G22-002 | CANDIDATE | Origin-wide Web Locks serialize drains; unsupported environments fail closed; tab crash/mobile coverage pending |
-| PH5-G22-003 | PARTIAL | Persist completion request before POST, interrogate server after lost response, only retry when server confirms PENDING_UPLOAD, status-only PROCESSING reconciliation; retry/cancellation policies pending |
+| PH5-G22-003 | PARTIAL | Scoped upload-state endpoint checks version AND backing storage (including upload-only guests); completion checkpoint and server-first lost-response reconciliation; durable exponential 30s–1h retry with six-attempt ceiling, terminal-failure quarantine, and current-actor-only writes; deliberate rebind/cancel and real provider acceptance pending |
 | PH5-G22-004 | PARTIAL | Server-derived member/tenant queue partition, auth/tenant-boundary epoch rotation and strict no-auto-replay after same-user re-login; original actor can list/discard old generation; explicit authorized recovery UI remains open |
-| PH5-G22-005 | PARTIAL | Atomic 100 MiB file, 300 MiB actor, 500 MiB browser and 10-draft limits; actor-only inventory and abort-first discard, safe replay of already-committed abort, denial preserves original; TTL/eviction/real-device proof pending |
+| PH5-G22-005 | PARTIAL | Atomic 100 MiB file/300 MiB actor/500 MiB browser/10-draft caps; account-scoped inventory without cross-account queue mutation; abort-first discard and explicit old-epoch abort reconciliation, preserving originals on denial; TTL/eviction/real-device proof pending |
 | PH5-G22-006 | CANDIDATE | Incremental 1 MiB SHA-256 original-byte hashing matches known vectors/Node crypto across block boundaries; real 100 MiB mobile peak-memory and worker/cancellation evidence pending |
 | PH5-G22-007 | PARTIAL | No closed-tab provider writes; unsupported lock surfaces fail closed; upload modal explicitly distinguishes saved draft vs scanned/verified evidence; device/scope acceptance pending |
 | PH5-G22-008 | BLOCKED_EXTERNAL | Real provider, device and interruption acceptance |
-| PH5-G28-001 | PARTIAL (P0 OPEN) | Passwordless restricted role migration + DB privilege tests; RB09 quarantine, source-package and archive URL denial for invalidated evidence, new submission denial under locks, and fail-closed upload URL refresh. Operator identity/approval binding, prior signed-URL/copied-archive revocation, accepted-recipient invalidation and real end-to-end runbook proof still open |
+| PH5-G28-001 | PARTIAL (P0 OPEN) | DB-only approval-gated runbook with NOLOGIN incident role, zero direct table access, operator-login/approval/target/reason/expiry check, single-use transactional claim and dual audit inserts; real PG16 approval/replay/RB08/RB09 tests. Approved evidence quarantine, package/archive/future URL guards and locked submission/signing. Individually provisioned human login, approval issuance, prior provider URLs/copies, accepted-recipient policy and independent runbook acceptance remain open |
 | PH5-G28-002 | OPEN | Validated deployable infrastructure, privilege and network contract |
 | PH5-G28-003 | OPEN | Promoted image/DB migration/rollback pipeline |
 | PH5-G28-004 | PARTIAL | Isolated DB dump/restore drill uses its own consistent snapshot, cleanup trap, restricted file permissions and safe preflight; actual PITR, RPO/RTO, S3 bytes and KMS recovery unverified |
 | PH5-G28-005 | BLOCKED_EXTERNAL | Load/soak/on-call/alert/chaos receipts |
-| PH5-G28-006 | PARTIAL | Real queue exercised against loopback provider/IndexedDB/Web Locks; added quota, actor inventory/discard, lost completion and SHA-256 vectors, backend URL refresh states and DB incident role tests; full service E2E pending |
-| PH5-G28-007 | PARTIAL | Passwordless least-privilege incident DB role migration and no service-account credential provided; independent operator IAM/approval and complete admin surface still missing |
+| PH5-G28-006 | PARTIAL | Isolated PostgreSQL 16 role/approval/approved-version quarantine tests; API-scoped issuer status and document/package/archive containment regressions, plus Chromium IndexedDB/Web Locks/loopback tests for recovery, quotas, identity, hashing and retry; full cross-service provider/device E2E pending |
+| PH5-G28-007 | PARTIAL | NOLOGIN incident role has no direct tenant table privileges; separately owned guarded execution function requires individually provisioned database login and time-limited independent single-use approval. Human IAM and independent approval issuance/admin UI still missing |
 | PH5-G28-008 | OPEN | Legal hold, retention and complete deletion contract |
 | PH5-G28-009 | BLOCKED_EXTERNAL | One final integrated, independently reviewed production release |
 
@@ -42,7 +42,7 @@
 
 The browser regression file `apps/web/e2e/offline-queue-phase5.spec.ts` executes the actual queue against a stubbed API client, real Chromium IndexedDB/Web Locks and loopback HTTP PUTs. It covers expired presigned URL refresh, concurrent drains, actor isolation, per-actor/global quota, scoped draft inventory/discard, missing completion responses and same-key retry when the server remains pending, plus injected browser-storage exhaustion. `apps/web/e2e/chunked-sha256.spec.ts` compares original-byte SHA-256 against known empty/abc vectors and Node crypto across padding/segment boundaries. `apps/web/e2e/csv-export.spec.ts` covers Unicode, #/%/CRLF, quoting, formula prefixes and malformed values. Backend regressions check restricted incident SQL privileges and deny refresh of quarantined upload intents. These are fixture/DB mechanics tests, **not** production provider or end-to-end acceptance.
 
-**Latest verified passing engineering head before this ledger edit:** `93f5d132d36d348303c2058b3093fe7fd49669d8`, GitHub `verify-and-test` and `group-register` successful. The prior `71ccd765` head included **17 passing** Chromium archive-project checks and **257 passing** API tests. This confirmed head also includes lost-completion, backend URL-refresh and abort-replay regressions; later auth epoch changes require a fresh exact-head result. Always check the exact latest head before claiming that its tests passed.
+**Latest verified passing engineering head before this ledger edit:** `584184c2bc12d6656a5eaf6d89a44297d5478a4e`, GitHub `verify-and-test` and `group-register` successful, with **281/281 API**, **26/26 Chromium archive-project**, **15/15 security** and **44/44 shared** tests. This head includes real PostgreSQL 16 guarded approval, role isolation and approved-version incident quarantine, but is not independent human/provider acceptance. Later offline retry fixes require new exact-head CI checks; never inherit older green results.
 
 Useful commands on a clean Node 22/pnpm 12.4.1 checkout with isolated PG16/Redis and Chromium:
 ```sh
@@ -63,20 +63,28 @@ The browser queue enforces the API's current 100 MiB maximum per file, a 300 MiB
 
 The original-blob SHA-256 digest now uses a streaming incremental implementation reading 1 MiB slices rather than `file.arrayBuffer()`. Known vectors and segment boundaries match Node's SHA-256. Full mobile peak-memory profiling, background-worker offload and cancellation are unaccepted.
 
+## Bounded retry contract
+
+The foreground drain is limited to one sender per origin via Web Locks. Transient network failures, provider 408/429/5xx and API 408/429/5xx now save an exponential next-attempt checkpoint beginning at 30 seconds, capped at one hour, with a maximum of six failures before a retained, non-replaying terminal draft. Malformed uploads, denied authority, repeated presigned URL 403, missing ETag and server quarantine require deliberate investigation rather than indefinite retry. Completion-request uncertainty is separately reconciled through the authorized upload-status endpoint, which checks the immutable version **and** its backing storage. This protects an upload-only guest from requiring unrelated `document.read`. The current account cannot edit another account's saved draft simply by triggering a drain. A user-initiated retry/rebind after terminal failure and explicit cancellation UI remain pending.
+
 ## Actor-bound queue recovery contract
 
 On the contractor project screen, `GET /api/v1/auth/me` supplies `userId` and `activeOrgId`; these define the upload partition instead of stale browser-provided input. Session and organisation changes clear the partition and rotate a non-secret local generation value. Enqueued originals are tagged with their current generation; legacy drafts without one and pre-logout drafts are **not automatically replayed**, even if the same user signs back in. The returning original actor may inspect and deliberately discard drafts; restoring old bytes for upload would require an explicit server-verified authority check and user confirmation (still outstanding). Browser-local storage is **not** a security boundary against people sharing one OS/browser profile.
 
 ## Incident operation limitations (PH5-G28-001)
 
-`scripts/execute-runbooks.ts` now requires `INCIDENT_DATABASE_URL` for a separately provisioned `tc_incident_operator` login; `INCIDENT_OPERATOR_ID` and (for actual execution) `INCIDENT_APPROVAL_REF`. No superuser/migrator fallback exists. Invocation is:
+Migration `0021` introduced a restricted operator role; migrations `0022`–`0023` strengthen that design into a **NOLOGIN group role with no direct sessions/storage/tenant-table access**. A separate, non-superuser individual DB login must be independently provisioned and allowed to switch into the group. The only exposed operation is `public.execute_approved_incident_runbook`: one SECURITY DEFINER transaction verifies a pre-recorded independent approval bound to real database login, operator user ID, organisation, code, target, exact reason and a maximum 60-minute expiry; then it performs the narrow mutation, consumes the approval and inserts both audit events atomically. On failure, all effects roll back. The read-only dry run also requires an approval, but does not consume it.
+
+`scripts/execute-runbooks.ts` accepts `INCIDENT_DATABASE_URL` for that individual login, plus `INCIDENT_OPERATOR_ID` and `INCIDENT_APPROVAL_REF`. There is **no default credential, IAM membership, approval-issuance endpoint or automatically granted operator**. Do not run the incident command from a migrator or application identity; real approval issuance must be performed through a separately reviewed security workflow.
 
 ```sh
+# Example CLI shape only; requires individually provisioned credentials
+# and a matching independently approved DB record, even for dry run.
 pnpm tsx scripts/execute-runbooks.ts RB-09 <org-uuid> <document-version-uuid> "<12+ character incident reason>" --dry-run
-# --execute only after independently approved, restricted IAM and staging rehearsal
+# --execute only with separate approval, staging rehearsal and provider playbook.
 ```
 
-Migration `0021_incident_operator_restricted_role.sql` creates `tc_incident_operator` without a password, grants only necessary SELECT, single-column containment writes and append-only audit inserts, and refuses unsafe pre-existing elevated role attributes. A deployment must independently establish short-lived credentials and bind approval to a real operator identity; supplying `INCIDENT_OPERATOR_ID` as an environment variable is **not sufficient authentication of that named human**.
+The real PostgreSQL regression suites exercise RB08 tenant-specific session revocation, RB09 quarantine of an APPROVED document version, approved-user/reviewer separation, wrong-tenant/reason rejection, approval replay denial, append-only audit receipts and zero direct incident-table access. Tests do **not** provision or authenticate real humans.
 
 RB09 changes the **storage_objects** state rather than overwriting an APPROVED document version to violate `review_status <> APPROVED OR file_status = READY`. Existing document download/preview/stream endpoints deny non-READY storage objects. Package PDF download and new handover submissions now reject included evidence whose storage or review state is no longer qualified; submission uses row locks to serialize against quarantine. Completed portable archive downloads also require every manifest-pinned source version/object to remain READY and match the immutable object SHA/version; source records are held with FOR SHARE while issuing future URLs. This cannot revoke URLs issued before the incident or delete already distributed archive copies. These controls **do not revoke previously distributed provider-signed URLs or copied exports**, and they are not sufficient to close the P0. Real restricted-PG dry-run/execute/replay, audit-chain, package/acceptance/archives propagation and operator IAM must be accepted independently.
 
