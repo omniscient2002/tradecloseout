@@ -924,33 +924,116 @@ export class ProjectsService {
     projectId: string,
     dto: { userId: string; role: string },
   ) {
-    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
-      const memberId = uuidv7();
+    const permittedRoles = new Set([
+      'R-PM', 'R-SITE', 'R-DOC', 'R-PROC', 'R-QC',
+      'R-SAFETY', 'R-REVIEWER', 'R-AUDITOR',
+    ]);
+    if (!dto || typeof dto.userId !== 'string' ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(dto.userId) ||
+        !permittedRoles.has(dto.role)) {
+      throw new UnprocessableEntityException({ code: 'INVALID_PROJECT_MEMBER' });
+    }
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      await this.lockEditableCommercialProject(client, ctx.orgId, projectId);
+
+      // PH2-G05-004: read the *current* tenant membership and user status.
+      // An arbitrary UUID, suspended member or external guest cannot become
+      // an ACTIVE project member merely by referencing an ID.
+      const { rows: eligible } = await client.query(
+        `SELECT m.role FROM memberships m
+           JOIN users u ON u.id = m.user_id AND u.status = 'ACTIVE'
+          WHERE m.org_id = $1 AND m.user_id = $2 AND m.status = 'ACTIVE'
+          FOR SHARE OF m, u`,
+        [ctx.orgId, dto.userId],
+      );
+      if (!eligible.length) {
+        throw new UnprocessableEntityException({ code: 'PROJECT_MEMBER_NOT_ELIGIBLE' });
+      }
+      const orgRole = eligible[0].role;
+      if (!['R-OWNER','R-ADMIN'].includes(orgRole) && dto.role !== orgRole) {
+        throw new UnprocessableEntityException({ code: 'PROJECT_ROLE_EXCEEDS_MEMBERSHIP' });
+      }
+
+      const { rows: existing } = await client.query(
+        `SELECT id,role,status FROM project_members
+          WHERE org_id = $1 AND project_id = $2 AND user_id = $3 FOR UPDATE`,
+        [ctx.orgId, projectId, dto.userId],
+      );
+      if (existing[0]?.status === 'ACTIVE' && existing[0].role === 'R-PM' &&
+          dto.role !== 'R-PM') {
+        await this.ensureAnotherActiveProjectManager(client, ctx.orgId, projectId, dto.userId);
+      }
+
+      const memberId = existing[0]?.id ?? uuidv7();
       const res = await client.query(
         `INSERT INTO project_members (id, org_id, project_id, user_id, role, added_by, status)
          VALUES ($1, $2, $3, $4, $5, $6, 'ACTIVE')
          ON CONFLICT (project_id, user_id)
-         DO UPDATE SET role = $5, status = 'ACTIVE', updated_at = now()
+         DO UPDATE SET role = EXCLUDED.role, status = 'ACTIVE', updated_at = now()
          RETURNING *`,
         [memberId, ctx.orgId, projectId, dto.userId, dto.role, ctx.userId],
       );
+      emit({
+        eventType: 'PROJECT_MEMBER_ASSIGNED',
+        projectId, entityType: 'PROJECT_MEMBER', entityId: res.rows[0].id,
+        beforeJson: existing[0] ? { role: existing[0].role, status: existing[0].status } : null,
+        afterJson: { role: dto.role, status: 'ACTIVE' },
+      });
       return res.rows[0];
     });
+  }
+
+  private async ensureAnotherActiveProjectManager(
+    client: PoolClient, orgId: string, projectId: string, excludedUserId: string,
+  ): Promise<void> {
+    const { rows: remaining } = await client.query(
+      `SELECT 1 FROM project_members pm
+         JOIN memberships m ON m.org_id = pm.org_id AND m.user_id = pm.user_id
+         JOIN users u ON u.id = pm.user_id
+        WHERE pm.org_id = $1 AND pm.project_id = $2 AND pm.user_id <> $3
+          AND pm.status = 'ACTIVE' AND pm.role IN ('R-PM', 'R-OWNER', 'R-ADMIN')
+          AND m.status = 'ACTIVE' AND u.status = 'ACTIVE'
+        LIMIT 1`,
+      [orgId, projectId, excludedUserId],
+    );
+    if (!remaining.length) {
+      throw new ConflictException({
+        code: 'LAST_PROJECT_MANAGER_REQUIRED',
+        detail: 'Assign another active project manager before removing the final manager.',
+      });
+    }
   }
 
   /**
    * DELETE /projects/:id/members/:userId
    */
   async removeProjectMember(ctx: TenantActorContext, projectId: string, targetUserId: string) {
-    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
-      const res = await client.query(
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      await this.lockEditableCommercialProject(client, ctx.orgId, projectId);
+      const { rows: current } = await client.query(
+        `SELECT id,role,status FROM project_members
+          WHERE org_id = $1 AND project_id = $2 AND user_id = $3 FOR UPDATE`,
+        [ctx.orgId, projectId, targetUserId],
+      );
+      if (!current.length || current[0].status !== 'ACTIVE') {
+        throw new NotFoundException('PROJECT_MEMBER_NOT_FOUND');
+      }
+      if (['R-PM','R-OWNER','R-ADMIN'].includes(current[0].role)) {
+        await this.ensureAnotherActiveProjectManager(client, ctx.orgId, projectId, targetUserId);
+      }
+      const { rows: removed } = await client.query(
         `UPDATE project_members
             SET status = 'REMOVED', updated_at = now()
           WHERE org_id = $1 AND project_id = $2 AND user_id = $3
-          RETURNING *`,
+          RETURNING id`,
         [ctx.orgId, projectId, targetUserId],
       );
-      if (!res.rows.length) throw new NotFoundException('PROJECT_MEMBER_NOT_FOUND');
+      emit({
+        eventType: 'PROJECT_MEMBER_REMOVED',
+        projectId, entityType: 'PROJECT_MEMBER', entityId: removed[0].id,
+        beforeJson: { role: current[0].role, status: 'ACTIVE' },
+        afterJson: { role: current[0].role, status: 'REMOVED' },
+      });
       return { success: true, removedUserId: targetUserId };
     });
   }
