@@ -1,0 +1,78 @@
+TAP version 13
+# Subtest: PH1-G26-003: every ORM projection matches real fresh and upgraded PostgreSQL
+    # Subtest: real ORM writes/reads preserve defaults, exact bigint, numeric, arrays, citext, dates and NULL
+    not ok 1 - real ORM writes/reads preserve defaults, exact bigint, numeric, arrays, citext, dates and NULL
+      ---
+      duration_ms: 9.222012
+      type: 'test'
+      location: '/tmp/tco-g26-003-orm/packages/db/test/phase1-orm-contract.spec.ts:2:5730'
+      failureType: 'testCodeFailure'
+      error: |-
+        Failed query: insert into "project_members" ("id", "org_id", "project_id", "user_id", "role", "scope_json", "status", "added_by", "created_at", "updated_at") values ($1, $2, $3, $4, $5, default, default, default, default, default) returning "id", "org_id", "project_id", "user_id", "role", "scope_json", "status", "added_by", "created_at", "updated_at"
+        params: 1255f36a-d712-4ae7-8abb-3a206fb3babc,c954224e-e8e1-45b5-813a-9ccc3b64ef6e,884b8e63-594d-4826-94df-25c17d0ca177,82391127-96d0-4096-88ce-7fdb331fb345,PM
+      code: 'ERR_TEST_FAILURE'
+      stack: |-
+        NodePgPreparedQuery.queryWithCache (/tmp/tco-g26-003-orm/node_modules/.pnpm/drizzle-orm@0.45.4_@types+pg@8.23.1_pg@8.23.1/node_modules/src/pg-core/session.ts:73:11)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async <anonymous> (/tmp/tco-g26-003-orm/node_modules/.pnpm/drizzle-orm@0.45.4_@types+pg@8.23.1_pg@8.23.1/node_modules/src/node-postgres/session.ts:154:19)
+        async <anonymous> (/tmp/tco-g26-003-orm/packages/db/test/phase1-orm-contract.spec.ts:102:33)
+        async scoped (/tmp/tco-g26-003-orm/packages/db/test/helpers/fixtures.ts:26:20)
+        async TestContext.<anonymous> (/tmp/tco-g26-003-orm/packages/db/test/phase1-orm-contract.spec.ts:95:7)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async <anonymous> (/tmp/tco-g26-003-orm/packages/db/test/phase1-orm-contract.spec.ts:91:5)
+        async withDisposableDatabase (/tmp/tco-g26-003-orm/packages/db/test/helpers/disposable-database.ts:72:5)
+        async TestContext.<anonymous> (/tmp/tco-g26-003-orm/packages/db/test/phase1-orm-contract.spec.ts:85:3)
+      ...
+    # Subtest: SQL constraints and tenant authority remain enforced on ORM writes
+    not ok 2 - SQL constraints and tenant authority remain enforced on ORM writes
+      ---
+      duration_ms: 15.230625
+      type: 'test'
+      location: '/tmp/tco-g26-003-orm/packages/db/test/phase1-orm-contract.spec.ts:2:8470'
+      failureType: 'testCodeFailure'
+      error: |-
+        The validation function is expected to return "true". Received false
+        
+        Caught error:
+        
+        Error: Failed query: insert into "project_members" ("id", "org_id", "project_id", "user_id", "role", "scope_json", "status", "added_by", "created_at", "updated_at") values ($1, $2, $3, $4, $5, default, default, default, default, default)
+        params: 31d87933-626a-45b8-9792-09d6174a9825,c954224e-e8e1-45b5-813a-9ccc3b64ef6e,269496d7-2f2c-4636-9bfa-db5ad75028ab,82391127-96d0-4096-88ce-7fdb331fb345,PM
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      stack: |-
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async TestContext.<anonymous> (/tmp/tco-g26-003-orm/packages/db/test/phase1-orm-contract.spec.ts:143:7)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async <anonymous> (/tmp/tco-g26-003-orm/packages/db/test/phase1-orm-contract.spec.ts:138:5)
+        async withDisposableDatabase (/tmp/tco-g26-003-orm/packages/db/test/helpers/disposable-database.ts:72:5)
+        async TestContext.<anonymous> (/tmp/tco-g26-003-orm/packages/db/test/phase1-orm-contract.spec.ts:85:3)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: populated 0005 upgrade converges including all SQL security/constraint metadata and ORM queries
+    ok 3 - populated 0005 upgrade converges including all SQL security/constraint metadata and ORM queries
+      ---
+      duration_ms: 6694.181524
+      type: 'test'
+      ...
+    1..3
+not ok 1 - PH1-G26-003: every ORM projection matches real fresh and upgraded PostgreSQL
+  ---
+  duration_ms: 10950.799006
+  type: 'test'
+  location: '/tmp/tco-g26-003-orm/packages/db/test/phase1-orm-contract.spec.ts:2:5227'
+  failureType: 'subtestsFailed'
+  error: '2 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Fresh PostgreSQL: {"tables":72,"columns":925,"runtimeQueries":70,"denied":["transmittal_items","transmittals"]}; SQL-only roots: 14
+# Populated upgrade: {"tables":72,"columns":925,"runtimeQueries":70,"denied":["transmittal_items","transmittals"]}; full catalog equal to fresh.
+1..1
+# tests 4
+# suites 0
+# pass 1
+# fail 3
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 12217.63685

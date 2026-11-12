@@ -1,0 +1,825 @@
+$ pnpm --filter @tradecloseout/shared build && pnpm --filter @tradecloseout/db build && pnpm --filter @tradecloseout/pdf-engine build && pnpm -r --workspace-concurrency=1 run test
+$ tsc
+$ tsc
+$ tsc
+Scope: 6 of 7 workspace projects
+$ node --import tsx --test test/*.spec.ts
+TAP version 13
+# Subtest: PH1-G27-003: nested credentials are removed from audit metadata without mutating the input
+ok 1 - PH1-G27-003: nested credentials are removed from audit metadata without mutating the input
+  ---
+  duration_ms: 6.726467
+  type: 'test'
+  ...
+# Subtest: PH1-G27-003: signed URLs and credential values are scrubbed without sensitive key names
+ok 2 - PH1-G27-003: signed URLs and credential values are scrubbed without sensitive key names
+  ---
+  duration_ms: 0.691444
+  type: 'test'
+  ...
+# Subtest: PH1-G27-003: redaction terminates on circular structures and bounded nesting
+ok 3 - PH1-G27-003: redaction terminates on circular structures and bounded nesting
+  ---
+  duration_ms: 0.639077
+  type: 'test'
+  ...
+# Subtest: PH1-G27-003/004: forged envelope identity rejects and rolls back its transaction
+ok 4 - PH1-G27-003/004: forged envelope identity rejects and rolls back its transaction
+  ---
+  duration_ms: 5.331503
+  type: 'test'
+  ...
+# Subtest: PH1-G27-003/004: emitted V1 event preserves provenance, nested redaction and audit
+ok 5 - PH1-G27-003/004: emitted V1 event preserves provenance, nested redaction and audit
+  ---
+  duration_ms: 1.456255
+  type: 'test'
+  ...
+# Subtest: Disposable PostgreSQL migration, isolation and audit regression tests
+    # Subtest: DB-02: upgrading the 0005 baseline converges to the fresh schema
+    ok 1 - DB-02: upgrading the 0005 baseline converges to the fresh schema
+      ---
+      duration_ms: 4457.775003
+      type: 'test'
+      ...
+    # Subtest: DB-01: fresh ledger matches every actual SQL checksum, reruns and concurrent runners do not change it
+    ok 2 - DB-01: fresh ledger matches every actual SQL checksum, reruns and concurrent runners do not change it
+      ---
+      duration_ms: 416.571582
+      type: 'test'
+      ...
+    # Subtest: DB-03: mismatched and unknown ledger entries reject migration
+    ok 3 - DB-03: mismatched and unknown ledger entries reject migration
+      ---
+      duration_ms: 737.576269
+      type: 'test'
+      ...
+    # Subtest: DB-06/07: real runtime role reads own tenant and rejects an otherwise valid foreign write with RLS SQLSTATE
+    ok 4 - DB-06/07: real runtime role reads own tenant and rejects an otherwise valid foreign write with RLS SQLSTATE
+      ---
+      duration_ms: 18.428023
+      type: 'test'
+      ...
+    # Subtest: DB-10: tenant-table inventory catches disabled RLS as well as unforced RLS
+    ok 5 - DB-10: tenant-table inventory catches disabled RLS as well as unforced RLS
+      ---
+      duration_ms: 8.043552
+      type: 'test'
+      ...
+    # Subtest: PH1-G26-001/G27-001: runtime cannot access or mutate audit child partitions
+    ok 6 - PH1-G26-001/G27-001: runtime cannot access or mutate audit child partitions
+      ---
+      duration_ms: 411.149644
+      type: 'test'
+      ...
+    # Subtest: PH1-G26-002/G24-007: storage reconciliation persists typed BIGINT values
+    ok 7 - PH1-G26-002/G24-007: storage reconciliation persists typed BIGINT values
+      ---
+      duration_ms: 35.842598
+      type: 'test'
+      ...
+    # Subtest: PH1-G26-011: actual PostgreSQL rejects invalid package usage and persists only bounded counters
+    ok 8 - PH1-G26-011: actual PostgreSQL rejects invalid package usage and persists only bounded counters
+      ---
+      duration_ms: 24.958627
+      type: 'test'
+      ...
+    # Subtest: PH1-G26-002: storage reconciliation rejects underflow and overflow without corrupting the counter
+    ok 9 - PH1-G26-002: storage reconciliation rejects underflow and overflow without corrupting the counter
+      ---
+      duration_ms: 14.863541
+      type: 'test'
+      ...
+    # Subtest: DB-08: direct cross-project procurement insert fails the intended composite FK
+    ok 10 - DB-08: direct cross-project procurement insert fails the intended composite FK
+      ---
+      duration_ms: 39.703149
+      type: 'test'
+      ...
+    # Subtest: DB-07: shared catalogue rows are readable, foreign rows and global writes are blocked
+    ok 11 - DB-07: shared catalogue rows are readable, foreign rows and global writes are blocked
+      ---
+      duration_ms: 11.498676
+      type: 'test'
+      ...
+    # Subtest: PH1-G26-008: caller-forged audit sequence is ignored and concurrent inserts retain chain order
+    ok 12 - PH1-G26-008: caller-forged audit sequence is ignored and concurrent inserts retain chain order
+      ---
+      duration_ms: 75.634616
+      type: 'test'
+      ...
+    # Subtest: AUDIT-02/03/04: nonempty chain rejects update/delete and detects privileged payload tampering
+    ok 13 - AUDIT-02/03/04: nonempty chain rejects update/delete and detects privileged payload tampering
+      ---
+      duration_ms: 44.97138
+      type: 'test'
+      ...
+    # Subtest: N30: canonical tenant alias validation rejects conflicting tenant settings
+    ok 14 - N30: canonical tenant alias validation rejects conflicting tenant settings
+      ---
+      duration_ms: 6.75855
+      type: 'test'
+      ...
+    1..14
+ok 6 - Disposable PostgreSQL migration, isolation and audit regression tests
+  ---
+  duration_ms: 11888.44565
+  type: 'test'
+  ...
+# Subtest: PH1-G26-001: fresh PG16 parent access and every existing/default child are tenant-safe and immutable
+ok 7 - PH1-G26-001: fresh PG16 parent access and every existing/default child are tenant-safe and immutable
+  ---
+  duration_ms: 6184.210346
+  type: 'test'
+  ...
+# Subtest: PH1-G26-001: future direct partitions and ATTACH are protected by defaults and migrator-only RLS provisioning
+ok 8 - PH1-G26-001: future direct partitions and ATTACH are protected by defaults and migrator-only RLS provisioning
+  ---
+  duration_ms: 4370.07885
+  type: 'test'
+  ...
+# Subtest: PH1-G26-001: real upgrade from pre-hardening SQL preserves older events and revokes existing partition access
+ok 9 - PH1-G26-001: real upgrade from pre-hardening SQL preserves older events and revokes existing partition access
+  ---
+  duration_ms: 3151.786287
+  type: 'test'
+  ...
+# Subtest: PH1-G26-008: forged sequence/hash/time cannot override trusted position, registry is protected
+ok 10 - PH1-G26-008: forged sequence/hash/time cannot override trusted position, registry is protected
+  ---
+  duration_ms: 5771.001121
+  type: 'test'
+  ...
+# Subtest: PH1-G26-008: two transactions serialize same tenant, distinct tenants progress independently, rollback never registers a gap
+ok 11 - PH1-G26-008: two transactions serialize same tenant, distinct tenants progress independently, rollback never registers a gap
+  ---
+  duration_ms: 3934.749621
+  type: 'test'
+  ...
+# Subtest: PH1-G26-008: legacy upgrade preserves original hashes and adds positions without rewriting history
+ok 12 - PH1-G26-008: legacy upgrade preserves original hashes and adds positions without rewriting history
+  ---
+  duration_ms: 3108.827247
+  type: 'test'
+  ...
+# Subtest: PH1-G26-008: forward migration refuses a historically altered hash instead of silently backfilling
+ok 13 - PH1-G26-008: forward migration refuses a historically altered hash instead of silently backfilling
+  ---
+  duration_ms: 1968.078105
+  type: 'test'
+  ...
+# Subtest: PH1-G26-007: canonical tenant acceptance on fresh PostgreSQL 16
+    # Subtest: both legacy spellings, equal UUID values, absent and malformed context
+    ok 1 - both legacy spellings, equal UUID values, absent and malformed context
+      ---
+      duration_ms: 35.890098
+      type: 'test'
+      ...
+    # Subtest: catalogue proof and real restricted SELECT/UPDATE/DELETE on EVERY tenant table and partition
+    ok 2 - catalogue proof and real restricted SELECT/UPDATE/DELETE on EVERY tenant table and partition
+      ---
+      duration_ms: 2219.835221
+      type: 'test'
+      ...
+    # Subtest: self memberships discovered across orgs; writes require the active tenant
+    ok 3 - self memberships discovered across orgs; writes require the active tenant
+      ---
+      duration_ms: 9.395754
+      type: 'test'
+      ...
+    # Subtest: explicit organisation bootstrap works with the legacy single alias, without a self-write exception
+    ok 4 - explicit organisation bootstrap works with the legacy single alias, without a self-write exception
+      ---
+      duration_ms: 9.691067
+      type: 'test'
+      ...
+    # Subtest: guest bootstrap remains read-only, active and unexpired; invitations stay tenant-scoped
+    ok 5 - guest bootstrap remains read-only, active and unexpired; invitations stay tenant-scoped
+      ---
+      duration_ms: 24.932377
+      type: 'test'
+      ...
+    # Subtest: real WITH CHECK on valid inserts and tenant transfers; shared catalogue stays immutable globally
+    ok 6 - real WITH CHECK on valid inserts and tenant transfers; shared catalogue stays immutable globally
+      ---
+      duration_ms: 17.191796
+      type: 'test'
+      ...
+    # Subtest: all custom SECURITY DEFINER functions and future partition provisioner preserve their boundaries
+    ok 7 - all custom SECURITY DEFINER functions and future partition provisioner preserve their boundaries
+      ---
+      duration_ms: 108.153421
+      type: 'test'
+      ...
+    # Subtest: real single-connection pool clears transaction context after commit, rollback and a SQL error
+    ok 8 - real single-connection pool clears transaction context after commit, rollback and a SQL error
+      ---
+      duration_ms: 39.99668
+      type: 'test'
+      ...
+    1..8
+ok 14 - PH1-G26-007: canonical tenant acceptance on fresh PostgreSQL 16
+  ---
+  duration_ms: 8358.566254
+  type: 'test'
+  ...
+# Inventoried and executed 15 restricted operations on each of 77 actual tenant relations: admin_audit_events, approval_overrides, archive_exports, asset_categories, asset_identity_revisions, assets, audit_chain_positions, audit_events, audit_events_2026_10, audit_events_2026_11, audit_events_2026_12, audit_events_default, bulk_import_jobs, checklist_snapshots, client_profiles, config_versions, contracts, credit_notes, defects, deletion_requests, digital_signatures, document_assets, document_contracts, document_events, document_requirements, document_versions, documents, evidence_companion_rules, evidence_revalidations, guest_grants, handover_packages, idempotency_keys, invitations, invoice_lines, invoice_tds, invoices, job_executions, legal_holds, memberships, notification_preferences, notification_templates, notifications, org_profiles, outbox_events, package_items, package_layouts, package_requirements, parties, party_contacts, payment_events, procurement_order_lines, procurement_orders, project_members, projects, quality_inspections, requirement_change_requests, requirement_revisions, requirements, retention_policies, review_comments, reviews, seasonal_commissioning_schedules, security_events, specification_refs, storage_objects, submission_events, submission_recipients, submissions, subscriptions, supplier_document_obligations, tab_worksheets, transmittal_items, transmittals, usage_counters, variations, waivers, warranty_events
+# Subtest: PH1-G26-007: reproduce both defects before a real populated 0045→0046 upgrade, preserving original ledger
+ok 15 - PH1-G26-007: reproduce both defects before a real populated 0045→0046 upgrade, preserving original ledger
+  ---
+  duration_ms: 3656.79166
+  type: 'test'
+  ...
+# REPRODUCED on original 0045: conflicting aliases exposed 2 projects; user-only context deleted 2 own cross-org memberships (rolled back).
+# Subtest: PH1-G26-003: every ORM projection matches real fresh and upgraded PostgreSQL
+    # Subtest: real ORM writes/reads preserve defaults, exact bigint, arrays, citext, dates and NULL
+    ok 1 - real ORM writes/reads preserve defaults, exact bigint, arrays, citext, dates and NULL
+      ---
+      duration_ms: 74.814783
+      type: 'test'
+      ...
+    # Subtest: SQL constraints and tenant authority remain enforced on ORM writes
+    ok 2 - SQL constraints and tenant authority remain enforced on ORM writes
+      ---
+      duration_ms: 12.364212
+      type: 'test'
+      ...
+    # Subtest: populated 0005 upgrade converges including all SQL security/constraint metadata and ORM queries
+    ok 3 - populated 0005 upgrade converges including all SQL security/constraint metadata and ORM queries
+      ---
+      duration_ms: 4577.008506
+      type: 'test'
+      ...
+    1..3
+ok 16 - PH1-G26-003: every ORM projection matches real fresh and upgraded PostgreSQL
+  ---
+  duration_ms: 10202.615434
+  type: 'test'
+  ...
+# Fresh PostgreSQL: {"tables":72,"columns":925,"runtimeQueries":70,"denied":["transmittal_items","transmittals"]}; SQL-only roots: 14
+# Populated upgrade: {"tables":72,"columns":925,"runtimeQueries":70,"denied":["transmittal_items","transmittals"]}; full catalog equal to fresh.
+# Subtest: PH1-G27-004: V1 event never spreads domain identity over authoritative envelope
+ok 17 - PH1-G27-004: V1 event never spreads domain identity over authoritative envelope
+  ---
+  duration_ms: 7.163715
+  type: 'test'
+  ...
+# Subtest: PH1-G27-004: all forged reserved fields fail producer closed
+ok 18 - PH1-G27-004: all forged reserved fields fail producer closed
+  ---
+  duration_ms: 1.385501
+  type: 'test'
+  ...
+# Subtest: PH1-G27-004: unknown versions, missing mandatory fields and V1 nested identity are denied
+ok 19 - PH1-G27-004: unknown versions, missing mandatory fields and V1 nested identity are denied
+  ---
+  duration_ms: 10.171987
+  type: 'test'
+  ...
+# Subtest: PH1-G27-004: pending legacy row is supported only if every supplied row identity matches
+ok 20 - PH1-G27-004: pending legacy row is supported only if every supplied row identity matches
+  ---
+  duration_ms: 1.312895
+  type: 'test'
+  ...
+# Subtest: PH1-G27-004: a submission can reference its package without impersonating a package event
+ok 21 - PH1-G27-004: a submission can reference its package without impersonating a package event
+  ---
+  duration_ms: 0.442122
+  type: 'test'
+  ...
+# Subtest: PH1-G27-004: archived exportId and packageId cannot redirect a queued resource
+ok 22 - PH1-G27-004: archived exportId and packageId cannot redirect a queued resource
+  ---
+  duration_ms: 11.432397
+  type: 'test'
+  ...
+# Subtest: PH1-G26-011: bounded usage counters preserve valid consumption and refunds
+ok 23 - PH1-G26-011: bounded usage counters preserve valid consumption and refunds
+  ---
+  duration_ms: 4.446191
+  type: 'test'
+  ...
+# Subtest: PH1-G26-011: counter underflow, overflow and plan-limit violations deny without updating
+ok 24 - PH1-G26-011: counter underflow, overflow and plan-limit violations deny without updating
+  ---
+  duration_ms: 1.459268
+  type: 'test'
+  ...
+# Subtest: PH1-G26-011: malformed limits or deltas fail before database writes
+ok 25 - PH1-G26-011: malformed limits or deltas fail before database writes
+  ---
+  duration_ms: 1.301896
+  type: 'test'
+  ...
+# Subtest: PH1-G26-006: bounded transaction settings are local and clean rollback returns healthy client
+ok 26 - PH1-G26-006: bounded transaction settings are local and clean rollback returns healthy client
+  ---
+  duration_ms: 10.300096
+  type: 'test'
+  ...
+# Subtest: PH1-G26-006: rollback failure preserves primary error and destroys poisoned client
+ok 27 - PH1-G26-006: rollback failure preserves primary error and destroys poisoned client
+  ---
+  duration_ms: 0.932892
+  type: 'test'
+  ...
+# Subtest: PH1-G26-006: ambiguous COMMIT failure discards client even if ROLLBACK succeeds
+ok 28 - PH1-G26-006: ambiguous COMMIT failure discards client even if ROLLBACK succeeds
+  ---
+  duration_ms: 0.934667
+  type: 'test'
+  ...
+# Subtest: PH1-G26-006: failed BEGIN discards client without assuming a transaction exists
+ok 29 - PH1-G26-006: failed BEGIN discards client without assuming a transaction exists
+  ---
+  duration_ms: 2.175061
+  type: 'test'
+  ...
+# Subtest: PH1-G26-006: savepoints use valid bounded non-colliding SQL identifiers
+ok 30 - PH1-G26-006: savepoints use valid bounded non-colliding SQL identifiers
+  ---
+  duration_ms: 4.44825
+  type: 'test'
+  ...
+# Subtest: PH1-G26-006: failed savepoint cleanup preserves the primary SQL failure
+ok 31 - PH1-G26-006: failed savepoint cleanup preserves the primary SQL failure
+  ---
+  duration_ms: 0.775624
+  type: 'test'
+  ...
+# Subtest: PH1-G26-006: successful savepoint rollback releases it and rethrows original error
+ok 32 - PH1-G26-006: successful savepoint rollback releases it and rethrows original error
+  ---
+  duration_ms: 2.41279
+  type: 'test'
+  ...
+1..32
+# tests 57
+# suites 0
+# pass 57
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 15829.348961
+$ jest --runInBand
+
+Test Suites: 4 passed, 4 total
+Tests:       44 passed, 44 total
+Snapshots:   0 total
+Time:        1.774 s, estimated 3 s
+Ran all test suites.
+$ playwright test --project=archive
+
+Running 6 tests using 4 workers
+
+(node:217773) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:217774) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:217767) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:217766) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [archive] › e2e/archive-verifier.spec.ts:10:7 › ARC-03/WEB-UX: offline extracted archive missing (584ms)
+  ✓  2 [archive] › e2e/archive-verifier.spec.ts:10:7 › ARC-03/WEB-UX: offline extracted archive changed-manifest (496ms)
+  ✓  3 [archive] › e2e/archive-verifier.spec.ts:10:7 › ARC-03/WEB-UX: offline extracted archive changed-file (510ms)
+  ✓  4 [archive] › e2e/archive-verifier.spec.ts:10:7 › ARC-03/WEB-UX: offline extracted archive valid (478ms)
+  ✓  5 [archive] › e2e/archive-verifier.spec.ts:10:7 › ARC-03/WEB-UX: offline extracted archive extra-file (231ms)
+  ✓  6 [archive] › e2e/archive-verifier.spec.ts:10:7 › ARC-03/WEB-UX: offline extracted archive unsafe-title (270ms)
+
+  6 passed (2.0s)
+$ tsx test/pdf-engine.spec.ts
+======================================================================
+TradeCloseout PDF Engine & Submittal Compilation Suite
+======================================================================
+
+[PDF-01] Testing PDF inspection and sanitisation...
+✓ Inspection and sanitisation verified: pages=3, objects=14
+
+[PDF-02] Testing front matter generation...
+✓ Front matter generated with Cover Page and TOC.
+
+[PDF-03] Testing multi-document compilation & Bates stamping...
+✓ Dossier compilation verified: 7 pages merged, stamped, and zipped (3788 bytes).
+
+======================================================================
+✓ ALL PDF ENGINE UNIT TESTS PASSED PERFECTLY!
+======================================================================
+
+$ jest --runInBand
+PASS test/pr1-independent-db-acceptance.spec.ts (20.575 s)
+PASS test/g01-mfa-enrollment-proposals-db.spec.ts (9.22 s)
+PASS test/phase1-next-asset-authority.spec.ts (13.196 s)
+PASS test/g02-live-review-authority.spec.ts (12.9 s)
+PASS test/hvac-domain-excellence.spec.ts
+PASS test/phase1-session-eligibility-tx-db.spec.ts (9.861 s)
+PASS test/phase1-mfa-transaction-fence-db.spec.ts (6.435 s)
+PASS test/g01-mfa-http-contract-db.spec.ts
+PASS test/rls-isolation.spec.ts
+PASS test/phase1-easy-database.spec.ts (6.088 s)
+PASS test/g01-mfa-attempt-budget-db.spec.ts (6.113 s)
+PASS test/production-reaudit-remediation.spec.ts
+PASS test/rbac-matrix.spec.ts
+PASS test/contractor-user-journey.spec.ts
+PASS test/g02-guest-multi-requirement-scope.spec.ts
+PASS test/phase1-canonical-tenant-pool-db.spec.ts
+PASS test/idempotency-cleanup-replay.spec.ts
+PASS test/hvac-production-reaudit-remediation.spec.ts
+PASS test/document-download-boundaries.spec.ts
+PASS test/g01-sensitive-idempotency.spec.ts
+PASS test/phase1-easy-boundaries.spec.ts
+PASS test/g01-mfa-guard-policy.spec.ts
+PASS test/modules/documents-reviews.spec.ts
+PASS test/phase1-upload-intent-scope.spec.ts
+PASS test/hvac-checklist-readiness-branch.spec.ts
+PASS test/phase1-document-detail-scope.spec.ts
+PASS test/review-authority-boundaries.spec.ts
+PASS test/phase0-evidence-integrity-remediation.spec.ts
+PASS test/discovery-lifecycle-foundations.spec.ts
+PASS test/g01-mfa-key-retirement.spec.ts
+PASS test/sol-integrity-verification.spec.ts
+PASS test/concurrency.spec.ts
+PASS test/perfect-10-remediation.spec.ts
+PASS test/production-review-remediation.spec.ts
+PASS test/phase1-document-storage-quota.spec.ts
+PASS test/v021-edge-cases.e2e-spec.ts
+PASS test/modules/parties-projects.spec.ts
+PASS test/modules/handover-billing-system.spec.ts
+PASS test/phase1-upload-refresh-authority.spec.ts
+PASS test/rls-and-integrity.spec.ts
+PASS test/phase1-document-version-transaction.spec.ts
+PASS test/g01-otp-hmac-redis.spec.ts
+PASS test/g02-bulk-review-contract.spec.ts
+PASS test/phase1-next-input-auth.spec.ts
+PASS test/guest-session-boundaries.spec.ts
+PASS test/phase1-problem-error-redaction.spec.ts
+PASS test/phase1-tenant-transaction-failures.spec.ts
+PASS test/idempotency-expired-claim.spec.ts
+PASS test/phase1-public-health-redaction.spec.ts
+PASS test/g01-otp-runtime-validation.spec.ts
+PASS test/phase1-security-response-headers.spec.ts
+PASS test/phase1-session-authority-http.spec.ts
+PASS test/security-invariants.e2e-spec.ts
+PASS test/modules/nfr-quality-attributes.spec.ts
+PASS test/modules/config-checklists-assets.spec.ts
+PASS test/modules/auth-iam.spec.ts
+
+Test Suites: 56 passed, 56 total
+Tests:       430 passed, 430 total
+Snapshots:   0 total
+Time:        114.565 s, estimated 162 s
+Ran all test suites.
+$ node --import tsx --test test/worker-integration.spec.ts test/phase1-worker-secrecy.spec.ts test/phase1-scheduler-orchestration.spec.ts test/phase1-worker-drain.spec.ts test/phase1-outbox-identity.spec.ts test/phase1-audit-chain-restore.spec.ts test/phase1-easy-boundaries.spec.ts
+TAP version 13
+# Subtest: PH1-G26-008: restored audit chain and internal head registry must agree
+ok 1 - PH1-G26-008: restored audit chain and internal head registry must agree
+  ---
+  duration_ms: 4745.184405
+  type: 'test'
+  ...
+# OWNER_DIGEST_CONNECTION_UNSAFE
+# Subtest: gateway rejects unsafe configuration and unbounded/unmatched receipts without credential forwarding
+ok 2 - gateway rejects unsafe configuration and unbounded/unmatched receipts without credential forwarding
+  ---
+  duration_ms: 120.210883
+  type: 'test'
+  ...
+# Subtest: missing qpdf prevents production/staging startup with secret-free diagnostics
+ok 3 - missing qpdf prevents production/staging startup with secret-free diagnostics
+  ---
+  duration_ms: 0.952413
+  type: 'test'
+  ...
+# Subtest: runDailyExpiryJob: destroys connection on uncertain BEGIN without masking the command failure
+ok 4 - runDailyExpiryJob: destroys connection on uncertain BEGIN without masking the command failure
+  ---
+  duration_ms: 0.795166
+  type: 'test'
+  ...
+# Subtest: runDailyExpiryJob: destroys connection on uncertain STATEMENT_ROLLBACK without masking the command failure
+ok 5 - runDailyExpiryJob: destroys connection on uncertain STATEMENT_ROLLBACK without masking the command failure
+  ---
+  duration_ms: 0.302663
+  type: 'test'
+  ...
+# Subtest: runDailyExpiryJob: destroys connection on uncertain COMMIT without masking the command failure
+ok 6 - runDailyExpiryJob: destroys connection on uncertain COMMIT without masking the command failure
+  ---
+  duration_ms: 0.376401
+  type: 'test'
+  ...
+# Subtest: runWeeklyOwnerRetentionAtRiskDigest: destroys connection on uncertain BEGIN without masking the command failure
+ok 7 - runWeeklyOwnerRetentionAtRiskDigest: destroys connection on uncertain BEGIN without masking the command failure
+  ---
+  duration_ms: 58.412714
+  type: 'test'
+  ...
+# Subtest: runWeeklyOwnerRetentionAtRiskDigest: destroys connection on uncertain STATEMENT_ROLLBACK without masking the command failure
+ok 8 - runWeeklyOwnerRetentionAtRiskDigest: destroys connection on uncertain STATEMENT_ROLLBACK without masking the command failure
+  ---
+  duration_ms: 2.073681
+  type: 'test'
+  ...
+# Subtest: runWeeklyOwnerRetentionAtRiskDigest: destroys connection on uncertain COMMIT without masking the command failure
+ok 9 - runWeeklyOwnerRetentionAtRiskDigest: destroys connection on uncertain COMMIT without masking the command failure
+  ---
+  duration_ms: 2.676269
+  type: 'test'
+  ...
+# Subtest: verifyAuditHashChainIntegrity: destroys connection on uncertain BEGIN without masking the command failure
+ok 10 - verifyAuditHashChainIntegrity: destroys connection on uncertain BEGIN without masking the command failure
+  ---
+  duration_ms: 0.787047
+  type: 'test'
+  ...
+# Subtest: verifyAuditHashChainIntegrity: destroys connection on uncertain STATEMENT_ROLLBACK without masking the command failure
+ok 11 - verifyAuditHashChainIntegrity: destroys connection on uncertain STATEMENT_ROLLBACK without masking the command failure
+  ---
+  duration_ms: 0.6424
+  type: 'test'
+  ...
+# Subtest: verifyAuditHashChainIntegrity: destroys connection on uncertain COMMIT without masking the command failure
+ok 12 - verifyAuditHashChainIntegrity: destroys connection on uncertain COMMIT without masking the command failure
+  ---
+  duration_ms: 0.263344
+  type: 'test'
+  ...
+# Subtest: runStorageLifecycleCleanup: destroys connection on uncertain BEGIN without masking the command failure
+ok 13 - runStorageLifecycleCleanup: destroys connection on uncertain BEGIN without masking the command failure
+  ---
+  duration_ms: 0.327677
+  type: 'test'
+  ...
+# Subtest: runStorageLifecycleCleanup: destroys connection on uncertain STATEMENT_ROLLBACK without masking the command failure
+ok 14 - runStorageLifecycleCleanup: destroys connection on uncertain STATEMENT_ROLLBACK without masking the command failure
+  ---
+  duration_ms: 0.296752
+  type: 'test'
+  ...
+# Subtest: runStorageLifecycleCleanup: destroys connection on uncertain COMMIT without masking the command failure
+ok 15 - runStorageLifecycleCleanup: destroys connection on uncertain COMMIT without masking the command failure
+  ---
+  duration_ms: 0.197409
+  type: 'test'
+  ...
+# Subtest: reconcileIdempotencyClaims: destroys connection on uncertain BEGIN without masking the command failure
+ok 16 - reconcileIdempotencyClaims: destroys connection on uncertain BEGIN without masking the command failure
+  ---
+  duration_ms: 0.262826
+  type: 'test'
+  ...
+# Subtest: reconcileIdempotencyClaims: destroys connection on uncertain STATEMENT_ROLLBACK without masking the command failure
+ok 17 - reconcileIdempotencyClaims: destroys connection on uncertain STATEMENT_ROLLBACK without masking the command failure
+  ---
+  duration_ms: 0.225342
+  type: 'test'
+  ...
+# Subtest: reconcileIdempotencyClaims: destroys connection on uncertain COMMIT without masking the command failure
+ok 18 - reconcileIdempotencyClaims: destroys connection on uncertain COMMIT without masking the command failure
+  ---
+  duration_ms: 0.167706
+  type: 'test'
+  ...
+# Subtest: dispatchQueuedNotifications: destroys connection on uncertain BEGIN without masking the command failure
+ok 19 - dispatchQueuedNotifications: destroys connection on uncertain BEGIN without masking the command failure
+  ---
+  duration_ms: 0.702727
+  type: 'test'
+  ...
+# Subtest: dispatchQueuedNotifications: destroys connection on uncertain STATEMENT_ROLLBACK without masking the command failure
+ok 20 - dispatchQueuedNotifications: destroys connection on uncertain STATEMENT_ROLLBACK without masking the command failure
+  ---
+  duration_ms: 0.354284
+  type: 'test'
+  ...
+# Subtest: dispatchQueuedNotifications: destroys connection on uncertain COMMIT without masking the command failure
+ok 21 - dispatchQueuedNotifications: destroys connection on uncertain COMMIT without masking the command failure
+  ---
+  duration_ms: 0.306136
+  type: 'test'
+  ...
+# Subtest: PH1-G27-004: rejects forged V1 and legacy event row fields before querying resources
+ok 22 - PH1-G27-004: rejects forged V1 and legacy event row fields before querying resources
+  ---
+  duration_ms: 2.346629
+  type: 'test'
+  ...
+# Subtest: PH1-G27-004: file, package, and archive executor all prove resource scope
+ok 23 - PH1-G27-004: file, package, and archive executor all prove resource scope
+  ---
+  duration_ms: 2.669891
+  type: 'test'
+  ...
+# Subtest: PH1-G27-004: migrated PG16 retains actor/event/request and disallows cross-project and tenant dispatch
+ok 24 - PH1-G27-004: migrated PG16 retains actor/event/request and disallows cross-project and tenant dispatch
+  ---
+  duration_ms: 4080.282119
+  type: 'test'
+  ...
+# Subtest: PH1-G24-006: overlapping minute ticks never run the same task concurrently
+ok 25 - PH1-G24-006: overlapping minute ticks never run the same task concurrently
+  ---
+  duration_ms: 2.04602
+  type: 'test'
+  ...
+# Subtest: PH1-G24-006: one failed task does not skip unrelated work and is retried
+ok 26 - PH1-G24-006: one failed task does not skip unrelated work and is retried
+  ---
+  duration_ms: 1.676069
+  type: 'test'
+  ...
+# Subtest: PH1-G24-006 / G24-010: shutdown drains work and rejects subsequent ticks
+ok 27 - PH1-G24-006 / G24-010: shutdown drains work and rejects subsequent ticks
+  ---
+  duration_ms: 0.527961
+  type: 'test'
+  ...
+# Subtest: PH1-G24-006: throwing diagnostic reporter cannot poison task release
+ok 28 - PH1-G24-006: throwing diagnostic reporter cannot poison task release
+  ---
+  duration_ms: 0.519975
+  type: 'test'
+  ...
+# Subtest: PH1-G24-010: outbox poll cannot overlap and drain waits before closing BullMQ/PG/Redis
+ok 29 - PH1-G24-010: outbox poll cannot overlap and drain waits before closing BullMQ/PG/Redis
+  ---
+  duration_ms: 9.391247
+  type: 'test'
+  ...
+# Subtest: PH1-G24-010: failing tracked outbox work is released and cannot block shutdown
+ok 30 - PH1-G24-010: failing tracked outbox work is released and cannot block shutdown
+  ---
+  duration_ms: 0.687087
+  type: 'test'
+  ...
+# Subtest: PH1-G24-010: resource shutdown failures propagate rather than report clean success
+ok 31 - PH1-G24-010: resource shutdown failures propagate rather than report clean success
+  ---
+  duration_ms: 3.380003
+  type: 'test'
+  ...
+# Subtest: PH1-G27-005: routine worker logging does not serialize arbitrary error details
+ok 32 - PH1-G27-005: routine worker logging does not serialize arbitrary error details
+  ---
+  duration_ms: 1.294501
+  type: 'test'
+  ...
+# Subtest: PH1-G27-005: error class mapping cannot be tricked by inherited keys or getters
+ok 33 - PH1-G27-005: error class mapping cannot be tricked by inherited keys or getters
+  ---
+  duration_ms: 0.230424
+  type: 'test'
+  ...
+# Subtest: PH1-G27-005: untrusted scanner protocol response stays out of job failure reason
+ok 34 - PH1-G27-005: untrusted scanner protocol response stays out of job failure reason
+  ---
+  duration_ms: 38.070907
+  type: 'test'
+  ...
+# Subtest: PH1-G27-005: processor boundary preserves success and scrubs all failure channels
+ok 35 - PH1-G27-005: processor boundary preserves success and scrubs all failure channels
+  ---
+  duration_ms: 4.188405
+  type: 'test'
+  ...
+# Subtest: PH1-G27-005: BullMQ Redis failedReason and stack trace do not retain provider secrets
+ok 36 - PH1-G27-005: BullMQ Redis failedReason and stack trace do not retain provider secrets
+  ---
+  duration_ms: 87.910493
+  type: 'test'
+  ...
+# Subtest: PH1-G27-005: WebP converter failure never embeds tool output or input path
+ok 37 - PH1-G27-005: WebP converter failure never embeds tool output or input path
+  ---
+  duration_ms: 26.855045
+  type: 'test'
+  ...
+# Subtest: PH1-G27-005: worker diagnostic egress and package failure persistence are secret-free
+    # Subtest: raw errors, stack traces and untrusted job identifiers are never logged
+    ok 1 - raw errors, stack traces and untrusted job identifiers are never logged
+      ---
+      duration_ms: 1.69097
+      type: 'test'
+      ...
+    # Subtest: terminal package DB status stores only a fixed, non-sensitive failure detail
+    ok 2 - terminal package DB status stores only a fixed, non-sensitive failure detail
+      ---
+      duration_ms: 1.164907
+      type: 'test'
+      ...
+    # Subtest: database write failure logs a fixed category, not the thrown provider secret
+    ok 3 - database write failure logs a fixed category, not the thrown provider secret
+      ---
+      duration_ms: 0.696199
+      type: 'test'
+      ...
+    1..3
+ok 38 - PH1-G27-005: worker diagnostic egress and package failure persistence are secret-free
+  ---
+  duration_ms: 5.181846
+  type: 'test'
+  ...
+# OWNER_DIGEST_TENANT_FAILED
+# Subtest: Isolated worker DB/Redis and storage HTTP contract regressions
+    # Subtest: PH1-G24-002: scoped owner discovery sends exactly one digest per eligible tenant
+    ok 1 - PH1-G24-002: scoped owner discovery sends exactly one digest per eligible tenant
+      ---
+      duration_ms: 87.466373
+      type: 'test'
+      ...
+    # Subtest: PH1-G27-002: audit genesis and content tampering are detected without leaking event metadata
+    ok 2 - PH1-G27-002: audit genesis and content tampering are detected without leaking event metadata
+      ---
+      duration_ms: 77.936712
+      type: 'test'
+      ...
+    # Subtest: SCHED-01/02: real Redis NX excludes concurrent owner and old owner cannot delete replacement lock
+    ok 3 - SCHED-01/02: real Redis NX excludes concurrent owner and old owner cannot delete replacement lock
+      ---
+      duration_ms: 3.468287
+      type: 'test'
+      ...
+    # Subtest: SCHED-03/04: successful period runs once; failed period retries; India year boundary
+    ok 4 - SCHED-03/04: successful period runs once; failed period retries; India year boundary
+      ---
+      duration_ms: 7.528218
+      type: 'test'
+      ...
+    # Subtest: TX-05/06: cleanup retains expired unresolved claims after committed effect
+    ok 5 - TX-05/06: cleanup retains expired unresolved claims after committed effect
+      ---
+      duration_ms: 14.535367
+      type: 'test'
+      ...
+    # Subtest: NOTIF-01/04: no configuration, rejection and invalid ack stay queued; matching capture acknowledgment permits SENT
+    ok 6 - NOTIF-01/04: no configuration, rejection and invalid ack stay queued; matching capture acknowledgment permits SENT
+      ---
+      duration_ms: 108.446084
+      type: 'test'
+      ...
+    # Subtest: ARC-02: ZIP contains exact pinned bytes; durable readback and replay are verified independently
+    ok 7 - ARC-02: ZIP contains exact pinned bytes; durable readback and replay are verified independently
+      ---
+      duration_ms: 109.074891
+      type: 'test'
+      ...
+    # Subtest: ARC-03/04: missing source prevents completion
+    ok 8 - ARC-03/04: missing source prevents completion
+      ---
+      duration_ms: 26.644654
+      type: 'test'
+      ...
+    # Subtest: ARC-03/04: wrong digest prevents completion
+    ok 9 - ARC-03/04: wrong digest prevents completion
+      ---
+      duration_ms: 18.863199
+      type: 'test'
+      ...
+    # Subtest: ARC-03/04: unversioned source prevents completion
+    ok 10 - ARC-03/04: unversioned source prevents completion
+      ---
+      duration_ms: 7.48082
+      type: 'test'
+      ...
+    # Subtest: ARC-03/04: unsafe path prevents completion
+    ok 11 - ARC-03/04: unsafe path prevents completion
+      ---
+      duration_ms: 7.593654
+      type: 'test'
+      ...
+# An error was encountered in a non-retryable streaming request.
+    # Subtest: PKG-05: failed output upload and missing storage configuration cannot complete
+    ok 12 - PKG-05: failed output upload and missing storage configuration cannot complete
+      ---
+      duration_ms: 84.355437
+      type: 'test'
+      ...
+    # Subtest: N19 / V09: BoundedByteStream validates ceilings and aborts transfer when exceeded
+    ok 13 - N19 / V09: BoundedByteStream validates ceilings and aborts transfer when exceeded
+      ---
+      duration_ms: 5.076882
+      type: 'test'
+      ...
+    # Subtest: N18 / V02: OUTBOX_EVENT_REGISTRY covers 100% of application-emitted event types
+    ok 14 - N18 / V02: OUTBOX_EVENT_REGISTRY covers 100% of application-emitted event types
+      ---
+      duration_ms: 0.213551
+      type: 'test'
+      ...
+    1..14
+ok 39 - Isolated worker DB/Redis and storage HTTP contract regressions
+  ---
+  duration_ms: 4363.606567
+  type: 'test'
+  ...
+1..39
+# tests 56
+# suites 0
+# pass 56
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 6194.250709

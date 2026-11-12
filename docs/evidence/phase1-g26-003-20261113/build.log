@@ -1,0 +1,61 @@
+$ turbo run build
+
+   • turbo 2.11.10
+   • Packages in scope: @tradecloseout/api, @tradecloseout/db, @tradecloseout/pdf-engine, @tradecloseout/shared, @tradecloseout/web, @tradecloseout/worker
+   • Running build in 6 packages
+   • Remote caching disabled, using shared worktree cache
+
+@tradecloseout/db:build: cache miss, executing 67e01bd9c62e9ba8
+@tradecloseout/shared:build: cache hit, replaying logs 917141234ba41e2b
+@tradecloseout/shared:build: $ tsc
+@tradecloseout/web:build: cache hit, replaying logs 18005dccd16d3761
+@tradecloseout/pdf-engine:build: cache hit, replaying logs c4c8f39292f6a6e5
+@tradecloseout/web:build: $ next build
+@tradecloseout/web:build:    ▲ Next.js 15.5.28
+@tradecloseout/web:build: 
+@tradecloseout/web:build:    Creating an optimized production build ...
+@tradecloseout/web:build:  ✓ Compiled successfully in 17.4s
+@tradecloseout/web:build:    Linting and checking validity of types ...
+@tradecloseout/web:build:    Collecting page data ...
+@tradecloseout/web:build:    Generating static pages (0/10) ...
+@tradecloseout/web:build:    Generating static pages (2/10) 
+@tradecloseout/web:build:    Generating static pages (4/10) 
+@tradecloseout/web:build:    Generating static pages (7/10) 
+@tradecloseout/web:build:  ✓ Generating static pages (10/10)
+@tradecloseout/web:build:    Finalizing page optimization ...
+@tradecloseout/web:build:    Collecting build traces ...
+@tradecloseout/web:build: 
+@tradecloseout/web:build: Route (app)                                      Size  First Load JS
+@tradecloseout/web:build: ┌ ○ /                                           122 B         102 kB
+@tradecloseout/web:build: ├ ○ /_not-found                                 993 B         103 kB
+@tradecloseout/web:build: ├ ○ /audit                                    2.87 kB         105 kB
+@tradecloseout/web:build: ├ ○ /billing                                  3.58 kB         105 kB
+@tradecloseout/web:build: ├ ○ /dashboard                                10.5 kB         115 kB
+@tradecloseout/web:build: ├ ƒ /guest/[token]                            4.43 kB         109 kB
+@tradecloseout/web:build: ├ ○ /login                                    4.68 kB         107 kB
+@tradecloseout/web:build: ├ ○ /parties                                     4 kB         106 kB
+@tradecloseout/web:build: ├ ○ /projects                                 4.79 kB         107 kB
+@tradecloseout/web:build: ├ ƒ /projects/[projectId]                      194 kB         298 kB
+@tradecloseout/web:build: └ ƒ /projects/[projectId]/review/[versionId]  6.79 kB         109 kB
+@tradecloseout/web:build: + First Load JS shared by all                  102 kB
+@tradecloseout/web:build:   ├ chunks/651b194a-71b7141f20bace2b.js       54.2 kB
+@tradecloseout/web:build:   ├ chunks/99-eb8e0fc7c5c9b880.js             45.7 kB
+@tradecloseout/web:build:   └ other shared chunks (total)               1.86 kB
+@tradecloseout/web:build: 
+@tradecloseout/web:build: 
+@tradecloseout/web:build: ƒ Middleware                                  34.1 kB
+@tradecloseout/web:build: 
+@tradecloseout/web:build: ○  (Static)   prerendered as static content
+@tradecloseout/web:build: ƒ  (Dynamic)  server-rendered on demand
+@tradecloseout/web:build: 
+@tradecloseout/pdf-engine:build: $ tsc
+@tradecloseout/db:build: $ tsc
+@tradecloseout/api:build: cache miss, executing b4845b9dd8a58a34
+@tradecloseout/worker:build: cache miss, executing 71eae0c34698c4e0
+@tradecloseout/api:build: $ nest build
+@tradecloseout/worker:build: $ tsc
+
+ Tasks:    6 successful, 6 total
+Cached:    3 cached, 6 total
+  Time:    19.655s 
+

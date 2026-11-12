@@ -1,0 +1,58 @@
+TAP version 13
+# Subtest: PH1-G26-003: every ORM projection matches real fresh and upgraded PostgreSQL
+    # Subtest: real ORM writes/reads preserve defaults, exact bigint, arrays, citext, dates and NULL
+    not ok 1 - real ORM writes/reads preserve defaults, exact bigint, arrays, citext, dates and NULL
+      ---
+      duration_ms: 24.49442
+      type: 'test'
+      location: '/tmp/tco-g26-003-orm/packages/db/test/phase1-orm-contract.spec.ts:2:5730'
+      failureType: 'testCodeFailure'
+      error: |-
+        Failed query: insert into "usage_counters" ("id", "org_id", "metric", "period", "value", "updated_at") values (default, $1, $2, $3, $4, default) returning "id", "org_id", "metric", "period", "value", "updated_at"
+        params: 3107550a-dcd1-45ff-a8f5-65cb30cac384,STORAGE_BYTES,ORM_PARITY,9007199254740993
+      code: 'ERR_TEST_FAILURE'
+      stack: |-
+        NodePgPreparedQuery.queryWithCache (/tmp/tco-g26-003-orm/node_modules/.pnpm/drizzle-orm@0.45.4_@types+pg@8.23.1_pg@8.23.1/node_modules/src/pg-core/session.ts:73:11)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async <anonymous> (/tmp/tco-g26-003-orm/node_modules/.pnpm/drizzle-orm@0.45.4_@types+pg@8.23.1_pg@8.23.1/node_modules/src/node-postgres/session.ts:154:19)
+        async <anonymous> (/tmp/tco-g26-003-orm/packages/db/test/phase1-orm-contract.spec.ts:119:25)
+        async scoped (/tmp/tco-g26-003-orm/packages/db/test/helpers/fixtures.ts:26:20)
+        async TestContext.<anonymous> (/tmp/tco-g26-003-orm/packages/db/test/phase1-orm-contract.spec.ts:95:7)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async <anonymous> (/tmp/tco-g26-003-orm/packages/db/test/phase1-orm-contract.spec.ts:91:5)
+        async withDisposableDatabase (/tmp/tco-g26-003-orm/packages/db/test/helpers/disposable-database.ts:72:5)
+        async TestContext.<anonymous> (/tmp/tco-g26-003-orm/packages/db/test/phase1-orm-contract.spec.ts:85:3)
+      ...
+    # Subtest: SQL constraints and tenant authority remain enforced on ORM writes
+    ok 2 - SQL constraints and tenant authority remain enforced on ORM writes
+      ---
+      duration_ms: 19.423984
+      type: 'test'
+      ...
+    # Subtest: populated 0005 upgrade converges including all SQL security/constraint metadata and ORM queries
+    ok 3 - populated 0005 upgrade converges including all SQL security/constraint metadata and ORM queries
+      ---
+      duration_ms: 4788.583297
+      type: 'test'
+      ...
+    1..3
+not ok 1 - PH1-G26-003: every ORM projection matches real fresh and upgraded PostgreSQL
+  ---
+  duration_ms: 9444.018395
+  type: 'test'
+  location: '/tmp/tco-g26-003-orm/packages/db/test/phase1-orm-contract.spec.ts:2:5227'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Fresh PostgreSQL: {"tables":72,"columns":925,"runtimeQueries":70,"denied":["transmittal_items","transmittals"]}; SQL-only roots: 14
+# Populated upgrade: {"tables":72,"columns":925,"runtimeQueries":70,"denied":["transmittal_items","transmittals"]}; full catalog equal to fresh.
+1..1
+# tests 4
+# suites 0
+# pass 2
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 10100.524731
