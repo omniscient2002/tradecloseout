@@ -245,7 +245,12 @@ export function resolveConfigV021(
       // 3. Apply merge semantics
       if (schema.overridePolicy === 'APPEND' && Array.isArray(rawVal)) {
         const existingArr = Array.isArray(result[path]) ? result[path] : [];
-        result[path] = Array.from(new Set([...existingArr, ...rawVal]));
+        // PH2-G06-004: recipient identity is case-insensitive and whitespace
+        // insensitive. Set<object> used reference identity and never deduped
+        // semantic duplicates. Retain first-seen, normalized deterministic order.
+        const values = [...existingArr, ...rawVal] as string[];
+        result[path] = Array.from(new Set(values.map(recipient =>
+          recipient.trim().toLowerCase())));
       } else if (schema.overridePolicy === 'MERGE_MAP' && Array.isArray(rawVal)) {
         const keyField = schema.mergeKey ?? 'key';
         result[path] = mergeKeyedObjects(result[path] ?? [], rawVal, keyField, level, conflicts);
@@ -299,13 +304,21 @@ function mergeKeyedObjects(
     map.set(String(item[keyField]), structuredClone(item));
   }
 
+  const seenPatches = new Set<string>();
   for (const patch of patchArr) {
     if (!patch || typeof patch !== 'object' || typeof patch[keyField] !== 'string' ||
-        !patch[keyField].trim() || ['__proto__', 'constructor', 'prototype'].includes(patch[keyField])) {
+        !patch[keyField].trim() || patch[keyField].length > 128 ||
+        ['__proto__', 'constructor', 'prototype'].includes(patch[keyField])) {
       conflicts.push({ path: keyField, level, message: 'Invalid keyed configuration item.' });
       continue;
     }
     const k = patch[keyField];
+    if (seenPatches.has(k)) {
+      conflicts.push({ path: `${keyField}:${k}`, level,
+        message: 'Duplicate configuration key within one layer.' });
+      continue;
+    }
+    seenPatches.add(k);
     const current = map.get(k);
 
     if (patch.$remove === true) {
@@ -367,7 +380,17 @@ export interface ConfigLayerInput {
 
 export function resolveConfigurationHierarchy(layers: ConfigLayerInput[]) {
   const byLevel: Partial<Record<ConfigLevel, ConfigLayerRecord>> = {};
+  const inputConflicts: ConfigConflict[] = [];
   for (const layer of layers) {
+    if (!layer || !['PLATFORM','TRADE','ORG','CLIENT_CONTRACT','PROJECT'].includes(layer.level)) {
+      inputConflicts.push({ path: '$level', level: 'PROJECT', message: 'Unknown configuration level.' });
+      continue;
+    }
+    if (byLevel[layer.level]) {
+      inputConflicts.push({ path: '$level', level: layer.level,
+        message: 'Duplicate configuration layer requires an explicit version selection.' });
+      continue;
+    }
     byLevel[layer.level] = {
       level: layer.level,
       versionId: layer.versionId,
@@ -379,10 +402,12 @@ export function resolveConfigurationHierarchy(layers: ConfigLayerInput[]) {
   return {
     payload: res.payload,
     provenance: res.provenance,
-    conflicts: res.conflicts.map((c) => ({
+    conflicts: [...inputConflicts, ...res.conflicts].map((c) => ({
       path: c.path,
       attemptedAtLevel: c.level,
-      lockedAtLevel: 'PLATFORM' as ConfigLevel,
+      // No invented PLATFORM attribution: the owner level is only known if
+      // an actual winning layer established a value at that path.
+      lockedAtLevel: res.provenance[c.path]?.level ?? null,
       message: c.message,
     })),
     checksum: res.checksum,
