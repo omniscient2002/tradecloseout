@@ -5,7 +5,7 @@ export type PermissionScope = 'Y' | 'A' | 'S';
 
 export const ORG_ROLE_PERMISSIONS: Record<string, Record<string, PermissionScope>> = {
   'R-OWNER': {
-    'org.read': 'Y', 'org.manage': 'Y', 'org.manage_members': 'Y', 'org.transfer_ownership': 'Y',
+    'org.read': 'Y', 'notification.read': 'Y', 'org.manage': 'Y', 'org.manage_members': 'Y', 'org.transfer_ownership': 'Y',
     'org.delete': 'Y', 'billing.read': 'Y', 'billing.manage': 'Y', 'party.read': 'Y', 'party.manage': 'Y',
     'template.read': 'Y', 'template.manage': 'Y', 'project.create': 'Y', 'project.read': 'A',
     'project.manage': 'A', 'project.close': 'Y', 'contract.manage': 'Y', 'checklist.manage': 'Y',
@@ -16,69 +16,71 @@ export const ORG_ROLE_PERMISSIONS: Record<string, Record<string, PermissionScope
     'package.generate': 'Y', 'package.download': 'Y', 'package.submit': 'Y', 'package.accept': 'Y',
     'warranty.manage': 'Y', 'defect.manage': 'Y', 'notification.manage': 'Y', 'audit.read': 'Y',
     'export.data': 'Y', 'apikey.manage': 'Y',
+    'document.reuse': 'A', 'submission.recipients_manage': 'Y',
   },
   'R-ADMIN': {
-    'org.read': 'Y', 'org.manage': 'Y', 'org.manage_members': 'Y', 'billing.read': 'Y',
+    'org.read': 'Y', 'notification.read': 'Y', 'org.manage': 'Y', 'org.manage_members': 'Y', 'billing.read': 'Y',
     'party.read': 'Y', 'party.manage': 'Y', 'template.read': 'Y', 'template.manage': 'Y',
     'project.create': 'Y', 'project.read': 'A', 'project.manage': 'A', 'project.close': 'Y',
     'contract.manage': 'Y', 'checklist.manage': 'Y', 'asset.read': 'A', 'asset.manage': 'Y',
     'document.read': 'A', 'document.upload': 'A', 'document.download': 'A', 'document.metadata_edit': 'A',
-    'document.delete': 'A', 'document.bulk_import': 'Y', 'review.read': 'A', 'review.submit': 'A',
+    'document.delete': 'A', 'document.bulk_import': 'Y', 'document.reuse': 'A', 'review.read': 'A', 'review.submit': 'A',
     'review.decide': 'A', 'review.record_external': 'Y', 'requirement.waive': 'Y',
     'requirement.waive_second': 'Y', 'package.generate': 'Y', 'package.download': 'Y',
     'package.submit': 'Y', 'package.accept': 'Y', 'warranty.manage': 'Y', 'defect.manage': 'Y',
     'notification.manage': 'Y', 'audit.read': 'Y', 'export.data': 'Y', 'apikey.manage': 'Y',
+    'submission.recipients_manage': 'Y',
   },
   'R-PM': {
-    'org.read': 'Y', 'party.read': 'Y', 'party.manage': 'Y', 'template.read': 'Y',
+    'org.read': 'Y', 'notification.read': 'Y', 'party.read': 'Y', 'party.manage': 'Y', 'template.read': 'Y',
     'project.create': 'Y', 'project.read': 'A', 'project.manage': 'A', 'project.close': 'Y',
     'contract.manage': 'Y', 'checklist.manage': 'Y', 'asset.read': 'A', 'asset.manage': 'Y',
     'document.read': 'A', 'document.upload': 'A', 'document.download': 'A', 'document.metadata_edit': 'A',
-    'document.delete': 'A', 'document.bulk_import': 'Y', 'review.read': 'A', 'review.submit': 'A',
+    'document.delete': 'A', 'document.bulk_import': 'Y', 'document.reuse': 'A', 'review.read': 'A', 'review.submit': 'A',
     'review.decide': 'S', // Scoped to requirements where reviewer_role matches (AUD-005)
     'review.record_external': 'Y', 'requirement.waive': 'Y', 'package.generate': 'Y',
     'package.download': 'Y', 'package.submit': 'Y', 'package.accept': 'Y',
     'warranty.manage': 'Y', 'defect.manage': 'Y', 'notification.manage': 'Y', 'audit.read': 'Y',
   },
   'R-SITE': {
-    'org.read': 'Y', 'party.read': 'Y', 'project.read': 'S', 'asset.read': 'S', 'asset.manage': 'S',
+    'org.read': 'Y', 'notification.read': 'Y', 'party.read': 'Y', 'project.read': 'S', 'asset.read': 'S', 'asset.manage': 'S',
     'document.read': 'S', 'document.upload': 'S', 'document.download': 'S', 'document.metadata_edit': 'S',
     'review.read': 'S', 'review.submit': 'S', 'package.download': 'S', 'defect.manage': 'S',
   },
   'R-DOC': {
-    'org.read': 'Y', 'party.read': 'Y', 'template.read': 'Y', 'project.read': 'A', 'asset.read': 'A',
+    'org.read': 'Y', 'notification.read': 'Y', 'party.read': 'Y', 'template.read': 'Y', 'project.read': 'A', 'asset.read': 'A',
     'asset.manage': 'Y', 'document.read': 'A', 'document.upload': 'A',
     'document.download': 'S', // Widened to 'A' only if org.doc_controller_org_wide_download = true
-    'document.metadata_edit': 'A', 'document.delete': 'A', 'document.bulk_import': 'Y',
+    'document.metadata_edit': 'A', 'document.delete': 'A', 'document.bulk_import': 'Y', 'document.reuse': 'A',
     'review.read': 'A', 'review.submit': 'A', 'review.record_external': 'Y',
     'package.generate': 'Y', 'package.download': 'Y', 'package.submit': 'Y', 'notification.manage': 'Y',
   },
   'R-PROC': {
-    'org.read': 'Y', 'party.read': 'Y', 'party.manage': 'Y', 'project.read': 'S', 'asset.read': 'S',
+    'org.read': 'Y', 'notification.read': 'Y', 'party.read': 'Y', 'party.manage': 'Y', 'project.read': 'S', 'asset.read': 'S',
     'asset.manage': 'S', 'document.read': 'S', 'document.upload': 'S', 'document.download': 'S',
     'document.metadata_edit': 'S', 'review.read': 'S', 'review.submit': 'S', 'warranty.manage': 'S',
   },
   'R-QC': {
-    'org.read': 'Y', 'party.read': 'Y', 'template.read': 'Y', 'project.read': 'S', 'asset.read': 'S',
+    'org.read': 'Y', 'notification.read': 'Y', 'party.read': 'Y', 'template.read': 'Y', 'project.read': 'S', 'asset.read': 'S',
     'asset.manage': 'S', 'document.read': 'S', 'document.upload': 'S', 'document.download': 'S',
     'document.metadata_edit': 'S', 'review.read': 'S', 'review.submit': 'S', 'review.decide': 'S',
     'defect.manage': 'S',
   },
   'R-SAFETY': {
-    'org.read': 'Y', 'party.read': 'Y', 'project.read': 'S', 'asset.read': 'S', 'document.read': 'S',
+    'org.read': 'Y', 'notification.read': 'Y', 'party.read': 'Y', 'project.read': 'S', 'asset.read': 'S', 'document.read': 'S',
     'document.upload': 'S', 'document.download': 'S', 'review.read': 'S', 'review.submit': 'S',
   },
   'R-REVIEWER': {
-    'org.read': 'Y', 'party.read': 'Y', 'project.read': 'S', 'asset.read': 'S', 'document.read': 'S',
-    'document.download': 'S', 'review.read': 'S', 'review.decide': 'S', 'package.download': 'Y',
+    'org.read': 'Y', 'notification.read': 'Y', 'party.read': 'Y', 'project.read': 'S', 'asset.read': 'S', 'document.read': 'S',
+    'document.download': 'S', 'review.read': 'S', 'review.decide': 'S', 'package.download': 'S',
   },
   'R-AUDITOR': {
-    'org.read': 'Y', 'party.read': 'Y', 'template.read': 'Y', 'project.read': 'A', 'asset.read': 'A',
+    'org.read': 'Y', 'notification.read': 'Y', 'party.read': 'Y', 'template.read': 'Y', 'project.read': 'A', 'asset.read': 'A',
     'document.read': 'A', 'document.download': 'A', 'review.read': 'A', 'package.download': 'Y',
     'audit.read': 'Y',
   },
   'R-BILLING': {
-    'org.read': 'Y', 'billing.read': 'Y', 'billing.manage': 'Y',
+    'org.read': 'Y', 'notification.read': 'Y', 'billing.read': 'Y', 'billing.manage': 'Y',
   },
 };
 
@@ -100,6 +102,33 @@ export const PROJECT_ROLE_PERMISSIONS: Record<string, Record<string, PermissionS
     'project.read': 'A', 'asset.read': 'A', 'document.read': 'A', 'document.upload': 'A',
     'document.download': 'S', 'document.metadata_edit': 'A', 'review.read': 'A',
     'review.submit': 'A', 'package.generate': 'Y', 'package.download': 'Y', 'package.submit': 'Y',
+  },
+  // G02-010: project roles validated against the configured catalogue.
+  // Reviewer-role matching and self-approval remain separate service gates.
+  'R-PROC': {
+    'project.read':'S','asset.read':'S','asset.manage':'S',
+    'document.read':'S','document.upload':'S','document.download':'S',
+    'review.read':'S','review.submit':'S','warranty.manage':'S',
+  },
+  'R-QC': {
+    'project.read':'S','asset.read':'S','asset.manage':'S',
+    'document.read':'S','document.upload':'S','document.download':'S',
+    'review.read':'S','review.submit':'S','review.decide':'S',
+    'defect.manage':'S',
+  },
+  'R-SAFETY': {
+    'project.read':'S','asset.read':'S','document.read':'S',
+    'document.upload':'S','document.download':'S','review.read':'S',
+  },
+  'R-REVIEWER': {
+    'project.read':'S','asset.read':'S','document.read':'S',
+    'document.download':'S','review.read':'S','review.decide':'S',
+    'package.download':'S',
+  },
+  'R-AUDITOR': {
+    'project.read':'S','asset.read':'S','document.read':'S',
+    'document.download':'S','review.read':'S','package.download':'S',
+    'audit.read':'S',
   },
   'R-CONSULTANT': {
     'project.read': 'S', 'asset.read': 'S', 'document.read': 'S', 'document.download': 'S',
@@ -225,9 +254,11 @@ export type Permission =
   | 'package.download'
   | 'package.submit'
   | 'package.accept'
+  | 'inspection.witness'
   | 'submission.recipients_manage'
   | 'warranty.manage'
   | 'defect.manage'
+  | 'notification.read'
   | 'notification.manage'
   | 'audit.read'
   | 'export.data'

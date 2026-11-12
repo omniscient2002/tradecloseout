@@ -70,6 +70,14 @@ export const ConfigSchemaRegistry: Record<string, Record<string, FieldSchema>> =
       overridePolicy: 'MERGE_MAP',
       mergeKey: 'key',
     },
+    // Legacy checklist import/snapshot payloads use the flat requirements key.
+    // It remains an explicit schema entry pending a versioned migration; any
+    // mixed legacy/registered payload is an error (see below).
+    requirements: {
+      path: 'requirements',
+      type: 'unkeyed_array',
+      overridePolicy: 'REPLACE',
+    },
   },
 };
 
@@ -86,6 +94,64 @@ export interface ConfigConflict {
   message: string;
 }
 
+/**
+ * PH2-G06-003: explicit, bounded schema validation before configuration can
+ * alter any consumer-facing safety policy. Parsed JSON must be an ordinary
+ * record; arbitrary objects/functions/prototype keys never enter resolution.
+ */
+function isConfigRecord(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+function safeConfigData(value: unknown, depth = 0): boolean {
+  if (depth > 8) return false;
+  if (value === null || typeof value === 'boolean') return true;
+  if (typeof value === 'string') return value.length <= 2048;
+  if (typeof value === 'number') return Number.isSafeInteger(value);
+  if (Array.isArray(value)) {
+    return value.length <= 1000 && value.every(item => safeConfigData(item, depth + 1));
+  }
+  if (!isConfigRecord(value)) return false;
+  const keys = Object.keys(value);
+  return keys.length <= 64 && keys.every(key =>
+    key.length <= 128 && !['__proto__','constructor','prototype'].includes(key) &&
+    safeConfigData(value[key], depth + 1));
+}
+
+function validateConfigValue(schema: FieldSchema, value: unknown): boolean {
+  if (!safeConfigData(value)) return false;
+  if (schema.type === 'keyed_array') {
+    // The keyed merge reports per-item conflicts, without silently losing
+    // unrelated valid items during a read-only preview.
+    return Array.isArray(value) && value.every(item => isConfigRecord(item));
+  }
+  if (schema.type === 'unkeyed_array') {
+    if (!Array.isArray(value)) return false;
+    if (schema.path === 'notifications.extra_recipients') {
+      return value.every(recipient => typeof recipient === 'string' &&
+        /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient.trim()) &&
+        recipient.trim().length <= 254);
+    }
+    return true;
+  }
+  if (schema.type === 'map') return isConfigRecord(value);
+  if (schema.path === 'security.max_file_size_bytes') {
+    return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+  }
+  if (schema.path === 'security.retention_days') {
+    return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+  }
+  if (schema.path === 'branding.primary_color') {
+    return typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value);
+  }
+  if (schema.path === 'naming.pattern') {
+    return typeof value === 'string' && value.length > 0 && value.length <= 200;
+  }
+  return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean';
+}
+
 export function resolveConfigV021(
   layersByLevel: Partial<Record<ConfigLevel, ConfigLayerRecord>>,
   isPreview = false,
@@ -93,30 +159,106 @@ export function resolveConfigV021(
   const result: Record<string, any> = {};
   const provenance: Record<string, { level: ConfigLevel; versionId: string }> = {};
   const conflicts: ConfigConflict[] = [];
+  // Preserve the source encoding across layers. A legacy flat requirements
+  // array must use the *same keyed lock semantics* as registered requirements.
+  // Mixed encodings need a reviewed schema migration, not last-writer-wins.
+  let requirementsEncoding: 'requirements' | 'checklist.requirements' | null = null;
 
   // RT-019: Installed orgs iterate [PLATFORM, ORG, CLIENT_CONTRACT, PROJECT]; preview iterates [PLATFORM, TRADE]
   const orderedLevels: ConfigLevel[] = isPreview
     ? ['PLATFORM', 'TRADE']
     : ['PLATFORM', 'ORG', 'CLIENT_CONTRACT', 'PROJECT'];
 
+  const suppliedLayers = isConfigRecord(layersByLevel) ? layersByLevel : {};
+  if (!isConfigRecord(layersByLevel)) {
+    conflicts.push({ path: '$layers', level: 'PLATFORM',
+      message: 'Configuration layers must be a level-keyed record.' });
+  }
+  for (const rawLevel of Object.keys(suppliedLayers)) {
+    // RT-019: an installed organisation can carry its source TRADE pack as
+    // metadata; that level was already installed into an ORG version and
+    // must not be applied a second time. This is the one known ignored level.
+    if (!isPreview && rawLevel === 'TRADE') continue;
+    if (!orderedLevels.includes(rawLevel as ConfigLevel)) {
+      conflicts.push({ path: '$level', level: 'PROJECT',
+        message: 'Unknown or inapplicable configuration level.' });
+    }
+  }
+
   for (const level of orderedLevels) {
-    const cfg = layersByLevel[level];
-    if (!cfg) continue;
+    const cfg = suppliedLayers[level] as ConfigLayerRecord | undefined;
+    if (cfg === undefined) continue;
+    if (!isConfigRecord(cfg)) {
+      conflicts.push({ path: '$layer', level, message: 'Configuration layer must be a record.' });
+      continue;
+    }
 
-    const registry = ConfigSchemaRegistry[cfg.schemaVersion] ?? ConfigSchemaRegistry['v1.0']!;
+    const registry = Object.hasOwn(ConfigSchemaRegistry, cfg.schemaVersion)
+      ? ConfigSchemaRegistry[cfg.schemaVersion] : undefined;
+    if (!registry) {
+      conflicts.push({ path: '$schemaVersion', level, message: 'Unsupported configuration schema version.' });
+      continue;
+    }
+    if (cfg.level !== level) {
+      conflicts.push({ path: '$level', level, message: 'Configuration layer identity does not match its position.' });
+      continue;
+    }
+    if (typeof cfg.versionId !== 'string' || !cfg.versionId.trim() ||
+        cfg.versionId.length > 128) {
+      conflicts.push({ path: '$versionId', level, message: 'Missing or invalid immutable source version identity.' });
+      continue;
+    }
 
-    for (const [path, rawVal] of Object.entries(cfg.payload)) {
-      if (rawVal === undefined || rawVal === null) continue;
+    if (!isConfigRecord(cfg.payload) || Object.keys(cfg.payload).length > 64) {
+      conflicts.push({ path: '$payload', level, message: 'Invalid or excessive configuration fields.' });
+      continue;
+    }
 
-      const schema: FieldSchema = registry[path] ?? {
-        path,
-        type: 'scalar',
-        overridePolicy: 'REPLACE',
-      };
+    for (const [inputPath, rawVal] of Object.entries(cfg.payload)) {
+      const isRequirements = inputPath === 'requirements' ||
+        inputPath === 'checklist.requirements';
+      if (isRequirements) {
+        const otherPath = inputPath === 'requirements'
+          ? 'checklist.requirements' : 'requirements';
+        if (Object.hasOwn(cfg.payload, otherPath) ||
+            (requirementsEncoding !== null && requirementsEncoding !== inputPath)) {
+          conflicts.push({ path: 'requirements', level,
+            message: 'Mixed checklist requirement schemas require explicit migration.' });
+          continue;
+        }
+      }
+      const path = inputPath === 'requirements'
+        ? 'checklist.requirements' : inputPath;
+      const schema: FieldSchema | undefined =
+        Object.hasOwn(registry, path) ? registry[path] : undefined;
+      if (!schema) {
+        conflicts.push({ path: inputPath, level,
+          message: 'Field is not registered in this configuration schema.' });
+        continue;
+      }
+      if (rawVal === undefined || rawVal === null) {
+        if (rawVal === null) conflicts.push({ path: inputPath, level,
+          message: 'Explicit null configuration is not supported.' });
+        continue;
+      }
+      if (!validateConfigValue(schema, rawVal)) {
+        conflicts.push({ path: inputPath, level,
+          message: 'Configuration value has invalid type, size or structure.' });
+        continue;
+      }
+      if (isRequirements) requirementsEncoding = inputPath;
 
-      // 1. LOCKED policy guard
+      // 1. LOCKED fields require their authoritative owner, even when
+      // the owner omitted a value. Missing platform policy is not permission
+      // for an organisation or project to establish its own security limit.
+      if (schema.overridePolicy === 'LOCKED' && schema.ownerLevel &&
+          level !== schema.ownerLevel && !provenance[path]) {
+        conflicts.push({ path, level,
+          message: `Field '${path}' must originate from ${schema.ownerLevel}.` });
+        continue;
+      }
       if (schema.overridePolicy === 'LOCKED' && provenance[path]) {
-        if (JSON.stringify(rawVal) !== JSON.stringify(result[path])) {
+        if (JSON.stringify(sortDeepKeys(rawVal)) !== JSON.stringify(sortDeepKeys(result[path]))) {
           conflicts.push({
             path,
             level,
@@ -136,10 +278,18 @@ export function resolveConfigV021(
         continue;
       }
 
-      // 3. Apply merge semantics
+      // 3. Apply merge semantics. Restatements and rejected item mutations
+      // cannot take credit for provenance they did not actually change.
+      const previousCanonical = Object.hasOwn(result, path)
+        ? JSON.stringify(sortDeepKeys(result[path])) : undefined;
       if (schema.overridePolicy === 'APPEND' && Array.isArray(rawVal)) {
         const existingArr = Array.isArray(result[path]) ? result[path] : [];
-        result[path] = Array.from(new Set([...existingArr, ...rawVal]));
+        // PH2-G06-004: recipient identity is case-insensitive and whitespace
+        // insensitive. Set<object> used reference identity and never deduped
+        // semantic duplicates. Retain first-seen, normalized deterministic order.
+        const values = [...existingArr, ...rawVal] as string[];
+        result[path] = Array.from(new Set(values.map(recipient =>
+          recipient.trim().toLowerCase())));
       } else if (schema.overridePolicy === 'MERGE_MAP' && Array.isArray(rawVal)) {
         const keyField = schema.mergeKey ?? 'key';
         result[path] = mergeKeyedObjects(result[path] ?? [], rawVal, keyField, level, conflicts);
@@ -151,8 +301,19 @@ export function resolveConfigV021(
         }
       }
 
-      provenance[path] = { level, versionId: cfg.versionId };
+      if (previousCanonical !== JSON.stringify(sortDeepKeys(result[path]))) {
+        provenance[path] = { level, versionId: cfg.versionId };
+      }
     }
+  }
+
+  // Present the canonical keyed merge in the legacy snapshot-consumer key.
+  // Both encodings now execute identical lock/mandatory/reviewer rules, so a
+  // lower layer cannot weaken an obligation merely by changing path spelling.
+  const registeredRequirements = result['checklist.requirements'];
+  if (registeredRequirements !== undefined) {
+    result.requirements = structuredClone(registeredRequirements);
+    provenance.requirements = provenance['checklist.requirements']!;
   }
 
   const canonical = JSON.stringify(sortDeepKeys(result));
@@ -173,8 +334,21 @@ function mergeKeyedObjects(
     map.set(String(item[keyField]), structuredClone(item));
   }
 
+  const seenPatches = new Set<string>();
   for (const patch of patchArr) {
-    const k = String(patch[keyField]);
+    if (!patch || typeof patch !== 'object' || typeof patch[keyField] !== 'string' ||
+        !patch[keyField].trim() || patch[keyField].length > 128 ||
+        ['__proto__', 'constructor', 'prototype'].includes(patch[keyField])) {
+      conflicts.push({ path: keyField, level, message: 'Invalid keyed configuration item.' });
+      continue;
+    }
+    const k = patch[keyField];
+    if (seenPatches.has(k)) {
+      conflicts.push({ path: `${keyField}:${k}`, level,
+        message: 'Duplicate configuration key within one layer.' });
+      continue;
+    }
+    seenPatches.add(k);
     const current = map.get(k);
 
     if (patch.$remove === true) {
@@ -191,12 +365,22 @@ function mergeKeyedObjects(
     }
 
     if (current) {
-      if (current.locked === true && patch.mandatory === false && current.mandatory === true) {
-        conflicts.push({
-          path: `${keyField}:${k}.mandatory`,
-          level,
-          message: `Locked mandatory item '${k}' cannot be made optional at ${level}.`,
-        });
+      // A locked record protects its *whole* obligation, including reviewer,
+      // document type, scope and mandatory status. A child may only restate
+      // identical values; it cannot replace semantics while retaining locked.
+      if (current.locked === true) {
+        if (Object.entries(patch).some(
+          ([field, value]) => field !== 'provenanceLevel' &&
+            JSON.stringify(sortDeepKeys(value)) !== JSON.stringify(sortDeepKeys(current[field])),
+        )) {
+          conflicts.push({
+            path: `${keyField}:${k}`,
+            level,
+            message: `Locked item '${k}' cannot be weakened at ${level}.`,
+          });
+        }
+        // Identical children inherit the original locked version; they do
+        // not move provenance to an untrusted lower layer.
         continue;
       }
       map.set(k, { ...current, ...patch, provenanceLevel: level });
@@ -230,7 +414,17 @@ export interface ConfigLayerInput {
 
 export function resolveConfigurationHierarchy(layers: ConfigLayerInput[]) {
   const byLevel: Partial<Record<ConfigLevel, ConfigLayerRecord>> = {};
+  const inputConflicts: ConfigConflict[] = [];
   for (const layer of layers) {
+    if (!layer || !['PLATFORM','TRADE','ORG','CLIENT_CONTRACT','PROJECT'].includes(layer.level)) {
+      inputConflicts.push({ path: '$level', level: 'PROJECT', message: 'Unknown configuration level.' });
+      continue;
+    }
+    if (byLevel[layer.level]) {
+      inputConflicts.push({ path: '$level', level: layer.level,
+        message: 'Duplicate configuration layer requires an explicit version selection.' });
+      continue;
+    }
     byLevel[layer.level] = {
       level: layer.level,
       versionId: layer.versionId,
@@ -242,10 +436,12 @@ export function resolveConfigurationHierarchy(layers: ConfigLayerInput[]) {
   return {
     payload: res.payload,
     provenance: res.provenance,
-    conflicts: res.conflicts.map((c) => ({
+    conflicts: [...inputConflicts, ...res.conflicts].map((c) => ({
       path: c.path,
       attemptedAtLevel: c.level,
-      lockedAtLevel: 'PLATFORM' as ConfigLevel,
+      // No invented PLATFORM attribution: the owner level is only known if
+      // an actual winning layer established a value at that path.
+      lockedAtLevel: res.provenance[c.path]?.level ?? null,
       message: c.message,
     })),
     checksum: res.checksum,

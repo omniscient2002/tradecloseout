@@ -36,7 +36,7 @@ export class HandoverController {
    */
   @Get('projects/:projectId/packages')
   @UseGuards(SessionCsrfGuard, PermissionGuard)
-  @RequirePermission('document.read')
+  @RequirePermission('package.download')
   async listPackages(@Req() req: any, @Param('projectId') projectId: string) {
     return this.handoverService.listPackages(req.userContext, projectId);
   }
@@ -61,14 +61,14 @@ export class HandoverController {
    */
   @Get('packages/:id')
   @UseGuards(SessionCsrfGuard, PermissionGuard)
-  @RequirePermission('document.read')
+  @RequirePermission('package.download')
   async getPackage(@Req() req: any, @Param('id') id: string) {
     return this.handoverService.getPackage(req.userContext, id);
   }
 
   @Get('projects/:projectId/packages/:id')
   @UseGuards(SessionCsrfGuard, PermissionGuard)
-  @RequirePermission('document.read')
+  @RequirePermission('package.download')
   async getProjectPackage(
     @Req() req: any,
     @Param('projectId') projectId: string,
@@ -79,7 +79,7 @@ export class HandoverController {
 
   @Get('projects/:projectId/packages/:packageId/download')
   @UseGuards(SessionCsrfGuard, PermissionGuard)
-  @RequirePermission('document.read')
+  @RequirePermission('package.download')
   async getPackageDownloadUrl(
     @Req() req: any,
     @Param('projectId') projectId: string,
@@ -227,20 +227,22 @@ export class HandoverController {
   }
 
   /**
-   * Pure-Node front matter and TOC PDF for Handover Dossier
+   * Downloads the latest verified full dossier produced by the worker.
+   * Presigned storage URL expires in 15 minutes; no synthetic PDF is returned.
    */
   @Get('projects/:projectId/dossier/pdf')
   @UseGuards(SessionCsrfGuard, PermissionGuard)
-  @RequirePermission('document.read')
+  @RequirePermission('package.download')
   async getDossierPdf(
     @Req() req: any,
     @Param('projectId') projectId: string,
     @Res() res: Response,
   ) {
-    const pdfBytes = await this.handoverService.generateDossierPdf(req.userContext, projectId);
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename=Handover-Dossier-${projectId}.pdf`);
-    res.send(Buffer.from(pdfBytes));
+    const artifact = await this.handoverService.getLatestDossierDownloadUrl(
+      req.userContext, projectId,
+    );
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.redirect(302, artifact.downloadUrl);
   }
 
   /**
@@ -249,7 +251,7 @@ export class HandoverController {
    */
   @Post('projects/:projectId/archive-exports')
   @UseGuards(SessionCsrfGuard, PermissionGuard)
-  @RequirePermission('package.generate')
+  @RequirePermission('export.data')
   @RequireIdempotency()
   async exportProjectArchive(
     @Req() req: any,

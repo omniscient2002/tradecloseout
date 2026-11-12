@@ -8,8 +8,10 @@ import {
   Param,
   Body,
   Headers,
+  HttpCode,
   Req,
   UseGuards,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { BillingService } from './billing.service';
 import { GstEinvoiceTdsService } from './gst-einvoice-tds.service';
@@ -25,6 +27,18 @@ export class BillingController {
     private readonly warrantyAndBillingService: WarrantyAndBillingService,
   ) {}
 
+  private assertInvoiceIssuanceEnabled() {
+    // Live tax/invoice issuance must be explicitly enabled only after a
+    // documented GST/tax review and provider reconciliation acceptance.
+    // Webhook receipt itself NEVER means money was settled.
+    if (process.env.ENABLE_TAX_INVOICE_ISSUANCE !== 'true') {
+      throw new ServiceUnavailableException({
+        code: 'TAX_INVOICE_ISSUANCE_DISABLED',
+        detail: 'Tax invoice issuance requires independent finance/legal release approval.',
+      });
+    }
+  }
+
   @Get('billing/plans')
   async listPlans() {
     return this.billingService.listPlans();
@@ -32,14 +46,14 @@ export class BillingController {
 
   @Get(['billing/invoices', 'orgs/current/invoices'])
   @UseGuards(SessionCsrfGuard, PermissionGuard)
-  @RequirePermission('billing.manage')
+  @RequirePermission('billing.read')
   async listInvoices(@Req() req: any) {
     return this.billingService.listInvoices(req.userContext);
   }
 
   @Get('orgs/current/subscription')
   @UseGuards(SessionCsrfGuard, PermissionGuard)
-  @RequirePermission('billing.manage')
+  @RequirePermission('billing.read')
   async getCurrentSubscription(@Req() req: any) {
     return this.warrantyAndBillingService.getSubscription(req.userContext);
   }
@@ -57,6 +71,7 @@ export class BillingController {
       isInterState?: boolean;
     },
   ) {
+    this.assertInvoiceIssuanceEnabled();
     return this.billingService.createInvoice(req.userContext, dto);
   }
 
@@ -80,7 +95,7 @@ export class BillingController {
 
   @Post('projects/:id/warranty-events')
   @UseGuards(SessionCsrfGuard, PermissionGuard)
-  @RequirePermission('document.upload')
+  @RequirePermission('warranty.manage')
   async recordWarrantyEvent(
     @Req() req: any,
     @Param('id') projectId: string,
@@ -108,7 +123,8 @@ export class BillingController {
 
   @Get('projects/:id/commercial-readiness')
   @UseGuards(SessionCsrfGuard, PermissionGuard)
-  @RequirePermission('document.read')
+  // Contains contract and retention money: document.read is not finance access.
+  @RequirePermission('contract.manage')
   async getCommercialReadiness(@Req() req: any, @Param('id') projectId: string) {
     return this.warrantyAndBillingService.getCommercialReadiness(req.userContext, projectId);
   }
@@ -122,7 +138,7 @@ export class BillingController {
 
   @Post('projects/:id/defects')
   @UseGuards(SessionCsrfGuard, PermissionGuard)
-  @RequirePermission('document.upload')
+  @RequirePermission('defect.manage')
   async createDefect(
     @Req() req: any,
     @Param('id') projectId: string,
@@ -140,7 +156,7 @@ export class BillingController {
 
   @Post(['defects/:id/remedy', 'projects/:projectId/defects/:id/remedy'])
   @UseGuards(SessionCsrfGuard, PermissionGuard)
-  @RequirePermission('document.upload')
+  @RequirePermission('defect.manage')
   async submitDefectRemedy(
     @Req() req: any,
     @Param('id') defectId: string,
@@ -158,7 +174,7 @@ export class BillingController {
 
   @Post(['defects/:id/close', 'projects/:projectId/defects/:id/close'])
   @UseGuards(SessionCsrfGuard, PermissionGuard)
-  @RequirePermission('document.upload')
+  @RequirePermission('defect.manage')
   async closeDefect(
     @Req() req: any,
     @Param('id') defectId: string,
@@ -188,6 +204,7 @@ export class BillingController {
       buyerStateCode: string;
     },
   ) {
+    this.assertInvoiceIssuanceEnabled();
     return this.gstEinvoiceService.issueRule46GstInvoice(req.userContext, {
       subscriptionId: dto.subscriptionId,
       description: dto.description,
@@ -218,10 +235,14 @@ export class BillingController {
   }
 
   @Post('webhooks/razorpay')
+  @HttpCode(202)
   async handleRazorpayWebhook(
     @Req() req: any,
     @Headers('x-razorpay-signature') signature: string,
+    @Headers('x-razorpay-event-id') eventId: string,
   ) {
-    return this.billingService.handleRazorpayWebhook(req.rawBody, signature || '');
+    return this.billingService.handleRazorpayWebhook(
+      req.rawBody, signature || '', eventId || '',
+    );
   }
 }

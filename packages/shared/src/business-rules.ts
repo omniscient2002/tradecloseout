@@ -14,3 +14,31 @@ export function sumPaise(values: readonly (string | bigint)[]): bigint {
     return total + amount;
   }, 0n);
 }
+
+/**
+ * PH2-G05-011: parse an INR user entry into integer paise without Number,
+ * floating-point rounding, exponent notation or silent precision loss.
+ * Return a string suitable for JSON transport and PostgreSQL BIGINT.
+ */
+export function parseInrToPaise(input: string): string {
+  const value = typeof input === 'string' ? input.trim() : '';
+  if (!/^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,2})?$/.test(value)) {
+    throw new Error('INVALID_INR_AMOUNT');
+  }
+  const [whole, decimal = ''] = value.split('.');
+  const amount = BigInt(whole) * 100n + BigInt(decimal.padEnd(2, '0'));
+  if (amount > 9223372036854775807n) throw new Error('INR_AMOUNT_OUT_OF_RANGE');
+  return amount.toString();
+}
+
+/** Canonical calendar month for IST-based monthly package reservations. */
+export function quotaMonthIndia(date: Date = new Date()): string {
+  if (!Number.isFinite(date.getTime())) throw new Error('INVALID_QUOTA_DATE');
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit',
+  }).formatToParts(date);
+  const year = parts.find(part => part.type === 'year')?.value;
+  const month = parts.find(part => part.type === 'month')?.value;
+  if (!year || !month) throw new Error('INVALID_QUOTA_DATE');
+  return `${year}-${month}`;
+}

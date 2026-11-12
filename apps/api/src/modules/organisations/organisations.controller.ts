@@ -28,7 +28,7 @@ export class OrganisationsController {
   }
 
   @Get('audit')
-  @RequirePermission('org.read')
+  @RequirePermission('audit.read')
   async getAuditLog(@Req() req: any, @Param('orgId') orgId: string) {
     return this.orgsService.getAuditLog(req.userContext, orgId);
   }
@@ -108,7 +108,7 @@ export class OrganisationsController {
   }
 
   @Post('transfer-ownership')
-  @RequirePermission('org.manage')
+  @RequirePermission('org.transfer_ownership')
   async transferOwnership(
     @Req() req: any,
     @Param('orgId') orgId: string,

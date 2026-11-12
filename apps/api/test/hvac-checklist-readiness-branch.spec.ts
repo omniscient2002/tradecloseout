@@ -8,13 +8,18 @@ import { ProjectsService } from '../src/modules/projects/projects.service';
 const orgId = '0192e3a0-0000-7000-8000-000000000001';
 const projectId = '0192e3a0-1000-7000-8000-000000000002';
 const userId = '0192e3a0-2000-7000-8000-000000000003';
-const ctx: any = { orgId, projectId, userId, actorType: 'MEMBER', ip: '127.0.0.1', userAgent: 'test', requestId: 'test' };
+const ctx: any = { orgId, projectId, userId, actorType: 'MEMBER', projectRole:'R-QC', orgRole:'R-QC', ip: '127.0.0.1', userAgent: 'test', requestId: 'test' };
 
 function mockPool(handler: (sql: string, params?: any[]) => any) {
   const client: any = {
     query: jest.fn(async (sql: string, params?: any[]) => {
       const result = handler(sql, params);
       if (result !== undefined) return result;
+      // The test actor is a currently assigned project member, not a stale
+      // privileged snapshot or a fabricated system exception.
+      if (sql.includes('SELECT role,scope_json FROM project_members')) {
+        return { rows: [{ role:'R-QC', scope_json:{} }] };
+      }
       // These focused unit tests model an existing project. The actual
       // database-backed suite tests the project lock and missing-project case.
       if (sql.includes('SELECT id, status, purged_at FROM projects') && sql.includes('FOR UPDATE')) {
@@ -111,9 +116,15 @@ describe('HVAC checklist and readiness release gates', () => {
   it('rejects evidence intentionally misclassified against its contractual requirement', async () => {
     const reqId = '0192e3a0-4000-7000-8000-000000000004';
     const client: any = {
-      query: jest.fn(async (sql: string) => sql.includes('SELECT id, doc_type_key FROM requirements')
-        ? { rows: [{ id: reqId, doc_type_key: 'DT-057' }] }
-        : { rows: [] }),
+      query: jest.fn(async (sql: string) => {
+        if (sql.includes('SELECT role,scope_json FROM project_members')) {
+          return { rows: [{role:'R-QC',scope_json:{}}] };
+        }
+        if (sql.includes('SELECT id, doc_type_key FROM requirements')) {
+          return { rows: [{id:reqId,doc_type_key:'DT-057'}] };
+        }
+        return {rows:[]};
+      }),
       release: jest.fn(),
     };
     const db = new TenantDbService({ connect: jest.fn(async () => client) } as any);
@@ -132,7 +143,10 @@ describe('HVAC checklist and readiness release gates', () => {
     const insert = client.query.mock.calls.find(([sql]: any[]) => sql.includes('INSERT INTO projects'));
     expect(insert).toBeDefined();
     expect(insert![0]).toContain('project_type');
-    expect(insert![1][insert![1].length - 1]).toBe('HOSPITAL');
+    // Project type stays in its named bind position; the canonical contract
+    // value is now a separate trailing parameter and may be NULL.
+    expect(insert![1][12]).toBe('HOSPITAL');
+    expect(insert![1][13]).toBeNull();
   });
 
   it('rejects unrecognised project types before touching the database', async () => {

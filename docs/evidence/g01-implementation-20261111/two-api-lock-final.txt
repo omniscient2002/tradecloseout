@@ -1,0 +1,8 @@
+PASS test/g01-two-api-http.spec.ts (32.48 s)
+  ✓ G01 actual two-API strict-mode HTTP: shared budgets, MFA, lost response and crash rollback (29514 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       1 passed, 1 total
+Snapshots:   0 total
+Time:        32.55 s, estimated 35 s
+Ran all test suites matching /test\/g01-two-api-http.spec.ts/i.

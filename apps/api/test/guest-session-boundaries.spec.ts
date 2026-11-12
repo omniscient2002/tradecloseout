@@ -7,7 +7,7 @@ describe('guest session boundaries', () => {
     const client = {
       query: jest.fn(async (sql: string) => {
         statements.push(sql);
-        if (sql.includes('FROM guest_grants')) return { rows: [{ role: 'R-SUPPLIER-OEM', capabilities: ['document.upload'], scope_json: {}, status: 'ACTIVE', expires_at: '2099-01-01' }] };
+        if (sql.includes('FROM guest_grants')) return { rows: [{ role: 'R-SUPPLIER-OEM', capabilities: ['document.upload'], scope_json: {}, status: 'ACTIVE', expires_at: '2099-01-01', principal_user_id: 'user-1', grant_type: 'SUPPLIER_UPLOAD', party_status: 'ACTIVE', project_status: 'ACTIVE', independent_authority_verified_at: null }] };
         return { rows: [] };
       }),
       release: jest.fn(),
@@ -39,7 +39,7 @@ describe('guest session boundaries', () => {
       return { rows: [] };
     });
     const service = new PartiesService({ withTokenContext: async (_token: string, work: any) => work({ query }) } as any);
-    const result = await service.getGuestGrant('opaque-token');
+    const result = await service.getGuestGrant('a'.repeat(64));
     expect(result.otpRequired).toBe(true);
     expect(result.otpVerified).toBe(false);
     expect(result).not.toHaveProperty('target_email');
@@ -49,7 +49,7 @@ describe('guest session boundaries', () => {
 
   it('rejects OTP verification without a valid challenge identifier', async () => {
     const service = new PartiesService({} as any);
-    await expect(service.verifyGuestOtp('opaque-token', '123456', 'invalid'))
+    await expect(service.verifyGuestOtp('a'.repeat(64), '123456', 'invalid'))
       .rejects.toThrow('INVALID_CHALLENGE_OR_CODE');
   });
 
@@ -70,7 +70,7 @@ describe('guest session boundaries', () => {
       committed = true;
       return result;
     } } as any);
-    await expect(service.verifyGuestOtp('opaque-token', '123456', '0192e3a0-0000-7000-8000-000000000001'))
+    await expect(service.verifyGuestOtp('a'.repeat(64), '123456', '0192e3a0-0000-7000-8000-000000000001'))
       .rejects.toThrow('INVALID_OTP_CODE');
     expect(committed).toBe(true);
     expect(statements.some((sql) => sql.includes('UPDATE guest_grants SET failed_otp_count'))).toBe(true);

@@ -20,6 +20,7 @@ import { WorkItemsModule } from './modules/work-items/work-items.module';
 import { CommissioningModule } from './modules/commissioning/commissioning.module';
 import { IdempotencyInterceptor } from './common/interceptors/idempotency.interceptor';
 import { VisibilityProjectionInterceptor } from './common/interceptors/visibility-projection.interceptor';
+import { AuthenticationAuditInterceptor } from './common/interceptors/authentication-audit.interceptor';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { VisibilityProjectionInterceptor } from './common/interceptors/visibilit
     CommissioningModule,
   ],
   providers: [
+    { provide:APP_INTERCEPTOR,useClass:AuthenticationAuditInterceptor },
     {
       provide: APP_INTERCEPTOR,
       useClass: IdempotencyInterceptor,

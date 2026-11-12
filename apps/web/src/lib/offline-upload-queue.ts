@@ -1,8 +1,14 @@
-import { apiFetch } from './api-client';
+import {
+  apiFetch, getAuthEpoch, getAuthGeneration, requireAuthenticatedBrowserContext,
+} from './api-client';
 
 export interface OfflineQueuedUpload {
   queueId: string;
   actorPartition: string;
+  // Persisted G01 credential generation and cross-tab epoch are required for
+  // each queued operation. Legacy items without these remain local/blocked.
+  authGeneration?: string;
+  authEpoch?: string;
   projectId: string;
   requirementId: string;
   assetId: string | null;
@@ -31,6 +37,25 @@ export interface OfflineQueuedUpload {
 const DB_NAME = 'tradecloseout_field_pwa';
 const STORE_NAME = 'tc_offline_upload_outbox';
 const ACTOR_PARTITION_KEY = 'tc_offline_actor_partition';
+
+export function isQueuedUploadContextCurrent(
+  expected: Pick<OfflineQueuedUpload,'actorPartition'|'authGeneration'|'authEpoch'>,
+  actual: {partition:string|null;generation:string|null;epoch:string|null},
+): boolean {
+  return Boolean(expected.authGeneration && expected.authEpoch &&
+    expected.actorPartition === actual.partition &&
+    expected.authGeneration === actual.generation &&
+    expected.authEpoch === actual.epoch);
+}
+
+function assertQueuedUploadContext(item: OfflineQueuedUpload): void {
+  if (typeof window === 'undefined' || !isQueuedUploadContextCurrent(item,{
+    partition:window.localStorage.getItem(ACTOR_PARTITION_KEY),
+    generation:getAuthGeneration(),epoch:getAuthEpoch(),
+  })) {
+    throw new Error('UPLOAD_ACTOR_CONTEXT_CHANGED');
+  }
+}
 
 export function setOfflineActorPartition(partition: string | null): void {
   if (typeof window === 'undefined') return;
@@ -148,16 +173,22 @@ export async function enqueueFieldUpload(params: {
   title: string;
   externalComment?: string;
 }): Promise<OfflineQueuedUpload> {
-  const actorPartition = params.actorPartition ||
-    (typeof window !== 'undefined' ? window.localStorage.getItem(ACTOR_PARTITION_KEY) : null);
+  const actorPartition = typeof window !== 'undefined'
+    ? window.localStorage.getItem(ACTOR_PARTITION_KEY) : null;
   if (!actorPartition) {
     throw new Error('UPLOAD_ACTOR_CONTEXT_REQUIRED: Sign in or establish the guest grant before queueing evidence.');
   }
+  if (params.actorPartition && params.actorPartition !== actorPartition) {
+    throw new Error('UPLOAD_ACTOR_PARTITION_MISMATCH: The selected guest or member has changed.');
+  }
+  const {authGeneration,authEpoch}=await requireAuthenticatedBrowserContext();
   const originalFile = params.file;
   const checksumSha256 = await computeBrowserFileSha256(originalFile);
   const item: OfflineQueuedUpload = {
     queueId: crypto.randomUUID(),
     actorPartition,
+    authGeneration,
+    authEpoch,
     projectId: params.projectId,
     requirementId: params.requirementId,
     assetId: params.assetId ?? null,
@@ -198,7 +229,15 @@ export async function drainOfflineUploadQueue(
   onProgress?: (queueId: string, uploadedBytes: number, totalBytes: number) => void,
 ): Promise<void> {
   if (typeof navigator !== 'undefined' && !navigator.onLine) return;
-  if (typeof indexedDB === 'undefined') return;
+  if (typeof indexedDB === 'undefined' || typeof window === 'undefined') return;
+
+  // Recover a valid cookie-only session before selecting queued work, but
+  // never auto-rebind after an explicit cross-tab actor change.
+  try {
+    await requireAuthenticatedBrowserContext();
+  } catch {
+    return;
+  }
 
   const db = await openOfflineDb();
   const items = await new Promise<OfflineQueuedUpload[]>((resolve, reject) => {
@@ -212,7 +251,10 @@ export async function drainOfflineUploadQueue(
     if (item.status === 'COMPLETED') continue;
 
     const currentActorPartition = window.localStorage.getItem(ACTOR_PARTITION_KEY);
-    if (!currentActorPartition || item.actorPartition !== currentActorPartition) {
+    if (!isQueuedUploadContextCurrent(item,{
+      partition:currentActorPartition,
+      generation:getAuthGeneration(),epoch:getAuthEpoch(),
+    })) {
       item.status = 'BLOCKED_SCOPE';
       item.lastError = 'This draft belongs to a different signed-in account or guest grant.';
       await saveQueueItem(db, item);
@@ -225,8 +267,10 @@ export async function drainOfflineUploadQueue(
     }
 
     try {
+      assertQueuedUploadContext(item);
       // Step 1: Request or reuse S3 multipart upload intent (TC2-030 contract alignment)
       if (!item.uploadIntent) {
+        assertQueuedUploadContext(item);
         const intentRes = await apiFetch<{
           documentId: string;
           versionId: string;
@@ -254,6 +298,7 @@ export async function drainOfflineUploadQueue(
           }),
         });
 
+        assertQueuedUploadContext(item);
         const resolvedParts = (intentRes.upload?.parts || intentRes.parts || []).map((p) => ({
           partNumber: p.partNumber,
           url: p.url || p.uploadUrl || '',
@@ -276,6 +321,7 @@ export async function drainOfflineUploadQueue(
       const partSize = item.uploadIntent.partSizeBytes;
 
       for (const part of item.uploadIntent.parts) {
+        assertQueuedUploadContext(item);
         if (completedPartNums.has(part.partNumber)) continue;
 
         const startByte = (part.partNumber - 1) * partSize;
@@ -287,6 +333,7 @@ export async function drainOfflineUploadQueue(
           headers: part.requiredHeaders,
           body: chunkBlob,
         });
+        assertQueuedUploadContext(item);
         if (!putRes.ok) {
           throw new Error(`S3 part ${part.partNumber} failed with status ${putRes.status}`);
         }
@@ -302,6 +349,7 @@ export async function drainOfflineUploadQueue(
       }
 
       // Step 3: Complete multipart upload with checksum & trigger scan (TC2-001 & TC2-030)
+      assertQueuedUploadContext(item);
       await apiFetch(`/api/v1/document-versions/${item.uploadIntent.versionId}/complete`, {
         method: 'POST',
         idempotencyKey: `complete_${item.queueId}`,
@@ -311,14 +359,17 @@ export async function drainOfflineUploadQueue(
         }),
       });
 
+      assertQueuedUploadContext(item);
       // Poll authoritative document version state before declaring completed
       const startTime = Date.now();
       let serverVerifiedReady = false;
       while (Date.now() - startTime < 10000) {
+        assertQueuedUploadContext(item);
         try {
           const docRes = await apiFetch<{ versions?: Array<{ id: string; file_status: string }> }>(
             `/api/v1/documents/${item.uploadIntent.documentId}`,
           );
+          assertQueuedUploadContext(item);
           const currentVer = docRes.versions?.find((v) => v.id === item.uploadIntent!.versionId);
           if (currentVer) {
             if (currentVer.file_status === 'READY') {
@@ -330,11 +381,13 @@ export async function drainOfflineUploadQueue(
             }
           }
         } catch (pollErr: any) {
-          if (pollErr.message?.startsWith('Upload security failure:')) throw pollErr;
+          if (pollErr.message === 'UPLOAD_ACTOR_CONTEXT_CHANGED' ||
+              pollErr.message?.startsWith('Upload security failure:')) throw pollErr;
         }
         await new Promise((r) => setTimeout(r, 1500));
       }
 
+      assertQueuedUploadContext(item);
       if (!serverVerifiedReady) {
         // Upload transmission is complete, but server-side verification has not finished.
         // Keep the local blob and receipt so reload/retry cannot misreport evidence as accepted.
@@ -344,11 +397,16 @@ export async function drainOfflineUploadQueue(
         continue;
       }
 
+      assertQueuedUploadContext(item);
       item.status = 'COMPLETED';
       await deleteQueueItem(db, item.queueId);
     } catch (err: any) {
-      item.status = typeof navigator !== 'undefined' && navigator.onLine ? 'FAILED' : 'QUEUED_OFFLINE';
-      item.lastError = err.message || 'Network interrupted during upload';
+      item.status = err?.message === 'UPLOAD_ACTOR_CONTEXT_CHANGED'
+        ? 'BLOCKED_SCOPE'
+        : (typeof navigator !== 'undefined' && navigator.onLine ? 'FAILED' : 'QUEUED_OFFLINE');
+      item.lastError = err?.message === 'UPLOAD_ACTOR_CONTEXT_CHANGED'
+        ? 'Your authenticated session changed. Reconfirm ownership of this draft before uploading.'
+        : (err.message || 'Network interrupted during upload');
       await saveQueueItem(db, item);
     }
   }

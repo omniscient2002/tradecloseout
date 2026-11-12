@@ -93,17 +93,13 @@ export function LoginSwitchUserModal({
       if (otpRes.error || !otpRes.data) {
         throw new Error(otpRes.error || "Failed to send verification code");
       }
-      const code = otpRes.data.debugOtp || "123456";
-      const verifyRes = await api.auth.verifyOtp(
-        otpRes.data.challengeId || persona.email,
-        code,
-        persona.email
-      );
-      if (verifyRes.error || !verifyRes.data) {
-        throw new Error(verifyRes.error || "Verification failed");
-      }
-      onLoginSuccess(verifyRes.data.user);
-      onClose();
+      setCustomInput(persona.email);
+      setChallengeId(otpRes.data.challengeId);
+      setOtpCode("");
+      setOtpStep(true);
+      setDebugOtp(otpRes.data.debugOtp || null);
+      // Never attempt a guessed or fixed OTP; the human must verify access to
+      // the chosen destination before the session is replaced.
     } catch (err: any) {
       setErrorMsg(err.message || "Login failed");
     } finally {
@@ -154,8 +150,12 @@ export function LoginSwitchUserModal({
   };
 
   const handleLogout = async () => {
-    await api.auth.logout();
-    window.location.reload();
+    const result = await api.auth.logout();
+    if (result.error) {
+      setErrorMsg(result.error);
+      return;
+    }
+    window.location.href = "/login";
   };
 
   return (

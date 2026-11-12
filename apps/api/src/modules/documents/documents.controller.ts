@@ -80,7 +80,10 @@ export class DocumentsController {
     @Param('id') id: string,
     @Body() dto: CompleteUploadDto,
   ) {
-    return this.documentsService.completeUpload(req.userContext, id, dto);
+    // Both route aliases must bind the upload to its actual project.
+    return req.params?.projectId
+      ? this.documentsService.completeUpload(req.userContext, req.params.projectId, id, dto)
+      : this.documentsService.completeUpload(req.userContext, id, dto);
   }
 
   @Post('document-versions/:id/abort-upload')

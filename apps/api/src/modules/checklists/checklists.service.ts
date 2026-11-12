@@ -16,6 +16,7 @@ import {
   TenantActorContext,
   DomainOutboxEvent,
 } from '@tradecloseout/db';
+import { assertMemberResourceScope } from '@tradecloseout/db/tenant-tx';
 import {
   resolveConfigurationHierarchy,
   ConfigLayerInput,
@@ -35,6 +36,65 @@ export interface ResolvedRequirementSpec {
   reviewerRole?: string;
   dueOffsetDays?: number;
   validityRule?: Record<string, unknown>;
+}
+
+/**
+ * PH2-G06-001/006: the configuration resolver sees each requested layer,
+ * not the previously accepted project snapshot. A new single-layer import
+ * must not erase or weaken a locked obligation carried by that snapshot.
+ * Compare immutable obligation semantics (not volatile provenance metadata)
+ * before the active snapshot is superseded.
+ */
+export function assertLockedChecklistBaselineInvariant(previous: unknown, proposed: unknown): void {
+  if (previous == null) return;
+  let oldPayload: Record<string, unknown>;
+  try {
+    const decoded = typeof previous === 'string' ? JSON.parse(previous) : previous;
+    if (!decoded || typeof decoded !== 'object' || Array.isArray(decoded)) {
+      throw new Error('invalid snapshot object');
+    }
+    oldPayload = decoded as Record<string, unknown>;
+  } catch {
+    throw new ConflictException({ code: 'ACTIVE_CHECKLIST_SNAPSHOT_INVALID' });
+  }
+  const priorItems = oldPayload.requirements ?? oldPayload['checklist.requirements'];
+  if (priorItems === undefined) return;
+  if (!Array.isArray(priorItems)) {
+    throw new ConflictException({ code: 'ACTIVE_CHECKLIST_SNAPSHOT_INVALID' });
+  }
+  const nextItems = (proposed as Record<string, unknown> | null)?.requirements;
+  if (!Array.isArray(nextItems)) {
+    throw new ConflictException({ code: 'CHECKLIST_REQUIREMENTS_MISSING' });
+  }
+  const nextByKey = new Map(
+    nextItems.filter((item): item is Record<string, unknown> =>
+      Boolean(item && typeof item === 'object' && !Array.isArray(item) &&
+        typeof item.key === 'string')).map(item => [item.key, item]),
+  );
+  const canonical = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(canonical);
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(Object.entries(value)
+        .filter(([key]) => key !== 'provenanceLevel')
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, next]) => [key, canonical(next)]));
+    }
+    return value;
+  };
+  for (const item of priorItems) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      throw new ConflictException({ code: 'ACTIVE_CHECKLIST_SNAPSHOT_INVALID' });
+    }
+    if (item.locked !== true) continue;
+    if (typeof item.key !== 'string' || !item.key.trim() ||
+        !nextByKey.has(item.key) ||
+        JSON.stringify(canonical(item)) !== JSON.stringify(canonical(nextByKey.get(item.key)))) {
+      throw new ConflictException({
+        code: 'LOCKED_CHECKLIST_CHANGE_REQUIRES_REVIEW',
+        detail: 'Locked contractual obligations cannot be removed or redefined by a checklist import.',
+      });
+    }
+  }
 }
 
 @Injectable()
@@ -123,12 +183,13 @@ export class ChecklistsService {
       await this.lockEditableProject(client, ctx.orgId, projectId);
       // Supersede prior ACTIVE snapshot if one exists (06 §3.5)
       const { rows: priorSnaps } = await client.query(
-        `SELECT id, version_no FROM checklist_snapshots
+        `SELECT id, version_no, resolved_payload_json FROM checklist_snapshots
           WHERE org_id = $1 AND project_id = $2
           ORDER BY version_no DESC LIMIT 1
           FOR UPDATE`,
         [ctx.orgId, projectId],
       );
+      assertLockedChecklistBaselineInvariant(priorSnaps[0]?.resolved_payload_json, resolved.payload);
 
       const nextVersionNo = (priorSnaps[0]?.version_no ?? 0) + 1;
       if (priorSnaps.length > 0) {
@@ -398,6 +459,79 @@ export class ChecklistsService {
     return transaction
       ? applySnapshot(transaction.client, transaction.emit)
       : withTenantTransaction(this.pool, ctx, applySnapshot);
+  }
+
+  /**
+   * Lists only explicitly published HVAC template packs. This does not create
+   * a fake default HVAC checklist or infer undocumented client obligations.
+   */
+  async listApprovedHvacTemplates(ctx: TenantActorContext, projectId: string) {
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+      const { rows: owned } = await client.query(
+        `SELECT 1 FROM projects WHERE org_id = $1 AND id = $2`,
+        [ctx.orgId, projectId],
+      );
+      if (!owned.length) throw new NotFoundException('PROJECT_NOT_FOUND');
+      const { rows } = await client.query(
+        `SELECT id, code, name, version, schema_version,
+                CASE WHEN jsonb_typeof(payload_json->'requirements') = 'array'
+                     THEN jsonb_array_length(payload_json->'requirements') ELSE 0 END
+                AS requirement_count
+           FROM template_packs
+          WHERE trade = 'HVAC' AND status = 'ACTIVE'
+          ORDER BY code, version DESC`,
+      );
+      return rows;
+    });
+  }
+
+  /** Applies a specific published HVAC template version under the project lock. */
+  async applyApprovedHvacTemplate(
+    ctx: TenantActorContext,
+    projectId: string,
+    templatePackId: string,
+  ) {
+    if (!/^[a-f0-9-]{36}$/i.test(templatePackId)) {
+      throw new UnprocessableEntityException({
+        code: 'INVALID_TEMPLATE_ID',
+        detail: 'Select a valid published HVAC template pack.',
+      });
+    }
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      await this.lockEditableProject(client, ctx.orgId, projectId);
+      const { rows } = await client.query(
+        `SELECT id, code, name, version, schema_version, payload_json
+           FROM template_packs
+          WHERE id = $1 AND trade = 'HVAC' AND status = 'ACTIVE'
+          FOR SHARE`,
+        [templatePackId],
+      );
+      if (!rows.length) {
+        throw new NotFoundException('APPROVED_HVAC_TEMPLATE_NOT_FOUND');
+      }
+      const pack = rows[0];
+      const payload = typeof pack.payload_json === 'string'
+        ? JSON.parse(pack.payload_json) : pack.payload_json;
+      if (pack.schema_version !== 1 ||
+          !Array.isArray(payload?.requirements) || payload.requirements.length === 0) {
+        throw new UnprocessableEntityException({
+          code: 'HVAC_TEMPLATE_NOT_CONFIGURED',
+          detail: 'The selected published template has no valid scoped contractual requirements.',
+        });
+      }
+      const result = await this.createAndApplySnapshot(
+        ctx,
+        projectId,
+        [{ level: 'PROJECT', versionId: pack.id, payload }],
+        undefined,
+        `Published HVAC template ${pack.code} v${pack.version}`,
+        { client, emit },
+      );
+      return {
+        ...result,
+        template: { id: pack.id, code: pack.code, version: pack.version },
+      };
+    });
   }
 
   /**
@@ -768,6 +902,10 @@ export class ChecklistsService {
    */
   async listRequirements(ctx: TenantActorContext, projectId: string) {
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+      // G02-003: a grant's project_id is not a project-wide read permission.
+      // Scope rows in SQL before any serialization/count/search/pagination.
+      const isGuest = ctx.actorType === 'GUEST' || Boolean(ctx.guestGrantId);
+      if (isGuest && !ctx.guestGrantId) throw new NotFoundException('REQUIREMENTS_NOT_FOUND');
       const res = await client.query(
         `SELECT r.*,
                 dv.id AS latest_version_id,
@@ -786,12 +924,37 @@ export class ChecklistsService {
               LIMIT 1
            ) dv ON true
           WHERE r.org_id = $1 AND r.project_id = $2 AND r.superseded_at IS NULL
+            ${isGuest ? `AND EXISTS (
+                SELECT 1 FROM guest_grants g
+                 WHERE g.org_id=r.org_id AND g.project_id=r.project_id
+                   AND g.id=$3 AND g.status='ACTIVE' AND g.expires_at>now()
+                   AND g.principal_user_id=$4
+                   AND (
+                     (g.grant_type IN ('SUPPLIER_UPLOAD','SUPPLIER_CONTRIBUTOR')
+                       AND g.capabilities && ARRAY['document.upload','document.read']::text[]
+                       AND COALESCE(g.scope_json->'requirementIds','[]'::jsonb) ? r.id::text
+                       AND (r.owner_party_id IS NULL OR r.owner_party_id=g.party_id))
+                     OR
+                     (g.grant_type IN ('CLIENT_VIEW','CONSULTANT_REVIEW','MC_VIEW','AUDITOR_READ')
+                       AND g.capabilities && ARRAY['document.read','project.read','review.read']::text[]
+                       AND (r.status='APPROVED' OR
+                            COALESCE(g.scope_json->'requirementIds','[]'::jsonb) ? r.id::text))
+                   )
+              )` : ''}
           ORDER BY r.milestone_key ASC, r.title ASC`,
-        [ctx.orgId, projectId],
+        isGuest ? [ctx.orgId, projectId, ctx.guestGrantId, ctx.userId] : [ctx.orgId, projectId],
       );
 
       // FR-CHK-010: a requirement with due_at IS NULL is never derived as MISSING
-      return res.rows.map((row) => {
+      return res.rows.filter((row:any)=>{
+        try{
+          assertMemberResourceScope(ctx,'requirement',{
+            id:row.id,groupKey:row.group_key,
+            createdAt:row.created_at?.toISOString?.()||String(row.created_at),
+          },false);
+          return true;
+        }catch{return false;}
+      }).map((row:any) => {
         const item = {
           ...row,
           latestVersionId: row.latest_version_id || null,
@@ -949,7 +1112,24 @@ export class ChecklistsService {
     changeRequestId: string,
     dto: { decision: 'APPROVED' | 'REJECTED'; comment?: string },
   ) {
-    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+    if (!dto || !['APPROVED', 'REJECTED'].includes(dto.decision) ||
+        (dto.comment !== undefined &&
+          (typeof dto.comment !== 'string' || dto.comment.length > 2000))) {
+      throw new UnprocessableEntityException({ code: 'INVALID_CHANGE_DECISION' });
+    }
+    return withTenantTransaction(this.pool, ctx, async (
+      client: PoolClient, emit: (ev: DomainOutboxEvent) => void,
+    ) => {
+      // PH2-G06-006: a change decision is an independently authorised action.
+      // A caller's project.manage/checklist.manage claim is not enough.
+      const { rows: approverRows } = await client.query(
+        `SELECT role FROM memberships
+           WHERE org_id=$1 AND user_id=$2 AND status='ACTIVE' FOR SHARE`,
+        [ctx.orgId, ctx.userId],
+      );
+      if (!['R-OWNER', 'R-ADMIN'].includes(approverRows[0]?.role)) {
+        throw new ForbiddenException({ code: 'CHANGE_REVIEW_AUTHORITY_REQUIRED' });
+      }
       const crRes = await client.query(
         `SELECT * FROM requirement_change_requests WHERE org_id = $1 AND id = $2 FOR UPDATE`,
         [ctx.orgId, changeRequestId],
@@ -957,24 +1137,38 @@ export class ChecklistsService {
       if (!crRes.rows.length) throw new NotFoundException('CHANGE_REQUEST_NOT_FOUND');
       const cr = crRes.rows[0];
 
-      if (cr.status !== 'PENDING') {
+      if (!['PENDING','SUBMITTED'].includes(cr.status)) {
         throw new ConflictException('CHANGE_REQUEST_ALREADY_DECIDED');
+      }
+      if (cr.requested_by === ctx.userId) {
+        throw new ForbiddenException({ code: 'CHANGE_REQUEST_SELF_APPROVAL_FORBIDDEN' });
       }
 
       const res = await client.query(
         `UPDATE requirement_change_requests
-            SET status = $1, approved_by = $2, decided_at = now()
+            SET status = $1, approved_by = $2, decided_at = now(),
+                row_version = row_version + 1
           WHERE org_id = $3 AND id = $4
           RETURNING *`,
         [dto.decision, ctx.userId, ctx.orgId, changeRequestId],
       );
 
-      if (dto.decision === 'APPROVED' && cr.change_type === 'REMOVE' && cr.requirement_id) {
-        await client.query(
-          `UPDATE requirements SET superseded_at = now(), updated_at = now() WHERE org_id = $1 AND id = $2`,
-          [ctx.orgId, cr.requirement_id],
-        );
-      }
+      // Approval only authorises a subsequent, version-bound change-control
+      // application. It MUST NOT directly remove an active requirement:
+      // doing so invalidates readiness without generating a new snapshot,
+      // impact analysis, waiver reconciliation or revised acceptance.
+      emit({
+        eventType: 'REQUIREMENT_CHANGE_DECIDED',
+        projectId: cr.project_id,
+        entityType: 'REQUIREMENT_CHANGE_REQUEST',
+        entityId: cr.id,
+        beforeJson: { status: cr.status },
+        afterJson: {
+          status: dto.decision,
+          changeType: cr.change_type,
+          applied: false,
+        },
+      });
 
       return res.rows[0];
     });
