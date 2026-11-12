@@ -209,7 +209,7 @@ describe('PH4-G17-001/002 Pass 03: immutable scanner bytes and full target-set q
   ])('prevents independent closure after %s without changing CLOSED state', async (_name, mutate) => {
     const f = fixture();
     await f.service.submitDefectRemedy(ctx(submitter), projectId, defectId, evidenceId, 1);
-    (mutate as (f: typeof f) => void)(f);
+    (mutate as (target: ReturnType<typeof fixture>) => void)(f);
     await expect(f.service.closeDefect(
       ctx(verifier), projectId, defectId, evidenceId, 2,
     )).rejects.toMatchObject({response: {code: 'DEFECT_REMEDY_IMMUTABLE_RECEIPT_CHANGED'}});
