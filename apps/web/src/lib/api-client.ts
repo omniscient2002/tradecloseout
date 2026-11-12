@@ -44,6 +44,20 @@ export function setCsrfToken(token: string | null) {
   }
 }
 
+/**
+ * A session boundary invalidates local upload authority. The encrypted/auth
+ * credential is never put into IndexedDB; the queue only stores a partition
+ * label. Already-blocked drafts need explicit recovery after reauthentication.
+ */
+function clearLocalUploadAuthority(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem('tc_offline_actor_partition');
+  } catch {
+    // The caller still receives the authoritative authentication result.
+  }
+}
+
 export async function apiFetch<T>(
   path: string,
   options: RequestInit & { rowVersion?: number; idempotencyKey?: string } = {},
@@ -79,12 +93,19 @@ export async function apiFetch<T>(
     credentials: 'include',
   });
 
+  const authBoundary = method === 'POST' && [
+    '/api/v1/auth/otp/verify',
+    '/api/v1/auth/logout',
+    '/api/v1/auth/switch-org',
+  ].includes(path.split('?')[0]);
   if (res.status === 204) {
+    if (authBoundary) clearLocalUploadAuthority();
     return undefined as unknown as T;
   }
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
+    if (res.status === 401) clearLocalUploadAuthority();
     if (
       res.status === 401 &&
       typeof window !== 'undefined' &&
@@ -107,6 +128,7 @@ export async function apiFetch<T>(
     });
   }
 
+  if (authBoundary) clearLocalUploadAuthority();
   return data as T;
 }
 
