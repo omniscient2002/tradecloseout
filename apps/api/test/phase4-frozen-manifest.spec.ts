@@ -108,6 +108,21 @@ describe('PH4-G14-002: atomic frozen handover package manifest', () => {
     expect(sqls).not.toContain('ROLLBACK');
   });
 
+  it('PH4-G14-001: rejects exclusions and unrecognized package scopes before opening a transaction', async () => {
+    const { pool } = fakeDb();
+    const svc = new HandoverService(pool, {} as any);
+    for (const value of [
+      { excludedRequirementIds: [{ requirementId: reqId, reason: 'Sensitive'}] },
+      { excludedRequirementIds: 'not-an-array' },
+      { scope: { type: 'ASSET', assetIds: [uuidv7()] } },
+      null,
+    ]) {
+      await expect(svc.requestHandoverPackageGeneration(ctx, projectId, value as any))
+        .rejects.toBeDefined();
+    }
+    expect(pool.connect).not.toHaveBeenCalled();
+  });
+
   it('rejects a closed project under the same project lock as closure', async () => {
     const { pool, queries } = fakeDb({ projectStatus: 'CLOSED' });
     await expect(new HandoverService(pool, {} as any)
