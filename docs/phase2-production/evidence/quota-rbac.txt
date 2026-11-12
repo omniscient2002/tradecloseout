@@ -1,0 +1,20 @@
+$ pnpm --filter @tradecloseout/api test:rbac
+$ jest test/rbac-matrix.spec.ts
+PASS test/rbac-matrix.spec.ts (5.384 s)
+  RBAC Matrix: Additive Positive-Only Security Model
+    Org Role Capabilities
+      ✓ R-OWNER has full organizational and billing permissions (2 ms)
+      ✓ R-ADMIN can manage members and projects but cannot transfer org ownership
+      ✓ R-AUDITOR has read-only access and cannot upload documents or alter data
+      ✓ R-SAFETY has scoped asset and party reading, but cannot alter contracts or waive (1 ms)
+    Project Role Scoping & Positive-Only Union
+      ✓ R-PM on project grants requirement waiver within project
+      ✓ Additive capability: Org R-AUDITOR combined with Project R-PM gains PM permissions (1 ms)
+      ✓ R-DOC download permission widens to org-wide (A) when toggle is enabled
+      ✓ Guest token capabilities are honored additively
+
+Test Suites: 1 passed, 1 total
+Tests:       8 passed, 8 total
+Snapshots:   0 total
+Time:        5.459 s
+Ran all test suites matching /test\/rbac-matrix.spec.ts/i.

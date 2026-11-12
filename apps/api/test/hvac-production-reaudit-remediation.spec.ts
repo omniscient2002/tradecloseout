@@ -59,7 +59,7 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
         expect(reqResult.challengeId).toBeDefined();
         const { challengeId, debugOtp } = reqResult;
 
-        const mockRes: any = { cookie: jest.fn() };
+        const mockRes: any = { cookie: jest.fn(), clearCookie: jest.fn() };
 
         // 1. First verification with challengeId succeeds
         const firstVerify = await identityController.verifyOtp(
@@ -99,7 +99,7 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
 
         expect(firstReq.challengeId).not.toBe(secondReq.challengeId);
 
-        const mockRes: any = { cookie: jest.fn() };
+        const mockRes: any = { cookie: jest.fn(), clearCookie: jest.fn() };
 
         // Attempting to verify the first (superseded) challenge MUST fail
         await expect(
@@ -128,7 +128,7 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
         const req1 = await identityController.requestOtp({ identifier: testIdentifier }, {} as any);
         const req2 = await identityController.requestOtp({ identifier: testIdentifier }, {} as any);
 
-        const mockRes: any = { cookie: jest.fn() };
+        const mockRes: any = { cookie: jest.fn(), clearCookie: jest.fn() };
 
         // Attempting to consume the older generation MUST return OTP_EXPIRED
         await expect(
@@ -281,23 +281,27 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
       try {
         const billingService = new BillingService({} as any);
         await expect(
-          billingService.handleRazorpayWebhook(Buffer.from('{"id":"evt_123"}'), 'invalid_hmac_sig'),
+          billingService.handleRazorpayWebhook(Buffer.from('{"id":"evt_123"}'), '0'.repeat(64)),
         ).rejects.toThrow(/INVALID_PAYMENT_WEBHOOK_SIGNATURE/);
       } finally {
         delete process.env.RAZORPAY_WEBHOOK_SECRET;
       }
     });
 
-    it('V03: throws ServiceUnavailableException even with valid signature until durable inbox exists', async () => {
+    it('V03: refuses to acknowledge a signed event when durable inbox persistence fails', async () => {
       const secret = 'test_webhook_secret_123';
       process.env.RAZORPAY_WEBHOOK_SECRET = secret;
       try {
-        const billingService = new BillingService({} as any);
-        const payload = Buffer.from(JSON.stringify({ id: 'evt_valid_123', event: 'payment.captured' }));
+        const billingService = new BillingService({
+          getPool: () => ({ query: async () => { throw new Error('INBOX_OFFLINE'); } }),
+        } as any);
+        const payload = Buffer.from(JSON.stringify({
+          entity: 'event', event: 'payment.captured', payload: { payment: { entity: { id: 'pay_test' } } },
+        }));
         const validSig = createHmac('sha256', secret).update(payload).digest('hex');
 
         await expect(
-          billingService.handleRazorpayWebhook(payload, validSig),
+          billingService.handleRazorpayWebhook(payload, validSig, 'evt_valid_123'),
         ).rejects.toThrow(ServiceUnavailableException);
       } finally {
         delete process.env.RAZORPAY_WEBHOOK_SECRET;
@@ -605,9 +609,9 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
       const mockPool: any = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string) => {
-            if (sql.includes('FROM submissions WHERE')) {
+            if (sql.includes('FROM submissions s')) {
               return {
-                rows: [{ id: submissionId, project_id: realProjectId, status: 'SENT' }],
+                rows: [{ id: submissionId, project_id: realProjectId, status: 'SUBMITTED', package_purpose: 'FULL_HANDOVER' }],
               };
             }
             return { rows: [] };
@@ -620,10 +624,11 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
       const ctx: TenantActorContext = {
         orgId,
         userId: uuidv7(),
-        actorType: 'MEMBER',
+        actorType: 'GUEST',
         requestId: 'req-sub-1',
         ip: '127.0.0.1',
         userAgent: 'jest',
+        guestGrantId: 'test-guest-grant',
       };
 
       await expect(
@@ -683,7 +688,7 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
   // Finding N21: Multi-Contract Pre-Aggregation & Rupee-at-Risk Precision
   // --------------------------------------------------------------------------
   describe('N21: Owner Digest & Multi-Contract Dashboard Calculation', () => {
-    it('calculates owner digest with exact paise integer math and supports 0% retention', async () => {
+    it('reports exact informational retention without claiming a financial hold', async () => {
       const orgId = uuidv7();
       const projectId = uuidv7();
 
@@ -691,6 +696,9 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
         withTenantContext: jest.fn().mockImplementation(async (ctx, fn) => {
           const client: any = {
             query: jest.fn().mockImplementation(async (sql: string) => {
+              if (sql.includes('FROM memberships')) {
+                return { rows: [{ owner_valid: 1 }] };
+              }
               if (sql.includes('FROM projects WHERE')) {
                 return {
                   rows: [
@@ -717,14 +725,19 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
 
       const notificationsService = new NotificationsService(mockDb);
       const digest = await notificationsService.getOwnerDigest(
-        { orgId, userId: uuidv7(), actorType: 'USER', requestId: 'r1' },
+        { orgId, userId: uuidv7(), actorType: 'USER', orgRole: 'R-OWNER', requestId: 'r1' },
         projectId,
       );
 
       expect(digest.contractValuePaise).toBe('50000000');
       expect(digest.contractValueInr).toBe(500000);
-      expect(digest.retentionMoneyGatedPaise).toBe('2500000'); // 25,000 INR
-      expect(digest.retentionMoneyGatedInr).toBe(25000);
+      // A configured retention percentage is NOT proof that funds are
+      // withheld. Old "gated" fields are deprecated until payment evidence.
+      expect(digest.retentionMoneyGatedPaise).toBeNull();
+      expect(digest.retentionMoneyGatedInr).toBeNull();
+      expect(digest.informationalRetentionExposurePaise).toBe('2500000');
+      expect(digest.informationalRetentionExposureInr).toBe(25000);
+      expect(digest.financialSummaryBasis).toBe('PROJECT_ESTIMATE');
     });
 
     it('V08: Dashboard contract summary includes only ACTIVE contracts and excludes SUPERSEDED ones', async () => {
@@ -740,7 +753,7 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
               return { rows: [{ id: orgId, name: 'Metro HVAC EPC Ltd', pan: 'AAACM1234F', gstin: '27AAACM1234F1Z5', tier: 'ENTERPRISE' }] };
             }
             if (sql.includes('FROM users u')) {
-              return { rows: [{ id: userId, name: 'Lead HVAC Engineer', role: 'R-SITE' }] };
+              return { rows: [{ id: userId, name: 'Lead HVAC Engineer', role: 'R-OWNER' }] };
             }
             if (sql.includes('WITH contract_summary AS')) {
               return {

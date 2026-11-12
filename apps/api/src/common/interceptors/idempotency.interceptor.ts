@@ -36,6 +36,17 @@ export class IdempotencyInterceptor implements NestInterceptor {
       [context.getHandler(), context.getClass()],
     );
 
+    // PH1-G01-001: MFA enrollment returns one-time factor secrets and
+    // confirmation returns recovery codes. Generic idempotency receipts store
+    // plaintext response_json, so these commands must never reach that store.
+    // Their controller-level account/session locking, proof consumption and
+    // replay checks remain authoritative. A new enrollment-start request
+    // replaces the pending enrollment rather than replaying its secret.
+    const path = `${req.baseUrl || ''}${req.route?.path ?? req.path ?? ''}`;
+    if (/\/auth\/mfa(?:\/|$)/.test(path)) {
+      return next.handle();
+    }
+
     const idempotencyKey = req.headers['idempotency-key'];
     if (!idempotencyKey) {
       if (requiresIdempotency) {

@@ -50,6 +50,9 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
         query: jest.fn().mockImplementation(async (sql: string, params?: any[]) => {
           executedQueries.push({ sql, params: params || [] });
 
+          if (sql.includes('SELECT status, purged_at FROM projects')) {
+            return { rows: [{ status: 'ACTIVE', purged_at: null }] };
+          }
           if (sql.includes('SELECT * FROM assets WHERE')) {
             return {
               rows: [
@@ -153,6 +156,9 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
         query: jest.fn().mockImplementation(async (sql: string, params?: any[]) => {
           executedQueries.push({ sql, params: params || [] });
 
+          if (sql.includes('SELECT status, purged_at FROM projects')) {
+            return { rows: [{ status: 'ACTIVE', purged_at: null }] };
+          }
           if (sql.includes('SELECT * FROM assets WHERE')) {
             return {
               rows: [
@@ -360,6 +366,12 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
         withTenantContext: jest.fn().mockImplementation(async (ctx, fn) => {
           const client = {
             query: jest.fn().mockImplementation(async (sql: string, params?: any[]) => {
+              if (sql.includes('SELECT project_id FROM reviews')) {
+                return { rows: [{ project_id: projectId }] };
+              }
+              if (sql.includes('SELECT role,scope_json FROM project_members')) {
+                return { rows: [{ role: 'R-QC', scope_json: {} }] };
+              }
               if (sql.includes('SELECT * FROM reviews WHERE org_id = $1 AND id = $2')) {
                 return {
                   rows: [
@@ -415,7 +427,7 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
       const reviewsService = new ReviewsService(mockDb);
 
       await expect(
-        reviewsService.decideReview(mockCtx, reviewId, {
+        reviewsService.decideReview({...mockCtx,projectId,projectRole:'R-QC'}, reviewId, {
           decision: 'APPROVE',
           comment: 'Readings are acceptable',
         }),
@@ -427,6 +439,12 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
         withTenantContext: jest.fn().mockImplementation(async (ctx, fn) => {
           const client = {
             query: jest.fn().mockImplementation(async (sql: string, params?: any[]) => {
+              if (sql.includes('SELECT project_id FROM reviews')) {
+                return { rows: [{ project_id: projectId }] };
+              }
+              if (sql.includes('SELECT role,scope_json FROM project_members')) {
+                return { rows: [{ role: 'R-QC', scope_json: {} }] };
+              }
               if (sql.includes('SELECT * FROM reviews WHERE org_id = $1 AND id = $2')) {
                 return {
                   rows: [
@@ -490,7 +508,7 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
 
       const reviewsService = new ReviewsService(mockDb);
 
-      const res = await reviewsService.decideReview(mockCtx, reviewId, {
+      const res = await reviewsService.decideReview({...mockCtx,projectId,projectRole:'R-QC'}, reviewId, {
         decision: 'APPROVE',
         comment: 'All hydrostatic test readings and gauge calibration verified',
       });
@@ -509,7 +527,7 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
 
       const mockClient = {
         query: jest.fn().mockImplementation(async (sql: string, params?: any[]) => {
-          if (sql.includes('SELECT id, code, name, site_json')) {
+          if (sql.includes('SELECT id,code,name,site_json,created_at FROM projects')) {
             return {
               rows: [
                 {
@@ -614,7 +632,7 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
 
       const handoverService = new HandoverService(mockPool, {} as any);
 
-      const res = await handoverService.exportProjectArchive(mockTenantActorCtx, projectId, {
+      const res = await handoverService.exportProjectArchive({...mockTenantActorCtx,orgRole:'R-OWNER'}, projectId, {
         purpose: 'Handover & Exit Audit',
       });
 
@@ -702,13 +720,24 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
 
       const mockClient = {
         query: jest.fn().mockImplementation(async (sql: string, params?: any[]) => {
-          if (sql.includes('SELECT') && sql.includes('FROM memberships')) {
-            return { rows: [{ id: 'mem-001', role: 'R-PM', status: 'ACTIVE' }] };
+          // Offboarding requires a currently authorised owner, a distinct
+          // active target and an independently eligible replacement.
+          if (sql.includes('SELECT role FROM memberships') && sql.includes('FOR SHARE')) {
+            return { rows: [{ role: 'R-OWNER' }] };
+          }
+          if (sql.includes('SELECT id, role, status FROM memberships')) {
+            return { rows: [{ id: 'mem-001', role: 'R-SITE', status: 'ACTIVE' }] };
+          }
+          if (sql.includes('SELECT m.role FROM memberships m')) {
+            return { rows: [{ role: 'R-OWNER' }] };
+          }
+          if (sql.includes('SELECT p.id,p.status FROM projects p')) {
+            return { rows: [{ id: projectId, status: 'ACTIVE' }] };
           }
           if (sql.includes('COUNT(r.id)::int AS open_reqs')) {
             return { rows: [{ project_id: projectId, project_code: 'PRJ-01', open_reqs: 3 }] };
           }
-          if (sql.includes('COUNT(rv.id)::int AS pending_reviews')) {
+          if (sql.includes('COUNT(DISTINCT rv.id)::int AS pending_reviews')) {
             return { rows: [{ project_id: projectId, project_code: 'PRJ-01', pending_reviews: 2 }] };
           }
           if (sql.includes('COUNT(hp.id)::int AS draft_packages')) {
@@ -820,41 +849,21 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
   // 8. Storage Lifecycle Cleanup (Top 25 Item 25)
   // ==========================================================================
   describe('Storage Lifecycle Cleanup', () => {
-    it('safely deletes stale abandoned upload intents older than 24h without touching verified READY files', async () => {
-      let versionsDeleteSql = '';
-      let objectsDeleteSql = '';
-
-      const mockClient = {
-        query: jest.fn().mockImplementation(async (sql: string) => {
-          if (sql.includes('SELECT id FROM organisations WHERE status = \'ACTIVE\'')) {
-            return { rows: [{ id: orgId }] };
-          }
-          if (sql.includes('DELETE FROM document_versions')) {
-            versionsDeleteSql = sql;
-            return { rowCount: 4 };
-          }
-          if (sql.includes('DELETE FROM storage_objects')) {
-            objectsDeleteSql = sql;
-            return { rowCount: 2 };
-          }
-          return { rows: [] };
-        }),
-        release: jest.fn(),
-      };
-
-      const mockPool = { connect: jest.fn().mockResolvedValue(mockClient) } as any;
-      const mockRedis = {} as any;
-
-      const scheduler = new TradeCloseoutScheduler(mockPool, mockRedis);
-
-      const res = await scheduler.runStorageLifecycleCleanup();
-
-      expect(res.purgedPendingVersions).toBe(4);
-      expect(res.purgedPendingObjects).toBe(2);
-      expect(versionsDeleteSql).toContain("file_status = 'PENDING_UPLOAD'");
-      expect(versionsDeleteSql).toContain("interval '24 hours'");
-      expect(objectsDeleteSql).toContain("status = 'PENDING'");
-      expect(objectsDeleteSql).toContain("NOT EXISTS (");
+    it('retains expired upload identities and records that physical provider cleanup is unconfirmed',async()=>{
+      const executed:string[]=[];
+      const mockClient={query:jest.fn(async(sql:string)=>{
+        executed.push(sql);
+        if(sql.includes('SELECT id FROM organisations'))return {rows:[{id:orgId}]};
+        if(sql.includes('SELECT DISTINCT project_id'))return {rows:[{project_id:projectId}]};
+        if(sql.includes('SELECT dv.id,dv.object_id'))return {rows:[{id:uuidv7(),object_id:uuidv7(),project_id:projectId}]};
+        if(sql.includes('UPDATE storage_objects so'))return {rows:[],rowCount:1};
+        return {rows:[]};
+      }),release:jest.fn()};
+      const scheduler=new TradeCloseoutScheduler({connect:async()=>mockClient} as any,{} as any);
+      expect(await scheduler.runStorageLifecycleCleanup()).toEqual({expiredVersions:1,expiredObjects:1});
+      expect(executed.some(sql=>/^DELETE FROM (document_versions|storage_objects)/.test(sql.trim()))).toBe(false);
+      expect(executed.some(sql=>sql.includes('upload_cleanup_requested_at'))).toBe(true);
+      expect(executed.some(sql=>sql.includes('upload_cleanup_completed_at='))).toBe(false);
     });
   });
 });

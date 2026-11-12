@@ -1,0 +1,9 @@
+PASS test/phase2-two-party-ownership-db.spec.ts
+  PH2-G03-007 real two-party ownership transaction
+    ✓ requires independent fresh MFA, rejects wrong recipients, expiry, stale scope and replay, serializes competing requests (1355 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       1 passed, 1 total
+Snapshots:   0 total
+Time:        4.56 s
+Ran all test suites matching /test\/phase2-two-party-ownership-db.spec.ts/i.

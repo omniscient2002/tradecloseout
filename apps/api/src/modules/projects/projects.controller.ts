@@ -89,7 +89,7 @@ export class ProjectsController {
   }
 
   @Post(':id/close')
-  @RequirePermission('project.manage')
+  @RequirePermission('project.close')
   @RequireIdempotency()
   async closeProject(@Req() req: any, @Param('id') id: string, @Body() dto?: CloseProjectDto) {
     return this.projectsService.closeProject(req.userContext, id, undefined, {
@@ -107,19 +107,19 @@ export class ProjectsController {
     return this.projectsService.reopenProject(
       req.userContext,
       id,
-      dto?.expectedRowVersion ?? 1,
-      dto?.reason || 'Reopened for post-closeout amendments',
+      dto?.expectedRowVersion,
+      dto?.reason,
     );
   }
 
   @Get(':id/contracts')
-  @RequirePermission('project.read')
+  @RequirePermission('contract.manage')
   async listContracts(@Req() req: any, @Param('id') id: string) {
     return this.projectsService.listContracts(req.userContext, id);
   }
 
   @Post(':id/contracts')
-  @RequirePermission('project.manage')
+  @RequirePermission('contract.manage')
   async createContract(
     @Req() req: any,
     @Param('id') id: string,
@@ -129,7 +129,7 @@ export class ProjectsController {
   }
 
   @Post(':id/contracts/:contractId/variations')
-  @RequirePermission('project.manage')
+  @RequirePermission('contract.manage')
   async createVariation(
     @Req() req: any,
     @Param('id') id: string,
@@ -146,7 +146,7 @@ export class ProjectsController {
   }
 
   @Post(':id/specifications')
-  @RequirePermission('project.manage')
+  @RequirePermission('contract.manage')
   async createSpecification(
     @Req() req: any,
     @Param('id') id: string,

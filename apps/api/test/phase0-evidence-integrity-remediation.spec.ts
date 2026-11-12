@@ -1,3 +1,4 @@
+import {syntheticEntitlementQuery} from './helpers/synthetic-entitlement-query';
 // apps/api/test/phase0-evidence-integrity-remediation.spec.ts
 // Comprehensive Test Suite for Phase 0 & Phase 1 Invariants (TC2-001 to TC2-028)
 
@@ -90,6 +91,8 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
       const mockClient = {
         query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
           executedQueries.push({ sql, params });
+          if(sql.includes('SELECT project_id FROM document_versions'))return {rows:[{project_id:projectId}]};
+          if(sql.includes('SELECT id,status,purged_at FROM projects'))return {rows:[{id:projectId,status:'ACTIVE',purged_at:null}]};
           if (sql.includes('SELECT dv.*, so.id AS storage_id')) {
             return {
               rows: [
@@ -156,6 +159,12 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
         withTenantContext: jest.fn().mockImplementation(async (ctx, fn) => {
           const client = {
             query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
+              if (sql.includes('SELECT project_id FROM reviews')) {
+                return { rows: [{ project_id: projectId }] };
+              }
+              if (sql.includes('SELECT role,scope_json FROM project_members')) {
+                return { rows: [{ role: 'R-QC', scope_json: {} }] };
+              }
               if (sql.includes('SELECT * FROM reviews')) {
                 return {
                   rows: [
@@ -163,6 +172,7 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
                       id: 'rev-1',
                       org_id: orgId,
                       document_version_id: 'ver-unscanned',
+                      project_id: projectId,
                       status: 'IN_REVIEW',
                       reviewer_subject_type: 'USER', reviewer_subject_id: userId,
                     },
@@ -191,7 +201,7 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
 
       const reviewsService = new ReviewsService(mockDb);
       await expect(
-        reviewsService.decideReview(mockCtx, 'rev-1', {
+        reviewsService.decideReview({...mockCtx,projectId,projectRole:'R-QC'}, 'rev-1', {
           decision: 'APPROVE',
           comment: 'Approved by QC',
         }),
@@ -207,6 +217,14 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
           const client = {
             query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
               executedQueries.push({ sql, params });
+          if(sql.includes('SELECT project_id FROM document_versions'))return {rows:[{project_id:projectId}]};
+          if(sql.includes('SELECT id,status,purged_at FROM projects'))return {rows:[{id:projectId,status:'ACTIVE',purged_at:null}]};
+              if (sql.includes('SELECT project_id FROM reviews')) {
+                return { rows: [{ project_id: projectId }] };
+              }
+              if (sql.includes('SELECT role,scope_json FROM project_members')) {
+                return { rows: [{ role: 'R-QC', scope_json: {} }] };
+              }
               if (sql.includes('SELECT * FROM reviews')) {
                 return {
                   rows: [
@@ -214,6 +232,7 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
                       id: 'rev-2',
                       org_id: orgId,
                       document_version_id: 'ver-ready',
+                      project_id: projectId,
                       status: 'IN_REVIEW',
                       reviewer_subject_type: 'USER', reviewer_subject_id: userId,
                     },
@@ -255,7 +274,7 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
       } as any;
 
       const reviewsService = new ReviewsService(mockDb);
-      const res = await reviewsService.decideReview(mockCtx, 'rev-2', {
+      const res = await reviewsService.decideReview({...mockCtx,projectId,projectRole:'R-QC'}, 'rev-2', {
         decision: 'APPROVE',
         comment: 'All checks passed',
       });
@@ -307,14 +326,19 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
             executedQueries.push({ sql, params });
+          if(sql.includes('SELECT project_id FROM document_versions'))return {rows:[{project_id:projectId}]};
+          if(sql.includes('SELECT id,status,purged_at FROM projects'))return {rows:[{id:projectId,status:'ACTIVE',purged_at:null}]};
             if (sql.includes('FROM submissions')) {
               return {
-                rows: [{ id: 'sub-1', project_id: projectId, status: 'SUBMITTED', package_id: 'pkg-1' }],
+                rows: [{ id: 'sub-1', project_id: projectId, status: 'SUBMITTED', package_id: 'pkg-1', package_purpose: 'FULL_HANDOVER' }],
               };
             }
             if (sql.includes('FROM submission_recipients')) {
               return {
-                rows: [{ id: 'sr-1', status: 'SENT', recipient_party_id: 'party-consultant', decided_at: null }],
+                rows: [{ id: 'sr-1', status: 'SENT', recipient_party_id: 'party-consultant', decided_at: null,
+                  grant_status: 'ACTIVE', grant_expires_at: new Date(Date.now() + 60_000),
+                  grant_project_id: projectId, grant_party_id: 'party-consultant',
+                  grant_capabilities: ['package.accept'], grant_independent_authority_verified_at: new Date() }],
               };
             }
             if (sql.includes('UPDATE submission_recipients')) {
@@ -328,7 +352,7 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
 
       const handoverService = new HandoverService(mockPool, {} as any);
       const res = await handoverService.recordRecipientSubmissionDecision(
-        mockTenantActorCtx,
+        { ...mockTenantActorCtx, actorType: 'GUEST', guestGrantId: 'grant-test', guestCapabilities: ['package.accept'] },
         projectId,
         'sub-1',
         {
@@ -381,6 +405,8 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
             executedQueries.push({ sql, params });
+          if(sql.includes('SELECT project_id FROM document_versions'))return {rows:[{project_id:projectId}]};
+          if(sql.includes('SELECT id,status,purged_at FROM projects'))return {rows:[{id:projectId,status:'ACTIVE',purged_at:null}]};
             if (sql.includes('SELECT d.*, a.tag AS asset_tag')) {
               return { rows: [{ id: 'def-1', title: 'Damper stuck', raised_at: new Date() }] };
             }
@@ -463,11 +489,23 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
       const mockClient = {
         query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
           executedQueries.push({ sql, params });
+          if(sql.includes('SELECT project_id FROM document_versions'))return {rows:[{project_id:projectId}]};
+          if(sql.includes('SELECT id,status,purged_at FROM projects'))return {rows:[{id:projectId,status:'ACTIVE',purged_at:null}]};
           if (sql.includes('SELECT scope_json, capabilities FROM guest_grants')) {
             return { rows: [{ scope_json: { requirementIds: ['0192e3a0-req-allowed-1'] }, capabilities: ['document.upload'] }] };
           }
           if (sql.includes('SELECT id, doc_type_key FROM requirements')) {
             return { rows: [{ id: '0192e3a0-req-allowed-1', doc_type_key: 'DT-043' }] };
+          }
+          const entitlementFixture=syntheticEntitlementQuery(sql,{});if(entitlementFixture)return entitlementFixture;
+          if (sql.includes("maxStorageBytes' AS max_storage_bytes")) {
+            return { rows: [{ max_storage_bytes: '1048576' }] };
+          }
+          if (sql.includes("metric='STORAGE_BYTES'") && sql.includes('FOR UPDATE')) {
+            return { rows: [{ value: '0' }] };
+          }
+          if (sql.includes('SUM(size_bytes)')) {
+            return { rows: [{ reserved_bytes: '0' }] };
           }
           if (sql.includes('SELECT COALESCE(MAX(version_no)')) {
             return { rows: [{ max_v: 0 }] };

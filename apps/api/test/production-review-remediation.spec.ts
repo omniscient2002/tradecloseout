@@ -1,3 +1,4 @@
+import {syntheticEntitlementQuery} from './helpers/synthetic-entitlement-query';
 // apps/api/test/production-review-remediation.spec.ts
 // Regression verification suite for Full Production Review Findings (NP01..NP06, NP09, NP10)
 
@@ -59,7 +60,7 @@ describe('Production Review Remediation Suite (NP01..NP06, NP09, NP10)', () => {
       };
 
       const commissioningService = new CommissioningService(mockPool);
-      const res = await commissioningService.signInspectionWitness(ctx, projectId, inspectionId, {
+      const res = await commissioningService.recordInspectionWitnessAttendance(ctx, projectId, inspectionId, {
         partyName: 'Unverified Consultant Pvt Ltd',
         representativeName: 'Jane Doe',
         role: 'CONSULTANT',
@@ -88,7 +89,7 @@ describe('Production Review Remediation Suite (NP01..NP06, NP09, NP10)', () => {
 
       const commissioningService = new CommissioningService(mockPool);
       await expect(
-        commissioningService.signInspectionWitness(ctx, projectId, inspectionId, {
+        commissioningService.recordInspectionWitnessAttendance(ctx, projectId, inspectionId, {
           partyName: 'Fake Corp',
           representativeName: 'Jane Doe',
           role: 'CONSULTANT',
@@ -308,6 +309,7 @@ describe('Production Review Remediation Suite (NP01..NP06, NP09, NP10)', () => {
       const mockPool: any = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string) => {
+            const entitlementFixture=syntheticEntitlementQuery(sql,{noSubscription:true});if(entitlementFixture)return entitlementFixture;
             if (sql.includes('FROM subscriptions')) {
               return { rows: [] }; // no subscription
             }
@@ -323,10 +325,10 @@ describe('Production Review Remediation Suite (NP01..NP06, NP09, NP10)', () => {
       expect(sub.id).toBeNull();
       expect(sub.status).toBe('INACTIVE');
       expect(sub.planTier).toBe('NONE');
-      expect(sub.pricePaise).toBe(0);
+      expect(sub.pricePaise).toBeNull();
       expect(sub.seatLimit).toBe(0);
       expect(sub.storageQuotaBytes).toBe(0);
-      expect(sub.limitsJson).toEqual({ maxActiveProjects: 0, maxSeats: 0, maxStorageBytes: 0 });
+      expect(sub.limitsJson).toEqual({ maxActiveProjects: 0, maxSeats: 0, maxStorageBytes: 0, maxPackageGenerationsPerMonth: 0 });
     });
 
     it('preserves legitimate zero limits without overriding with defaults', async () => {
@@ -334,6 +336,7 @@ describe('Production Review Remediation Suite (NP01..NP06, NP09, NP10)', () => {
       const mockPool: any = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string) => {
+            const entitlementFixture=syntheticEntitlementQuery(sql,{zero:true,subscriptionId:subId});if(entitlementFixture)return entitlementFixture;
             if (sql.includes('FROM subscriptions')) {
               return {
                 rows: [
@@ -409,11 +412,24 @@ describe('Production Review Remediation Suite (NP01..NP06, NP09, NP10)', () => {
       expect(res.items[0].entityVersion).toBe(3);
     });
 
-    it('processes supplier obligation intake and updates status', async () => {
+    it('processes supplier obligation intake only when backed by verified document evidence', async () => {
+      const verifiedVersionId=uuidv7();
       const obligationId = uuidv7();
       let updatedStatus = '';
       const mockClient: any = {
         query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
+          // Intake is valid only while the target project is live.
+          if (sql.includes('SELECT status FROM projects')) {
+            return { rows: [{ status: 'ACTIVE' }] };
+          }
+          if (sql.includes('FROM document_versions dv')) {
+            // This stub represents an actual READY, version-pinned object;
+            // prove the service SQL enforces the immutable evidence predicates.
+            expect(sql).toContain("so.provider_version_id IS NOT NULL");
+            expect(sql).toContain("so.observed_size_bytes=so.size_bytes");
+            expect(params[2]).toBe(verifiedVersionId);
+            return {rows:[{id:verifiedVersionId}]};
+          }
           if (sql.includes('FROM supplier_document_obligations')) {
             return {
               rows: [
@@ -422,13 +438,17 @@ describe('Production Review Remediation Suite (NP01..NP06, NP09, NP10)', () => {
                   org_id: orgId,
                   project_id: projectId,
                   status: 'UPLOADED',
-                  document_version_id: null,
+                  document_version_id: verifiedVersionId,
+                  doc_type_key:'DT-001',
+                  supplier_party_id:null,requirement_id:null,
                 },
               ],
             };
           }
           if (sql.includes('UPDATE supplier_document_obligations')) {
-            updatedStatus = params[3];
+            expect(sql).toContain("SET status='ACCEPTED',document_version_id=$4");
+            expect(params[3]).toBe(verifiedVersionId);
+            updatedStatus='ACCEPTED';
             return { rows: [] };
           }
           return { rows: [] };

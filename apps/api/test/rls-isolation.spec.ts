@@ -5,11 +5,15 @@
 import { TenantDbService, ExecutionContext } from '../src/database/tenant-db.service';
 import { uuidv7 } from 'uuidv7';
 import { Pool } from 'pg';
+import { assertTestDatabaseTargetConsistency, openDisposableDatabaseForSuite } from '../../../packages/db/test/helpers/disposable-database';
+
+jest.setTimeout(180_000);
 
 describe('Spike 1: RLS Tenant Isolation Acceptance Suite', () => {
   let db: TenantDbService;
   let adminClient: any;
   let migratorPool: Pool;
+  let fixture: Awaited<ReturnType<typeof openDisposableDatabaseForSuite>>;
   const orgAId = uuidv7();
   const orgBId = uuidv7();
   const userAId = uuidv7();
@@ -18,16 +22,12 @@ describe('Spike 1: RLS Tenant Isolation Acceptance Suite', () => {
   const projectBId = uuidv7();
 
   beforeAll(async () => {
-    db = new TenantDbService();
-
-    // Use tc_migrator connection to set up initial seed data
-    migratorPool = new Pool({
-      host: process.env.DB_HOST || '127.0.0.1',
-      port: Number(process.env.DB_PORT) || 5432,
-      database: process.env.DB_NAME || 'tradecloseout',
-      user: process.env.DB_MIGRATOR_USER || 'tc_migrator',
-      password: process.env.DB_MIGRATOR_PASSWORD || 'migrator_local_pw',
-    });
+    // Fail before touching a fixture if the legacy DB_PORT path and the
+    // application/migrator DATABASE_URL are not the same PostgreSQL target.
+    assertTestDatabaseTargetConsistency();
+    fixture = await openDisposableDatabaseForSuite();
+    db = new TenantDbService(fixture.app);
+    migratorPool = fixture.admin;
 
     // Seed Org A and Org B (global table)
     await migratorPool.query(
@@ -89,33 +89,7 @@ describe('Spike 1: RLS Tenant Isolation Acceptance Suite', () => {
   });
 
   afterAll(async () => {
-    // Clean up seeded test records using scoped transactions
-    const cleanClientA = await migratorPool.connect();
-    try {
-      await cleanClientA.query('BEGIN');
-      await cleanClientA.query("SELECT set_config('app.current_org', $1, true)", [orgAId]);
-      await cleanClientA.query(`DELETE FROM projects WHERE id = $1`, [projectAId]);
-      await cleanClientA.query(`DELETE FROM memberships WHERE org_id = $1`, [orgAId]);
-      await cleanClientA.query('COMMIT');
-    } finally {
-      cleanClientA.release();
-    }
-
-    const cleanClientB = await migratorPool.connect();
-    try {
-      await cleanClientB.query('BEGIN');
-      await cleanClientB.query("SELECT set_config('app.current_org', $1, true)", [orgBId]);
-      await cleanClientB.query(`DELETE FROM projects WHERE id = $1`, [projectBId]);
-      await cleanClientB.query(`DELETE FROM memberships WHERE org_id = $1`, [orgBId]);
-      await cleanClientB.query('COMMIT');
-    } finally {
-      cleanClientB.release();
-    }
-
-    await migratorPool.query(`DELETE FROM users WHERE id IN ($1, $2)`, [userAId, userBId]);
-    await migratorPool.query(`DELETE FROM organisations WHERE id IN ($1, $2)`, [orgAId, orgBId]);
-    await migratorPool.end();
-    await db.getPool().end();
+    await fixture?.close();
   });
 
   it('FAIL-CLOSED: Unscoped query as tc_app returns 0 rows across tenant tables', async () => {

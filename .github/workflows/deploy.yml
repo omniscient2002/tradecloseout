@@ -75,6 +75,119 @@ jobs:
           MIGRATOR_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/tradecloseout
         run: pnpm test:security
 
+      - name: Run Explicit RBAC Authorization Matrix
+        env:
+          APP_DATABASE_URL: postgres://tc_app:app_local_pw@127.0.0.1:5432/tradecloseout
+          MIGRATOR_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/tradecloseout
+        run: pnpm test:rbac
+
+      - name: Strict production-mode API authentication smoke (fixture-only; no provider calls)
+        env:
+          NODE_ENV: production
+          API_PORT: '3011'
+          APP_DATABASE_URL: postgres://tc_app:app_local_pw@127.0.0.1:5432/tradecloseout
+          REDIS_URL: redis://127.0.0.1:6379
+          FRONTEND_URL: https://localhost:3002
+          PUBLIC_APP_URL: https://localhost:3002
+          AUTH_TRUSTED_PROXY_CIDRS: direct
+          AUTH_OTP_HMAC_KEY: ci-only-not-for-production-otp-hmac-key-000001
+          AUTH_CSRF_KEY: ci-only-not-for-production-csrf-key-000001
+          AUTH_DELIVERY_CALLBACK_KEY: ci-only-callback-signing-key-at-least-32
+          DLT_SMS_STATUS_URL: https://invalid.example.test/sms-status
+          MAIL_STATUS_URL: https://invalid.example.test/mail-status
+          DLT_SMS_URL: https://invalid.example.test/otp
+          DLT_SMS_API_KEY: 'ci-only-no-real-provider'
+          DLT_SENDER_ID: 'TESTG01'
+          DLT_ENTITY_ID: 'CI-TEST-ENTITY'
+          DLT_OTP_TEMPLATE_ID: 'CI-TEST-TEMPLATE'
+          MAIL_GATEWAY_URL: https://invalid.example.test/send
+          MAIL_FROM_ADDRESS: ci-auth@example.test
+          MAIL_API_KEY: 'ci-only-no-real-provider'
+        run: |
+          set -euo pipefail
+          export AUTH_MFA_ENCRYPTION_KEY="$(node -e 'process.stdout.write(Buffer.alloc(32,7).toString("base64"))')"
+          pnpm --filter @tradecloseout/api start >/tmp/tradecloseout-prod-mode-smoke.log 2>&1 &
+          API_SMOKE_PID=$!
+          trap 'kill "$API_SMOKE_PID" 2>/dev/null || true' EXIT
+          READY=0
+          for i in $(seq 1 45); do
+            STATUS="$(curl -sS --max-time 2 -o /dev/null -w '%{http_code}' http://127.0.0.1:3011/api/v1/auth/me 2>/dev/null || true)"
+            if [ "$STATUS" = "401" ]; then READY=1; break; fi
+            sleep 1
+          done
+          if [ "$READY" -ne 1 ]; then
+            echo 'G01_PRODUCTION_MODE_STARTUP_FAILURE'
+            sed -E 's/(postgres:\/\/)[^@]+@/\1[REDACTED]@/g' /tmp/tradecloseout-prod-mode-smoke.log | tail -n 45
+            exit 1
+          fi
+          EXPECTED=403
+          STATUS="$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' \
+            -H 'Origin: https://attacker.example.test' -H 'Content-Type: application/json' \
+            --data '{"identifier":"invalid-id"}' \
+            http://127.0.0.1:3011/api/v1/auth/otp/request)"
+          test "$STATUS" = "$EXPECTED"
+          STATUS="$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' \
+            -H 'Origin: https://localhost:3002' -H 'Content-Type: application/json' \
+            --data '{"identifier":"invalid-id"}' \
+            http://127.0.0.1:3011/api/v1/auth/otp/request)"
+          test "$STATUS" = '422'
+          # G01-016: raw HTTP inputs are genuinely decoded and rejected in
+          # strict production-mode API startup before delivery or SQL issuance.
+          for PAYLOAD in \
+            '{"identifier":null}' \
+            '{"identifier":["victim@example.test"]}' \
+            '{"identifier":{"toString":"victim@example.test"}}' \
+            '{"identifier":12345}' \
+            '{"identifier":true}' \
+            '{"phoneOrEmail":["+919876543210"]}'; do
+            STATUS="$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' \
+              -H 'Origin: https://localhost:3002' -H 'Content-Type: application/json' \
+              --data "$PAYLOAD" \
+              http://127.0.0.1:3011/api/v1/auth/otp/request)"
+            if [ "$STATUS" != "422" ]; then
+              echo 'G01_PRODUCTION_MODE_MALFORMED_INPUT_ACCEPTED'
+              exit 1
+            fi
+          done
+          curl -sS --max-time 5 -D /tmp/g01-prod-mode-headers.txt -o /dev/null \
+            http://127.0.0.1:3011/api/v1/auth/me
+          grep -Eiq '^Cache-Control:.*no-store' /tmp/g01-prod-mode-headers.txt
+          grep -Eiq '^Referrer-Policy:.*no-referrer' /tmp/g01-prod-mode-headers.txt
+          # A production-mode process genuinely booted with restricted tc_app,
+          # with no debug OTP, no real delivery and no customer credentials.
+          # This is NOT proof of HTTPS at the client/proxy or provider acceptance.
+
+      - name: Run production-built Next + real API browser auth journey (test-only OTP)
+        env:
+          E2E_BASE_URL: http://localhost:3002
+          E2E_LIVE_AUTH: 'true'
+          APP_DATABASE_URL: postgres://tc_app:app_local_pw@127.0.0.1:5432/tradecloseout
+          REDIS_URL: redis://127.0.0.1:6379
+          FRONTEND_URL: http://localhost:3002
+          NEXT_PUBLIC_ENABLE_DEV_PERSONAS: 'false'
+        run: |
+          set -euo pipefail
+          NODE_ENV=test ENABLE_DEBUG_OTP=true pnpm --filter @tradecloseout/api start >/tmp/tradecloseout-g01-api.log 2>&1 &
+          API_PID=$!
+          NODE_ENV=production pnpm --filter @tradecloseout/web start >/tmp/tradecloseout-g01-next.log 2>&1 &
+          WEB_PID=$!
+          trap 'kill "$WEB_PID" "$API_PID" 2>/dev/null || true' EXIT
+          READY=0
+          for i in $(seq 1 90); do
+            if curl -sS --max-time 2 -o /dev/null http://127.0.0.1:3001/api/v1/auth/me 2>/dev/null \
+              && curl -fsS --max-time 2 http://localhost:3002/login >/dev/null 2>&1; then
+              READY=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$READY" -ne 1 ]; then
+            echo 'Next or API did not start in the disposable integration environment'
+            cat /tmp/tradecloseout-g01-api.log /tmp/tradecloseout-g01-next.log
+            exit 1
+          fi
+          pnpm --filter @tradecloseout/web exec playwright test --project=application --grep "E2E-G01"
+
       - name: Preserve browser failure evidence
         if: always()
         uses: actions/upload-artifact@v4

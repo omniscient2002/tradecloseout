@@ -13,6 +13,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { OrganisationsService } from './organisations.service';
+import { parseOrgProfilePatch, requireOrganisationUuid } from './organisation-validation';
 import { SessionCsrfGuard } from '../../common/guards/session-csrf.guard';
 import { PermissionGuard, RequirePermission } from '../../common/guards/permission.guard';
 
@@ -28,7 +29,7 @@ export class OrganisationsController {
   }
 
   @Get('audit')
-  @RequirePermission('org.read')
+  @RequirePermission('audit.read')
   async getAuditLog(@Req() req: any, @Param('orgId') orgId: string) {
     return this.orgsService.getAuditLog(req.userContext, orgId);
   }
@@ -46,7 +47,8 @@ export class OrganisationsController {
     @Param('orgId') orgId: string,
     @Body() dto: any,
   ) {
-    return this.orgsService.updateOrganisation(req.userContext, orgId, dto);
+    const patch = parseOrgProfilePatch(dto);
+    return this.orgsService.updateOrgProfile(req.userContext, patch.rowVersion, patch.input);
   }
 
   @Get('members')
@@ -72,7 +74,7 @@ export class OrganisationsController {
     @Param('orgId') orgId: string,
     @Param('id') invitationId: string,
   ) {
-    return this.orgsService.revokeInvitation(req.userContext, orgId, invitationId);
+    return this.orgsService.revokeInvitation(req.userContext, orgId, requireOrganisationUuid(invitationId, 'id'));
   }
 
   @Patch('members/:userId')
@@ -83,7 +85,7 @@ export class OrganisationsController {
     @Param('userId') targetUserId: string,
     @Body() dto: { role: string },
   ) {
-    return this.orgsService.updateMemberRole(req.userContext, orgId, targetUserId, dto);
+    return this.orgsService.updateMemberRole(req.userContext, orgId, requireOrganisationUuid(targetUserId, 'userId'), dto);
   }
 
   @Get('members/:userId/offboarding-gap-report')
@@ -93,7 +95,15 @@ export class OrganisationsController {
     @Param('orgId') orgId: string,
     @Param('userId') targetUserId: string,
   ) {
-    return this.orgsService.getOffboardingGapReport(req.userContext, orgId, targetUserId);
+    return this.orgsService.getOffboardingGapReport(req.userContext, orgId, requireOrganisationUuid(targetUserId, 'userId'));
+  }
+
+  @Post('members/:userId/suspend')
+  @RequirePermission('org.manage_members')
+  async suspendMember(@Req() req: any, @Param('orgId') orgId: string,
+    @Param('userId') targetUserId: string) {
+    return this.orgsService.suspendMember(req.userContext, orgId,
+      requireOrganisationUuid(targetUserId, 'userId'));
   }
 
   @Delete('members/:userId')
@@ -104,17 +114,38 @@ export class OrganisationsController {
     @Param('userId') targetUserId: string,
     @Body('reassignToUserId') reassignToUserId?: string,
   ) {
-    return this.orgsService.removeMember(req.userContext, orgId, targetUserId, reassignToUserId);
+    return this.orgsService.removeMember(req.userContext, orgId,
+      requireOrganisationUuid(targetUserId, 'userId'),
+      reassignToUserId === undefined ? undefined : requireOrganisationUuid(reassignToUserId, 'reassignToUserId'));
+
+  }
+
+  @Post('ownership-transfers')
+  @RequirePermission('org.transfer_ownership')
+  async requestOwnership(@Req() req:any,@Body() input:{targetUserId:string;rowVersion:number;requestKey:string}) {
+    return this.orgsService.requestOwnershipTransfer(req.userContext,input);
+  }
+  @Post('ownership-transfers/:id/accept')
+  @RequirePermission('org.read')
+  async acceptOwnership(@Req() req:any,@Param('id') id:string) {
+    return this.orgsService.acceptOwnershipTransfer(req.userContext,id);
+  }
+  @Post('ownership-transfers/:id/cancel')
+  @RequirePermission('org.read')
+  async cancelOwnership(@Req() req:any,@Param('id') id:string) {
+    return this.orgsService.cancelOwnershipTransfer(req.userContext,id);
   }
 
   @Post('transfer-ownership')
-  @RequirePermission('org.manage')
+  @RequirePermission('org.transfer_ownership')
   async transferOwnership(
     @Req() req: any,
     @Param('orgId') orgId: string,
     @Body() dto: { targetUserId: string },
   ) {
-    return this.orgsService.transferOwnership(req.userContext, dto.targetUserId);
+    // Transfer requires a separately authenticated recipient acceptance workflow.
+    return this.orgsService.transferOwnership(req.userContext, requireOrganisationUuid(dto?.targetUserId, 'targetUserId'));
+
   }
 
   @Post('reassign-work')
@@ -124,6 +155,9 @@ export class OrganisationsController {
     @Param('orgId') orgId: string,
     @Body() dto: { fromUserId: string; toUserId: string },
   ) {
-    return this.orgsService.reassignWork(req.userContext, orgId, dto);
+    return this.orgsService.reassignWork(req.userContext, orgId, {
+      fromUserId: requireOrganisationUuid(dto?.fromUserId, 'fromUserId'),
+      toUserId: requireOrganisationUuid(dto?.toUserId, 'toUserId'),
+    });
   }
 }

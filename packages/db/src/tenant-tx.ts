@@ -1,6 +1,8 @@
 import { Pool, PoolClient } from 'pg';
 import { createHash } from 'crypto';
 import { uuidv7 } from 'uuidv7';
+import { assertCurrentProjectAuthority } from './project-authority';
+import { assertCurrentSessionEligibility } from './live-session-authority';
 
 export interface TenantActorContext {
   orgId: string;       // Must come exclusively from session.active_org_id (AUD-014)
@@ -11,10 +13,22 @@ export interface TenantActorContext {
   requestId: string;
   orgRole?: string;
   projectRole?: string;
+  projectId?: string;
+  projectScope?: Record<string, unknown>;
+  permission?: string;
+  docControllerOrgWideDownload?: boolean;
   guestGrantId?: string;
   guestProjectId?: string;
   guestCapabilities?: string[];
   guestScope?: Record<string, any>;
+  // Populated exclusively by SessionCsrfGuard for authenticated HTTP work.
+  // Optional for controlled migrations, background jobs and offline fixtures.
+  sessionId?: string;
+  authGeneration?: string;
+  /** Server-selected initial project lock mode; never read from request JSON. */
+  projectWrite?: boolean;
+  /** Server-selected stronger initial lock for organisation administration. */
+  organisationWrite?: boolean;
 }
 
 export interface DomainOutboxEvent {
@@ -64,13 +78,23 @@ export async function withTenantTransaction<T>(
 
   const client = await pool.connect();
   const stagedEvents: DomainOutboxEvent[] = [];
+  let destroyConnection = false;
 
   try {
     await client.query('BEGIN');
+    // Server-side limits bound stranded locks and idle sessions. Transaction-
+    // local settings are automatically cleared after COMMIT/ROLLBACK.
+    await client.query(`SET LOCAL lock_timeout = '15s'`);
+    await client.query(`SET LOCAL statement_timeout = '90s'`);
+    await client.query(`SET LOCAL idle_in_transaction_session_timeout = '60s'`);
 
     // Bind transaction-local settings for PostgreSQL RLS policies (08 §5.2)
     await client.query(`SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`, [ctx.orgId]);
     await client.query(`SELECT set_config('app.current_user', $1, true)`, [ctx.userId]);
+
+    await assertCurrentSessionEligibility(client, ctx);
+
+    await assertCurrentProjectAuthority(client, ctx);
 
     const result = await work(client, (ev) => stagedEvents.push(ev));
 
@@ -86,6 +110,9 @@ export async function withTenantTransaction<T>(
           ev.projectId ?? null,
           ev.eventType,
           JSON.stringify({
+            // Preserve legacy payload contracts, but reserved identity fields
+            // may only come from the trusted transaction context.
+            ...(ev.afterJson ? redactSensitiveFields(ev.afterJson) : {}),
             eventId,
             orgId: ctx.orgId,
             projectId: ev.projectId ?? null,
@@ -94,7 +121,6 @@ export async function withTenantTransaction<T>(
             packageId: ev.entityType === 'HANDOVER_PACKAGE' ? ev.entityId : undefined,
             actorUserId: ctx.userId,
             requestId: ctx.requestId,
-            ...(ev.afterJson || {}),
           }),
         ],
       );
@@ -126,10 +152,14 @@ export async function withTenantTransaction<T>(
     await client.query('COMMIT');
     return result;
   } catch (err) {
-    await client.query('ROLLBACK');
+    // If the transaction cannot be rolled back, the physical connection must
+    // be removed from the pool. Preserve the ORIGINAL command/commit error:
+    // replacing it with a rollback failure hides the causal evidence.
+    try { await client.query('ROLLBACK'); }
+    catch { destroyConnection = true; }
     throw err;
   } finally {
-    client.release();
+    client.release(destroyConnection);
   }
 }
 
@@ -190,22 +220,42 @@ export async function reconcileStorageQuotaOnFileStatusChange(
 
   await client.query(
     `UPDATE usage_counters
-        SET value = GREATEST(0::numeric, value::numeric + $2)::text,
+        SET value = GREATEST(0::numeric, value::numeric + $2::numeric)::bigint,
             updated_at = now()
       WHERE org_id = $1 AND metric = 'STORAGE_BYTES' AND period = 'ALL_TIME'`,
     [orgId, delta.toString()],
   );
 }
 
+/**
+ * Defense in depth for structured event data before it reaches either the
+ * immutable audit ledger or the worker outbox. This is not a substitute for
+ * schema-level event allowlists or secret-free producer contracts.
+ */
 export function redactSensitiveFields(obj: Record<string, unknown>): Record<string, unknown> {
-  const REDACTED_KEYS = new Set(['token', 'token_hash', 'otp', 'password', 'secret', 'qr_payload']);
-  const clone: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(obj)) {
-    clone[k] = REDACTED_KEYS.has(k.toLowerCase()) ? '[REDACTED]' : v;
-  }
-  return clone;
+  const secretKey = /(?:^|_)(?:tokens?|secrets?|passwords?|otps?|totp|pins?|api_keys?|access_keys?|private_keys?|recovery_codes?|backup_codes?|manual_setup_key|mfa_factor|authorization|cookies?|qr_payload|client_secrets?)(?:_|$)/i;
+  const isSecretKey = (key: string) => secretKey.test(
+    key.replace(/([a-z0-9])([A-Z])/g, '$1_$2').replace(/[.\-]/g, '_').toLowerCase(),
+  );
+  const signedUrl = /(?:[?&](?:X-Amz-(?:Signature|Credential|Security-Token)|Signature|token|access_token|sig)=)/i;
+  const sanitize = (value: unknown, depth: number): unknown => {
+    if (depth > 32) return '[REDACTED]';
+    if (typeof value === 'string') {
+      return signedUrl.test(value) ? '[REDACTED]' : value;
+    }
+    if (Array.isArray(value)) return value.map((item) => sanitize(item, depth + 1));
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(Object.entries(value).map(([key, entry]) =>
+        [key, isSecretKey(key) ? '[REDACTED]' : sanitize(entry, depth + 1)]));
+    }
+    return value;
+  };
+  return sanitize(obj, 0) as Record<string, unknown>;
 }
 
 export function hashRequestPayload(body: unknown): string {
   return createHash('sha256').update(JSON.stringify(body ?? {})).digest('hex');
 }
+
+export { assertCurrentProjectAuthority, assertMemberResourceScope, assertValidMemberProjectScope } from './project-authority';
+export { assertCurrentSessionEligibility } from './live-session-authority';

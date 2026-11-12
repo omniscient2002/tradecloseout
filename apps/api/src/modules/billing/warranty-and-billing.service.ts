@@ -1,12 +1,12 @@
+import {resolveEffectiveEntitlements,currentCapacityUsage} from '@tradecloseout/db/entitlements';
 import {
   ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
-  UnauthorizedException,
   UnprocessableEntityException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
-import { createHmac, timingSafeEqual } from 'crypto';
 import { Pool } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { withTenantTransaction, TenantActorContext } from '@tradecloseout/db/tenant-tx';
@@ -554,131 +554,34 @@ export class WarrantyAndBillingService {
 
   async getSubscription(ctx: TenantActorContext) {
     return withTenantTransaction(this.pool, ctx, async (client) => {
-      const { rows } = await client.query(
-        `SELECT s.*, p.name AS plan_name, p.code AS plan_tier, p.limits_json, p.price_paise, p.interval
-           FROM subscriptions s
-           JOIN plans p ON p.id = s.plan_id
-          WHERE s.org_id = $1
-          ORDER BY s.updated_at DESC LIMIT 1`,
-        [ctx.orgId],
-      );
-      if (!rows.length) {
-        return {
-          id: null,
-          planName: 'No Subscription',
-          planTier: 'NONE',
-          status: 'INACTIVE',
-          seatLimit: 0,
-          storageQuotaBytes: 0,
-          pricePaise: 0,
-          limitsJson: { maxActiveProjects: 0, maxSeats: 0, maxStorageBytes: 0 },
-          plan_name: 'No Subscription',
-          plan_tier: 'NONE',
-          seat_limit: 0,
-          storage_quota_bytes: 0,
-          price_paise: 0,
-        };
-      }
-      const sub = rows[0];
-      const limits = sub.limits_json || {};
-      const seatLimit = Number(limits.maxSeats ?? 20);
-      const storageQuotaBytes = Number(limits.maxStorageBytes ?? (100 * 1024 * 1024 * 1024));
-      const maxActiveProjects = Number(limits.maxActiveProjects ?? 15);
-      return {
-        id: sub.id,
-        orgId: sub.org_id,
-        planId: sub.plan_id,
-        status: sub.status,
-        provider: sub.provider,
-        providerRef: sub.provider_ref,
-        currentPeriodStart: sub.current_period_start,
-        currentPeriodEnd: sub.current_period_end,
-        cancelAt: sub.cancel_at,
-        rowVersion: sub.row_version,
-        updatedAt: sub.updated_at,
-        planName: sub.plan_name,
-        planTier: sub.plan_tier,
-        pricePaise: Number(sub.price_paise),
-        interval: sub.interval,
-        limitsJson: limits,
-        seatLimit,
-        storageQuotaBytes,
-        maxActiveProjects,
-        plan_name: sub.plan_name,
-        plan_tier: sub.plan_tier,
-        price_paise: Number(sub.price_paise),
-        seat_limit: seatLimit,
-        storage_quota_bytes: storageQuotaBytes,
-      };
+      const effective=await resolveEffectiveEntitlements(client,ctx.orgId);
+      const usage=await currentCapacityUsage(client,ctx.orgId);
+      return {...effective,id:effective.subscriptionId,status:effective.subscriptionStatus||'INACTIVE',
+        planName:effective.planName||'No Subscription',planTier:effective.planCode||'NONE',limitsJson:effective.limits,
+        seatLimit:effective.limits.maxSeats,storageQuotaBytes:effective.limits.maxStorageBytes,
+        maxActiveProjects:effective.limits.maxActiveProjects,
+        plan_name:effective.planName||'No Subscription',plan_tier:effective.planCode||'NONE',
+        seat_limit:effective.limits.maxSeats,storage_quota_bytes:effective.limits.maxStorageBytes,
+        price_paise:effective.pricePaise,usage,liveFulfilmentAvailable:false,
+        recoveryActions:effective.canConsume?[]:['CONTACT_BILLING_OWNER']};
     });
   }
 
   /**
-   * API-160: POST /api/v1/webhooks/razorpay
-   * Verifies Razorpay HMAC-SHA256 signature, deduplicates by event_id (10 §12.1),
-   * and updates subscription state.
+   * Legacy payment-settlement implementation is intentionally retired.
+   * It used untrusted webhook notes as the tenant selector, and could modify
+   * entitlements without independently reconciled provider references.
+   *
+   * Verified events are now *only* accepted by BillingService's durable
+   * read-only receipt. Do not resurrect automatic fulfillment here.
    */
   async processRazorpayWebhook(rawBody: string, signatureHeader: string) {
-    const secret = process.env.RAZORPAY_WEBHOOK_SECRET || '';
-    const expectedHmac = createHmac('sha256', secret).update(rawBody).digest('hex');
-
-    const expectedBuf = Buffer.from(expectedHmac, 'utf8');
-    const actualBuf = Buffer.from(signatureHeader || '', 'utf8');
-    if (expectedBuf.length !== actualBuf.length || !timingSafeEqual(expectedBuf, actualBuf)) {
-      throw new UnauthorizedException({
-        code: 'WEBHOOK_SIGNATURE_INVALID',
-        detail: 'Razorpay webhook HMAC verification failed.',
-      });
-    }
-
-    const event = JSON.parse(rawBody);
-    const eventId: string = event.id;
-    const orgId: string | undefined = event.payload?.subscription?.entity?.notes?.orgId;
-
-    const client = await this.pool.connect();
-    try {
-      await client.query('BEGIN');
-
-      // Idempotent deduplication by event_id (10 §12.1)
-      const { rowCount } = await client.query(
-        `INSERT INTO payment_events (id, org_id, provider, event_id, type, payload_json)
-         VALUES ($1, $2, 'RAZORPAY', $3, $4, $5)
-         ON CONFLICT (event_id) DO NOTHING`,
-        [uuidv7(), orgId ?? null, eventId, event.event, JSON.stringify({ id: eventId, event: event.event })],
-      );
-
-      if (rowCount === 0) {
-        await client.query('COMMIT');
-        return { processed: false, duplicate: true };
-      }
-
-      if (orgId) {
-        await client.query(`SELECT set_config('app.current_org', $1, true)`, [orgId]);
-        if (event.event === 'subscription.charged') {
-          await client.query(
-            `UPDATE subscriptions
-                SET status = 'ACTIVE', row_version = row_version + 1, updated_at = now()
-              WHERE org_id = $1`,
-            [orgId],
-          );
-        } else if (event.event === 'subscription.halted') {
-          await client.query(
-            `UPDATE subscriptions
-                SET status = 'PAST_DUE', row_version = row_version + 1, updated_at = now()
-              WHERE org_id = $1`,
-            [orgId],
-          );
-        }
-      }
-
-      await client.query('COMMIT');
-      return { processed: true, duplicate: false };
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
+    void rawBody;
+    void signatureHeader;
+    throw new ServiceUnavailableException({
+      code: 'AUTOMATED_PAYMENT_FULFILLMENT_DISABLED',
+      detail: 'Subscription changes require independent provider reconciliation and explicit enablement.',
+    });
   }
 
   /**

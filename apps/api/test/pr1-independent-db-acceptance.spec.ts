@@ -1,3 +1,4 @@
+import {attachSyntheticEntitlementPolicy} from '../../../packages/db/test/helpers/synthetic-entitlement-policy';
 import { ConflictException, UnprocessableEntityException } from '@nestjs/common';
 import { Pool } from 'pg';
 import { uuidv7 } from 'uuidv7';
@@ -5,6 +6,7 @@ import { withDisposableDatabase } from '../../../packages/db/test/helpers/dispos
 import { ChecklistsService } from '../src/modules/checklists/checklists.service';
 import { HandoverService } from '../src/modules/handover/handover.service';
 import { ProjectsService } from '../src/modules/projects/projects.service';
+import { AssetsService } from '../src/modules/assets/assets.service';
 import { Test } from '@nestjs/testing';
 import { ChecklistsController } from '../src/modules/checklists/checklists.controller';
 import { SessionCsrfGuard } from '../src/common/guards/session-csrf.guard';
@@ -68,6 +70,13 @@ async function acceptedProject(admin: Pool, app: Pool) {
     (id,org_id,project_id,version_no,status,snapshot_id,snapshot_checksum,requested_by)
     VALUES($1,$2,$3,1,'ACCEPTED',$4,$5,$6)`,
   [packageId, orgId, projectId, first.snapshotId, first.checksum, userId]);
+  await admin.query(`INSERT INTO package_requirements
+    (id, org_id, project_id, package_id, requirement_id, requirement_key,
+     scope_key, title, doc_type_key, mandatory, status_at_generation)
+    SELECT $1, r.org_id, r.project_id, $2, r.id, r.requirement_key,
+           COALESCE(r.scope_key, 'PROJECT'), r.title, r.doc_type_key, r.mandatory, r.status
+      FROM requirements r WHERE r.org_id = $3 AND r.project_id = $4 AND r.superseded_at IS NULL`,
+  [uuidv7(), packageId, orgId, projectId]);
   await admin.query(`INSERT INTO submissions
     (id,org_id,project_id,package_id,status,submitted_at,submitted_by)
     VALUES($1,$2,$3,$4,'ACCEPTED',now(),$5)`, [submissionId, orgId, projectId, packageId, userId]);
@@ -171,6 +180,23 @@ describe('PR1 independent review — PostgreSQL acceptance', () => {
       } finally { await http.close(); }
       expect(await state()).toEqual(before);
       expect((await admin.query('SELECT status FROM checklist_snapshots WHERE id=$1', [first.snapshotId])).rows[0].status).toBe('ACTIVE');
+      // Phase 2: reopening reserves a real active-project entitlement. This
+      // disposable review fixture must explicitly provision a qualifying plan.
+      const reopenPlanId = uuidv7();
+      await admin.query(
+        `INSERT INTO plans(id,code,name,limits_json,price_paise,interval,status)
+         VALUES($1,'PR1_REOPEN_PLAN','Reviewed project reopen fixture',$2::jsonb,0,'MONTH','ACTIVE')`,
+        [reopenPlanId, JSON.stringify({
+          maxActiveProjects: 2, maxSeats: 5, maxStorageBytes: 1073741824,
+          maxPackageGenerationsPerMonth: 2,
+        })],
+      );
+      await attachSyntheticEntitlementPolicy(admin,reopenPlanId);
+      await admin.query(
+        `INSERT INTO subscriptions(id,org_id,plan_id,status,current_period_start,current_period_end)
+         VALUES($1,$2,$3,'TRIAL',now()-interval '1 day',now()+interval '30 days')`,
+        [uuidv7(), orgId, reopenPlanId],
+      );
       await projects.reopenProject(ctx, projectId, closed.row_version, 'Authorized additional closeout scope');
       const imported = await checklists.importL3Checklist(ctx, projectId, { requirements: [requirement('REOPENED-WORK')] });
       expect(imported.snapshotId).not.toBe(first.snapshotId);
@@ -269,7 +295,7 @@ describe('PR1 independent review — PostgreSQL acceptance', () => {
         [orgId, projectId],
       );
       await expect(checklists.createAndApplySnapshot(ctx, projectId, [{
-        level: 'PROJECT', versionId: uuidv7(),
+        level: 'PROJECT', versionId: 'explicit-project-authoring', sourceMode: 'MANUAL_PROJECT_INPUT',
         payload: { requirements: [{ ...requirement('BAD-REVIEW'), reviewerRole: 'R-UNKNOWN' }] },
       }])).rejects.toThrow(UnprocessableEntityException);
       const after = await admin.query(
@@ -345,6 +371,62 @@ describe('PR1 independent review — PostgreSQL acceptance', () => {
         `SELECT status FROM projects WHERE id = $1`, [projectId],
       );
       expect(projRows[0].status).toBe('HANDOVER');
+    });
+  });
+});
+
+
+describe('PR4 closeout purpose and immutable asset gate — PostgreSQL acceptance', () => {
+  it('does not treat an accepted RA-bill annexure as the full handover after full acceptance is revoked', async () => {
+    await withDisposableDatabase(async ({ admin, app }) => {
+      const { ctx, orgId, projectId, userId, first } = await acceptedProject(admin, app);
+      await admin.query(`UPDATE handover_packages SET status = 'READY'
+        WHERE org_id = $1 AND project_id = $2 AND package_purpose = 'FULL_HANDOVER'`, [orgId, projectId]);
+      await admin.query(`UPDATE submissions SET status = 'SUBMITTED'
+        WHERE org_id = $1 AND project_id = $2`, [orgId, projectId]);
+      const billId = uuidv7(), submissionId = uuidv7();
+      await admin.query(`INSERT INTO handover_packages
+        (id, org_id, project_id, version_no, status, snapshot_id, snapshot_checksum,
+         package_purpose, override_reason, requested_by)
+        VALUES($1, $2, $3, 2, 'ACCEPTED', $4, $5, 'RA_BILL', 'RA Bill Annexure: RA-100 (DELIVERY)', $6)`,
+        [billId, orgId, projectId, first.snapshotId, first.checksum, userId]);
+      await admin.query(`INSERT INTO submissions
+        (id, org_id, project_id, package_id, status, submitted_at, submitted_by)
+        VALUES($1,$2,$3,$4,'ACCEPTED',now(),$5)`,
+        [submissionId, orgId, projectId, billId, userId]);
+      await admin.query(`INSERT INTO submission_recipients
+        (id, org_id, project_id, submission_id, name, email, status, is_required_approver, decided_at)
+        VALUES($1,$2,$3,$4,'Client','client@example.com','ACCEPTED',true,now())`,
+        [uuidv7(), orgId, projectId, submissionId]);
+
+      await expect(new ProjectsService(app).closeProject(ctx, projectId))
+        .rejects.toMatchObject({ response: expect.objectContaining({ code: 'HANDOVER_SUBMISSION_NOT_ACCEPTED' }) });
+      expect((await admin.query('SELECT status FROM projects WHERE id=$1', [projectId])).rows[0].status).toBe('HANDOVER');
+    });
+  });
+
+  it('rejects asset creation, modification, retirement and evidence revalidation after CLOSED', async () => {
+    await withDisposableDatabase(async ({ admin, app }) => {
+      const { ctx, projectId } = await acceptedProject(admin, app);
+      const assets = new AssetsService(app), projects = new ProjectsService(app);
+      const asset = await assets.createAsset(ctx, projectId, {
+        tag: 'AHU-TEST-001', name: 'Air Handling Unit', categoryKey: 'AHU',
+      });
+      expect((await projects.closeProject(ctx, projectId)).status).toBe('CLOSED');
+
+      const attempts = [
+        () => assets.createAsset(ctx, projectId, { tag: 'AHU-LATE', name: 'Late unit', categoryKey: 'AHU' }),
+        () => assets.updateAsset(ctx, projectId, asset.assetId, { name: 'After closing' }),
+        () => assets.deleteOrRetireAsset(ctx, projectId, asset.assetId),
+        () => assets.revalidateEvidence(ctx, projectId, asset.assetId, uuidv7(),
+          { status: 'CONFIRMED', expectedRowVersion: 1 }),
+      ];
+      for (const write of attempts) await expect(write())
+        .rejects.toMatchObject({ response: expect.objectContaining({
+          code: 'CLOSED_PROJECT_REQUIRES_FORMAL_REOPEN',
+        }) });
+      const { rows } = await admin.query('SELECT name,status,deleted_at FROM assets WHERE id=$1', [asset.assetId]);
+      expect(rows[0]).toMatchObject({ name: 'Air Handling Unit', status: 'ACTIVE', deleted_at: null });
     });
   });
 });

@@ -43,6 +43,8 @@ export const OUTBOX_EVENT_REGISTRY: Record<string, OutboxEventRegistration> = {
   ASSET_IDENTITY_REVISED: { type: 'ASSET_IDENTITY_REVISED', category: 'INFORMATIONAL', version: 1, description: 'Asset serial or make/model revised' },
   EVIDENCE_REVALIDATION_DECIDED: { type: 'EVIDENCE_REVALIDATION_DECIDED', category: 'INFORMATIONAL', version: 1, description: 'Revalidation outcome decided' },
 
+  UPLOAD_INTENT_EXPIRED: {type:'UPLOAD_INTENT_EXPIRED',category:'INFORMATIONAL',version:1,description:'Local upload expiry; physical provider cleanup not confirmed'},
+
   // Document & review informational events
   DOCUMENT_VERSION_CREATED: { type: 'DOCUMENT_VERSION_CREATED', category: 'INFORMATIONAL', version: 1, description: 'New document version uploaded' },
   DOCUMENT_SUBMITTED_FOR_REVIEW: { type: 'DOCUMENT_SUBMITTED_FOR_REVIEW', category: 'INFORMATIONAL', version: 1, description: 'Document version submitted for review' },

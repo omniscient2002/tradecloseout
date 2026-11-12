@@ -1,0 +1,14 @@
+{
+  "apps/api/src/modules/checklists/checklists.service.ts": "9b73a94705f2c18a1665c6d2900c77b3790a584f4a722b14fba05f2718c01974",
+  "apps/api/src/modules/configuration/config-resolver.ts": "decc316d6c8551aa815221ab09338ebb6dab470ca4f721ef22b4ea7e51f127f7",
+  "apps/api/src/modules/configuration/configuration-store.ts": "5752641dd54160d0de64782b1dba7a5371ee4c207ea25282ad28fef0c38e94fc",
+  "apps/api/test/hvac-checklist-readiness-branch.spec.ts": "cff01e3faeb3b6079aa365cbb60f00fb74b2575cf1532965bb4bc63b0e810072",
+  "apps/api/test/phase2-configuration-boundaries.spec.ts": "2cadd84640c229f98cb4a589fb2c871aa7a17eca612a3aea7ad6ba47aa0db4c9",
+  "apps/api/test/phase2-configuration-sources-db.spec.ts": "7f0e68e541b83d651fa9f0e396ba66e7dde4c4b544bcd610244fc3baeb7b1b94",
+  "apps/api/test/phase2-quota-recovery-db.spec.ts": "dd11b2f27b4ecbef008206bfa7a2053dc171cbeae4e7135a9e72633049ab44e2",
+  "apps/api/test/pr1-independent-db-acceptance.spec.ts": "db49fb3639b4be66ef478a990bca40cb1cfbaba073877f82b7aa54c68f3bf6de",
+  "apps/worker/src/queues/handover-package.processor.ts": "303d7189d4b391657639c4625647e8c8a04ed69267fac30115787e3db310dbe1",
+  "apps/worker/src/queues/package-artifact-capacity.ts": "93d399735c5a894d3c4988f05406bb8e84d9124ede4a9f8f1f20c36a7ab174ec",
+  "packages/db/migrations/0054_phase2_immutable_configuration_sources.sql": "53f0689a4b81071c250f214fcec23ae6212e07f702966592511d26a4c25a8280",
+  "packages/db/src/schema.ts": "68d97792b6224b0a2235f03ee367cf31ca60eae9cf467d38bfd852062ce32db0"
+}

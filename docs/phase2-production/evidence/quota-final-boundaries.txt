@@ -1,0 +1,30 @@
+PASS test/phase2-quota-recovery-db.spec.ts (10.848 s)
+PASS test/phase0-evidence-integrity-remediation.spec.ts
+FAIL test/sol-integrity-verification.spec.ts
+  ● Sol Integrity & Audit Invariants Suite › 1. Revision allocation locks parent document (TC-F013) › executes SELECT ... FROM documents FOR UPDATE before allocating nextVersionNo on existing document
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 0
+    Received:    -1
+
+      87 |       const lockIndex = executedQueries.findIndex((q) => q.includes('SELECT id, doc_type_key FROM documents WHERE org_id = $1 AND project_id = $2 AND id = $3 FOR UPDATE'));
+      88 |       const maxIndex = executedQueries.findIndex((q) => q.includes('SELECT COALESCE(MAX(version_no), 0)'));
+    > 89 |       expect(lockIndex).toBeGreaterThanOrEqual(0);
+         |                         ^
+      90 |       expect(maxIndex).toBeGreaterThan(lockIndex);
+      91 |     });
+      92 |   });
+
+      at Object.<anonymous> (test/sol-integrity-verification.spec.ts:89:25)
+
+Test Suites: 1 failed, 2 passed, 3 total
+Tests:       1 failed, 21 passed, 22 total
+Snapshots:   0 total
+Time:        12.051 s, estimated 22 s
+Ran all test suites matching /test\/phase2-quota-recovery-db.spec.ts|test\/phase0-evidence-integrity-remediation.spec.ts|test\/sol-integrity-verification.spec.ts/i.
+Error: ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL
+
+  × "pnpm recursive exec" failed in /workspace/work/phase2-production/
+  │ integrated/apps/api
+

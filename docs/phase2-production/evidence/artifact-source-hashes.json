@@ -1,0 +1,11 @@
+{
+  "apps/api/test/contractor-user-journey.spec.ts": "05bf9d6148edd042d43375928de8f9bb2b2aba82a77b7e012c32116eb6c2e673",
+  "apps/api/test/phase2-entitlements.spec.ts": "d5b43d2d20b2310a455ada40ae2bfe979f5328eea8a61d92f55a44cb023e832c",
+  "apps/api/test/phase2-package-artifact-publication-db.spec.ts": "4b81ec5e4e65b4280685677f341aa2ad5433ee677eec8f8dbc0e4a790e4f5228",
+  "apps/api/test/phase2-quota-recovery-db.spec.ts": "5ec42f15a85e1d78ce63c8309b862f000c4d52e06f20ca8bdba0af7e200b2b25",
+  "apps/worker/src/queues/handover-package.processor.ts": "e4a12f6d70c8a123345a0fc662c04eb1f385afa1a6ed306d6d503bd48aff73d3",
+  "apps/worker/src/queues/package-artifact-capacity.ts": "bffbb424eb5fbad811d4272db3f43c674b18c62a0c1ef81067786d9d0f4a0fcd",
+  "packages/db/migrations/0052_phase2_package_artifact_reservations.sql": "d7b9cd85a99a8ec05bd371a2ee4438c49c4864f0d88198e9e599464a6e4bb61b",
+  "packages/db/src/entitlements.ts": "4c5af13c9a51830fca30021359921d553390289b430c03d893b4709989d2ef63",
+  "packages/db/src/schema.ts": "ed9e7052e00bee51b763734f0cdff0aef02766bc15e3646cb06192a3edb115f0"
+}

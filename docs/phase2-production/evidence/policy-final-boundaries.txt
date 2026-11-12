@@ -1,0 +1,9 @@
+PASS test/phase2-policy-upgrade-and-org-lock-db.spec.ts (8.151 s)
+PASS test/phase2-entitlements.spec.ts
+PASS test/phase2-public-plan-policy.spec.ts
+
+Test Suites: 3 passed, 3 total
+Tests:       44 passed, 44 total
+Snapshots:   0 total
+Time:        10.036 s
+Ran all test suites matching /test\/phase2-entitlements.spec.ts|test\/phase2-policy-upgrade-and-org-lock-db.spec.ts|test\/phase2-public-plan-policy.spec.ts/i.

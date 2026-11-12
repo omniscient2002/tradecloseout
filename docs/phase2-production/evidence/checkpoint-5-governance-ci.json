@@ -1,0 +1,21 @@
+{
+  "candidateSha": "f64209de7c05b155156698dc965d087d2746eb4a",
+  "evidenceLevel": "EXACT_HEAD_CI_NOT_EXTERNAL_ACCEPTANCE",
+  "workflow_runs": [
+    {
+      "id": 43262432033,
+      "name": "TradeCloseout CI/CD Pipeline (15 \u00a74)",
+      "status": "completed",
+      "conclusion": "success",
+      "jobId": 131336989770,
+      "url": "https://github.com/omniscient2002/tradecloseout/actions/runs/43262432033"
+    },
+    {
+      "id": 43262432176,
+      "name": "Group review protocol verification",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/omniscient2002/tradecloseout/actions/runs/43262432176"
+    }
+  ]
+}

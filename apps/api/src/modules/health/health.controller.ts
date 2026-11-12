@@ -28,13 +28,13 @@ export class HealthController {
         version: '0.2.1',
         database: isAlive ? 'connected' : 'disconnected',
       });
-    } catch (err: any) {
+    } catch {
       return res.status(HttpStatus.SERVICE_UNAVAILABLE).json({
         status: 'error',
         timestamp: new Date().toISOString(),
         version: '0.2.1',
         database: 'error',
-        message: err.message,
+        message: 'Health dependency unavailable',
       });
     }
   }

@@ -14,8 +14,10 @@ import {
 import { PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { STANDARD_COMPANION_RULES } from '@tradecloseout/db';
+import { assertCurrentProjectAuthority } from '@tradecloseout/db/tenant-tx';
 import { TenantDbService, ExecutionContext } from '../../database/tenant-db.service';
 import { ExternalApprovalDto } from './dto/external-approval.dto';
+import { isProductionEnvironment } from '../identity/auth-security';
 
 export function isExpiredOnIndiaDate(expiryDate: string | Date, now = new Date()): boolean {
   const expiry = expiryDate instanceof Date ? expiryDate.toISOString().slice(0, 10) : String(expiryDate).slice(0, 10);
@@ -267,7 +269,43 @@ export class ReviewsService {
 
   async getVersionReviewDetail(ctx: ExecutionContext, projectId: string, versionId: string) {
     if (ctx.actorType === 'GUEST' || ctx.guestGrantId) {
-      throw new NotFoundException('DOCUMENT_VERSION_NOT_FOUND');
+      // G02-017: project-authorized client/consultant *read* of a currently
+      // approved verified contractor version. Never expose uploader name,
+      // reviewer identity, private comments or internal companion notes.
+      if(!ctx.guestGrantId)throw new NotFoundException('DOCUMENT_VERSION_NOT_FOUND');
+      return this.db.withTenantContext(ctx,async(client:PoolClient)=>{
+        const {rows}=await client.query(
+          `SELECT dv.id,dv.document_id,dv.revision_code,dv.review_status,
+                  dv.file_status,dv.issue_date,dv.expiry_date,dv.row_version,
+                  d.title AS document_title,d.doc_type_key
+             FROM guest_grants g
+             JOIN document_versions dv
+              ON dv.org_id=g.org_id AND dv.project_id=g.project_id
+              AND dv.id=$3 AND dv.deleted_at IS NULL
+             JOIN documents d
+              ON d.org_id=dv.org_id AND d.project_id=dv.project_id
+              AND d.id=dv.document_id AND d.deleted_at IS NULL
+              AND d.current_approved_version_id=dv.id
+            WHERE g.org_id=$1 AND g.project_id=$2 AND g.id=$4
+              AND g.principal_user_id=$5
+              AND g.status='ACTIVE' AND g.expires_at>now()
+              AND g.grant_type IN ('CLIENT_VIEW','CONSULTANT_REVIEW','MC_VIEW','AUDITOR_READ')
+              AND g.capabilities @> ARRAY['document.read']::text[]
+              AND dv.file_status='READY' AND dv.review_status='APPROVED'
+            LIMIT 1`,
+          [ctx.orgId,projectId,versionId,ctx.guestGrantId,ctx.userId],
+        );
+        if(!rows.length)throw new NotFoundException('DOCUMENT_VERSION_NOT_FOUND');
+        const v=rows[0];
+        return {
+          versionId:v.id,documentId:v.document_id,
+          documentTitle:v.document_title,docTypeKey:v.doc_type_key,
+          revisionCode:v.revision_code,issueDate:v.issue_date,
+          expiryDate:v.expiry_date,fileStatus:'READY',reviewStatus:'APPROVED',
+          rowVersion:v.row_version,comments:[],
+          reviewerIdentityRedacted:true,
+        };
+      });
     }
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
       const verRes = await client.query(
@@ -565,7 +603,23 @@ export class ReviewsService {
     }
 
     const run = async (client: PoolClient) => {
-      // 1. Fetch review record
+      // PH1-G02-002: route-level authorization may have had no projectId
+      // for bulk decisions. Resolve the actual review project first, then
+      // lock and revalidate current membership before locking the review.
+      // This also avoids review -> membership inverse lock order.
+      const { rows: projectRows } = await client.query(
+        `SELECT project_id FROM reviews WHERE org_id=$1 AND id=$2`,
+        [ctx.orgId, reviewId],
+      );
+      if (!projectRows.length) throw new NotFoundException('REVIEW_NOT_FOUND');
+      const actualProjectId = projectRows[0].project_id as string;
+      if (ctx.projectId && ctx.projectId !== actualProjectId) {
+        throw new NotFoundException('REVIEW_NOT_FOUND');
+      }
+      await assertCurrentProjectAuthority(client, {
+        ...ctx, projectId: actualProjectId,
+      });
+      // 1. Lock the review after validating current authority.
       const reviewRes = await client.query(
         `SELECT * FROM reviews WHERE org_id = $1 AND id = $2 FOR UPDATE`,
         [ctx.orgId, reviewId],
@@ -574,6 +628,9 @@ export class ReviewsService {
         throw new NotFoundException('REVIEW_NOT_FOUND');
       }
       const review = reviewRes.rows[0];
+      if (review.project_id !== actualProjectId) {
+        throw new NotFoundException('REVIEW_NOT_FOUND');
+      }
       if (review.status !== 'IN_REVIEW' && review.status !== 'PENDING') {
         throw new ConflictException(`INVALID_STATE_TRANSITION: Review is already in status ${review.status}`);
       }
@@ -921,6 +978,26 @@ export class ReviewsService {
         throw new UnprocessableEntityException('EXTERNAL_PROOF_NOT_VERIFIED_IN_PROJECT');
       }
       if (proofRes.rows.length > 1) throw new UnprocessableEntityException('EXTERNAL_PROOF_VERSION_AMBIGUOUS');
+
+      // G01-001: an issuer-selected PDF, email screenshot or claimed party
+      // name is not itself an authorised external acceptance. Two different
+      // platform reviewers must attest to the identical, scanned READY proof
+      // bytes, exact target revision and designated counterparty before a
+      // contractor can record an offline external approval. This trusted SQL
+      // function exposes only a boolean; the API cannot forge review records.
+      if (isProductionEnvironment()) {
+        const {rows:verified} = await client.query(
+          `SELECT has_verified_external_document_approval($1,$2,$3,$4) AS valid`,
+          [ctx.orgId,version.id,proofRes.rows[0].proof_version_id,
+           dto.externalPartyId],
+        );
+        if (verified[0]?.valid !== true) {
+          throw new ForbiddenException({
+            code:'INDEPENDENT_EXTERNAL_PROOF_REQUIRED',
+            detail:'External approval requires independent verification of this exact document revision and the external decision evidence.',
+          });
+        }
+      }
 
       // Security Invariant (TC2-003): External approval requires verified READY file_status
       if (version.file_status !== 'READY') {

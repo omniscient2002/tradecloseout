@@ -1,0 +1,11 @@
+PASS test/phase2-configuration-boundaries.spec.ts (18.252 s)
+PASS test/pr1-independent-db-acceptance.spec.ts (11.874 s)
+PASS test/phase2-quota-recovery-db.spec.ts (8.546 s)
+PASS test/phase2-configuration-sources-db.spec.ts
+PASS test/hvac-checklist-readiness-branch.spec.ts
+
+Test Suites: 5 passed, 5 total
+Tests:       59 passed, 59 total
+Snapshots:   0 total
+Time:        41.14 s
+Ran all test suites matching /test\/pr1-independent-db-acceptance.spec.ts|test\/phase2-configuration-boundaries.spec.ts|test\/hvac-checklist-readiness-branch.spec.ts|test\/phase2-configuration-sources-db.spec.ts|test\/phase2-quota-recovery-db.spec.ts/i.

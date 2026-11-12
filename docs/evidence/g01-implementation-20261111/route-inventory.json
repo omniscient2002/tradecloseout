@@ -1,0 +1,2080 @@
+[
+  {
+    "method": "DELETE",
+    "path": "/api/v1/documents/:id",
+    "controller": "DocumentsController",
+    "handler": "deleteDocument",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.delete"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/orgs/:orgId/invitations/:id",
+    "controller": "OrganisationsController",
+    "handler": "revokeInvitation",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "org.manage"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/orgs/:orgId/members/:userId",
+    "controller": "OrganisationsController",
+    "handler": "removeMember",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "org.manage"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/projects/:id/members/:userId",
+    "controller": "ProjectsController",
+    "handler": "removeProjectMember",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "project.manage"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/projects/:projectId/assets/:id",
+    "controller": "AssetsController",
+    "handler": "deleteAsset",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "asset.manage"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/auth/me",
+    "controller": "IdentityController",
+    "handler": "getMe",
+    "guards": [
+      "SessionCsrfGuard"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/auth/mfa/status",
+    "controller": "MfaController",
+    "handler": "status",
+    "guards": [
+      "SessionCsrfGuard"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/auth/orgs",
+    "controller": "IdentityController",
+    "handler": "getOrgs",
+    "guards": [
+      "SessionCsrfGuard"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/auth/session/bootstrap",
+    "controller": "IdentityController",
+    "handler": "bootstrapSession",
+    "guards": [
+      "SessionCsrfGuard"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/auth/sessions",
+    "controller": "IdentityController",
+    "handler": "listOwnSessions",
+    "guards": [
+      "SessionCsrfGuard"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/billing/invoices",
+    "controller": "BillingController",
+    "handler": "listInvoices",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "billing.manage"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/billing/plans",
+    "controller": "BillingController",
+    "handler": "listPlans",
+    "guards": []
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/document-versions/:id/download-url",
+    "controller": "DocumentsController",
+    "handler": "getDownloadUrl",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.download"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/document-versions/:id/preview-url",
+    "controller": "DocumentsController",
+    "handler": "getPreviewUrl",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.download"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/document-versions/:versionId/stream",
+    "controller": "DocumentsController",
+    "handler": "streamDirectPdf",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.download"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/documents/:id",
+    "controller": "DocumentsController",
+    "handler": "getDocument",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.read"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/guest/:token",
+    "controller": "PartiesController",
+    "handler": "getGuestGrant",
+    "guards": []
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/guest/me/context",
+    "controller": "PartiesController",
+    "handler": "getGuestSessionContext",
+    "guards": [
+      "SessionCsrfGuard"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/health",
+    "controller": "HealthController",
+    "handler": "apiHealth",
+    "guards": []
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/notifications",
+    "controller": "NotificationsController",
+    "handler": "listNotifications",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.read"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/orgs/:orgId",
+    "controller": "OrganisationsController",
+    "handler": "getOrganisation",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "org.read"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/orgs/:orgId/audit",
+    "controller": "OrganisationsController",
+    "handler": "getAuditLog",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "org.read"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/orgs/:orgId/dashboard",
+    "controller": "OrganisationsController",
+    "handler": "getDashboard",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "org.read"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/orgs/:orgId/members",
+    "controller": "OrganisationsController",
+    "handler": "listMembers",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "org.read"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/orgs/:orgId/members/:userId/offboarding-gap-report",
+    "controller": "OrganisationsController",
+    "handler": "getOffboardingGapReport",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "org.manage"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/orgs/current/invoices",
+    "controller": "BillingController",
+    "handler": "listInvoices",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "billing.manage"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/orgs/current/subscription",
+    "controller": "BillingController",
+    "handler": "getCurrentSubscription",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "billing.manage"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/packages/:id",
+    "controller": "HandoverController",
+    "handler": "getPackage",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "package.download"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/parties",
+    "controller": "PartiesController",
+    "handler": "getParties",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "party.read"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects",
+    "controller": "ProjectsController",
+    "handler": "listProjects",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "project.read"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/:id",
+    "controller": "ProjectsController",
+    "handler": "getProject",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "project.read"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/:id/commercial-readiness",
+    "controller": "BillingController",
+    "handler": "getCommercialReadiness",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.read"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/:id/contracts",
+    "controller": "ProjectsController",
+    "handler": "listContracts",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "project.read"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/:id/dashboard",
+    "controller": "ProjectsController",
+    "handler": "getProjectDashboard",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "project.read"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/:id/defects",
+    "controller": "BillingController",
+    "handler": "listDefects",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.read"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/:id/members",
+    "controller": "ProjectsController",
+    "handler": "listProjectMembers",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "project.read"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/:id/specifications",
+    "controller": "ProjectsController",
+    "handler": "listSpecifications",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "project.read"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/:id/warranty-events",
+    "controller": "BillingController",
+    "handler": "listWarrantyEvents",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.read"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/:projectId/archive-exports",
+    "controller": "HandoverController",
+    "handler": "listArchiveExports",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "export.data"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/:projectId/archive-exports/:exportId",
+    "controller": "HandoverController",
+    "handler": "getArchiveExport",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "export.data"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/:projectId/assets",
+    "controller": "AssetsController",
+    "handler": "listAssets",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "asset.read"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/:projectId/assets/:id",
+    "controller": "AssetsController",
+    "handler": "getAsset",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "asset.read"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/:projectId/assets/:id/history",
+    "controller": "AssetsController",
+    "handler": "getAssetIdentityHistory",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "asset.read"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/:projectId/assets/:id/passport",
+    "controller": "AssetsController",
+    "handler": "getEquipmentPassport",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "asset.read"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/:projectId/assets/export",
+    "controller": "AssetsController",
+    "handler": "exportAssets",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "asset.read"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/:projectId/change-requests",
+    "controller": "ChecklistsController",
+    "handler": "listChangeRequests",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.read"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/:projectId/checklists/approved-templates",
+    "controller": "ChecklistsController",
+    "handler": "listApprovedTemplates",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "project.manage"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/:projectId/commissioning/seasonal-schedules",
+    "controller": "CommissioningController",
+    "handler": "listSeasonalSchedules",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "project.read"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/:projectId/commissioning/tab-worksheets",
+    "controller": "CommissioningController",
+    "handler": "listTabWorksheets",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.read"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/:projectId/document-versions/:versionId",
+    "controller": "ReviewsController",
+    "handler": "getVersionReviewDetail",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.read"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/:projectId/document-versions/:versionId/stream",
+    "controller": "DocumentsController",
+    "handler": "streamProjectPdf",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.download"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/:projectId/documents",
+    "controller": "DocumentsController",
+    "handler": "listDocuments",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.read"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/:projectId/dossier/pdf",
+    "controller": "HandoverController",
+    "handler": "getDossierPdf",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "package.download"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/:projectId/external-review-options",
+    "controller": "ReviewsController",
+    "handler": "getExternalReviewOptions",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "review.record_external"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/:projectId/handover/readiness",
+    "controller": "HandoverController",
+    "handler": "evaluateReadiness",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "package.generate"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/:projectId/owner-digest",
+    "controller": "NotificationsController",
+    "handler": "getOwnerDigest",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "project.read"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/:projectId/packages",
+    "controller": "HandoverController",
+    "handler": "listPackages",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "package.download"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/:projectId/packages/:id",
+    "controller": "HandoverController",
+    "handler": "getProjectPackage",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "package.download"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/:projectId/packages/:packageId/download",
+    "controller": "HandoverController",
+    "handler": "getPackageDownloadUrl",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "package.download"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/:projectId/packages/readiness",
+    "controller": "HandoverController",
+    "handler": "evaluateReadiness",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "package.generate"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/:projectId/procurement-orders",
+    "controller": "PartiesController",
+    "handler": "listProcurementOrders",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "party.read"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/:projectId/readiness",
+    "controller": "HandoverController",
+    "handler": "evaluateReadiness",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "package.generate"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/:projectId/requirements",
+    "controller": "ChecklistsController",
+    "handler": "listRequirements",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.read"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/:projectId/reviews",
+    "controller": "ReviewsController",
+    "handler": "listReviews",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "review.decide"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/reviews/:id",
+    "controller": "ReviewsController",
+    "handler": "getReview",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "review.decide"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/signatures/verify/:code",
+    "controller": "DigitalSignatureController",
+    "handler": "verifySignature",
+    "guards": []
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/work-items",
+    "controller": "WorkItemsController",
+    "handler": "listWorkItems",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "project.read"
+  },
+  {
+    "method": "GET",
+    "path": "/health",
+    "controller": "HealthController",
+    "handler": "health",
+    "guards": []
+  },
+  {
+    "method": "GET",
+    "path": "/projects/:projectId/commissioning/seasonal-schedules",
+    "controller": "CommissioningController",
+    "handler": "listSeasonalSchedules",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "project.read"
+  },
+  {
+    "method": "GET",
+    "path": "/projects/:projectId/commissioning/tab-worksheets",
+    "controller": "CommissioningController",
+    "handler": "listTabWorksheets",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.read"
+  },
+  {
+    "method": "GET",
+    "path": "/work-items",
+    "controller": "WorkItemsController",
+    "handler": "listWorkItems",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "project.read"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/orgs/:orgId",
+    "controller": "OrganisationsController",
+    "handler": "updateOrganisation",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "org.manage"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/orgs/:orgId/members/:userId",
+    "controller": "OrganisationsController",
+    "handler": "updateMemberRole",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "org.manage"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/projects/:id",
+    "controller": "ProjectsController",
+    "handler": "updateProject",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "project.manage"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/projects/:projectId/assets/:id",
+    "controller": "AssetsController",
+    "handler": "updateAsset",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "asset.manage"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/projects/:projectId/assets/:id/revalidations/:revalidationId",
+    "controller": "AssetsController",
+    "handler": "revalidateEvidence",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "asset.manage"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/projects/:projectId/commissioning/seasonal-schedules/:id",
+    "controller": "CommissioningController",
+    "handler": "updateSeasonalSchedulePatch",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "project.manage"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/projects/:projectId/commissioning/seasonal/:id",
+    "controller": "CommissioningController",
+    "handler": "updateSeasonalSchedulePatch",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "project.manage"
+  },
+  {
+    "method": "PATCH",
+    "path": "/projects/:projectId/commissioning/seasonal-schedules/:id",
+    "controller": "CommissioningController",
+    "handler": "updateSeasonalSchedulePatch",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "project.manage"
+  },
+  {
+    "method": "PATCH",
+    "path": "/projects/:projectId/commissioning/seasonal/:id",
+    "controller": "CommissioningController",
+    "handler": "updateSeasonalSchedulePatch",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "project.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/delivery/receipts",
+    "controller": "AuthDeliveryController",
+    "handler": "receipt",
+    "guards": []
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/logout",
+    "controller": "IdentityController",
+    "handler": "logout",
+    "guards": [
+      "SessionCsrfGuard"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/mfa/enroll/confirm",
+    "controller": "MfaController",
+    "handler": "confirmEnrollment",
+    "guards": [
+      "SessionCsrfGuard"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/mfa/enroll/start",
+    "controller": "MfaController",
+    "handler": "beginEnrollment",
+    "guards": [
+      "SessionCsrfGuard"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/mfa/recovery",
+    "controller": "MfaController",
+    "handler": "recoverFactor",
+    "guards": [
+      "SessionCsrfGuard"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/mfa/reset",
+    "controller": "MfaController",
+    "handler": "resetEnrollment",
+    "guards": [
+      "SessionCsrfGuard"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/mfa/verify",
+    "controller": "MfaController",
+    "handler": "verifyFactor",
+    "guards": [
+      "SessionCsrfGuard"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/otp/request",
+    "controller": "IdentityController",
+    "handler": "requestOtp",
+    "guards": []
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/otp/verify",
+    "controller": "IdentityController",
+    "handler": "verifyOtp",
+    "guards": []
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/sessions/:sessionId/revoke",
+    "controller": "IdentityController",
+    "handler": "revokeDeviceSession",
+    "guards": [
+      "SessionCsrfGuard"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/sessions/revoke-all",
+    "controller": "IdentityController",
+    "handler": "revokeAllSessions",
+    "guards": [
+      "SessionCsrfGuard"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/switch-org",
+    "controller": "IdentityController",
+    "handler": "switchActiveOrg",
+    "guards": [
+      "SessionCsrfGuard"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/billing/invoices",
+    "controller": "BillingController",
+    "handler": "createInvoice",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "billing.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/billing/invoices/:id/tds",
+    "controller": "BillingController",
+    "handler": "recordTds",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "billing.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/billing/rule46-invoices",
+    "controller": "BillingController",
+    "handler": "issueRule46GstInvoice",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "billing.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/billing/tds/:id/reconcile",
+    "controller": "BillingController",
+    "handler": "reconcileForm16a",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "billing.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/bulk-imports/:id/commit",
+    "controller": "DocumentsController",
+    "handler": "commitBulkImport",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.bulk_import"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/bulk-imports/:id/dry-run",
+    "controller": "DocumentsController",
+    "handler": "dryRunBulkImport",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.bulk_import"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/change-requests/:id/decide",
+    "controller": "ChecklistsController",
+    "handler": "decideChangeRequest",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "checklist.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/defects/:id/close",
+    "controller": "BillingController",
+    "handler": "closeDefect",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "defect.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/defects/:id/remedy",
+    "controller": "BillingController",
+    "handler": "submitDefectRemedy",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "defect.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/document-versions/:id/abort-upload",
+    "controller": "DocumentsController",
+    "handler": "abortUpload",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.upload"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/document-versions/:id/complete",
+    "controller": "DocumentsController",
+    "handler": "completeUpload",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.upload"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/document-versions/:id/complete-upload",
+    "controller": "DocumentsController",
+    "handler": "completeUpload",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.upload"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/document-versions/:id/external-approval",
+    "controller": "ReviewsController",
+    "handler": "recordExternalApproval",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "review.record_external"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/document-versions/:id/refresh-upload-urls",
+    "controller": "DocumentsController",
+    "handler": "refreshUploadUrls",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.upload"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/documents/:id/restore",
+    "controller": "DocumentsController",
+    "handler": "restoreDocument",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.delete"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/documents/:id/versions",
+    "controller": "DocumentsController",
+    "handler": "replaceDocumentVersion",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.upload"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/guest-grants/:id/revoke",
+    "controller": "PartiesController",
+    "handler": "revokeGuestGrant",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "party.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/guest/:token/otp/request",
+    "controller": "PartiesController",
+    "handler": "requestGuestOtp",
+    "guards": []
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/guest/:token/otp/verify",
+    "controller": "PartiesController",
+    "handler": "verifyGuestOtp",
+    "guards": []
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/guest/:token/session",
+    "controller": "PartiesController",
+    "handler": "createGuestSession",
+    "guards": []
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/notifications",
+    "controller": "NotificationsController",
+    "handler": "createNotification",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "notification.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/orgs/:orgId/invitations",
+    "controller": "OrganisationsController",
+    "handler": "createInvitation",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "org.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/orgs/:orgId/reassign-work",
+    "controller": "OrganisationsController",
+    "handler": "reassignWork",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "org.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/orgs/:orgId/transfer-ownership",
+    "controller": "OrganisationsController",
+    "handler": "transferOwnership",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "org.transfer_ownership"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/orgs/current/invoices",
+    "controller": "BillingController",
+    "handler": "createInvoice",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "billing.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/orgs/current/tds",
+    "controller": "BillingController",
+    "handler": "recordTds",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "billing.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/packages/:id/submit",
+    "controller": "HandoverController",
+    "handler": "submitPackage",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "package.submit"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/parties",
+    "controller": "PartiesController",
+    "handler": "createParty",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "party.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects",
+    "controller": "ProjectsController",
+    "handler": "createProject",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "project.create"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:id/activate",
+    "controller": "ProjectsController",
+    "handler": "activateProject",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "project.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:id/close",
+    "controller": "ProjectsController",
+    "handler": "closeProject",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "project.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:id/contracts",
+    "controller": "ProjectsController",
+    "handler": "createContract",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "project.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:id/contracts/:contractId/variations",
+    "controller": "ProjectsController",
+    "handler": "createVariation",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "project.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:id/defects",
+    "controller": "BillingController",
+    "handler": "createDefect",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "defect.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:id/handover",
+    "controller": "ProjectsController",
+    "handler": "handoverProject",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "project.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:id/members",
+    "controller": "ProjectsController",
+    "handler": "addProjectMember",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "project.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:id/reopen",
+    "controller": "ProjectsController",
+    "handler": "reopenProject",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "project.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:id/specifications",
+    "controller": "ProjectsController",
+    "handler": "createSpecification",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "project.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:id/suspend",
+    "controller": "ProjectsController",
+    "handler": "suspendProject",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "project.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:id/warranty-events",
+    "controller": "BillingController",
+    "handler": "recordWarrantyEvent",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "warranty.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/archive-exports",
+    "controller": "HandoverController",
+    "handler": "exportProjectArchive",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "package.generate"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/assets",
+    "controller": "AssetsController",
+    "handler": "createAsset",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "asset.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/assets/import",
+    "controller": "AssetsController",
+    "handler": "importAssets",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "asset.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/assets/match-candidates",
+    "controller": "AssetsController",
+    "handler": "matchAssetCandidates",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "asset.read"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/checklist/import-l3",
+    "controller": "ChecklistsController",
+    "handler": "importL3Checklist",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "project.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/checklist/snapshots",
+    "controller": "ChecklistsController",
+    "handler": "createSnapshot",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "project.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/checklists/apply-template",
+    "controller": "ChecklistsController",
+    "handler": "applyApprovedTemplate",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "project.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/checklists/import-l3",
+    "controller": "ChecklistsController",
+    "handler": "importL3Checklist",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "project.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/checklists/waivers/:id/countersign",
+    "controller": "ChecklistsController",
+    "handler": "countersignWaiver",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "requirement.waive_second"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/commissioning/inspections",
+    "controller": "CommissioningController",
+    "handler": "recordQualityInspection",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.upload"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/commissioning/inspections/:id/witness-attendance",
+    "controller": "CommissioningController",
+    "handler": "recordInspectionWitnessAttendance",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.upload"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/commissioning/inspections/:id/witness-sign",
+    "controller": "CommissioningController",
+    "handler": "signInspectionWitness",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "inspection.witness"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/commissioning/seasonal-schedules",
+    "controller": "CommissioningController",
+    "handler": "createSeasonalSchedule",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "project.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/commissioning/tab-worksheets",
+    "controller": "CommissioningController",
+    "handler": "recordTabWorksheet",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.upload"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/defects/:id/close",
+    "controller": "BillingController",
+    "handler": "closeDefect",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "defect.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/defects/:id/remedy",
+    "controller": "BillingController",
+    "handler": "submitDefectRemedy",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "defect.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/document-versions/:id/complete-upload",
+    "controller": "DocumentsController",
+    "handler": "completeUpload",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.upload"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/document-versions/:versionId/decision",
+    "controller": "ReviewsController",
+    "handler": "decideVersionReview",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "review.decide"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/documents/:documentId/batch-links",
+    "controller": "DocumentsController",
+    "handler": "linkBatchEvidence",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.upload"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/documents/bulk-import",
+    "controller": "DocumentsController",
+    "handler": "createBulkImportIntent",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.bulk_import"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/documents/bulk-import-intents",
+    "controller": "DocumentsController",
+    "handler": "createBulkImportIntent",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.bulk_import"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/documents/upload-intents",
+    "controller": "DocumentsController",
+    "handler": "createUploadIntent",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.upload"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/guest-grants",
+    "controller": "PartiesController",
+    "handler": "createGuestGrant",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "party.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/handover/packages",
+    "controller": "HandoverController",
+    "handler": "generateHandoverPackage",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "package.generate"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/handover/ra-bill-pack",
+    "controller": "HandoverController",
+    "handler": "compileRaBillEvidencePack",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "package.generate"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/packages",
+    "controller": "HandoverController",
+    "handler": "generateHandoverPackage",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "package.generate"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/procurement-orders",
+    "controller": "PartiesController",
+    "handler": "createProcurementOrder",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "party.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/requirements",
+    "controller": "ChecklistsController",
+    "handler": "createRequirement",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "checklist.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/requirements/:id/change-requests",
+    "controller": "ChecklistsController",
+    "handler": "requestChange",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "checklist.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/reviews",
+    "controller": "ReviewsController",
+    "handler": "recordProjectReview",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "review.decide"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/reviews/:versionId",
+    "controller": "ReviewsController",
+    "handler": "decideVersionReview",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "review.decide"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/reviews/:versionId/decision",
+    "controller": "ReviewsController",
+    "handler": "decideVersionReview",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "review.decide"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/signatures",
+    "controller": "DigitalSignatureController",
+    "handler": "recordSignature",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.upload"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/snapshots",
+    "controller": "ChecklistsController",
+    "handler": "createSnapshot",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "project.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/submissions",
+    "controller": "HandoverController",
+    "handler": "createSubmission",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "package.submit"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/submissions/:submissionId/decision",
+    "controller": "HandoverController",
+    "handler": "recordSubmissionDecision",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "package.accept"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/supplier-document-obligations/:id/intake",
+    "controller": "PartiesController",
+    "handler": "intakeSupplierObligation",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.upload"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/supplier-links",
+    "controller": "PartiesController",
+    "handler": "createSupplierLink",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.upload"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/supplier-obligations/:id/intake",
+    "controller": "PartiesController",
+    "handler": "intakeSupplierObligation",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.upload"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/supplier-upload-links",
+    "controller": "PartiesController",
+    "handler": "createSupplierUploadLink",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.upload"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/transmittals/generate",
+    "controller": "DocumentsController",
+    "handler": "generateTransmittalPack",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.upload"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/transmittals/stamp-back",
+    "controller": "DocumentsController",
+    "handler": "processTransmittalStampBack",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "review.record_external"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/upload-intents",
+    "controller": "DocumentsController",
+    "handler": "createUploadIntent",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.upload"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/projects/:projectId/waivers/:id/countersign",
+    "controller": "ChecklistsController",
+    "handler": "countersignWaiver",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "requirement.waive_second"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/requirements/:id/submit-review",
+    "controller": "ReviewsController",
+    "handler": "submitReview",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.upload"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/requirements/:id/waivers",
+    "controller": "ChecklistsController",
+    "handler": "requestWaiver",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "requirement.waive"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/requirements/:id/waivers/approve",
+    "controller": "ChecklistsController",
+    "handler": "countersignWaiver",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "requirement.waive_second"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/requirements/:id/waivers/countersign",
+    "controller": "ChecklistsController",
+    "handler": "countersignWaiver",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "requirement.waive_second"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/reviews/:id/comments",
+    "controller": "ReviewsController",
+    "handler": "addComment",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "review.decide"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/reviews/:id/decisions",
+    "controller": "ReviewsController",
+    "handler": "decideReview",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "review.decide"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/reviews/:id/override",
+    "controller": "ReviewsController",
+    "handler": "overrideReview",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "review.decide"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/reviews/bulk-decisions",
+    "controller": "ReviewsController",
+    "handler": "bulkDecisions",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "review.decide"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/submissions/:submissionId/recipients/:recipientId/decision",
+    "controller": "HandoverController",
+    "handler": "recordRecipientDecision",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "package.accept"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/waivers/:id/countersign",
+    "controller": "ChecklistsController",
+    "handler": "countersignWaiver",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "requirement.waive_second"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/webhooks/razorpay",
+    "controller": "BillingController",
+    "handler": "handleRazorpayWebhook",
+    "guards": []
+  },
+  {
+    "method": "POST",
+    "path": "/projects/:projectId/commissioning/inspections",
+    "controller": "CommissioningController",
+    "handler": "recordQualityInspection",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.upload"
+  },
+  {
+    "method": "POST",
+    "path": "/projects/:projectId/commissioning/inspections/:id/witness-attendance",
+    "controller": "CommissioningController",
+    "handler": "recordInspectionWitnessAttendance",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.upload"
+  },
+  {
+    "method": "POST",
+    "path": "/projects/:projectId/commissioning/inspections/:id/witness-sign",
+    "controller": "CommissioningController",
+    "handler": "signInspectionWitness",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "inspection.witness"
+  },
+  {
+    "method": "POST",
+    "path": "/projects/:projectId/commissioning/seasonal-schedules",
+    "controller": "CommissioningController",
+    "handler": "createSeasonalSchedule",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "project.manage"
+  },
+  {
+    "method": "POST",
+    "path": "/projects/:projectId/commissioning/tab-worksheets",
+    "controller": "CommissioningController",
+    "handler": "recordTabWorksheet",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "document.upload"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/projects/:projectId/commissioning/seasonal-schedules/:id",
+    "controller": "CommissioningController",
+    "handler": "updateSeasonalSchedulePut",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "project.manage"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/projects/:projectId/commissioning/seasonal/:id",
+    "controller": "CommissioningController",
+    "handler": "updateSeasonalSchedulePut",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "project.manage"
+  },
+  {
+    "method": "PUT",
+    "path": "/projects/:projectId/commissioning/seasonal-schedules/:id",
+    "controller": "CommissioningController",
+    "handler": "updateSeasonalSchedulePut",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "project.manage"
+  },
+  {
+    "method": "PUT",
+    "path": "/projects/:projectId/commissioning/seasonal/:id",
+    "controller": "CommissioningController",
+    "handler": "updateSeasonalSchedulePut",
+    "guards": [
+      "SessionCsrfGuard",
+      "PermissionGuard"
+    ],
+    "permission": "project.manage"
+  }
+]

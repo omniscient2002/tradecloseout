@@ -1,5 +1,7 @@
 import { HeadObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { Pool } from 'pg';
+import {lockStorageCapacity,reconcileStorageCapacity,resolveEffectiveEntitlements} from '@tradecloseout/db';
+import {reservePackageArtifact} from './package-artifact-capacity';
 import { createHash } from 'crypto';
 import { createReadStream, createWriteStream } from 'fs';
 import { mkdtemp, rm, stat } from 'fs/promises';
@@ -50,6 +52,7 @@ export async function compileAndPersistHandoverPackage(
 
   const owner = `PACKAGE_JOB:${jobId}`;
   const client = await pool.connect();
+  let destroyInitial=false;
   let packageMeta: any;
   let packageRequirements: any[] = [];
   let sourceRows: any[] = [];
@@ -155,10 +158,10 @@ export async function compileAndPersistHandoverPackage(
     }
     await client.query('COMMIT');
   } catch (error) {
-    await client.query('ROLLBACK').catch(() => undefined);
+    try{await client.query('ROLLBACK');}catch{destroyInitial=true;}
     throw error;
   } finally {
-    client.release();
+    client.release(destroyInitial);
   }
 
   const maxSourceBytes = configuredLimit('PACKAGE_MAX_SOURCE_BYTES', DEFAULT_MAX_SOURCE_BYTES);
@@ -258,8 +261,9 @@ export async function compileAndPersistHandoverPackage(
 
     const bucket = process.env.S3_BUCKET;
     if (!bucket) throw new Error('PACKAGE_STORAGE_NOT_CONFIGURED');
-    const artifactId = uuidv7();
-    const objectKey = `organisations/${orgId}/projects/${packageMeta.project_id}/handover/${packageId}/${artifactId}.pdf`;
+    const reservation=await reservePackageArtifact(pool,{orgId,projectId:packageMeta.project_id,packageId,owner,bucket,
+      filename:`handover-${packageMeta.project_code}-v${packageMeta.version_no}.pdf`,sizeBytes:outputStats.size,sha256:actualOutputSha});
+    const artifactId=reservation.id,objectKey=reservation.objectKey;
     const putResult = await s3.send(new PutObjectCommand({
       Bucket: bucket,
       Key: objectKey,
@@ -280,12 +284,21 @@ export async function compileAndPersistHandoverPackage(
     }
 
     const persistClient = await pool.connect();
+    let destroyPersist=false;
     try {
       await persistClient.query('BEGIN');
       await persistClient.query(
         `SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`,
         [orgId],
       );
+      const {rows:org}=await persistClient.query('SELECT status FROM organisations WHERE id=$1 FOR SHARE',[orgId]);
+      if(org[0]?.status!=='ACTIVE')throw new Error('PACKAGE_ORGANISATION_INACTIVE');
+      const {rows:project}=await persistClient.query(`SELECT status,purged_at FROM projects WHERE org_id=$1 AND id=$2 FOR UPDATE`,[orgId,packageMeta.project_id]);
+      if(!project[0]||project[0].purged_at||!['ACTIVE','HANDOVER'].includes(project[0].status))throw new Error('PACKAGE_PROJECT_NOT_EDITABLE');
+      const entitlement=await resolveEffectiveEntitlements(persistClient,orgId);
+      if(!entitlement.canConsume)throw new Error('PACKAGE_STORAGE_ENTITLEMENT_UNAVAILABLE');
+      const usage=await lockStorageCapacity(persistClient,orgId);
+      if(usage.totalBytes>BigInt(entitlement.limits.maxStorageBytes))throw new Error('STORAGE_QUOTA_EXCEEDED');
       const { rows: current } = await persistClient.query(
         `SELECT status, error_code FROM handover_packages
           WHERE org_id = $1 AND project_id = $2 AND id = $3 FOR UPDATE`,
@@ -294,14 +307,13 @@ export async function compileAndPersistHandoverPackage(
       if (!current.length || current[0].status !== 'GENERATING' || current[0].error_code !== owner) {
         throw new Error('PACKAGE_BUILD_LEASE_LOST');
       }
-      await persistClient.query(
-        `INSERT INTO storage_objects
-          (id, org_id, provider, bucket, object_key, original_filename, mime, size_bytes,
-           expected_sha256, observed_size_bytes, provider_version_id, sha256, status, created_by, updated_at)
-         VALUES ($1, $2, 'S3', $3, $4, $5, 'application/pdf', $6, $7, $6, $8, $7, 'READY', $9, now())`,
-        [artifactId, orgId, bucket, objectKey, `handover-${packageMeta.project_code}-v${packageMeta.version_no}.pdf`,
-          outputStats.size, actualOutputSha, putResult.VersionId, packageMeta.requested_by],
-      );
+      const published=await persistClient.query(`UPDATE storage_objects
+        SET status='READY',sha256=$3,observed_size_bytes=$4,provider_version_id=$5,updated_at=now()
+        WHERE org_id=$1 AND id=$2 AND status='PENDING' AND expected_sha256=$3 AND size_bytes=$4
+          AND id=(SELECT build_object_id FROM handover_packages WHERE org_id=$1 AND id=$6)
+        RETURNING id`,[orgId,artifactId,actualOutputSha,outputStats.size,putResult.VersionId,packageId]);
+      if(published.rowCount!==1)throw new Error('PACKAGE_ARTIFACT_RESERVATION_LOST');
+      await reconcileStorageCapacity(persistClient,orgId);
       for (const range of compileResult.itemPageRanges) {
         await persistClient.query(
           `UPDATE package_items
@@ -345,10 +357,10 @@ export async function compileAndPersistHandoverPackage(
         includedSourceCount: sourceRows.length,
       };
     } catch (error) {
-      await persistClient.query('ROLLBACK').catch(() => undefined);
+      try{await persistClient.query('ROLLBACK');}catch{destroyPersist=true;}
       throw error;
     } finally {
-      persistClient.release();
+      persistClient.release(destroyPersist);
     }
   } finally {
     await rm(tempDir, { recursive: true, force: true });

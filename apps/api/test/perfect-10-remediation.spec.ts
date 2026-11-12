@@ -1,3 +1,4 @@
+import {syntheticEntitlementQuery} from './helpers/synthetic-entitlement-query';
 // apps/api/test/perfect-10-remediation.spec.ts
 // Comprehensive Test Suite for the 5 Technical Bug Fixes & 5 Business/Domain Enhancements
 
@@ -183,19 +184,21 @@ describe('Perfect 10 Remediation & Hardening Test Suite', () => {
   // FIX 3 & Bug 2: Quota Soft Check & Accurate Storage Reconciliation
   // --------------------------------------------------------------------------
   describe('Fix 3 & Bug 2: Accurate Storage Quota Reconciliation', () => {
-    it('createUploadIntent performs soft check and rejects when ceiling exceeded', async () => {
+    it('createUploadIntent accounts for pending capacity and rejects when ceiling exceeded', async () => {
       const mockPool = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation((sql: string) => {
-            if (sql.includes('SELECT uc.value AS current_storage')) {
-              return Promise.resolve({
-                rows: [
-                  {
-                    current_storage: '950000000', // ~950 MB used
-                    limits_json: { maxStorageBytes: 1000000000 }, // 1 GB ceiling
-                  },
-                ],
-              });
+            const entitlementFixture=syntheticEntitlementQuery(sql,{storageBytes:1000000000});if(entitlementFixture)return entitlementFixture;
+            if(sql.includes('SELECT id,status,purged_at FROM projects'))return {rows:[{id:projectId,status:'ACTIVE',purged_at:null}]};
+            if(sql.includes('AS ready_bytes'))return {rows:[{ready_bytes:'950000000',reserved_bytes:'0'}]};
+          if (sql.includes("maxStorageBytes' AS max_storage_bytes")) {
+              return Promise.resolve({ rows: [{ max_storage_bytes: '1000000000' }] });
+            }
+            if (sql.includes("metric='STORAGE_BYTES'") && sql.includes('FOR UPDATE')) {
+              return Promise.resolve({ rows: [{ value: '950000000' }] });
+            }
+            if (sql.includes('SUM(size_bytes)')) {
+              return Promise.resolve({ rows: [{ reserved_bytes: '0' }] });
             }
             return Promise.resolve({ rows: [] });
           }),
@@ -229,15 +232,19 @@ describe('Perfect 10 Remediation & Hardening Test Suite', () => {
     it('deleteDocument refunds storage bytes of ready files', async () => {
       const docId = uuidv7();
       let quotaDeducted = false;
+      let documentDeleted = false;
 
       const mockPool = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation((sql: string, params: any[]) => {
-            if (sql.includes('UPDATE documents') && sql.includes('deleted_at = now()')) {
+            if(sql.startsWith('SELECT project_id FROM documents'))return Promise.resolve({rows:[{project_id:projectId}]});
+            if(sql.includes('SELECT id,status,purged_at FROM projects'))return Promise.resolve({rows:[{id:projectId,status:'ACTIVE',purged_at:null}]});
+            if (sql.includes('UPDATE documents') && sql.includes('deleted_at=now()')) {
+              documentDeleted=true;
               return Promise.resolve({ rows: [{ id: docId }] });
             }
-            if (sql.includes('SELECT COALESCE(SUM(so.size_bytes), 0) AS total_bytes')) {
-              return Promise.resolve({ rows: [{ total_bytes: '52428800' }] }); // 50 MB
+            if (sql.includes('AS ready_bytes')) {
+              return Promise.resolve({ rows: [{ ready_bytes: documentDeleted?'0':'52428800',reserved_bytes:'0' }] });
             }
             if (sql.includes('UPDATE usage_counters') && sql.includes('STORAGE_BYTES')) {
               quotaDeducted = true;
@@ -394,6 +401,9 @@ describe('Perfect 10 Remediation & Hardening Test Suite', () => {
       const mockPool = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation((sql: string) => {
+            if (sql.includes('SELECT status FROM projects')) {
+              return Promise.resolve({ rows: [{status:'ACTIVE'}] });
+            }
             if (sql.includes('SELECT id, requirement_key')) {
               return Promise.resolve({ rows: [{ id: reqId, requirement_key: 'CHLR-FAT', title: 'FAT' }] });
             }
@@ -411,6 +421,7 @@ describe('Perfect 10 Remediation & Hardening Test Suite', () => {
         orgId,
         userId,
         actorType: 'MEMBER' as const,
+        orgRole: 'R-PROC', // explicitly authorized supplier-link issuer
         ip: '127.0.0.1',
         userAgent: 'test',
         requestId: 'req-link',
@@ -483,6 +494,8 @@ describe('Perfect 10 Remediation & Hardening Test Suite', () => {
       const mockPool = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation((sql: string) => {
+            const offer=syntheticEntitlementQuery(sql);if(offer)return offer;
+            if(sql.includes('SELECT id,status,purged_at FROM projects'))return {rows:[{id:projectId,status:'ACTIVE',purged_at:null}]};
             if (sql.includes('SELECT r.id, r.requirement_key') && sql.includes('r.milestone_key = $3')) {
               return Promise.resolve({
                 rows: [
@@ -548,7 +561,19 @@ describe('Perfect 10 Remediation & Hardening Test Suite', () => {
   // --------------------------------------------------------------------------
   describe('Business Risk 5: Single-Project Closeout Pass Pricing', () => {
     it('listPlans returns Single-Project Closeout Pass with interval ONE_TIME_PROJECT', async () => {
-      const billingService = new BillingService({} as any);
+      const billingService = new BillingService({
+        getPool: () => ({
+          query: async () => ({ rows: [{
+            id: '0192e3a0-3000-7000-8000-000000000004',
+            code: 'PROJECT_PASS', name: 'Configured single-project pass',
+            price_paise: '2499900', interval: 'ONE_TIME_PROJECT',
+            limits_json: {
+              maxActiveProjects: 1, maxSeats: 1,
+              maxStorageBytes: 1073741824, maxPackageGenerationsPerMonth: 1,
+            },
+          }] }),
+        }),
+      } as any);
       const plans = await billingService.listPlans();
 
       const projectPass = plans.find((p) => p.code === 'PROJECT_PASS');

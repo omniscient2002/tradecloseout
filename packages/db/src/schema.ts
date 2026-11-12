@@ -23,6 +23,11 @@ export const users = pgTable('users', {
   name: text('name').notNull(),
   status: text('status').notNull().default('ACTIVE'), // ACTIVE | SUSPENDED | DELETED
   lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
+  mfaTotpSecret: text('mfa_totp_secret'),
+  mfaTotpPendingSecret: text('mfa_totp_pending_secret'),
+  mfaEnabledAt: timestamp('mfa_enabled_at', { withTimezone: true }),
+  mfaTotpLastStep: bigint('mfa_totp_last_step', { mode: 'number' }).notNull().default(-1),
+  authProofValidAfter: timestamp('auth_proof_valid_after',{withTimezone:true}).notNull().default(sql`'1970-01-01T00:00:00Z'::timestamptz`),
   rowVersion: integer('row_version').notNull().default(1),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -58,7 +63,7 @@ export const organisations = pgTable(
     state: text('state').notNull(),
     allowSelfApproval: boolean('allow_self_approval').notNull().default(false),
     allowGenericReview: boolean('allow_generic_review').notNull().default(false),
-    docControllerOrgWideDownload: boolean('document_controller_org_wide_download')
+    docControllerOrgWideDownload: boolean('doc_controller_org_wide_download')
       .notNull()
       .default(false),
     rowVersion: integer('row_version').notNull().default(1),
@@ -93,6 +98,14 @@ export const sessions = pgTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     tokenHash: text('token_hash').notNull(),
     csrfTokenHash: text('csrf_token_hash').notNull(),
+    authGeneration: uuid('auth_generation').notNull().default(sql`gen_random_uuid()`),
+    guestGrantId: uuid('guest_grant_id'),
+    mfaVerified: boolean('mfa_verified').notNull().default(false),
+    mfaVerifiedAt: timestamp('mfa_verified_at', { withTimezone: true }),
+    authenticatedAt: timestamp('authenticated_at', { withTimezone: true }).notNull().defaultNow(),
+    lastActivityAt: timestamp('last_activity_at', { withTimezone: true }).notNull().defaultNow(),
+    absoluteExpiresAt: timestamp('absolute_expires_at', { withTimezone: true })
+      .notNull().default(sql`now() + interval '90 days'`),
     activeOrgId: uuid('active_org_id')
       .notNull()
       .references(() => organisations.id, { onDelete: 'cascade' }),
@@ -107,6 +120,54 @@ export const sessions = pgTable(
     userActiveIdx: index('sessions_user_active_idx').on(t.userId, t.activeOrgId),
   }),
 );
+
+/** G01 one-use verification proofs. SQL maintains the generation/replay checks. */
+export const otpChallenges = pgTable('otp_challenges', {
+  id: uuid('id').primaryKey(),
+  channel: text('channel').notNull(),
+  identifier: text('identifier').notNull(),
+  purpose: text('purpose').notNull(),
+  guestGrantId: uuid('guest_grant_id'),
+  codeHash: text('code_hash').notNull(),
+  attempts: integer('attempts').notNull().default(0),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  consumedAt: timestamp('consumed_at', { withTimezone: true }),
+  deliveryStatus: text('delivery_status').notNull().default('SENT'),
+  otpGeneration: uuid('otp_generation'),
+  authIntentHash: text('auth_intent_hash'),
+  ip: inet('ip'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Shared, pseudonymous abuse budgets; no tenant identity before login. */
+export const authRequestBudgets = pgTable('auth_request_budgets', {
+  budgetKey: text('budget_key').primaryKey(),
+  count: integer('count').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Append-only security outcomes; runtime UPDATE/DELETE is not granted. */
+export const authSecurityEvents = pgTable('auth_security_events', {
+  id: uuid('id').primaryKey(),
+  actorUserId: uuid('actor_user_id').references(() => users.id, { onDelete: 'set null' }),
+  orgId: uuid('org_id').references(() => organisations.id, { onDelete: 'set null' }),
+  sessionId: uuid('session_id').references(() => sessions.id, { onDelete: 'set null' }),
+  eventType: text('event_type').notNull(),
+  outcome: text('outcome').notNull(),
+  subjectDigest: text('subject_digest'),
+  reasonCode: text('reason_code'),
+  sourceDigest: text('source_digest'),
+  occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const mfaRecoveryCodes = pgTable('mfa_recovery_codes', {
+  id: uuid('id').primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  codeHash: text('code_hash').notNull(),
+  consumedAt: timestamp('consumed_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
 
 export const memberships = pgTable(
   'memberships',
@@ -275,6 +336,13 @@ export const guestGrants = pgTable(
     partyId: uuid('party_id')
       .notNull()
       .references(() => parties.id),
+    targetEmail: text('target_email'),
+    targetPhoneE164: text('target_phone_e164'),
+    principalUserId: uuid('principal_user_id').references(() => users.id),
+    independentAuthorityVerifiedAt: timestamp('independent_authority_verified_at', { withTimezone: true }),
+    independentAuthorityEvidenceRef: text('independent_authority_evidence_ref'),
+    failedOtpCount: integer('failed_otp_count').notNull().default(0),
+    cooldownUntil: timestamp('cooldown_until', { withTimezone: true }),
     userId: uuid('user_id').references(() => users.id),
     role: text('role').notNull(), // R-CONSULT | R-CLIENT | R-MC | R-SUPPLIER-OEM | R-SUBCONTRACTOR | R-SUPPLIER-UP | R-LAB | R-OEM-SERVICE
     grantType: text('grant_type').notNull(), // SUPPLIER_UPLOAD | SUPPLIER_CONTRIBUTOR | CONSULTANT_REVIEW | CLIENT_VIEW | MC_VIEW | AUDITOR_READ
@@ -356,11 +424,19 @@ export const templatePacks = pgTable(
     version: integer('version').notNull(),
     schemaVersion: integer('schema_version').notNull().default(1),
     payloadJson: jsonb('payload_json').notNull(),
-    status: text('status').notNull().default('ACTIVE'),
+    status: text('status').notNull().default('DRAFT'),
+    authorIdentity: text('author_identity'),
+    reviewerIdentity: text('reviewer_identity'),
+    reviewedAt: timestamp('reviewed_at',{withTimezone:true}),
+    reviewEvidenceRef:text('review_evidence_ref'),
+    payloadChecksum:text('payload_checksum'),
+    governanceVersion:integer('governance_version'),
+    reviewRecordJson:jsonb('review_record_json'),
+    reviewedCandidateSha:text('reviewed_candidate_sha'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
-    tradeVerUq: uniqueIndex('template_packs_trade_ver_uq').on(t.trade, t.version),
+    codeVersionUq: uniqueIndex('template_packs_code_version_key').on(t.code, t.version),
   }),
 );
 
@@ -376,6 +452,8 @@ export const configVersions = pgTable(
     schemaVersion: integer('schema_version').notNull().default(1),
     payloadJson: jsonb('payload_json').notNull(),
     checksum: text('checksum').notNull(),
+    formatVersion:integer('format_version'),
+    sourceManifestJson:jsonb('source_manifest_json').notNull().default({}),
     status: text('status').notNull().default('DRAFT'), // DRAFT | ACTIVE | ARCHIVED
     sourcePackId: uuid('source_pack_id').references(() => templatePacks.id),
     createdBy: uuid('created_by').notNull().references(() => users.id),
@@ -616,6 +694,9 @@ export const storageObjects = pgTable(
     retentionClass: text('retention_class').notNull().default('PROJECT_PLUS_8Y'),
     createdBy: uuid('created_by').references(() => users.id),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    uploadCleanupRequestedAt: timestamp('upload_cleanup_requested_at', { withTimezone: true }),
+    uploadCleanupCompletedAt: timestamp('upload_cleanup_completed_at', { withTimezone: true }),
+    uploadFailureCode: text('upload_failure_code'),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
@@ -1082,6 +1163,7 @@ export const handoverPackages = pgTable(
       .references(() => checklistSnapshots.id),
     snapshotChecksum: text('snapshot_checksum').notNull(), // Required per FR-HND-021 / 08 §8 Rule 17
     overrideReason: text('override_reason'),
+    buildObjectId: uuid('build_object_id').references(() => storageObjects.id),
     pdfObjectId: uuid('pdf_object_id').references(() => storageObjects.id),
     zipObjectId: uuid('zip_object_id').references(() => storageObjects.id),
     manifestObjectId: uuid('manifest_object_id').references(() => storageObjects.id),
@@ -1424,12 +1506,43 @@ export const outboxEvents = pgTable('outbox_events', {
 /* 3.10 BILLING, GST, E-INVOICE & TDS (08-DATA-MODEL-AND-ERD.md §3.10)        */
 /* ========================================================================== */
 
+export const billingPolicyVersions = pgTable('billing_policy_versions', {
+  id: uuid('id').primaryKey(),
+  version: text('version').notNull().unique(),
+  schemaVersion: integer('schema_version').notNull(),
+  status: text('status').notNull(),
+  graceSeconds: integer('grace_seconds').notNull(),
+  createdByIdentity: text('created_by_identity').notNull(),
+  reviewerIdentity: text('reviewer_identity'),
+  approvedAt: timestamp('approved_at',{withTimezone:true}),
+  evidenceRef: text('evidence_ref'),
+});
+
+export const ownershipTransferIntents = pgTable('ownership_transfer_intents', {
+  id: uuid('id').primaryKey(),
+  orgId: uuid('org_id').notNull().references(()=>organisations.id),
+  requestedBy: uuid('requested_by').notNull().references(()=>users.id),
+  recipientUserId: uuid('recipient_user_id').notNull().references(()=>users.id),
+  requestKey: uuid('request_key').notNull(),
+  expectedOrgVersion: integer('expected_org_version').notNull(),
+  recipientMembershipVersion: integer('recipient_membership_version').notNull(),
+  status: text('status').notNull().default('PENDING'),
+  expiresAt: timestamp('expires_at',{withTimezone:true}).notNull(),
+  decidedAt: timestamp('decided_at',{withTimezone:true}),
+  createdAt: timestamp('created_at',{withTimezone:true}).notNull().defaultNow(),
+},t=>({
+  requestUq:uniqueIndex('ownership_transfer_org_request_uq').on(t.orgId,t.requestKey),
+  pendingUq:uniqueIndex('ownership_one_pending_intent').on(t.orgId).where(sql`${t.status}='PENDING'`),
+}));
+
 export const plans = pgTable(
   'plans',
   {
     id: uuid('id').primaryKey(),
     code: text('code').notNull(), // STARTER | GROWTH | SCALE
     name: text('name').notNull(),
+    publishedAt: timestamp('published_at', {withTimezone:true}),
+    policyVersionId: uuid('policy_version_id').references(()=>billingPolicyVersions.id),
     limitsJson: jsonb('limits_json').notNull(), // { maxActiveProjects, maxSeats, maxStorageBytes, maxPackageGenerationsPerMonth }
     pricePaise: bigint('price_paise', { mode: 'bigint' }).notNull(),
     interval: text('interval').notNull(), // MONTH | YEAR
@@ -1454,6 +1567,13 @@ export const subscriptions = pgTable('subscriptions', {
   currentPeriodStart: timestamp('current_period_start', { withTimezone: true }).notNull(),
   currentPeriodEnd: timestamp('current_period_end', { withTimezone: true }).notNull(),
   cancelAt: timestamp('cancel_at', { withTimezone: true }),
+  policyVersionId: uuid('policy_version_id').references(()=>billingPolicyVersions.id),
+  graceUntil: timestamp('grace_until', {withTimezone:true}),
+  limitsSnapshotJson: jsonb('limits_snapshot_json'),
+  priceSnapshotPaise: bigint('price_snapshot_paise',{mode:'bigint'}),
+  intervalSnapshot: text('interval_snapshot'),
+  planCodeSnapshot: text('plan_code_snapshot'),
+  snapshotVersion: integer('snapshot_version').notNull().default(1),
   rowVersion: integer('row_version').notNull().default(1),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

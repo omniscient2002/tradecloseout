@@ -1,0 +1,721 @@
+{
+  "schemaVersion": 1,
+  "auditReference": "470ea86728021b3fd8a715e5704cb1c890154a43",
+  "phase2ReferencePr": 21,
+  "phase2ReferenceSha": "301efedd2f3e023577b3b9f15ceb7ae5ff4c4c31",
+  "g03ReferenceSha": "7b2b649ecf33b69e8cf1b5753630d82ed89aaf08",
+  "productionReady": false,
+  "independentlyClosedAuditItems": 0,
+  "passes": [
+    {
+      "number": 1,
+      "work": "Integrated current PR21 and G03 baseline",
+      "state": "CI_VERIFIED_ENGINEERING_PASS",
+      "verifiedSha": "fb9f21acd18de08ffb618bb39588d7c5ddb98495",
+      "ci": "https://github.com/omniscient2002/tradecloseout/actions/runs/43216259006"
+    },
+    {
+      "number": 2,
+      "work": "Unified versioned entitlement policy",
+      "state": "CI_VERIFIED_ENGINEERING_PASS",
+      "notes": "Pinned immutable offers and explicit policy provenance; one resolver for current reads/seat/upload/project/package enforcement; no real policy approval or provider activation. Full workspace492 API plus separate44-boundary run includes2 new actual upgrade/concurrency tests. Overlapping results are not summed.",
+      "verifiedSha": "a00ac57f5b680ebca8a977b6c18326d333a0e7d7",
+      "ci": "https://github.com/omniscient2002/tradecloseout/actions/runs/43223651422"
+    },
+    {
+      "number": 3,
+      "work": "Atomic quota enforcement and recovery",
+      "state": "CI_VERIFIED_ENGINEERING_PASS",
+      "notes": "Canonical storage and compiler reservation before provider PUT, immutable verified publication, unpublished retry reuse, stale-owner and quota checks passed exact-head CI at the recorded SHA. Physical cleanup, distinct attempt leases and complete reactivation/recovery remain later work.",
+      "verifiedCheckpoints": [
+        {
+          "sha": "b187d41d31adec392dbb08f7e3a5da0581c8a385",
+          "ci": "https://github.com/omniscient2002/tradecloseout/actions/runs/43227078567"
+        }
+      ],
+      "verifiedSha": "9bffac16763f87103147ce4c0061f042b2a65bf4",
+      "ci": "https://github.com/omniscient2002/tradecloseout/actions/runs/43230577929"
+    },
+    {
+      "number": 4,
+      "work": "Configuration schemas and merge protection",
+      "state": "CI_VERIFIED_ENGINEERING_PASS",
+      "notes": "51 checks across resolver, actual checklist/readiness and isolated DB suites. Hardened flags/budgets/schema forwarding; preserved mandatory inheritance and per-item/field origin. Persisted lineage and real consumers remain Pass5 work.",
+      "verifiedSha": "9bffac16763f87103147ce4c0061f042b2a65bf4",
+      "ci": "https://github.com/omniscient2002/tradecloseout/actions/runs/43230577929"
+    },
+    {
+      "number": 5,
+      "work": "Persisted configuration, template governance and approved impact changes",
+      "state": "IN_PROGRESS",
+      "notes": "Governed immutable global pack publication and unsigned legacy exclusion passed exact-head CI at f64209de7c05b155156698dc965d087d2746eb4a. Persisted scoped definitions, canonical hashes, exact lineage, inherited-source preservation, no-op imports and artifact org-suspension serialization have local checks; new-head CI still required. Impact-controlled active changes, pack upgrade composition, consumers and UI remain engineering work. Qualified HVAC acceptance remains BLOCKED_EXTERNAL.",
+      "verifiedCheckpoints": [
+        {
+          "sha": "f64209de7c05b155156698dc965d087d2746eb4a",
+          "ci": "https://github.com/omniscient2002/tradecloseout/actions/runs/43262432033",
+          "scope": "Governed pack publication subset; not complete Pass5 or domain approval"
+        }
+      ]
+    },
+    {
+      "number": 6,
+      "work": "Project/team/contract/lifecycle operations",
+      "state": "PLANNED"
+    },
+    {
+      "number": 7,
+      "work": "Organisation profiles and responsibility transfer",
+      "state": "PLANNED"
+    },
+    {
+      "number": 8,
+      "work": "Ownership, invitations, suspension and deletion requests",
+      "state": "IN_PROGRESS"
+    },
+    {
+      "number": 9,
+      "work": "Notification privacy, scope and preferences",
+      "state": "PLANNED"
+    },
+    {
+      "number": 10,
+      "work": "Delivery, reminders and subscription reconciliation",
+      "state": "PLANNED"
+    },
+    {
+      "number": 11,
+      "work": "Accessible Phase2 frontend and actual business browser journeys",
+      "state": "PLANNED"
+    },
+    {
+      "number": 12,
+      "work": "Adversarial verification, full CI and acceptance reconciliation",
+      "state": "PLANNED"
+    }
+  ],
+  "findings": [
+    {
+      "id": "PH2-G20-001",
+      "group": "G20",
+      "title": "Enforce safe message projections and approved templates before delivery",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G20-002",
+      "group": "G20",
+      "title": "Bind notification reads and writes to current project and resource visibility",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G20-003",
+      "group": "G20",
+      "title": "Separate gateway acceptance from delivery and reconcile uncertain outcomes",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G20-004",
+      "group": "G20",
+      "title": "Add bounded retries, fair claiming and dead-letter recovery to business notifications",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G20-005",
+      "group": "G20",
+      "title": "Implement enforceable preferences and nonessential unsubscribe",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G20-006",
+      "group": "G20",
+      "title": "Make deduplication preserve immutable event and delivery identity",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G20-007",
+      "group": "G20",
+      "title": "Persist and consistently apply urgency, quiet hours and expiry",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G20-008",
+      "group": "G20",
+      "title": "Complete requirement and warranty reminder scheduling and supplier message contracts",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G20-009",
+      "group": "G20",
+      "title": "Use one qualified missing-work and financial-summary definition",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G20-010",
+      "group": "G20",
+      "title": "Resolve real recipients and deliver business events through a reviewed asynchronous contract",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G20-011",
+      "group": "G20",
+      "title": "Deliver a usable notification inbox and preference journey",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G20-012",
+      "group": "G20",
+      "title": "Obtain provider, privacy and operational delivery acceptance",
+      "status": "BLOCKED_EXTERNAL",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G18-001",
+      "group": "G18",
+      "title": "Replace contradictory fallbacks with one effective entitlement policy",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G18-002",
+      "group": "G18",
+      "title": "Enforce seats on every membership activation under one capacity lock",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G18-003",
+      "group": "G18",
+      "title": "Reserve storage atomically and treat zero as a real limit",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G18-004",
+      "group": "G18",
+      "title": "Align active-project usage with lifecycle and reopening",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G18-005",
+      "group": "G18",
+      "title": "Use plan-specific package limits and idempotent consumption",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G18-006",
+      "group": "G18",
+      "title": "Complete subscription fulfilment, expiry, grace and dunning safely",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G18-007",
+      "group": "G18",
+      "title": "Validate and version plan definitions and entitlement snapshots",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G18-008",
+      "group": "G18",
+      "title": "Keep financial issuance gated and remove inconsistent tax paths before enabling it",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G18-009",
+      "group": "G18",
+      "title": "Expose honest usage, remaining capacity and actionable billing recovery",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G18-010",
+      "group": "G18",
+      "title": "Accept the final entitlement and provider integration independently",
+      "status": "BLOCKED_EXTERNAL",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G03-001",
+      "group": "G03",
+      "title": "Integrate proposed G03 repairs onto the reviewed shared foundations",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G03-002",
+      "group": "G03",
+      "title": "Finish profile policy, defaults and generated-output integration",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G03-003",
+      "group": "G03",
+      "title": "Lock every affected editable project before reassignment",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G03-004",
+      "group": "G03",
+      "title": "Validate each replacement responsibility and lock its current eligibility",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G03-005",
+      "group": "G03",
+      "title": "Produce an accurate operational gap and delegation manifest",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G03-006",
+      "group": "G03",
+      "title": "Complete membership suspension/reactivation and project-team reconciliation",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G03-007",
+      "group": "G03",
+      "title": "Implement two-party ownership with a continuously eligible owner",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G03-008",
+      "group": "G03",
+      "title": "Preserve the contracted suspended-org read/export policy safely",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G03-009",
+      "group": "G03",
+      "title": "Finish invitation destination and seat policy without weakening identity proofs",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G03-010",
+      "group": "G03",
+      "title": "Deliver resumable onboarding and required consent",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G03-011",
+      "group": "G03",
+      "title": "Deliver organisation/team/ownership administration in the real application",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G03-012",
+      "group": "G03",
+      "title": "Implement owner-confirmed deletion requests and obtain retention acceptance",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G05-001",
+      "group": "G05",
+      "title": "Persist project contract value in the canonical financial model",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G05-002",
+      "group": "G05",
+      "title": "Complete and validate the project/contract/specification input contract",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G05-003",
+      "group": "G05",
+      "title": "Complete the project state machine and enforce terminal-state policy",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G05-004",
+      "group": "G05",
+      "title": "Require eligible project members and protect the final managing role",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G05-005",
+      "group": "G05",
+      "title": "Apply lifecycle locks to contract, variation and specification writers",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G05-006",
+      "group": "G05",
+      "title": "Enforce optimistic concurrency and real reasons at lifecycle APIs",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G05-007",
+      "group": "G05",
+      "title": "Enforce capacity on every capacity-changing lifecycle transition",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G05-008",
+      "group": "G05",
+      "title": "Use the actual close and contract capabilities at their boundaries",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G05-009",
+      "group": "G05",
+      "title": "Audit project/team/commercial edits transactionally",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G05-010",
+      "group": "G05",
+      "title": "Make dashboard counts and activity match current qualified work",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G05-011",
+      "group": "G05",
+      "title": "Repair the project-list API/UI contract and remove tenant-specific demo text",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G05-012",
+      "group": "G05",
+      "title": "Accept full project setup/lifecycle journeys on the integrated application",
+      "status": "BLOCKED_EXTERNAL",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G06-001",
+      "group": "G06",
+      "title": "Make locked ownership and keyed-item protection monotonic",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G06-002",
+      "group": "G06",
+      "title": "Use one canonical payload shape across resolver and checklist consumers",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G06-003",
+      "group": "G06",
+      "title": "Reject unknown schemas, invalid keys and contradictory layer identity",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G06-004",
+      "group": "G06",
+      "title": "Define semantic additive deduplication and detailed provenance",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G06-005",
+      "group": "G06",
+      "title": "Implement persisted configuration versions and installed-pack lineage",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G06-006",
+      "group": "G06",
+      "title": "Require approved impact-controlled changes for active baselines",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G06-007",
+      "group": "G06",
+      "title": "Repair catalogue and companion-rule document-type drift",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G06-008",
+      "group": "G06",
+      "title": "Connect reviewed applicability rules to actual project setup",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G06-009",
+      "group": "G06",
+      "title": "Establish template publication and review authority",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G06-010",
+      "group": "G06",
+      "title": "Make accepted configuration affect its real consumers",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G06-011",
+      "group": "G06",
+      "title": "Deliver safe preview, impact and configuration administration journeys",
+      "status": "OPEN",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    },
+    {
+      "id": "PH2-G06-012",
+      "group": "G06",
+      "title": "Obtain independent engineering and integrated configuration acceptance",
+      "status": "BLOCKED_EXTERNAL",
+      "canonicalStatusUnchanged": true,
+      "candidateEvidence": []
+    }
+  ],
+  "externalGates": [
+    {
+      "id": "HVAC_DOMAIN_APPROVAL",
+      "status": "BLOCKED_EXTERNAL",
+      "policyVersion": null,
+      "reviewerIdentity": null,
+      "approvalDate": null,
+      "acceptedCandidateSha": null,
+      "acceptanceEvidence": [],
+      "exceptions": []
+    },
+    {
+      "id": "BILLING_GRACE_POLICY_APPROVAL",
+      "status": "BLOCKED_EXTERNAL",
+      "policyVersion": null,
+      "reviewerIdentity": null,
+      "approvalDate": null,
+      "acceptedCandidateSha": null,
+      "acceptanceEvidence": [],
+      "exceptions": []
+    },
+    {
+      "id": "PROVIDER_ACCEPTANCE",
+      "status": "BLOCKED_EXTERNAL",
+      "integrationStage": "FINAL",
+      "acceptanceEvidence": []
+    }
+  ],
+  "newFindings": [
+    {
+      "id": "PH2-NEW-001",
+      "title": "Authenticated organisation profile writes must acquire the stronger initial org lock, avoiding shared-to-exclusive upgrades",
+      "evidenceLevel": "TARGETED_POSTGRESQL",
+      "state": "CANDIDATE_FIX_TESTED",
+      "scope": "Server-selected organisationWrite lock mode; no current-authority check removed."
+    },
+    {
+      "id": "PH2-NEW-002",
+      "title": "Policy read locking must not require granting runtime policy-edit authority",
+      "state": "CANDIDATE_FIX_TESTED",
+      "evidenceLevel": "TARGETED_POSTGRESQL",
+      "notes": "SELECT FOR SHARE required UPDATE; replaced by tenant-bound narrow locking read function, keeping ordinary policy UPDATE denied."
+    },
+    {
+      "id": "PH2-NEW-003",
+      "title": "Single-project offers need durable project scope before new consumption",
+      "state": "OPEN_FAIL_CLOSED",
+      "notes": "ONE_TIME_PROJECT new consumption remains unavailable until a complete scoped offer model and approved policy exist. It is not automatically excluded from required product scope."
+    },
+    {
+      "id": "PH2-NEW-004",
+      "title": "Scheduled upload expiry deletes retained version identities and does not distinguish provider cleanup",
+      "state": "CANDIDATE_FIX_TESTED",
+      "evidenceLevel": "TARGETED_POSTGRESQL",
+      "notes": "Expiry now retains FAILED/ABORTED tombstones, existing latest-version references and explicit unconfirmed cleanup state. Physical provider cleanup is not claimed."
+    },
+    {
+      "id": "PH2-NEW-005",
+      "title": "Authenticated guest mutations can upgrade a shared project lock during live authority revalidation",
+      "state": "CANDIDATE_FIX_TESTED",
+      "evidenceLevel": "TARGETED_POSTGRESQL",
+      "notes": "Server selects initial write lock mode before live authority checks. Two independently authenticated guest upload-intent transactions complete without shared-lock upgrade."
+    },
+    {
+      "id": "PH2-NEW-006",
+      "title": "RA evidence-pack generation bypasses monthly entitlement and lifecycle gates",
+      "state": "CANDIDATE_FIX_TESTED",
+      "evidenceLevel": "TARGETED_POSTGRESQL",
+      "notes": "Both package routes share project and capacity gates; RA route requires transport idempotency. Tests deny absent/zero/month-exhausted/closed cases and verify failed creation rolls back reservation."
+    },
+    {
+      "id": "PH2-NEW-007",
+      "title": "Package build owners need distinct attempt fencing and abandoned-lease recovery",
+      "state": "OPEN",
+      "evidenceLevel": "SOURCE_CONFIRMED_RISK",
+      "notes": "Current owner derives from job id; distinct worker attempts can share it. Package READY compare-and-set prevents stale second publication, but attempt/recovery lifecycle still needs hardening in Pass10."
+    },
+    {
+      "id": "PH2-NEW-008",
+      "title": "Scoped configuration locking must preserve global read-only authority and avoid DRAFT shared-lock upgrades",
+      "state": "CANDIDATE_FIX_TESTED",
+      "evidenceLevel": "TARGETED_POSTGRESQL",
+      "notes": "Narrow eligible-project locking function leaves runtime global UPDATE denied. DRAFT tenant sources take their eventual stronger lock; two real projects select one shared draft concurrently."
+    },
+    {
+      "id": "PH2-NEW-009",
+      "title": "Worker artifact admission and publication must serialize with organisation suspension",
+      "state": "CANDIDATE_FIX_TESTED",
+      "evidenceLevel": "TARGETED_POSTGRESQL",
+      "notes": "Active org SHARE precedes project lock. Real tc_app barrier proves suspension UPDATE cannot overtake admitted reservation; new reservation denies after suspension. Separate pre-auth invitation lock ordering remains future work."
+    }
+  ],
+  "candidateWork": [
+    {
+      "id": "PH2-G03-007",
+      "state": "IMPLEMENTED_SUBSET_TESTED_NOT_ACCEPTED",
+      "notes": "Added explicit-config expiry/fresh-MFA request, recipient confirmation/cancellation, role/version/expiry/replay fences, session/invitation invalidation and attributable audit. Legacy one-sided transfer remains disabled. UI, recovery and independent acceptance remain open."
+    },
+    {
+      "id": "PH2-G18-001",
+      "state": "IMPLEMENTED_SUBSET_TESTED_NOT_ACCEPTED",
+      "notes": "Typed shared resolver, no implicit allowances, fail closed without reviewed policy provenance; all supported quota entry points use pinned subscription values."
+    },
+    {
+      "id": "PH2-G18-007",
+      "state": "IMPLEMENTED_SUBSET_TESTED_NOT_ACCEPTED",
+      "notes": "Immutable plan/policy and subscription snapshots; malformed JSON/legacy states fail closed. Finance/provider offer acceptance still absent."
+    },
+    {
+      "id": "PH2-G18-003",
+      "state": "PARTIAL_TESTED",
+      "notes": "Canonical object accounting and mutex across uploads, scan finalization, restore and generated package artifacts. Retained expiry tombstones and explicit unconfirmed physical cleanup. Actual compiler/PG/programmable SDK checks passed; real provider settlement remains external."
+    },
+    {
+      "id": "PH2-G18-009",
+      "state": "PARTIAL_TESTED",
+      "notes": "Billing UI distinguishes recorded data from effective approval/allowance and exposes current usage; full recovery/provider journey still open."
+    },
+    {
+      "id": "PH2-G18-002",
+      "state": "IMPLEMENTED_SUBSET_TESTED_NOT_ACCEPTED",
+      "notes": "Actual production-mode PostgreSQL OTP invitation race grants one final seat; rejected invitation/proof remains unconsumed and works once capacity is explicitly recovered. Delivery is a test-only adapter, not provider approval."
+    },
+    {
+      "id": "PH2-G18-005",
+      "state": "IMPLEMENTED_SUBSET_TESTED_NOT_ACCEPTED",
+      "notes": "All known full/RA package generation routes use the same IST-month quota and project lock, with failure rollback and endpoint idempotency. Full provider artifacts and business acceptance remain open."
+    },
+    {
+      "id": "PH2-G06-001",
+      "state": "IMPLEMENTED_SUBSET_TESTED_NOT_ACCEPTED",
+      "notes": "Parent mandatory flags remain protected even without a mutable locked flag; conflicts identify the actual protecting source level."
+    },
+    {
+      "id": "PH2-G06-003",
+      "state": "IMPLEMENTED_SUBSET_TESTED_NOT_ACCEPTED",
+      "notes": "Compatibility wrapper preserves unknown schema versions for rejection; typed obligation flags, MIME values and aggregate/sparse/deep JSON budgets fail safely."
+    },
+    {
+      "id": "PH2-G06-004",
+      "state": "IMPLEMENTED_SUBSET_TESTED_NOT_ACCEPTED",
+      "notes": "Per-item/field origins and removals now persist in version2 snapshot provenance with exact source IDs and digests. Identical imports/reapplication preserve baseline identity; source/DB checks pass locally. Preview UI and complete consumer enforcement remain open."
+    },
+    {
+      "id": "PH2-G06-009",
+      "state": "IMPLEMENTED_SUBSET_TESTED_NOT_ACCEPTED",
+      "notes": "Separate provisioned author/reviewer principals, immutable payload/review provenance, bounded schema validation, no runtime edit/trigger/publication authority, explicit candidate/qualification/catalogue/mapping/applicability/scenario/exception records, retirement and guarded install. No real author/reviewer memberships or approval evidence seeded. CLI uses a separately configured least-privileged human connection; external gate stays blocked."
+    },
+    {
+      "id": "PH2-G06-002",
+      "state": "IMPLEMENTED_SUBSET_TESTED_NOT_ACCEPTED",
+      "notes": "New definitions canonicalize the registered requirements alias before immutable storage and record the normalization; conflicting encodings reject. Legacy source rows remain unverified. Real consumer completeness remains open."
+    },
+    {
+      "id": "PH2-G06-005",
+      "state": "PARTIAL_TESTED",
+      "notes": "Server-issued immutable scoped versions, real canonical database digests, scope/role fencing, exact installed-pack copy and source manifests are used by actual checklist producers. Active baseline changes, pack upgrade composition, authoring/admin UI and independent acceptance remain open."
+    }
+  ]
+}

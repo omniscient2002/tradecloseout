@@ -10,25 +10,30 @@ import os from 'os';
 import path from 'path';
 import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
-import { reconcileStorageQuotaOnFileStatusChange } from '@tradecloseout/db/tenant-tx';
+import { lockStorageCapacity, reconcileStorageCapacity } from '@tradecloseout/db';
 import { TradeCloseoutScheduler } from './scheduler';
 import { verifyAndScanUploadedFile } from './queues/file.processor';
 import { convertSupportingFormatToPdf } from './queues/format-converter';
 import { compileAndPersistHandoverPackage, markHandoverPackageFailed } from './queues/handover-package.processor';
 import { compileAndPersistPortableArchive } from './queues/portable-archive.processor';
 import { BoundedByteStream } from './queues/bounded-stream';
-import { OUTBOX_EVENT_REGISTRY } from './event-registry';
+import { dispatchDueOutbox } from './outbox-dispatch';
+import { validateWorkerStartupConfig, assertWorkerRuntimeDatabasePrivileges } from './worker-startup-security';
 
 const execFileAsync = promisify(execFile);
 
+// In production/staging no development fallback may be selected. Connection
+// setup is lazy; bootWorker validates configuration and actual DB identity
+// before scheduling, polling or consuming a single tenant job.
+const nonProd = ['development','test'].includes(process.env.NODE_ENV || '');
 const pool = new Pool({
-  connectionString:
-    process.env.APP_DATABASE_URL ||
-    'postgres://tc_app:tc_app_pass@127.0.0.1:5432/tradecloseout',
+  connectionString: process.env.APP_DATABASE_URL ||
+    (nonProd ? 'postgres://tc_app:tc_app_pass@127.0.0.1:5432/tradecloseout' : ''),
 });
-
-const redis = new Redis(process.env.REDIS_URL || 'redis://127.0.0.1:6379', {
+const redis = new Redis(process.env.REDIS_URL ||
+  (nonProd ? 'redis://127.0.0.1:6379' : 'redis://invalid.invalid:6379'), {
   maxRetriesPerRequest: null,
+  lazyConnect: true,
 });
 
 const scheduler = new TradeCloseoutScheduler(pool, redis);
@@ -59,13 +64,40 @@ async function bootWorker() {
   console.log('TradeCloseout Background Worker & Leader-Locked Scheduler Booting...');
   console.log('======================================================================');
 
+  validateWorkerStartupConfig();
+  if (['staging','production'].includes(process.env.NODE_ENV || '')) {
+    await assertWorkerRuntimeDatabasePrivileges(pool);
+  }
+  // A successful TCP connection alone is not proof the queue is available.
+  await redis.connect();
+  await redis.ping();
   await checkDependencies();
+  if (['staging','production'].includes(process.env.NODE_ENV || '') && !qpdfAvailable) {
+    throw new Error('BOOT_WORKER_QPDF_REQUIRED');
+  }
+
+  // PH1-G24-006/010: the cycle and the outbox poller must never overlap
+  // with themselves; shutdown stops new admission and drains known in-flight work.
+  let shuttingDown = false;
+  let scheduledInFlight: Promise<void> | null = null;
+  let outboxInFlight: Promise<void> | null = null;
+  const runWithSafePeriodLock = async (
+    ...args: Parameters<typeof scheduler.runWithPeriodLock>
+  ): Promise<void> => {
+    try {
+      await scheduler.runWithPeriodLock(...args);
+    } catch {
+      // Each task retains its own durable period lock / retry opportunity.
+      // Failure of one task must not starve another task on the same tick.
+      console.error('SCHEDULER_PERIOD_TASK_FAILED');
+    }
+  };
 
   // 1. Scheduled Background Tasks
   const runScheduledCycles = async () => {
     try {
       const periods = scheduler.getIndiaSchedulePeriods();
-      await scheduler.runWithPeriodLock(
+      await runWithSafePeriodLock(
         `daily-expiry:${periods.day}`,
         `sched:done:daily-expiry:${periods.day}`,
         300,
@@ -79,7 +111,7 @@ async function bootWorker() {
       );
 
       if (periods.weekday === 'Mon') {
-        await scheduler.runWithPeriodLock(
+        await runWithSafePeriodLock(
           `weekly-owner-digest:${periods.week}`,
           `sched:done:weekly-owner-digest:${periods.week}`,
           600,
@@ -88,7 +120,7 @@ async function bootWorker() {
         );
       }
 
-      await scheduler.runWithPeriodLock(
+      await runWithSafePeriodLock(
         `audit-hash-chain:${periods.day}`,
         `sched:done:audit-hash-chain:${periods.day}`,
         600,
@@ -101,22 +133,22 @@ async function bootWorker() {
         },
       );
 
-      await scheduler.runWithPeriodLock(
+      await runWithSafePeriodLock(
         `storage-lifecycle-cleanup:${periods.hourSlot}`,
         `sched:done:storage-lifecycle-cleanup:${periods.hourSlot}`,
         300,
         2 * 60 * 60,
         async () => {
-          const { purgedPendingVersions, purgedPendingObjects } = await scheduler.runStorageLifecycleCleanup();
-          if (purgedPendingVersions > 0 || purgedPendingObjects > 0) {
+          const { expiredVersions, expiredObjects } = await scheduler.runStorageLifecycleCleanup();
+          if (expiredVersions > 0 || expiredObjects > 0) {
             console.log(
-              `[Scheduler] Cleaned up ${purgedPendingVersions} stale pending versions and ${purgedPendingObjects} unattached pending objects.`,
+              `[Scheduler] Expired ${expiredVersions} stale upload versions and ${expiredObjects} pending objects; provider cleanup requires confirmation.`,
             );
           }
         },
       );
 
-      await scheduler.runWithPeriodLock(
+      await runWithSafePeriodLock(
         `idempotency-reconciliation:${periods.hourSlot}`,
         `sched:done:idempotency-reconciliation:${periods.hourSlot}`,
         300,
@@ -129,10 +161,47 @@ async function bootWorker() {
         },
       );
 
-      // Notification delivery cycle honoring IST quiet hours
-      const sentNotifications = await scheduler.dispatchQueuedNotifications();
-      if (sentNotifications > 0) {
-        console.log(`[Scheduler] Dispatched ${sentNotifications} queued notifications.`);
+      await runWithSafePeriodLock(
+        `auth-ephemera:${periods.hourSlot}`,
+        `sched:done:auth-ephemera:${periods.hourSlot}`,
+        300, 2 * 60 * 60,
+        async () => {
+          const removed = await scheduler.cleanupAuthenticationEphemera();
+          if (removed.budgets || removed.challenges || removed.sessions) {
+            console.log(`[Scheduler] Purged ${removed.budgets} expired auth budgets, ${removed.challenges} old OTPs and ${removed.sessions} old sessions.`);
+          }
+        },
+      );
+
+      await runWithSafePeriodLock(
+        `g01-invitation-reconciliation:${periods.hourSlot}`,
+        `sched:done:g01-invitation-reconciliation:${periods.hourSlot}`,
+        300,2*60*60,
+        async()=>{
+          const outcome=await scheduler.cleanupStaleInvitations();
+          if(outcome.staleDelivery||outcome.expired){
+            console.log(
+              `[Scheduler] G01 invalidated ${outcome.staleDelivery} stale unconfirmed invitations and ${outcome.expired} expired invitation links.`,
+            );
+          }
+        },
+      );
+
+      try {
+        await scheduler.reconcileAuthenticationDeliveries();
+      } catch {
+        console.error('SCHEDULER_AUTH_DELIVERY_FAILED');
+      }
+
+      // Notification delivery is independently scheduled: delivery ledger
+      // outage must not block queued notifications or vice versa.
+      try {
+        const sentNotifications = await scheduler.dispatchQueuedNotifications();
+        if (sentNotifications > 0) {
+          console.log(`[Scheduler] Dispatched ${sentNotifications} queued notifications.`);
+        }
+      } catch {
+        console.error('SCHEDULER_NOTIFICATION_DELIVERY_FAILED');
       }
     } catch (err) {
       console.error('[Scheduler Error]:', err);
@@ -140,7 +209,13 @@ async function bootWorker() {
   };
 
   await runScheduledCycles();
-  const cycleInterval = setInterval(runScheduledCycles, 60 * 1000);
+  const scheduleTick = () => {
+    if (shuttingDown || scheduledInFlight) return;
+    scheduledInFlight = runScheduledCycles().finally(() => {
+      scheduledInFlight = null;
+    });
+  };
+  const cycleInterval = setInterval(scheduleTick, 60 * 1000);
 
   // 2. BullMQ Queues
   const fileQueue = new Queue('file-processing', { connection: redis });
@@ -200,6 +275,11 @@ async function bootWorker() {
         try {
           await client.query('BEGIN');
           await client.query(`SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`, [orgId]);
+          const {rows:scope}=await client.query(`SELECT project_id FROM document_versions
+            WHERE org_id=$1 AND id=$2 AND object_id=$3`,[orgId,versionId,storageObjectId]);
+          if(scope[0]?.project_id)await client.query(`SELECT id FROM projects
+            WHERE org_id=$1 AND id=$2 FOR UPDATE`,[orgId,scope[0].project_id]);
+          await lockStorageCapacity(client,orgId);
           const { rows: currentRows } = await client.query(
             `SELECT dv.file_status, so.status AS storage_status, so.provider_version_id
                FROM document_versions dv
@@ -215,7 +295,7 @@ async function bootWorker() {
             return { ...result, finalStatus: 'IGNORED_STALE_RECEIPT' };
           }
           if (result.finalStatus === 'READY') {
-            const updRes = await client.query(
+            await client.query(
               `UPDATE document_versions
                   SET file_status = 'READY',
                       updated_at = now()
@@ -234,17 +314,9 @@ async function bootWorker() {
                 [storageObjectId, orgId, result.sha256, providerVersionId],
               );
             }
-            // Idempotent storage quota accounting (TC2-024)
-            if (updRes.rows.length > 0 && storageObjectId) {
-              const { rows: soRows } = await client.query(
-                `SELECT size_bytes FROM storage_objects WHERE id = $1 AND org_id = $2`,
-                [storageObjectId, orgId],
-              );
-              if (soRows.length > 0 && soRows[0].size_bytes) {
-                const sizeBytes = BigInt(soRows[0].size_bytes);
-                await reconcileStorageQuotaOnFileStatusChange(client, orgId, sizeBytes, 'MARKED_READY');
-              }
-            }
+            // The mutex prevents a reservation from seeing the transitional
+            // state; canonical rows prevent retry/dedup/shared-object overcharge.
+            await reconcileStorageCapacity(client,orgId);
           } else if (result.finalStatus === 'QUARANTINED') {
             await client.query(
               `UPDATE document_versions
@@ -392,107 +464,72 @@ async function bootWorker() {
   });
   formatWorker.on('failed', (job, err) => console.error(`Job ${job?.id} failed:`, err));
 
-  // 4. Outbox Poller (every 2s) with durable transaction locking (TC2-005)
+  // 4. Outbox claim/dispatch/ack, every 2s. Queue/network work is outside
+  // every tenant DB transaction; each claim has a fenced, expiring owner token.
   const pollOutbox = async () => {
     try {
-      // organisations is the only global discovery surface. Event rows themselves are
-      // never queried until app.current_org has been set in a tenant-bound transaction.
-      const { rows: orgRows } = await pool.query(
-        `SELECT id FROM organisations WHERE status <> 'DELETED' ORDER BY id`,
-      );
-
-      for (const { id: orgId } of orgRows) {
-        const client = await pool.connect();
-        try {
-          await client.query('BEGIN');
-          await client.query(
-            `SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`,
-            [orgId],
-          );
-          const { rows } = await client.query(
-            `SELECT id, org_id, project_id, event_type, payload_json
-               FROM outbox_events
-              WHERE org_id = $1 AND dispatched_at IS NULL AND attempts < 5
-              ORDER BY created_at ASC
-              LIMIT 20
-              FOR UPDATE SKIP LOCKED`,
-            [orgId],
-          );
-
-          for (const row of rows) {
-            try {
-              const payload = typeof row.payload_json === 'string' ? JSON.parse(row.payload_json) : row.payload_json;
-              const fullPayload = {
-                ...payload,
-                orgId: row.org_id,
-                projectId: payload.projectId || row.project_id,
-                eventId: row.id,
-              };
-
-              const reg = OUTBOX_EVENT_REGISTRY[row.event_type];
-              if (!reg) {
-                throw new Error(`UNKNOWN_OUTBOX_EVENT_TYPE: ${row.event_type} (${row.id}) is not registered in the outbox event catalog`);
-              }
-
-              if (row.event_type === 'FILE_UPLOAD_COMPLETED_ENQUEUE_SCAN') {
-                await fileQueue.add('scan', fullPayload, {
-                  jobId: `file-scan-${row.id}`,
-                  attempts: 3,
-                  backoff: { type: 'exponential', delay: 1000 },
-                });
-              } else if (row.event_type === 'HANDOVER_PACKAGE_QUEUED') {
-                await pdfQueue.add('compile', fullPayload, {
-                  jobId: `pdf-compile-${row.id}`,
-                  attempts: 2,
-                  backoff: { type: 'fixed', delay: 2000 },
-                });
-              } else if (row.event_type === 'PROJECT_ARCHIVE_EXPORT_QUEUED') {
-                await archiveQueue.add('export', fullPayload, {
-                  jobId: `archive-export-${row.id}`,
-                  attempts: 2,
-                  backoff: { type: 'fixed', delay: 2000 },
-                });
-              } else if (reg.category === 'INFORMATIONAL') {
-                // Registered informational domain events are acknowledged for downstream audit / notification
-                console.log(`[Outbox Poller] Dispatched informational event: ${row.event_type} (${row.id})`);
-              } else {
-                throw new Error(`UNHANDLED_EXECUTABLE_OUTBOX_EVENT: ${row.event_type} (${row.id})`);
-              }
-
-              await client.query(
-                `UPDATE outbox_events SET dispatched_at = now()
-                  WHERE org_id = $1 AND id = $2 AND dispatched_at IS NULL`,
-                [orgId, row.id],
-              );
-            } catch (dispatchErr) {
-              console.error(`Failed to dispatch outbox event ${row.id}:`, dispatchErr);
-              await client.query(
-                `UPDATE outbox_events SET attempts = attempts + 1 WHERE org_id = $1 AND id = $2`,
-                [orgId, row.id],
-              );
-            }
-          }
-          await client.query('COMMIT');
-        } catch (err) {
-          await client.query('ROLLBACK').catch(() => {});
-          console.error(`[Outbox Poller Error] tenant ${orgId}:`, err);
-        } finally {
-          client.release();
+      const result = await dispatchDueOutbox(pool, async (eventType, payload, eventId) => {
+        if (eventType === 'FILE_UPLOAD_COMPLETED_ENQUEUE_SCAN') {
+          await fileQueue.add('scan', payload, {
+            jobId: `file-scan-${eventId}`,
+            attempts: 3, backoff: {type:'exponential',delay:1000},
+          });
+        } else if (eventType === 'HANDOVER_PACKAGE_QUEUED') {
+          await pdfQueue.add('compile', payload, {
+            jobId: `pdf-compile-${eventId}`,
+            attempts: 2, backoff: {type:'fixed',delay:2000},
+          });
+        } else if (eventType === 'PROJECT_ARCHIVE_EXPORT_QUEUED') {
+          await archiveQueue.add('export', payload, {
+            jobId: `archive-export-${eventId}`,
+            attempts: 2, backoff: {type:'fixed',delay:2000},
+          });
+        } else {
+          throw new Error('OUTBOX_EVENT_INVALID');
         }
+      });
+      if (result.failed) {
+        console.error('OUTBOX_DISPATCH_FAILURES', {failed:result.failed});
       }
-    } catch (err) {
-      console.error('[Outbox Poller Error]:', err);
+    } catch {
+      // Never forward raw provider errors, payloads, or tenant identifiers.
+      console.error('OUTBOX_POLL_FAILED');
     }
   };
 
-  const outboxInterval = setInterval(pollOutbox, 2000);
+  const outboxTick = () => {
+    if (shuttingDown || outboxInFlight) return;
+    outboxInFlight = pollOutbox().finally(() => {
+      outboxInFlight = null;
+    });
+  };
+  const outboxInterval = setInterval(outboxTick, 2000);
 
   console.log('✓ TradeCloseout Worker, BullMQ Queues & Leader-Locked Schedulers are ACTIVE.');
 
   const shutdown = async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     console.log('Shutting down TradeCloseout Worker...');
     clearInterval(cycleInterval);
     clearInterval(outboxInterval);
+    const pending = [scheduledInFlight, outboxInFlight].filter(
+      (task): task is Promise<void> => task !== null,
+    );
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    const drained = await Promise.race([
+      Promise.allSettled(pending).then(() => true),
+      new Promise<boolean>(resolve => {
+        deadline = setTimeout(() => resolve(false), 30_000);
+      }),
+    ]);
+    if (deadline) clearTimeout(deadline);
+    if (!drained) {
+      // An uncertain in-flight outcome must not be announced as a clean exit.
+      // Durable claims are left for recovery; the supervisor observes failure.
+      console.error('WORKER_INFLIGHT_DRAIN_TIMEOUT');
+      process.exit(1);
+    }
     await Promise.all([fileWorker.close(), pdfWorker.close(), formatWorker.close(), archiveWorker.close()]);
     await Promise.all([fileQueue.close(), pdfQueue.close(), formatQueue.close(), archiveQueue.close()]);
     await pool.end();

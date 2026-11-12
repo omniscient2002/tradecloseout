@@ -1,3 +1,5 @@
+import {resolveEffectiveEntitlements} from '@tradecloseout/db/entitlements';
+import {lockStorageCapacity,reconcileStorageCapacity} from '@tradecloseout/db';
 // apps/api/src/modules/documents/documents.service.ts
 // Document upload intents, multipart refresh, virus scanning, versioning & bulk import
 // (RT-001, RT-006, RT-012, CB-003, AUD-P-04, FR-DOC-001..033, TC-DOC-01..03)
@@ -19,6 +21,7 @@ import { PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { TenantDbService, ExecutionContext } from '../../database/tenant-db.service';
 import { BulkImportStatus, FileVersionStatus } from '@tradecloseout/shared';
+import { assertMemberResourceScope } from '@tradecloseout/db/tenant-tx';
 
 import { Pool } from 'pg';
 import { S3StorageService } from './s3-storage.service';
@@ -77,24 +80,64 @@ export class DocumentsService {
     this.storageAdapter = storageAdapter || new S3StorageService();
   }
 
-  private async assertGuestVersionScope(client: PoolClient, ctx: ExecutionContext, versionId: string, capability: 'document.upload' | 'document.download') {
-    if (ctx.actorType !== 'GUEST' && !ctx.guestGrantId) return;
-    if (!ctx.guestGrantId) throw new NotFoundException('VERSION_NOT_FOUND');
-    const { rows } = await client.query(
-      `SELECT 1
-         FROM guest_grants g
+  private async lockStorageProject(client:PoolClient,ctx:ExecutionContext,projectId:string,editable:boolean) {
+    const {rows}=await client.query(`SELECT id,status,purged_at FROM projects
+      WHERE org_id=$1 AND id=$2 FOR UPDATE`,[ctx.orgId,projectId]);
+    const project=rows[0];
+    if(!project)throw new NotFoundException('PROJECT_NOT_FOUND');
+    if(project.purged_at)throw new ConflictException({code:'PROJECT_PURGED'});
+    if(editable&&!['DRAFT','ACTIVE','HANDOVER'].includes(project.status)) {
+      throw new ConflictException({code:project.status==='CLOSED'
+        ?'CLOSED_PROJECT_REQUIRES_FORMAL_REOPEN':'PROJECT_DOCUMENTS_NOT_EDITABLE'});
+    }
+  }
+
+  private async lockDocumentStorage(client:PoolClient,ctx:ExecutionContext,id:string,version:boolean,editable:boolean) {
+    const {rows}=await client.query(version
+      ?'SELECT project_id FROM document_versions WHERE org_id=$1 AND id=$2'
+      :'SELECT project_id FROM documents WHERE org_id=$1 AND id=$2',[ctx.orgId,id]);
+    if(!rows.length)throw new NotFoundException(version?'VERSION_NOT_FOUND':'DOCUMENT_NOT_FOUND');
+    if(ctx.projectId&&ctx.projectId!==rows[0].project_id)throw new NotFoundException('DOCUMENT_NOT_FOUND');
+    await this.lockStorageProject(client,ctx,rows[0].project_id,editable);
+    return lockStorageCapacity(client,ctx.orgId);
+  }
+
+  private async assertGuestVersionScope(
+    client:PoolClient,ctx:ExecutionContext,versionId:string,
+    capability:'document.upload'|'document.download',
+  ){
+    if(ctx.actorType!=='GUEST'&&!ctx.guestGrantId)return;
+    if(!ctx.guestGrantId)throw new NotFoundException('VERSION_NOT_FOUND');
+    const {rows}=await client.query(
+      `SELECT 1 FROM guest_grants g
          JOIN document_versions dv
-           ON dv.org_id = g.org_id AND dv.project_id = g.project_id
-          AND dv.uploaded_by_grant_id = g.id AND dv.id = $3
-         JOIN document_requirements dr
-           ON dr.org_id = dv.org_id AND dr.project_id = dv.project_id AND dr.document_id = dv.document_id
-        WHERE g.org_id = $1 AND g.id = $2 AND g.status = 'ACTIVE' AND g.expires_at > now()
+           ON dv.org_id=g.org_id AND dv.project_id=g.project_id
+          AND dv.id=$3 AND dv.deleted_at IS NULL
+         JOIN documents d ON d.org_id=dv.org_id AND d.project_id=dv.project_id
+          AND d.id=dv.document_id AND d.deleted_at IS NULL
+        WHERE g.org_id=$1 AND g.id=$2 AND g.status='ACTIVE'
+          AND g.expires_at>now() AND g.principal_user_id=$5
           AND g.capabilities @> ARRAY[$4]::text[]
-          AND COALESCE(g.scope_json->'requirementIds', '[]'::jsonb) ? dr.requirement_id::text
+          AND (
+            (g.grant_type IN ('SUPPLIER_UPLOAD','SUPPLIER_CONTRIBUTOR')
+              AND dv.uploaded_by_grant_id=g.id
+              AND EXISTS(
+                SELECT 1 FROM document_requirements dr
+                 WHERE dr.org_id=d.org_id AND dr.project_id=d.project_id
+                   AND dr.document_id=d.id
+                   AND COALESCE(g.scope_json->'requirementIds','[]'::jsonb)
+                         ? dr.requirement_id::text
+              ))
+            OR
+            (g.grant_type IN ('CLIENT_VIEW','CONSULTANT_REVIEW','MC_VIEW','AUDITOR_READ')
+              AND $4='document.download'
+              AND dv.file_status='READY' AND dv.review_status='APPROVED'
+              AND d.current_approved_version_id=dv.id)
+          )
         LIMIT 1`,
-      [ctx.orgId, ctx.guestGrantId, versionId, capability],
+      [ctx.orgId,ctx.guestGrantId,versionId,capability,ctx.userId],
     );
-    if (!rows.length) throw new NotFoundException('VERSION_NOT_FOUND');
+    if(!rows.length)throw new NotFoundException('VERSION_NOT_FOUND');
   }
 
   /**
@@ -166,21 +209,36 @@ export class DocumentsService {
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
       if (ctx.actorType === 'GUEST' || ctx.guestGrantId) {
         if (!ctx.guestGrantId) throw new NotFoundException('DOCUMENT_NOT_FOUND');
-        const { rows } = await client.query(
-          `SELECT DISTINCT dv.id, dv.version_no, dv.revision_code, dv.file_status, dv.review_status,
-                  dv.issue_date, dv.expiry_date, dv.created_at
+        const {rows}=await client.query(
+          `SELECT DISTINCT dv.id,dv.version_no,dv.revision_code,dv.file_status,
+                  dv.review_status,dv.issue_date,dv.expiry_date,dv.created_at
              FROM guest_grants g
-             JOIN documents d ON d.org_id = g.org_id AND d.project_id = g.project_id AND d.id = $3
+             JOIN documents d ON d.org_id=g.org_id AND d.project_id=g.project_id
+              AND d.id=$3 AND d.deleted_at IS NULL
              JOIN document_versions dv
-               ON dv.org_id = d.org_id AND dv.project_id = d.project_id AND dv.document_id = d.id
-              AND dv.uploaded_by_grant_id = g.id AND dv.deleted_at IS NULL
-             JOIN document_requirements dr
-               ON dr.org_id = d.org_id AND dr.project_id = d.project_id AND dr.document_id = d.id
-            WHERE g.org_id = $1 AND g.id = $2 AND g.status = 'ACTIVE' AND g.expires_at > now()
-              AND g.capabilities @> ARRAY['document.upload']::text[] AND d.deleted_at IS NULL
-              AND COALESCE(g.scope_json->'requirementIds', '[]'::jsonb) ? dr.requirement_id::text
+              ON dv.org_id=d.org_id AND dv.project_id=d.project_id
+              AND dv.document_id=d.id AND dv.deleted_at IS NULL
+            WHERE g.org_id=$1 AND g.id=$2 AND g.status='ACTIVE'
+              AND g.expires_at>now() AND g.principal_user_id=$4
+              AND (
+                (g.grant_type IN ('SUPPLIER_UPLOAD','SUPPLIER_CONTRIBUTOR')
+                 AND g.capabilities && ARRAY['document.upload','document.read']::text[]
+                 AND dv.uploaded_by_grant_id=g.id
+                 AND EXISTS(
+                   SELECT 1 FROM document_requirements dr
+                    WHERE dr.org_id=d.org_id AND dr.project_id=d.project_id
+                      AND dr.document_id=d.id
+                      AND COALESCE(g.scope_json->'requirementIds','[]'::jsonb)
+                             ? dr.requirement_id::text
+                 ))
+                OR
+                (g.grant_type IN ('CLIENT_VIEW','CONSULTANT_REVIEW','MC_VIEW','AUDITOR_READ')
+                 AND g.capabilities @> ARRAY['document.read']::text[]
+                 AND dv.file_status='READY' AND dv.review_status='APPROVED'
+                 AND d.current_approved_version_id=dv.id)
+              )
             ORDER BY dv.version_no DESC`,
-          [ctx.orgId, ctx.guestGrantId, documentId],
+          [ctx.orgId,ctx.guestGrantId,documentId,ctx.userId],
         );
         if (!rows.length) throw new NotFoundException('DOCUMENT_NOT_FOUND');
         return { id: documentId, versions: rows };
@@ -284,7 +342,7 @@ export class DocumentsService {
       ...(dto.assetIds || []),
     ]));
 
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+    return this.db.withTenantContext({...ctx,projectWrite:true}, async (client: PoolClient) => {
       if (isGuest) {
         if (!guestGrantId || requestedRequirementIds.length === 0) {
           throw new ForbiddenException('GUEST_UPLOAD_SCOPE_REQUIRED');
@@ -348,25 +406,19 @@ export class DocumentsService {
         }
       }
 
-      // Soft check plan storage limit without premature deduction (Bug 2 / Dimension 10)
-      const { rows: quotaRows } = await client.query(
-        `SELECT uc.value AS current_storage, p.limits_json
-           FROM organisations o
-           LEFT JOIN subscriptions s ON s.org_id = o.id AND s.status IN ('TRIAL', 'ACTIVE')
-           LEFT JOIN plans p ON p.id = s.plan_id
-           LEFT JOIN usage_counters uc ON uc.org_id = o.id AND uc.metric = 'STORAGE_BYTES' AND uc.period = 'ALL_TIME'
-          WHERE o.id = $1 LIMIT 1`,
-        [ctx.orgId],
-      );
-      if (quotaRows.length > 0 && quotaRows[0].limits_json?.maxStorageBytes) {
-        const currentBytes = BigInt(quotaRows[0].current_storage || '0');
-        const limitBytes = BigInt(quotaRows[0].limits_json.maxStorageBytes);
-        if (currentBytes + BigInt(dto.sizeBytes) > limitBytes) {
-          throw new BadRequestException({
-            code: 'STORAGE_QUOTA_EXCEEDED',
-            detail: `Upload exceeds organization storage ceiling (${currentBytes + BigInt(dto.sizeBytes)} > ${limitBytes} bytes).`,
-          });
-        }
+      // Every writer takes project -> capacity -> document locks. Derive usage
+      // from objects, repairing counters separately rather than trusting drift.
+      await this.lockStorageProject(client,ctx,projectId,true);
+      const effective=await resolveEffectiveEntitlements(client,ctx.orgId);
+      if(!effective.canConsume)throw new ConflictException({code:'STORAGE_ENTITLEMENT_UNAVAILABLE'});
+      const storageCeiling=BigInt(effective.limits.maxStorageBytes);
+      const usage=await lockStorageCapacity(client,ctx.orgId);
+      const occupied=usage.totalBytes;
+      if (occupied + BigInt(dto.sizeBytes) > storageCeiling) {
+        throw new ConflictException({
+          code: 'STORAGE_QUOTA_EXCEEDED',
+          detail: 'Insufficient storage capacity for this upload.',
+        });
       }
 
       let documentId = dto.documentId || existingDocumentId;
@@ -375,7 +427,7 @@ export class DocumentsService {
       // If documentId specified, enforce AUD-P-04 revision code uniqueness
       if (documentId) {
         const parentDocument = await client.query(
-          `SELECT id, doc_type_key FROM documents WHERE org_id = $1 AND project_id = $2 AND id = $3 FOR UPDATE`,
+          `SELECT id, doc_type_key FROM documents WHERE org_id = $1 AND project_id = $2 AND id = $3 AND deleted_at IS NULL FOR UPDATE`,
           [ctx.orgId, projectId, documentId],
         );
         if (!parentDocument.rows.length) throw new NotFoundException('DOCUMENT_NOT_FOUND_IN_PROJECT');
@@ -557,7 +609,8 @@ export class DocumentsService {
    * API-082A POST /document-versions/:id/refresh-upload-urls (RT-012, CB-003 join fix)
    */
   async refreshUploadUrls(ctx: ExecutionContext, versionId: string) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+    return this.db.withTenantContext({...ctx,projectWrite:true}, async (client: PoolClient) => {
+      await this.lockDocumentStorage(client,ctx,versionId,true,true);
       const verRes = await client.query(
         `SELECT dv.*, so.object_key, so.s3_upload_id, so.size_bytes
          FROM document_versions dv
@@ -600,12 +653,15 @@ export class DocumentsService {
     maybeVersionIdOrDto?: string | { checksumSha256?: string; isEicarTestVirus?: boolean; samplePayload?: string; parts?: Array<{ partNumber: number; etag?: string }> },
     maybeDto?: { checksumSha256?: string; isEicarTestVirus?: boolean; samplePayload?: string; parts?: Array<{ partNumber: number; etag?: string }> },
   ) {
+    const assertedProjectId =
+      typeof maybeVersionIdOrDto === 'string' ? projectIdOrVersionId : undefined;
     const versionId =
       typeof maybeVersionIdOrDto === 'string' ? maybeVersionIdOrDto : projectIdOrVersionId;
     const dto =
       typeof maybeVersionIdOrDto === 'object' ? maybeVersionIdOrDto : maybeDto;
 
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+    return this.db.withTenantContext({...ctx,projectWrite:true}, async (client: PoolClient) => {
+      await this.lockDocumentStorage(client,ctx,versionId,true,true);
       const verRes = await client.query(
         `SELECT dv.*, so.id AS storage_id, so.object_key, so.bucket, so.s3_upload_id,
                 so.expected_sha256, so.size_bytes AS storage_size_bytes,
@@ -621,8 +677,13 @@ export class DocumentsService {
       if (!verRes.rows.length) {
         throw new NotFoundException('VERSION_NOT_FOUND');
       }
-      await this.assertGuestVersionScope(client, ctx, versionId, 'document.upload');
+      // G02-008: the idempotent PROCESSING/READY path must not expose
+      // another project's metadata simply because the URL contained A.
       const version = verRes.rows[0];
+      if (assertedProjectId && version.project_id !== assertedProjectId) {
+        throw new NotFoundException('VERSION_NOT_FOUND');
+      }
+      await this.assertGuestVersionScope(client, ctx, versionId, 'document.upload');
       if (version.file_status !== 'PENDING_UPLOAD') {
         if (['PROCESSING', 'READY'].includes(version.file_status) && version.provider_version_id) {
           return {
@@ -718,11 +779,12 @@ export class DocumentsService {
    * API-084 POST /document-versions/:id/abort-upload
    */
   async abortUpload(ctx: ExecutionContext, versionId: string) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+    return this.db.withTenantContext({...ctx,projectWrite:true}, async (client: PoolClient) => {
+      await this.lockDocumentStorage(client,ctx,versionId,true,true);
       const verRes = await client.query(
         `SELECT dv.*, so.id AS storage_id, so.object_key, so.s3_upload_id FROM document_versions dv
            JOIN storage_objects so ON so.id = dv.object_id
-          WHERE dv.org_id = $1 AND dv.id = $2`,
+          WHERE dv.org_id = $1 AND dv.id = $2 FOR UPDATE OF dv,so`,
         [ctx.orgId, versionId],
       );
       if (!verRes.rows.length) {
@@ -738,7 +800,8 @@ export class DocumentsService {
       await this.storageAdapter.abortUpload({ objectKey: version.object_key, uploadId: version.s3_upload_id });
 
       await client.query(
-        `UPDATE storage_objects SET status = 'ABORTED' WHERE org_id = $1 AND id = $2`,
+        `UPDATE storage_objects SET status = 'ABORTED',upload_cleanup_requested_at=now(),
+            upload_failure_code='UPLOAD_ABORTED',updated_at=now() WHERE org_id = $1 AND id = $2`,
         [ctx.orgId, version.storage_id],
       );
       await client.query(
@@ -989,80 +1052,36 @@ export class DocumentsService {
     await pipeWithCancellation(body);
   }
 
-  /**
-   * API-090 DELETE /documents/:id (Soft-delete)
-   * Refunds STORAGE_BYTES quota on soft-delete (Bug 2: 10.0/10)
-   */
+  /** Soft deletion releases only logical READY bytes, once per object.
+   * Evidence bytes and immutable version identities are retained. */
   async deleteDocument(ctx: ExecutionContext, documentId: string) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
-      const res = await client.query(
-        `UPDATE documents
-            SET deleted_at = now(), row_version = row_version + 1
-          WHERE org_id = $1 AND id = $2 AND deleted_at IS NULL
-          RETURNING id`,
-        [ctx.orgId, documentId],
-      );
-      if (!res.rows.length) {
-        throw new NotFoundException('DOCUMENT_NOT_FOUND_OR_DELETED');
-      }
-
-      const { rows: sizeRows } = await client.query(
-        `SELECT COALESCE(SUM(so.size_bytes), 0) AS total_bytes
-           FROM document_versions dv
-           JOIN storage_objects so ON so.id = dv.object_id
-          WHERE dv.org_id = $1 AND dv.document_id = $2 AND dv.file_status = 'READY'`,
-        [ctx.orgId, documentId],
-      );
-      const freedBytes = BigInt(sizeRows[0]?.total_bytes || 0);
-      if (freedBytes > 0n) {
-        await client.query(
-          `UPDATE usage_counters
-              SET value = GREATEST(0::numeric, value::numeric - $2)::text,
-                  updated_at = now()
-            WHERE org_id = $1 AND metric = 'STORAGE_BYTES' AND period = 'ALL_TIME'`,
-          [ctx.orgId, freedBytes.toString()],
-        );
-      }
-
-      return { documentId, deleted: true, refundedBytes: Number(freedBytes) };
+    return this.db.withTenantContext({...ctx,projectWrite:true}, async (client: PoolClient) => {
+      const before=await this.lockDocumentStorage(client,ctx,documentId,false,true);
+      const {rows}=await client.query(`UPDATE documents
+        SET deleted_at=now(),row_version=row_version+1
+        WHERE org_id=$1 AND id=$2 AND deleted_at IS NULL RETURNING id`,[ctx.orgId,documentId]);
+      if(!rows.length)throw new NotFoundException('DOCUMENT_NOT_FOUND_OR_DELETED');
+      const after=await reconcileStorageCapacity(client,ctx.orgId);
+      return {documentId,deleted:true,refundedBytes:Number(before.readyBytes-after.readyBytes)};
     });
   }
 
-  /**
-   * API-091 POST /documents/:id/restore
-   */
+  /** Restoring retained evidence consumes logical capacity atomically, without
+   * changing any verified bytes or bypassing an unavailable entitlement. */
   async restoreDocument(ctx: ExecutionContext, documentId: string) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
-      const res = await client.query(
-        `UPDATE documents
-            SET deleted_at = NULL, row_version = row_version + 1
-          WHERE org_id = $1 AND id = $2 AND deleted_at IS NOT NULL
-          RETURNING id`,
-        [ctx.orgId, documentId],
-      );
-      if (!res.rows.length) {
-        throw new NotFoundException('DOCUMENT_NOT_FOUND_OR_NOT_DELETED');
+    return this.db.withTenantContext({...ctx,projectWrite:true}, async (client: PoolClient) => {
+      const before=await this.lockDocumentStorage(client,ctx,documentId,false,true);
+      const effective=await resolveEffectiveEntitlements(client,ctx.orgId);
+      if(!effective.canConsume)throw new ConflictException({code:'STORAGE_ENTITLEMENT_UNAVAILABLE'});
+      const {rows}=await client.query(`UPDATE documents
+        SET deleted_at=NULL,row_version=row_version+1
+        WHERE org_id=$1 AND id=$2 AND deleted_at IS NOT NULL RETURNING id`,[ctx.orgId,documentId]);
+      if(!rows.length)throw new NotFoundException('DOCUMENT_NOT_FOUND_OR_NOT_DELETED');
+      const after=await reconcileStorageCapacity(client,ctx.orgId);
+      if(after.totalBytes>BigInt(effective.limits.maxStorageBytes)) {
+        throw new ConflictException({code:'STORAGE_QUOTA_EXCEEDED',detail:'Restore requires available storage capacity.'});
       }
-
-      const { rows: sizeRows } = await client.query(
-        `SELECT COALESCE(SUM(so.size_bytes), 0) AS total_bytes
-           FROM document_versions dv
-           JOIN storage_objects so ON so.id = dv.object_id
-          WHERE dv.org_id = $1 AND dv.document_id = $2 AND dv.file_status = 'READY'`,
-        [ctx.orgId, documentId],
-      );
-      const readdedBytes = BigInt(sizeRows[0]?.total_bytes || 0);
-      if (readdedBytes > 0n) {
-        await client.query(
-          `UPDATE usage_counters
-              SET value = (value::numeric + $2)::text,
-                  updated_at = now()
-            WHERE org_id = $1 AND metric = 'STORAGE_BYTES' AND period = 'ALL_TIME'`,
-          [ctx.orgId, readdedBytes.toString()],
-        );
-      }
-
-      return { documentId, restored: true, readdedBytes: Number(readdedBytes) };
+      return {documentId,restored:true,readdedBytes:Number(after.readyBytes-before.readyBytes)};
     });
   }
 
@@ -1217,38 +1236,131 @@ export class DocumentsService {
     assetIds: string[],
     requirementIds: string[],
   ) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
-      // Re-use transaction logic from perfect-10-patches
-      for (let i = 0; i < assetIds.length; i++) {
+    const isUuid=(id:unknown):id is string=>
+      typeof id==='string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+    if(!isUuid(projectId)||!isUuid(documentId)||
+       !Array.isArray(assetIds)||!Array.isArray(requirementIds)||
+       assetIds.length+requirementIds.length===0||
+       assetIds.length>100||requirementIds.length>100||
+       !assetIds.every(isUuid)||!requirementIds.every(isUuid)||
+       new Set(assetIds).size!==assetIds.length||
+       new Set(requirementIds).size!==requirementIds.length){
+      throw new UnprocessableEntityException({code:'INVALID_EVIDENCE_LINKS'});
+    }
+    return this.db.withTenantContext({...ctx,projectWrite:true}, async (client: PoolClient) => {
+      // All linked records and the active authority are checked and locked
+      // BEFORE the first insert/update. An A-only supplier cannot attach B.
+      const {rows:project}=await client.query(
+        `SELECT status FROM projects WHERE org_id=$1 AND id=$2 FOR UPDATE`,
+        [ctx.orgId,projectId],
+      );
+      if(!project.length||!['DRAFT','ACTIVE','HANDOVER'].includes(project[0].status)){
+        throw new NotFoundException('PROJECT_NOT_FOUND');
+      }
+      const {rows:docs}=await client.query(
+        `SELECT d.id,d.doc_type_key,d.created_at,
+                dv.file_status,dv.uploaded_by_grant_id
+           FROM documents d
+           JOIN document_versions dv
+             ON dv.org_id=d.org_id AND dv.project_id=d.project_id
+            AND dv.id=d.latest_version_id AND dv.deleted_at IS NULL
+          WHERE d.org_id=$1 AND d.project_id=$2 AND d.id=$3
+            AND d.deleted_at IS NULL FOR SHARE OF d,dv`,
+        [ctx.orgId,projectId,documentId],
+      );
+      if(!docs.length) throw new NotFoundException('DOCUMENT_NOT_FOUND');
+      const doc=docs[0];
+      assertMemberResourceScope(ctx,'document',{
+        id:documentId,docTypeKey:doc.doc_type_key,
+        createdAt:doc.created_at?.toISOString?.()||String(doc.created_at),
+      },true);
+
+      let grant:any;
+      if(ctx.actorType==='GUEST'||ctx.guestGrantId){
+        if(!ctx.guestGrantId)throw new NotFoundException('DOCUMENT_NOT_FOUND');
+        const {rows}=await client.query(
+          `SELECT party_id,scope_json,project_id,principal_user_id
+             FROM guest_grants WHERE org_id=$1 AND id=$2 AND project_id=$3
+               AND status='ACTIVE' AND expires_at>now()
+               AND capabilities @> ARRAY['document.upload']::text[]
+             FOR SHARE`,
+          [ctx.orgId,ctx.guestGrantId,projectId],
+        );
+        grant=rows[0];
+        if(!grant || grant.principal_user_id!==ctx.userId ||
+           doc.uploaded_by_grant_id!==ctx.guestGrantId){
+          throw new NotFoundException('DOCUMENT_NOT_FOUND');
+        }
+        const assigned=grant.scope_json||{};
+        if(requirementIds.some(id=>!Array.isArray(assigned.requirementIds)||
+           !assigned.requirementIds.includes(id))||
+           assetIds.some(id=>!Array.isArray(assigned.assetIds)||
+             !assigned.assetIds.includes(id))){
+          throw new NotFoundException('EVIDENCE_SCOPE_NOT_FOUND');
+        }
+      }
+      const {rows:assets}=assetIds.length ? await client.query(
+        `SELECT id,category_key,created_at FROM assets
+           WHERE org_id=$1 AND project_id=$2 AND id=ANY($3::uuid[])
+             AND deleted_at IS NULL FOR SHARE`,
+        [ctx.orgId,projectId,assetIds],
+      ) : {rows:[]};
+      if(assets.length!==assetIds.length)throw new NotFoundException('ASSET_NOT_FOUND');
+      const {rows:reqs}=requirementIds.length ? await client.query(
+        `SELECT id,owner_party_id,group_key,doc_type_key,created_at
+           FROM requirements
+          WHERE org_id=$1 AND project_id=$2 AND id=ANY($3::uuid[])
+            AND superseded_at IS NULL FOR SHARE`,
+        [ctx.orgId,projectId,requirementIds],
+      ) : {rows:[]};
+      if(reqs.length!==requirementIds.length)throw new NotFoundException('REQUIREMENT_NOT_FOUND');
+      for(const row of assets){
+        assertMemberResourceScope(ctx,'asset',{
+          id:row.id,categoryKey:row.category_key,
+          createdAt:row.created_at?.toISOString?.()||String(row.created_at),
+        },true);
+      }
+      for(const row of reqs){
+        if(grant && row.owner_party_id && row.owner_party_id!==grant.party_id){
+          throw new NotFoundException('REQUIREMENT_NOT_FOUND');
+        }
+        assertMemberResourceScope(ctx,'requirement',{
+          id:row.id,groupKey:row.group_key,
+          createdAt:row.created_at?.toISOString?.()||String(row.created_at),
+        },true);
+      }
+      for(let i=0;i<assetIds.length;i++){
         await client.query(
-          `INSERT INTO document_assets (id, org_id, project_id, document_id, asset_id, is_primary)
-           VALUES ($1, $2, $3, $4, $5, $6)
-           ON CONFLICT (document_id, asset_id) DO NOTHING`,
-          [uuidv7(), ctx.orgId, projectId, documentId, assetIds[i], i === 0],
+          `INSERT INTO document_assets
+             (id,org_id,project_id,document_id,asset_id,is_primary)
+           VALUES($1,$2,$3,$4,$5,$6)
+           ON CONFLICT(document_id,asset_id) DO NOTHING`,
+          [uuidv7(),ctx.orgId,projectId,documentId,assetIds[i],i===0],
         );
       }
-
-      for (const reqId of requirementIds) {
+      for(const id of requirementIds){
         await client.query(
-          `INSERT INTO document_requirements (id, org_id, project_id, document_id, requirement_id)
-           VALUES ($1, $2, $3, $4, $5)
-           ON CONFLICT (document_id, requirement_id) DO NOTHING`,
-          [uuidv7(), ctx.orgId, projectId, documentId, reqId],
+          `INSERT INTO document_requirements
+             (id,org_id,project_id,document_id,requirement_id)
+           VALUES($1,$2,$3,$4,$5)
+           ON CONFLICT(document_id,requirement_id) DO NOTHING`,
+          [uuidv7(),ctx.orgId,projectId,documentId,id],
         );
       }
-
-      if (requirementIds.length > 0) {
+      // PROCESSING or PENDING uploads can have a link, but cannot claim the
+      // requirement has a completed uploaded artifact before verified bytes.
+      if(requirementIds.length && doc.file_status==='READY'){
         await client.query(
           `UPDATE requirements
-              SET status = 'UPLOADED', row_version = row_version + 1, updated_at = now()
-            WHERE org_id = $1 AND project_id = $2
-              AND id = ANY($3::uuid[])
-              AND status IN ('NOT_STARTED', 'REQUESTED', 'CHANGES_REQUESTED', 'REJECTED')`,
-          [ctx.orgId, projectId, requirementIds],
+              SET status='UPLOADED',row_version=row_version+1,updated_at=now()
+            WHERE org_id=$1 AND project_id=$2 AND id=ANY($3::uuid[])
+              AND status IN ('NOT_STARTED','REQUESTED','CHANGES_REQUESTED','REJECTED')`,
+          [ctx.orgId,projectId,requirementIds],
         );
       }
-
-      return { documentId, linkedAssetsCount: assetIds.length, linkedRequirementsCount: requirementIds.length };
+      return {documentId,linkedAssetsCount:assetIds.length,
+        linkedRequirementsCount:requirementIds.length,
+        verifiedEvidence:doc.file_status==='READY'};
     });
   }
 
@@ -1266,7 +1378,7 @@ export class DocumentsService {
     if (uniqueDocumentIds.length === 0 || uniqueDocumentIds.length > 250) {
       throw new BadRequestException('TRANSMITTAL_DOCUMENT_COUNT_INVALID');
     }
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+    return this.db.withTenantContext({...ctx,projectWrite:true}, async (client: PoolClient) => {
       await client.query(
         `SELECT id FROM projects WHERE org_id = $1 AND id = $2 FOR UPDATE`,
         [ctx.orgId, projectId],

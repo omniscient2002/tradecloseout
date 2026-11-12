@@ -29,6 +29,22 @@ export class SupplierGuestService {
       otpRequired?: boolean;
     },
   ) {
+    // G02-005: a bearer supplier may upload, never issue a new bearer or
+    // reassign contractor-controlled purchase obligations.
+    if(ctx.actorType==='GUEST'||ctx.guestGrantId ||
+       !['R-OWNER','R-ADMIN','R-PM','R-PROC'].includes(ctx.orgRole||'')){
+      throw new ForbiddenException({code:'SUPPLIER_LINK_ISSUER_REQUIRED'});
+    }
+    const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if(!uuid.test(projectId) || !uuid.test(input?.supplierPartyId||'') ||
+       !Array.isArray(input?.requirementIds) ||
+       input.requirementIds.some(id=>typeof id!=='string'||!uuid.test(id)) ||
+       new Set(input.requirementIds).size!==input.requirementIds.length ||
+       (input.expiresInDays!==undefined &&
+        (!Number.isInteger(input.expiresInDays)||input.expiresInDays<1||
+         input.expiresInDays>90))){
+      throw new UnprocessableEntityException({code:'INVALID_SUPPLIER_GRANT_SCOPE'});
+    }
     if (!input.requirementIds || input.requirementIds.length === 0 || input.requirementIds.length > 20) {
       throw new UnprocessableEntityException({
         code: 'VALIDATION_FAILED',
@@ -40,9 +56,17 @@ export class SupplierGuestService {
     const otpRequired = true;
 
     return withTenantTransaction(this.pool, ctx, async (client, emit) => {
-      // Verify all requirementIds belong to this project and assign supplier party
+      // Serialize grant issuance with project closure/revocation, not
+      // after an untrusted caller has already modified requirement owners.
+      const {rows:project}=await client.query(
+        `SELECT status FROM projects WHERE org_id=$1 AND id=$2 FOR UPDATE`,
+        [ctx.orgId,projectId],
+      );
+      if(!project.length||!['DRAFT','ACTIVE'].includes(project[0].status)){
+        throw new NotFoundException('PROJECT_NOT_AVAILABLE');
+      }
       const { rows: validReqs } = await client.query(
-        `SELECT id, requirement_key, title
+        `SELECT id, requirement_key, title, owner_party_id, status
            FROM requirements
           WHERE org_id = $1 AND project_id = $2 AND id = ANY($3::uuid[])
             AND superseded_at IS NULL
@@ -57,6 +81,11 @@ export class SupplierGuestService {
         });
       }
 
+      if(validReqs.some(row=>
+         (row.owner_party_id && row.owner_party_id!==input.supplierPartyId) ||
+         ['APPROVED','WAIVED','EXPIRED'].includes(row.status))){
+        throw new ForbiddenException({code:'SUPPLIER_ASSIGNMENT_IMMUTABLE'});
+      }
       await client.query(
         `UPDATE requirements
             SET owner_party_id = $4,

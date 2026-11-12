@@ -1,0 +1,360 @@
+$ pnpm --filter @tradecloseout/shared build && pnpm --filter @tradecloseout/db build && pnpm --filter @tradecloseout/pdf-engine build && pnpm -r --workspace-concurrency=1 run test
+$ tsc
+$ tsc
+$ tsc
+Scope: 6 of 7 workspace projects
+$ node --import tsx --test test/db-integration.spec.ts
+TAP version 13
+# Subtest: Disposable PostgreSQL migration, isolation and audit regression tests
+    # Subtest: DB-02: upgrading the 0005 baseline converges to the fresh schema
+    ok 1 - DB-02: upgrading the 0005 baseline converges to the fresh schema
+      ---
+      duration_ms: 3384.783216
+      type: 'test'
+      ...
+    # Subtest: DB-01: fresh ledger matches every actual SQL checksum, reruns and concurrent runners do not change it
+    ok 2 - DB-01: fresh ledger matches every actual SQL checksum, reruns and concurrent runners do not change it
+      ---
+      duration_ms: 405.584883
+      type: 'test'
+      ...
+    # Subtest: DB-03: mismatched and unknown ledger entries reject migration
+    ok 3 - DB-03: mismatched and unknown ledger entries reject migration
+      ---
+      duration_ms: 642.326956
+      type: 'test'
+      ...
+    # Subtest: DB-06/07: real runtime role reads own tenant and rejects an otherwise valid foreign write with RLS SQLSTATE
+    ok 4 - DB-06/07: real runtime role reads own tenant and rejects an otherwise valid foreign write with RLS SQLSTATE
+      ---
+      duration_ms: 17.102712
+      type: 'test'
+      ...
+    # Subtest: DB-10: tenant-table inventory catches disabled RLS as well as unforced RLS
+    ok 5 - DB-10: tenant-table inventory catches disabled RLS as well as unforced RLS
+      ---
+      duration_ms: 5.899134
+      type: 'test'
+      ...
+    # Subtest: DB-08: direct cross-project procurement insert fails the intended composite FK
+    ok 6 - DB-08: direct cross-project procurement insert fails the intended composite FK
+      ---
+      duration_ms: 20.011946
+      type: 'test'
+      ...
+    # Subtest: DB-07: shared catalogue rows are readable, foreign rows and global writes are blocked
+    ok 7 - DB-07: shared catalogue rows are readable, foreign rows and global writes are blocked
+      ---
+      duration_ms: 8.305705
+      type: 'test'
+      ...
+    # Subtest: AUDIT-02/03/04: nonempty chain rejects update/delete and detects privileged payload tampering
+    ok 8 - AUDIT-02/03/04: nonempty chain rejects update/delete and detects privileged payload tampering
+      ---
+      duration_ms: 44.347222
+      type: 'test'
+      ...
+    # Subtest: N30: canonical tenant alias validation rejects conflicting tenant settings
+    ok 9 - N30: canonical tenant alias validation rejects conflicting tenant settings
+      ---
+      duration_ms: 6.243592
+      type: 'test'
+      ...
+    1..9
+ok 1 - Disposable PostgreSQL migration, isolation and audit regression tests
+  ---
+  duration_ms: 6839.549553
+  type: 'test'
+  ...
+1..1
+# tests 10
+# suites 0
+# pass 10
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 7081.718944
+$ jest --runInBand
+
+Test Suites: 5 passed, 5 total
+Tests:       71 passed, 71 total
+Snapshots:   0 total
+Time:        1.746 s, estimated 4 s
+Ran all test suites.
+$ playwright test --project=archive --project=auth-storage
+
+Running 10 tests using 4 workers
+
+(node:188980) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:188972) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:188973) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:188979) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   4 [archive] › e2e/archive-verifier.spec.ts:10:7 › ARC-03/WEB-UX: offline extracted archive changed-manifest (1.3s)
+  ✓   1 [archive] › e2e/archive-verifier.spec.ts:10:7 › ARC-03/WEB-UX: offline extracted archive missing (1.3s)
+  ✓   2 [archive] › e2e/archive-verifier.spec.ts:10:7 › ARC-03/WEB-UX: offline extracted archive changed-file (1.3s)
+  ✓   3 [archive] › e2e/archive-verifier.spec.ts:10:7 › ARC-03/WEB-UX: offline extracted archive valid (1.4s)
+  ✓   5 [archive] › e2e/archive-verifier.spec.ts:10:7 › ARC-03/WEB-UX: offline extracted archive extra-file (535ms)
+  ✓   6 [archive] › e2e/archive-verifier.spec.ts:10:7 › ARC-03/WEB-UX: offline extracted archive unsafe-title (693ms)
+(node:189353) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:189359) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:189380) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:189387) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  10 [auth-storage] › e2e/g01-offline-context.spec.ts:130:5 › G01 browser logout keeps identity until the exact revocation acknowledgement (1.2s)
+  ✓   7 [auth-storage] › e2e/g01-offline-context.spec.ts:25:7 › G01 browser IndexedDB/multipart: switch-during-put (2.0s)
+  ✓   8 [auth-storage] › e2e/g01-offline-context.spec.ts:25:7 › G01 browser IndexedDB/multipart: switch-during-scan (2.0s)
+  ✓   9 [auth-storage] › e2e/g01-offline-context.spec.ts:25:7 › G01 browser IndexedDB/multipart: interrupt-and-resume (1.9s)
+
+  10 passed (8.3s)
+$ tsx test/pdf-engine.spec.ts
+======================================================================
+TradeCloseout PDF Engine & Submittal Compilation Suite
+======================================================================
+
+[PDF-01] Testing PDF inspection and sanitisation...
+✓ Inspection and sanitisation verified: pages=3, objects=14
+
+[PDF-02] Testing front matter generation...
+✓ Front matter generated with Cover Page and TOC.
+
+[PDF-03] Testing multi-document compilation & Bates stamping...
+✓ Dossier compilation verified: 7 pages merged, stamped, and zipped (3790 bytes).
+
+======================================================================
+✓ ALL PDF ENGINE UNIT TESTS PASSED PERFECTLY!
+======================================================================
+
+$ jest --runInBand
+PASS test/g01-two-api-http.spec.ts (36.032 s)
+PASS test/pr1-independent-db-acceptance.spec.ts (20.997 s)
+PASS test/g01-auth-denial-budget-db.spec.ts (17.88 s)
+  ● Console
+
+    console.error
+      AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE
+
+      337 |   lastAuthDenialDiagnosticAt = now;
+      338 |   // No exception string, HTTP request data, raw source or credentials.
+    > 339 |   console.error('AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE');
+          |           ^
+      340 | }
+      341 |
+      342 | /**
+
+      at reportAuthDenialPersistenceFailure (src/modules/identity/auth-security.ts:339:11)
+      at recordDeniedAuthenticationEvent (src/modules/identity/auth-security.ts:480:5)
+      at async /tmp/tc-g01-implementation/apps/api/test/g01-auth-denial-budget-db.spec.ts:146:9
+      at async withDisposableDatabase (../../packages/db/test/helpers/disposable-database.ts:107:5)
+      at async Object.<anonymous> (test/g01-auth-denial-budget-db.spec.ts:135:5)
+
+PASS test/remaining-production-gaps.spec.ts (15.831 s)
+PASS test/g01-invitation-db.spec.ts (15.924 s)
+PASS test/g01-delivery-reconciliation-db.spec.ts (14.149 s)
+PASS test/hvac-domain-excellence.spec.ts
+PASS test/g01-mfa-db.spec.ts (10.584 s)
+PASS test/pr4-authorization-evidence-gates.spec.ts (11.782 s)
+PASS test/g01-distributed-rate-budgets.spec.ts (8.445 s)
+PASS test/g01-member-invitation-authority-db.spec.ts (8.934 s)
+PASS test/g01-guest-principal-db.spec.ts (7.771 s)
+PASS test/production-reaudit-remediation.spec.ts (5.757 s)
+PASS test/contractor-user-journey.spec.ts
+PASS test/g01-identity-recovery-db.spec.ts
+PASS test/g01-auth-session-transaction-fence-db.spec.ts
+PASS test/g01-guest-project-party-db.spec.ts
+PASS test/g01-session-guard-db.spec.ts
+PASS test/g01-external-authority-db.spec.ts
+PASS test/g01-org-switch-review-regressions.spec.ts
+PASS test/g01-legacy-external-migration-upgrade-db.spec.ts
+PASS test/g01-external-document-attestation-db.spec.ts
+PASS test/idempotency-cleanup-replay.spec.ts
+PASS test/g01-independent-party-approval-db.spec.ts
+PASS test/g01-device-session-revocation-db.spec.ts
+PASS test/g01-auth-route-audit-db.spec.ts
+PASS test/hvac-production-reaudit-remediation.spec.ts
+PASS test/g01-privileged-route-inventory.spec.ts
+  ● Console
+
+    console.error
+      AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE
+
+      337 |   lastAuthDenialDiagnosticAt = now;
+      338 |   // No exception string, HTTP request data, raw source or credentials.
+    > 339 |   console.error('AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE');
+          |           ^
+      340 | }
+      341 |
+      342 | /**
+
+      at reportAuthDenialPersistenceFailure (src/modules/identity/auth-security.ts:339:11)
+      at recordDeniedAuthenticationEvent (src/modules/identity/auth-security.ts:480:5)
+      at SessionCsrfGuard.canActivate (src/common/guards/session-csrf.guard.ts:91:46)
+      at async /tmp/tc-g01-implementation/apps/api/test/g01-privileged-route-inventory.spec.ts:53:14
+
+PASS test/phase0-evidence-integrity-remediation.spec.ts
+PASS test/discovery-lifecycle-foundations.spec.ts
+PASS test/production-review-remediation.spec.ts
+PASS test/rls-isolation.spec.ts
+PASS test/g01-authentication-security.spec.ts
+  ● Console
+
+    console.error
+      AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE
+
+      337 |   lastAuthDenialDiagnosticAt = now;
+      338 |   // No exception string, HTTP request data, raw source or credentials.
+    > 339 |   console.error('AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE');
+          |           ^
+      340 | }
+      341 |
+      342 | /**
+
+      at reportAuthDenialPersistenceFailure (src/modules/identity/auth-security.ts:339:11)
+      at recordDeniedAuthenticationEvent (src/modules/identity/auth-security.ts:480:5)
+      at SessionCsrfGuard.canActivate (src/common/guards/session-csrf.guard.ts:91:46)
+      at async Object.<anonymous> (test/g01-authentication-security.spec.ts:284:7)
+
+PASS test/perfect-10-remediation.spec.ts
+PASS test/concurrency.spec.ts
+PASS test/security-invariants.e2e-spec.ts
+PASS test/v021-edge-cases.e2e-spec.ts
+PASS test/g01-delivery-redirect-boundaries.spec.ts
+PASS test/review-authority-boundaries.spec.ts
+PASS test/rls-and-integrity.spec.ts
+PASS test/hvac-checklist-readiness-branch.spec.ts
+PASS test/g01-reviewer-operations.spec.ts
+PASS test/modules/documents-reviews.spec.ts
+PASS test/guest-session-boundaries.spec.ts
+PASS test/document-download-boundaries.spec.ts
+PASS test/sol-integrity-verification.spec.ts
+PASS test/idempotency-expired-claim.spec.ts
+PASS test/remaining-dossier-delivery.spec.ts
+PASS test/modules/config-checklists-assets.spec.ts
+PASS test/g01-request-id-privacy.spec.ts
+PASS test/modules/parties-projects.spec.ts
+PASS test/rbac-matrix.spec.ts
+PASS test/modules/handover-billing-system.spec.ts
+PASS test/modules/nfr-quality-attributes.spec.ts
+PASS test/modules/auth-iam.spec.ts
+
+Test Suites: 55 passed, 55 total
+Tests:       341 passed, 341 total
+Snapshots:   0 total
+Time:        236.48 s, estimated 259 s
+Ran all test suites.
+$ node --import tsx --test test/*.spec.ts
+TAP version 13
+# Subtest: G01-R4: worker mode/configuration fails closed before background jobs
+ok 1 - G01-R4: worker mode/configuration fails closed before background jobs
+  ---
+  duration_ms: 3.832254
+  type: 'test'
+  ...
+# Subtest: G01-R4: worker checks connected PostgreSQL session and rejects role escalation
+ok 2 - G01-R4: worker checks connected PostgreSQL session and rejects role escalation
+  ---
+  duration_ms: 4.2386
+  type: 'test'
+  ...
+# Subtest: Isolated worker DB/Redis and storage HTTP contract regressions
+    # Subtest: SCHED-01/02: real Redis NX excludes concurrent owner and old owner cannot delete replacement lock
+    ok 1 - SCHED-01/02: real Redis NX excludes concurrent owner and old owner cannot delete replacement lock
+      ---
+      duration_ms: 10.797754
+      type: 'test'
+      ...
+    # Subtest: SCHED-03/04: successful period runs once; failed period retries; India year boundary
+    ok 2 - SCHED-03/04: successful period runs once; failed period retries; India year boundary
+      ---
+      duration_ms: 27.88915
+      type: 'test'
+      ...
+    # Subtest: TX-05/06: cleanup retains expired unresolved claims after committed effect
+    ok 3 - TX-05/06: cleanup retains expired unresolved claims after committed effect
+      ---
+      duration_ms: 21.838327
+      type: 'test'
+      ...
+    # Subtest: G01-020: abandoned unconfirmed invitations never become redeemable
+    ok 4 - G01-020: abandoned unconfirmed invitations never become redeemable
+      ---
+      duration_ms: 27.643222
+      type: 'test'
+      ...
+    # Subtest: NOTIF-01/04: no configuration, rejection and invalid ack stay queued; matching capture acknowledgment permits SENT
+    ok 5 - NOTIF-01/04: no configuration, rejection and invalid ack stay queued; matching capture acknowledgment permits SENT
+      ---
+      duration_ms: 108.046222
+      type: 'test'
+      ...
+    # Subtest: ARC-02: ZIP contains exact pinned bytes; durable readback and replay are verified independently
+    ok 6 - ARC-02: ZIP contains exact pinned bytes; durable readback and replay are verified independently
+      ---
+      duration_ms: 140.678321
+      type: 'test'
+      ...
+    # Subtest: ARC-03/04: missing source prevents completion
+    ok 7 - ARC-03/04: missing source prevents completion
+      ---
+      duration_ms: 28.5032
+      type: 'test'
+      ...
+    # Subtest: ARC-03/04: wrong digest prevents completion
+    ok 8 - ARC-03/04: wrong digest prevents completion
+      ---
+      duration_ms: 25.466478
+      type: 'test'
+      ...
+    # Subtest: ARC-03/04: unversioned source prevents completion
+    ok 9 - ARC-03/04: unversioned source prevents completion
+      ---
+      duration_ms: 8.754308
+      type: 'test'
+      ...
+    # Subtest: ARC-03/04: unsafe path prevents completion
+    ok 10 - ARC-03/04: unsafe path prevents completion
+      ---
+      duration_ms: 7.555217
+      type: 'test'
+      ...
+# An error was encountered in a non-retryable streaming request.
+    # Subtest: PKG-05: failed output upload and missing storage configuration cannot complete
+    ok 11 - PKG-05: failed output upload and missing storage configuration cannot complete
+      ---
+      duration_ms: 70.900884
+      type: 'test'
+      ...
+    # Subtest: N19 / V09: BoundedByteStream validates ceilings and aborts transfer when exceeded
+    ok 12 - N19 / V09: BoundedByteStream validates ceilings and aborts transfer when exceeded
+      ---
+      duration_ms: 7.253845
+      type: 'test'
+      ...
+    # Subtest: N18 / V02: OUTBOX_EVENT_REGISTRY covers 100% of application-emitted event types
+    ok 13 - N18 / V02: OUTBOX_EVENT_REGISTRY covers 100% of application-emitted event types
+      ---
+      duration_ms: 0.237161
+      type: 'test'
+      ...
+    1..13
+ok 3 - Isolated worker DB/Redis and storage HTTP contract regressions
+  ---
+  duration_ms: 3840.053465
+  type: 'test'
+  ...
+1..3
+# tests 16
+# suites 0
+# pass 16
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 5253.342282

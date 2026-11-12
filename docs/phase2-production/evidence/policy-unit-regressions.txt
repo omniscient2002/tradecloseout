@@ -1,0 +1,10 @@
+PASS test/production-review-remediation.spec.ts
+PASS test/phase0-evidence-integrity-remediation.spec.ts
+PASS test/perfect-10-remediation.spec.ts
+PASS test/sol-integrity-verification.spec.ts
+
+Test Suites: 4 passed, 4 total
+Tests:       44 passed, 44 total
+Snapshots:   0 total
+Time:        5.227 s
+Ran all test suites matching /test\/phase0-evidence-integrity-remediation.spec.ts|test\/perfect-10-remediation.spec.ts|test\/sol-integrity-verification.spec.ts|test\/production-review-remediation.spec.ts/i.
