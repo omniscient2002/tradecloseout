@@ -43,9 +43,22 @@ export class HandoverService {
       excludedRequirementIds?: Array<{ requirementId: string; reason: string }>;
     },
   ) {
+    // The only supported scope is a complete handover. Unknown fields, wrong
+    // types and ignored exclusions can mislead the requester about disclosure.
+    if (input === null || typeof input !== 'object' || Array.isArray(input) ||
+        Object.keys(input).some((key) => key !== 'excludedRequirementIds')) {
+      throw new UnprocessableEntityException({
+        code: 'PACKAGE_SCOPE_UNSUPPORTED',
+        detail: 'Only a full-project handover with no excluded requirements is supported.',
+      });
+    }
+    if (input.excludedRequirementIds !== undefined &&
+        !Array.isArray(input.excludedRequirementIds)) {
+      throw new UnprocessableEntityException({ code: 'PACKAGE_EXCLUSIONS_INVALID' });
+    }
     // Exclusions are not applied to the immutable manifest in this release.
     // Silently ignoring them can disclose evidence the requester intended to omit.
-    if (input?.excludedRequirementIds?.length) {
+    if (input.excludedRequirementIds?.length) {
       throw new UnprocessableEntityException({
         code: 'PACKAGE_EXCLUSIONS_NOT_SUPPORTED',
         detail: 'Partial-package exclusions are not supported. No evidence has been excluded or exported.',
