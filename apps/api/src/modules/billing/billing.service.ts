@@ -7,6 +7,34 @@ import { PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { TenantDbService, ExecutionContext } from '../../database/tenant-db.service';
 
+/** PH2-G18-007: active offers must be complete, bounded and safe to represent. */
+export function publicPlanLimits(value: unknown): {
+  maxActiveProjects: number;
+  maxSeats: number;
+  maxStorageBytes: number;
+  maxPackageGenerationsPerMonth: number;
+} {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new ServiceUnavailableException({ code: 'ACTIVE_PLAN_CONFIGURATION_INVALID' });
+  }
+  const record = value as Record<string, unknown>;
+  const fields = ['maxActiveProjects','maxSeats','maxStorageBytes',
+    'maxPackageGenerationsPerMonth'] as const;
+  for (const field of fields) {
+    const amount = record[field];
+    if (typeof amount !== 'number' || !Number.isSafeInteger(amount) || amount < 0) {
+      // Never substitute a fabricated Starter/zero value for a malformed offer.
+      throw new ServiceUnavailableException({ code: 'ACTIVE_PLAN_CONFIGURATION_INVALID' });
+    }
+  }
+  return {
+    maxActiveProjects: record.maxActiveProjects as number,
+    maxSeats: record.maxSeats as number,
+    maxStorageBytes: record.maxStorageBytes as number,
+    maxPackageGenerationsPerMonth: record.maxPackageGenerationsPerMonth as number,
+  };
+}
+
 @Injectable()
 export class BillingService {
   constructor(private readonly db: TenantDbService) {}
@@ -26,19 +54,25 @@ export class BillingService {
          ORDER BY price_paise ASC, code ASC`,
     );
     return rows.map((plan: any) => {
-      const limits = plan.limits_json || {};
-      const pricePaise = BigInt(plan.price_paise);
+      const limits = publicPlanLimits(plan.limits_json);
+      let pricePaise: bigint;
+      try { pricePaise = BigInt(plan.price_paise); }
+      catch { throw new ServiceUnavailableException({ code: 'ACTIVE_PLAN_CONFIGURATION_INVALID' }); }
+      if (pricePaise < 0n || pricePaise > 9223372036854775807n) {
+        throw new ServiceUnavailableException({ code: 'ACTIVE_PLAN_CONFIGURATION_INVALID' });
+      }
       return {
         id: plan.id,
         code: plan.code,
         name: plan.name,
         pricePaise: pricePaise.toString(),
-        priceInr: Number(pricePaise) / 100,
+        // Numeric INR is an optional convenience, never a lossy financial fact.
+        priceInr: pricePaise <= BigInt(Number.MAX_SAFE_INTEGER)
+          ? Number(pricePaise) / 100 : null,
         billingPeriod: ['MONTH', 'MONTHLY'].includes(plan.interval) ? 'MONTHLY'
           : ['YEAR', 'ANNUAL'].includes(plan.interval) ? 'ANNUAL' : plan.interval,
-        maxProjects: limits.maxActiveProjects ?? null,
-        storageGb: limits.maxStorageBytes != null
-          ? Number(limits.maxStorageBytes) / (1024 ** 3) : null,
+        maxProjects: limits.maxActiveProjects,
+        storageGb: limits.maxStorageBytes / (1024 ** 3),
         limits,
       };
     });
