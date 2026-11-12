@@ -22,7 +22,7 @@ export class WarrantyAndBillingService {
     client: PoolClient, ctx: TenantActorContext,
     defect: Record<string, any>,
     action: 'ASSIGNED' | 'REMEDY_SUBMITTED' | 'REMEDY_REJECTED' |
-      'INDEPENDENTLY_CLOSED' | 'WAIVED' | 'REOPENED',
+      'INDEPENDENTLY_CLOSED' | 'WAIVED' | 'REOPENED' | 'SEVERITY_UPDATED',
     toStatus: string,
     details: {
       assignedUserId?: string | null;
@@ -31,6 +31,7 @@ export class WarrantyAndBillingService {
       evidenceObjectId?: string | null;
       remedyVersionId?: string | null;
       reason?: string | null;
+      toSeverity?: string;
     } = {},
   ): Promise<string> {
     const eventId = uuidv7();
@@ -39,15 +40,17 @@ export class WarrantyAndBillingService {
          (id, org_id, project_id, defect_id, action, from_status, to_status,
           previous_row_version, next_row_version, actor_user_id,
           assigned_user_id, assigned_party_id, due_at,
+          from_severity, to_severity,
           evidence_object_id, remedy_document_version_id, reason)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-               $11, $12, $13, $14, $15, $16)`,
+               $11, $12, $13, $14, $15, $16, $17, $18)`,
       [eventId, ctx.orgId, defect.project_id, defect.id, action,
         defect.status, toStatus, defect.row_version,
         defect.row_version + 1, ctx.userId,
         details.assignedUserId === undefined ? (defect.assigned_user_id ?? null) : details.assignedUserId,
         details.assignedPartyId === undefined ? (defect.assigned_party_id ?? null) : details.assignedPartyId,
         details.dueAt === undefined ? (defect.due_at ?? null) : details.dueAt,
+        defect.severity ?? null, details.toSeverity ?? defect.severity ?? null,
         details.evidenceObjectId ?? null, details.remedyVersionId ?? null,
         details.reason ?? null],
     );
@@ -947,6 +950,52 @@ export class WarrantyAndBillingService {
       });
       return { defectId, status: nextStatus, rowVersion: defect.row_version + 1,
         transitionId };
+    });
+  }
+
+  async updateDefectSeverity(
+    ctx: TenantActorContext, projectId: string, defectId: string,
+    input: { expectedRowVersion: number;
+      severity: 'LOW'|'MEDIUM'|'HIGH'|'CRITICAL'|'MINOR'|'MAJOR'; reason: string },
+  ) {
+    this.assertDefectSupervisor(ctx);
+    const reason = this.requireDefectDecisionReason(input?.reason);
+    const severityMap: Record<string, string> = {
+      LOW: 'LOW', MINOR: 'LOW', MEDIUM: 'MEDIUM',
+      MAJOR: 'HIGH', HIGH: 'HIGH', CRITICAL: 'CRITICAL',
+    };
+    if (!input || typeof input.severity !== 'string' ||
+        !Object.prototype.hasOwnProperty.call(severityMap, input.severity)) {
+      throw new UnprocessableEntityException({ code: 'DEFECT_SEVERITY_UNSUPPORTED' });
+    }
+    const severity = severityMap[input.severity];
+    return withTenantTransaction(this.pool, ctx, async (client, emit) => {
+      const { defect, targetProjectId } = await this.lockDefectForMutation(
+        client, ctx, projectId, defectId,
+      );
+      await this.assertMemberDefectScope(client, ctx, defect, true);
+      this.assertDefectExpectedVersion(defect, input.expectedRowVersion);
+      if (!['OPEN','IN_PROGRESS'].includes(defect.status) ||
+          defect.severity === severity) {
+        throw new ConflictException({ code: 'DEFECT_SEVERITY_TRANSITION_BLOCKED' });
+      }
+      const updated = await client.query(
+        `UPDATE defects SET severity = $4, row_version = row_version + 1
+          WHERE org_id = $1 AND project_id = $2 AND id = $3 AND row_version = $5`,
+        [ctx.orgId, targetProjectId, defectId, severity, defect.row_version],
+      );
+      if (updated.rowCount !== 1) throw new ConflictException({ code: 'DEFECT_CONCURRENCY_CONFLICT' });
+      const transitionId = await this.appendDefectTransition(
+        client, ctx, defect, 'SEVERITY_UPDATED', defect.status,
+        { toSeverity: severity, reason },
+      );
+      emit({
+        eventType: 'DEFECT_SEVERITY_UPDATED', projectId: targetProjectId,
+        entityType: 'DEFECT', entityId: defectId,
+        afterJson: { severity, transitionId, rowVersion: defect.row_version + 1 },
+      });
+      return { defectId, status: defect.status, severity,
+        rowVersion: defect.row_version + 1, transitionId };
     });
   }
 
