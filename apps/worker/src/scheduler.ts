@@ -54,7 +54,20 @@ export class TradeCloseoutScheduler {
     try {
       if (await this.redis.exists(completedKey)) return;
       await fn();
-      await this.redis.set(completedKey, '1', 'EX', completedTtlSeconds);
+      // Completion is valid only for the holder that still owns the lease.
+      // Atomically check ownership and persist completion in the same Redis
+      // command, preventing an expired/stolen worker from marking false success.
+      const markCompletedLua = `
+        if redis.call("get", KEYS[1]) == ARGV[1] then
+          redis.call("set", KEYS[2], "1", "EX", ARGV[2])
+          return 1
+        end
+        return 0
+      `;
+      const marked = await this.redis.eval(
+        markCompletedLua, 2, fullKey, completedKey, ownerToken, String(completedTtlSeconds),
+      );
+      if (marked !== 1) throw new Error('SCHEDULER_LEASE_LOST');
     } finally {
       const releaseLua = `
         if redis.call("get", KEYS[1]) == ARGV[1] then
