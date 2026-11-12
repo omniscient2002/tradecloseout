@@ -121,7 +121,7 @@ describe('PH2-G20-009 / G05-001: financial exposure and actual overdue indicator
       };
       const listed=await service.listProjects(siteCtx);
       const row=listed.find((item:any)=>item.id===project.projectId);
-      expect(row).toBeDefined();
+      if (!row) throw new Error('PROJECT_DIRECTORY_ENTRY_MISSING');
       expect(row.contractValuePaise).toBeNull();
       expect(row.contract_value_paise).toBeNull();
       expect(JSON.stringify(row)).not.toContain('SECRET-');
