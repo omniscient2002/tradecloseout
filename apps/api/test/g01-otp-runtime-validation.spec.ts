@@ -19,7 +19,7 @@ describe('G01 runtime OTP validation', () => {
     [{ identifier: 123 }, 'numeric identifier'],
     [{ identifier: 'owner@example.com', phoneOrEmail: 'other@example.com' }, 'conflicting aliases'],
     [{ identifier: ['owner@example.com'] }, 'array identifier'],
-  ])('rejects %s without issuing a challenge (%s)', async (body) => {
+  ])('rejects %s without issuing a challenge (%s)', async (body: unknown, _label: string) => {
     await expect(controller.requestOtp(body as any, req)).rejects.toBeInstanceOf(UnprocessableEntityException);
     expect(redis.eval).not.toHaveBeenCalled();
     expect(pool.connect).not.toHaveBeenCalled();
@@ -35,7 +35,7 @@ describe('G01 runtime OTP validation', () => {
     [{ challengeId: { hostile: true }, code: '123456' }, 'object challenge'],
     [{ challengeId: 'not-a-uuid', code: '123456' }, 'malformed challenge'],
     [{ identifier: 'owner@example.com', code: '123456', signupProfile: { fullName: 42 } }, 'invalid signup profile'],
-  ])('rejects %s before consuming a challenge (%s)', async (body) => {
+  ])('rejects %s before consuming a challenge (%s)', async (body: unknown, _label: string) => {
     await expect(controller.verifyOtp(body as any, req, res)).rejects.toBeInstanceOf(UnprocessableEntityException);
     expect(redis.eval).not.toHaveBeenCalled();
     expect(pool.connect).not.toHaveBeenCalled();
