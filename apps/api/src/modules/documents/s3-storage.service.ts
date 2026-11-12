@@ -191,6 +191,7 @@ export class S3StorageService implements ObjectStoragePresigner {
 
   async refreshUploadUrls(params: { objectKey: string; uploadId: string; sizeBytes: number }) {
     this.assertConfigured();
+    await this.assertVersioningEnabled();
     const listed = await this.client.send(new ListPartsCommand({
       Bucket: this.bucket,
       Key: params.objectKey,
