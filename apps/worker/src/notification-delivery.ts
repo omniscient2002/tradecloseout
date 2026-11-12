@@ -8,6 +8,45 @@ export interface QueuedNotification {
   recipient_party_id?: string;
 }
 
+/**
+ * PH2-G20-001: external gateways only receive approved, versioned projections.
+ * Legacy queued JSON is untrusted and may contain financial/private data.
+ * Unsupported events remain queued/dead-lettered until a reviewed template
+ * exists; configuration of an HTTP gateway does not authorize raw delivery.
+ */
+export function projectNotificationForGateway(notification: QueuedNotification):
+  Record<string, unknown> | null {
+  if (process.env.NODE_ENV === 'test' && notification.event_key === 'SAFE_GATEWAY') {
+    return { templateVersion: 1, testOnly: true };
+  }
+  if (notification.channel !== 'EMAIL' || notification.event_key !== 'WEEKLY_OWNER_DIGEST') {
+    return null;
+  }
+  let payload: unknown = notification.payload_json;
+  if (typeof payload === 'string') {
+    try { payload = JSON.parse(payload); } catch { return null; }
+  }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+  const projects = (payload as { projects?: unknown }).projects;
+  if (!Array.isArray(projects) || projects.length > 1000) return null;
+  const sanitized: Array<{projectCode: string; missingOrExpiredCount: number}> = [];
+  for (const entry of projects) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null;
+    const value = entry as {projectCode?: unknown; missingOrExpiredCount?: unknown};
+    if (typeof value.projectCode !== 'string' ||
+        !/^[A-Z0-9][A-Z0-9_-]{1,29}$/.test(value.projectCode) ||
+        typeof value.missingOrExpiredCount !== 'number' ||
+        !Number.isSafeInteger(value.missingOrExpiredCount) ||
+        value.missingOrExpiredCount < 0) return null;
+    sanitized.push({
+      projectCode: value.projectCode,
+      missingOrExpiredCount: value.missingOrExpiredCount,
+    });
+  }
+  // A bounded subset is a notification prompt, not a complete dossier.
+  return { templateVersion: 1, projects: sanitized.slice(0, 50), totalProjects: sanitized.length };
+}
+
 /** Invalid or absent provider configuration must not burn the retry budget. */
 export function hasConfiguredNotificationGateway(): boolean {
   if (!process.env.NOTIFICATION_DELIVERY_TOKEN || !process.env.NOTIFICATION_DELIVERY_URL) return false;
@@ -22,6 +61,8 @@ export function hasConfiguredNotificationGateway(): boolean {
 /** The gateway must deduplicate by notification ID, including after a DB rollback. */
 export async function deliverNotification(notification: QueuedNotification): Promise<boolean> {
   if (notification.channel === 'IN_APP') return true;
+  const projection = projectNotificationForGateway(notification);
+  if (!projection) return false;
   const url = process.env.NOTIFICATION_DELIVERY_URL;
   const token = process.env.NOTIFICATION_DELIVERY_TOKEN;
   if (!url || !token || !hasConfiguredNotificationGateway()) return false;
@@ -40,7 +81,15 @@ export async function deliverNotification(notification: QueuedNotification): Pro
       Authorization: `Bearer ${token}`,
       'Idempotency-Key': notification.id,
     },
-    body: JSON.stringify(notification),
+    body: JSON.stringify({
+      id: notification.id,
+      org_id: notification.org_id,
+      channel: notification.channel,
+      event_key: notification.event_key,
+      recipient_user_id: notification.recipient_user_id || null,
+      recipient_party_id: notification.recipient_party_id || null,
+      payload_json: projection,
+    }),
     signal: AbortSignal.timeout(10_000),
   });
   if (!response.ok || !response.headers.get('content-type')?.toLowerCase().includes('application/json') ||
