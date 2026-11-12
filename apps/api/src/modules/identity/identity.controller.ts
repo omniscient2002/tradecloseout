@@ -1,3 +1,4 @@
+import { reserveActiveSeatForMembership } from '@tradecloseout/db';
 import {
   Body,
   ConflictException,
@@ -613,6 +614,10 @@ export class IdentityController {
           throw new UnauthorizedException({ code: 'INVITATION_CANNOT_CHANGE_EXISTING_MEMBER_ROLE' });
         }
         if (!existing.length) {
+          const allocation=await reserveActiveSeatForMembership(client,invitation.org_id);
+          if (allocation!=='RESERVED') {
+            throw new UnauthorizedException({code:allocation});
+          }
           await client.query(
             `INSERT INTO memberships(id,org_id,user_id,role,status,joined_at)
              VALUES($1,$2,$3,$4,'ACTIVE',now())`,
