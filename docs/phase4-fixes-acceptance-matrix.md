@@ -16,7 +16,7 @@
 | [PH4-G13-006](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G13.md#ph4-g13-006) | Connect native technical records to reviewed document and handover evidence | OPEN | Not yet implemented or independently verified |
 | [PH4-G13-007](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G13.md#ph4-g13-007) | Obtain independent HVAC commissioning acceptance | BLOCKED_EXTERNAL | Requires authorized external/domain acceptance |
 | [PH4-G17-001](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G17.md#ph4-g17-001) | Qualify immutable remedy and closure bytes rather than READY markers | PARTIAL / VERIFY | Remedy and closure reject READY-only objects without immutable version, size and digest; independent acceptance pending |
-| [PH4-G17-002](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G17.md#ph4-g17-002) | Replace storage-key and first-asset heuristics with exact remedy scope | OPEN | Not yet implemented or independently verified |
+| [PH4-G17-002](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G17.md#ph4-g17-002) | Replace storage-key and first-asset heuristics with exact remedy scope | PARTIAL / VERIFY | Both remedy and independent closure now require a current approved document-version link in the exact project and explicit matching asset binding; no storage-key or LIMIT 1 bypass. Persistent defect-to-version pinning and race/independent acceptance outstanding |
 | [PH4-G17-003](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G17.md#ph4-g17-003) | Define post-handover defect policy without rewriting accepted closeout | OPEN | Not yet implemented or independently verified |
 | [PH4-G17-004](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G17.md#ph4-g17-004) | Enforce current assignee, party and resource authority for defect work | OPEN | Not yet implemented or independently verified |
 | [PH4-G17-005](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G17.md#ph4-g17-005) | Persist assignment, remedy revisions and controlled reopen/waiver history | OPEN | Not yet implemented or independently verified |
@@ -68,7 +68,7 @@
 - Tax invoices, payment settlement, GST/IRP, actual provider delivery, OEM confirmations and real engineering certification remain **disabled or pending verified integration** where applicable. Do not replace them with pretend states.
 - No independent QA, architecture, HVAC, finance, legal, customer or operations reviewer has accepted the exact candidate. No deployment, merge or production sign-off is claimed.
 
-**Count:** 52 findings; 7 external gates; 16 partial remediation areas; 29 not yet addressed areas.
+**Count:** 52 findings; 7 external gates; 17 partial remediation areas; 28 not yet addressed areas.
 
 ## Dedicated PR and CI constraint
 
@@ -97,3 +97,5 @@ This Phase 4 branch is stacked on the audited Phase 1 candidate. Its preferred r
 - New targeted negative service tests cover stale revisions, non-cancellable output, cancelled retries and queued dispatch. Multi-process crash/retry/lease, orphan sweep and UI recovery journey are **not yet independently accepted**.
 
 - G14-007 follow-up: historical non-v2 QUEUED/GENERATING jobs are moved to FAILED with `PACKAGE_LEGACY_MANIFEST_UNPINNED` rather than left QUEUED or silently rebuilt from mutable document pointers. Requires operational old-worker drain and independent recovery acceptance.
+
+- PH4-G17-002 follow-up: source-key text and first-asset selection no longer confer remedy or closure authority; both operations verify exact approved current document scope and an exact asset link. Regression coverage includes misleading routing keys and wrong assets. Persisting the exact document version and immutable receipt across independent closure, concurrent link changes, and policy for explicitly authorized evidence reuse remain open.
