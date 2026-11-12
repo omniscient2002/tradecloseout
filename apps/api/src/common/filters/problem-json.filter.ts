@@ -70,6 +70,15 @@ export class ProblemJsonExceptionFilter implements ExceptionFilter {
         code = 'PLAN_LIMIT_EXCEEDED';
         title = 'Plan limit reached';
         detail = exception.message;
+      } else if (anyErr.code === 'AUTH_SESSION_CONTEXT_CHANGED') {
+        // The guard may have admitted the request before a concurrent
+        // revocation/offboarding. This is a current-authority denial, not a
+        // storage failure, credential expiry or an unhandled HTTP 500. Do not
+        // disclose which eligibility row was removed.
+        status = HttpStatus.FORBIDDEN;
+        code = 'AUTH_SESSION_CONTEXT_CHANGED';
+        title = 'Access has changed';
+        detail = 'The current session is no longer authorized for this action.';
       } else {
         this.logger.error(
           { requestId, err: exception.message, stack: exception.stack },
