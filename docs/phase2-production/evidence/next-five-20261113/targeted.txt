@@ -1,0 +1,11 @@
+PASS test/phase2-next-five-db.spec.ts (17.454 s)
+PASS test/g01-invitation-db.spec.ts (7.279 s)
+PASS test/phase2-organisation-offboarding-db.spec.ts
+PASS test/phase2-next-five.spec.ts
+PASS test/g03-organisation-validation.spec.ts
+
+Test Suites: 5 passed, 5 total
+Tests:       28 passed, 28 total
+Snapshots:   0 total
+Time:        26.977 s
+Ran all test suites matching /test\/phase2-next-five-db.spec.ts|test\/phase2-next-five.spec.ts|test\/g03-organisation-validation.spec.ts|test\/phase2-organisation-offboarding-db.spec.ts|test\/g01-invitation-db.spec.ts/i.

@@ -81,6 +81,7 @@ export const OUTBOX_EVENT_REGISTRY: Record<string, OutboxEventRegistration> = {
   SUBMISSION_AGGREGATED_REJECTED: { type: 'SUBMISSION_AGGREGATED_REJECTED', category: 'INFORMATIONAL', version: 1, description: 'Multi-recipient decision converged to rejected' },
 
   // Supplier guest portal events
+  PARTY_CREATED: { type: 'PARTY_CREATED', category: 'INFORMATIONAL', version: 1, description: 'Counterparty directory entry and audit committed' },
   PROCUREMENT_ORDER_ISSUED: { type: 'PROCUREMENT_ORDER_ISSUED', category: 'INFORMATIONAL', version: 1, description: 'Purchase order and explicit supplier obligations committed' },
   SUPPLIER_UPLOAD_LINK_CREATED: { type: 'SUPPLIER_UPLOAD_LINK_CREATED', category: 'INFORMATIONAL', version: 1, description: 'Supplier magic link issued' },
 

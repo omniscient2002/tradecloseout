@@ -18,6 +18,7 @@ import { uuidv7 } from 'uuidv7';
 import { canonicalAuthenticationEmail, canonicalAuthenticationPhone, hasPermission } from '@tradecloseout/shared';
 import { withTenantTransaction } from '@tradecloseout/db';
 import { parseProcurementInput, ProcurementInput } from './procurement-validation';
+import { parsePartyInput } from './party-validation';
 import { TenantDbService, ExecutionContext } from '../../database/tenant-db.service';
 import { DltSmsGateway, TransactionalMailGateway } from '../identity/identity.controller';
 import { consumeAuthenticationBudget, deriveSessionCsrf, isProductionEnvironment } from '../identity/auth-security';
@@ -25,9 +26,9 @@ import { consumeAuthenticationBudget, deriveSessionCsrf, isProductionEnvironment
 export interface CreatePartyDto {
   name: string;
   types: string[];
-  gstin?: string;
-  email?: string;
-  phone?: string;
+  gstin?: string | null;
+  email?: string | null;
+  phone?: string | null;
 }
 
 export interface GuestGrantProfile {
@@ -143,25 +144,31 @@ export class PartiesService {
    * Registers a new counterparty (Client, MC, Consultant, Supplier OEM, Lab).
    */
   async createParty(ctx: ExecutionContext, dto: CreatePartyDto) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
-      const id = uuidv7();
-      const res = await client.query(
-        `INSERT INTO parties (
-          id, org_id, name, types, gstin, email, phone, status, created_by
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'ACTIVE', $8)
-        RETURNING id, org_id, name, types, gstin, email, phone, status, created_at`,
-        [
-          id,
-          ctx.orgId,
-          dto.name.trim(),
-          dto.types && dto.types.length ? dto.types : ['SUPPLIER_OEM'],
-          dto.gstin?.trim() || null,
-          dto.email?.trim() || null,
-          dto.phone?.trim() || null,
-          ctx.userId,
-        ],
-      );
-      return res.rows[0];
+    if(ctx.actorType==='GUEST'||ctx.guestGrantId||!['USER','ADMIN'].includes(ctx.actorType)) {
+      throw new ForbiddenException({code:'PARTY_ISSUER_REQUIRED'});
+    }
+    const input=parsePartyInput(dto);
+    // A directory write is organisation-wide; a project role cannot supply
+    // authority for this unscoped command or revive a stale owner claim.
+    return withTenantTransaction(this.db.getPool(),{
+      ...ctx,actorType:ctx.actorType==='USER'?'MEMBER':ctx.actorType,
+      ip:(ctx as any).ip||'',userAgent:(ctx as any).userAgent||'',
+    },async(client,emit)=>{
+      const {rows:members}=await client.query(
+        `SELECT m.role FROM memberships m JOIN users u ON u.id=m.user_id AND u.status='ACTIVE'
+          WHERE m.org_id=$1 AND m.user_id=$2 AND m.status='ACTIVE' FOR SHARE OF m,u`,[ctx.orgId,ctx.userId]);
+      if(!members[0]||!hasPermission({orgRole:members[0].role},'party.manage').allowed) {
+        throw new ForbiddenException({code:'PARTY_ISSUER_REQUIRED'});
+      }
+      const id=uuidv7();
+      const {rows}=await client.query(
+        `INSERT INTO parties(id,org_id,name,types,gstin,email,phone,status,created_by)
+          VALUES($1,$2,$3,$4,$5,$6,$7,'ACTIVE',$8)
+          RETURNING id,org_id,name,types,gstin,email,phone,status,created_at`,
+        [id,ctx.orgId,input.name,input.types,input.gstin,input.email,input.phone,ctx.userId]);
+      emit({eventType:'PARTY_CREATED',entityType:'PARTY',entityId:id,
+        afterJson:{types:input.types,status:'ACTIVE'}});
+      return rows[0];
     });
   }
 

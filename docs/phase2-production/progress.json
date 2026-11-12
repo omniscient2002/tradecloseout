@@ -642,6 +642,13 @@
       "state": "CANDIDATE_FIX_TESTED",
       "evidenceLevel": "TARGETED_POSTGRESQL",
       "notes": "C01\u2013C10 in NEXT-TEN-PROCUREMENT-2026-11-12.md; ten mechanism fixes, not ten original audit closures. Narrow member issuance remains fail closed; no engineering classification or provider acceptance inferred."
+    },
+    {
+      "id": "PH2-NEW-010",
+      "title": "Counterparty directory admission/current authority/history and organisation current-alias consistency",
+      "state": "CANDIDATE_FIX_TESTED",
+      "evidenceLevel": "TARGETED_POSTGRESQL",
+      "notes": "D01\u2013D05 in NEXT-FIVE-DIRECTORY-2026-11-13.md; no directory label, contact validation or fixture invitation implies engineering/identity/provider approval."
     }
   ],
   "candidateWork": [
@@ -905,6 +912,59 @@
             "PH2-NEW-009"
           ],
           "title": "Commit order and attributable audit/outbox history atomically",
+          "state": "CANDIDATE_FIX_TESTED"
+        }
+      ]
+    },
+    {
+      "id": "PH2-NEXT-FIVE-20261113",
+      "baselineSha": "109ab9d0b145c6b12d276d6122dcfab5fa11d297",
+      "fixCount": 5,
+      "state": "CANDIDATE_FIX_TESTED",
+      "canonicalStatusUnchanged": true,
+      "providerIntegrationsEnabled": false,
+      "scope": "D01\u2013D05 under PH2-NEW-010; five scoped mechanisms, not canonical closures",
+      "completedDate": "2026-11-13",
+      "verification": "575 API tests across91 suites in one full invocation; worker33; typecheck/build; security15/RBAC8. Counts overlap. Exact-head CI and independent/external acceptance pending.",
+      "fixes": [
+        {
+          "id": "D01",
+          "parentFindingIds": [
+            "PH2-NEW-010"
+          ],
+          "title": "Require explicit supported unique directory classifications",
+          "state": "CANDIDATE_FIX_TESTED"
+        },
+        {
+          "id": "D02",
+          "parentFindingIds": [
+            "PH2-NEW-010"
+          ],
+          "title": "Validate/canonicalize bounded directory name and contact input",
+          "state": "CANDIDATE_FIX_TESTED"
+        },
+        {
+          "id": "D03",
+          "parentFindingIds": [
+            "PH2-NEW-010"
+          ],
+          "title": "Require current internal organisation-level directory authority",
+          "state": "CANDIDATE_FIX_TESTED"
+        },
+        {
+          "id": "D04",
+          "parentFindingIds": [
+            "PH2-NEW-010"
+          ],
+          "title": "Commit counterparty row and attributable audit/outbox history atomically",
+          "state": "CANDIDATE_FIX_TESTED"
+        },
+        {
+          "id": "D05",
+          "parentFindingIds": [
+            "PH2-NEW-010"
+          ],
+          "title": "Resolve current organisation alias consistently while rejecting foreign targets",
           "state": "CANDIDATE_FIX_TESTED"
         }
       ]

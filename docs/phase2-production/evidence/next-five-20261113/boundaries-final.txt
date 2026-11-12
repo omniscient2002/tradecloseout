@@ -1,0 +1,25 @@
+PASS test/phase2-next-five.spec.ts
+  Phase2 next five directory and organisation boundaries
+    ✓ D01 requires an explicit supported unique party classification (8 ms)
+    ✓ D01 requires an explicit supported unique party classification (2 ms)
+    ✓ D01 requires an explicit supported unique party classification (2 ms)
+    ✓ D01 requires an explicit supported unique party classification (9 ms)
+    ✓ D01 requires an explicit supported unique party classification (2 ms)
+    ✓ D01 requires an explicit supported unique party classification (1 ms)
+    ✓ D02 validates bounded directory inputs before SQL (1 ms)
+    ✓ D02 validates bounded directory inputs before SQL (1 ms)
+    ✓ D02 validates bounded directory inputs before SQL (2 ms)
+    ✓ D02 validates bounded directory inputs before SQL (2 ms)
+    ✓ D02 validates bounded directory inputs before SQL (2 ms)
+    ✓ D02 validates bounded directory inputs before SQL (2 ms)
+    ✓ D02 validates bounded directory inputs before SQL (1 ms)
+    ✓ D02 validates bounded directory inputs before SQL (1 ms)
+    ✓ D02 validates bounded directory inputs before SQL (1 ms)
+    ✓ D03 does not let a guest create a party using a stale internal role claim (1 ms)
+    ✓ D05 resolves current for invitation writes while rejecting another tenant before SQL (14 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       17 passed, 17 total
+Snapshots:   0 total
+Time:        4.613 s
+Ran all test suites matching /test\/phase2-next-five.spec.ts/i.

@@ -1,0 +1,337 @@
+FAIL test/phase2-next-five.spec.ts
+  Phase2 next five directory and organisation boundaries
+    ✕ D01 requires an explicit supported unique party classification (3 ms)
+    ✕ D01 requires an explicit supported unique party classification (1 ms)
+    ✕ D01 requires an explicit supported unique party classification (1 ms)
+    ✕ D01 requires an explicit supported unique party classification
+    ✕ D01 requires an explicit supported unique party classification
+    ✕ D01 requires an explicit supported unique party classification
+    ✕ D02 validates bounded directory inputs before SQL (1 ms)
+    ✕ D02 validates bounded directory inputs before SQL
+    ✕ D02 validates bounded directory inputs before SQL
+    ✕ D02 validates bounded directory inputs before SQL
+    ✕ D02 validates bounded directory inputs before SQL
+    ✕ D02 validates bounded directory inputs before SQL
+    ✕ D02 validates bounded directory inputs before SQL
+    ✕ D02 validates bounded directory inputs before SQL
+    ✕ D02 validates bounded directory inputs before SQL
+    ✕ D03 does not let a guest create a party using a stale internal role claim
+    ✕ D05 resolves current for invitation writes while rejecting another tenant before SQL (16 ms)
+
+  ● Phase2 next five directory and organisation boundaries › D01 requires an explicit supported unique party classification
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: undefined
+
+       7 |     const db={withTenantContext:jest.fn(),getPool:jest.fn()};const body:any=input();
+       8 |     if(types===undefined)delete body.types;else body.types=types;
+    >  9 |     await expect(new PartiesService(db as any).createParty(ctx,body)).rejects.toMatchObject({status:422});
+         |           ^
+      10 |     expect(db.withTenantContext).not.toHaveBeenCalled();expect(db.getPool).not.toHaveBeenCalled();
+      11 |   });
+      12 |   it.each([null,[],{...input(),name:4},{...input(),name:'Bad\u0000name'},
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at test/phase2-next-five.spec.ts:9:11
+
+  ● Phase2 next five directory and organisation boundaries › D01 requires an explicit supported unique party classification
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: undefined
+
+       7 |     const db={withTenantContext:jest.fn(),getPool:jest.fn()};const body:any=input();
+       8 |     if(types===undefined)delete body.types;else body.types=types;
+    >  9 |     await expect(new PartiesService(db as any).createParty(ctx,body)).rejects.toMatchObject({status:422});
+         |           ^
+      10 |     expect(db.withTenantContext).not.toHaveBeenCalled();expect(db.getPool).not.toHaveBeenCalled();
+      11 |   });
+      12 |   it.each([null,[],{...input(),name:4},{...input(),name:'Bad\u0000name'},
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at test/phase2-next-five.spec.ts:9:11
+
+  ● Phase2 next five directory and organisation boundaries › D01 requires an explicit supported unique party classification
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: undefined
+
+       7 |     const db={withTenantContext:jest.fn(),getPool:jest.fn()};const body:any=input();
+       8 |     if(types===undefined)delete body.types;else body.types=types;
+    >  9 |     await expect(new PartiesService(db as any).createParty(ctx,body)).rejects.toMatchObject({status:422});
+         |           ^
+      10 |     expect(db.withTenantContext).not.toHaveBeenCalled();expect(db.getPool).not.toHaveBeenCalled();
+      11 |   });
+      12 |   it.each([null,[],{...input(),name:4},{...input(),name:'Bad\u0000name'},
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at test/phase2-next-five.spec.ts:9:11
+
+  ● Phase2 next five directory and organisation boundaries › D01 requires an explicit supported unique party classification
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: undefined
+
+       7 |     const db={withTenantContext:jest.fn(),getPool:jest.fn()};const body:any=input();
+       8 |     if(types===undefined)delete body.types;else body.types=types;
+    >  9 |     await expect(new PartiesService(db as any).createParty(ctx,body)).rejects.toMatchObject({status:422});
+         |           ^
+      10 |     expect(db.withTenantContext).not.toHaveBeenCalled();expect(db.getPool).not.toHaveBeenCalled();
+      11 |   });
+      12 |   it.each([null,[],{...input(),name:4},{...input(),name:'Bad\u0000name'},
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at test/phase2-next-five.spec.ts:9:11
+
+  ● Phase2 next five directory and organisation boundaries › D01 requires an explicit supported unique party classification
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: undefined
+
+       7 |     const db={withTenantContext:jest.fn(),getPool:jest.fn()};const body:any=input();
+       8 |     if(types===undefined)delete body.types;else body.types=types;
+    >  9 |     await expect(new PartiesService(db as any).createParty(ctx,body)).rejects.toMatchObject({status:422});
+         |           ^
+      10 |     expect(db.withTenantContext).not.toHaveBeenCalled();expect(db.getPool).not.toHaveBeenCalled();
+      11 |   });
+      12 |   it.each([null,[],{...input(),name:4},{...input(),name:'Bad\u0000name'},
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at test/phase2-next-five.spec.ts:9:11
+
+  ● Phase2 next five directory and organisation boundaries › D01 requires an explicit supported unique party classification
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: undefined
+
+       7 |     const db={withTenantContext:jest.fn(),getPool:jest.fn()};const body:any=input();
+       8 |     if(types===undefined)delete body.types;else body.types=types;
+    >  9 |     await expect(new PartiesService(db as any).createParty(ctx,body)).rejects.toMatchObject({status:422});
+         |           ^
+      10 |     expect(db.withTenantContext).not.toHaveBeenCalled();expect(db.getPool).not.toHaveBeenCalled();
+      11 |   });
+      12 |   it.each([null,[],{...input(),name:4},{...input(),name:'Bad\u0000name'},
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at test/phase2-next-five.spec.ts:9:11
+
+  ● Phase2 next five directory and organisation boundaries › D02 validates bounded directory inputs before SQL
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: undefined
+
+      14 |     {...input(),phone:'call me'},{...input(),status:'ACTIVE'},{...input(),name:'x'.repeat(201)}])('D02 validates bounded directory inputs before SQL',async body=>{
+      15 |     const db={withTenantContext:jest.fn(),getPool:jest.fn()};
+    > 16 |     await expect(new PartiesService(db as any).createParty(ctx,body as any)).rejects.toMatchObject({status:422});
+         |           ^
+      17 |     expect(db.withTenantContext).not.toHaveBeenCalled();expect(db.getPool).not.toHaveBeenCalled();
+      18 |   });
+      19 |   it('D03 does not let a guest create a party using a stale internal role claim',async()=>{
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at test/phase2-next-five.spec.ts:16:11
+
+  ● Phase2 next five directory and organisation boundaries › D02 validates bounded directory inputs before SQL
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: undefined
+
+      14 |     {...input(),phone:'call me'},{...input(),status:'ACTIVE'},{...input(),name:'x'.repeat(201)}])('D02 validates bounded directory inputs before SQL',async body=>{
+      15 |     const db={withTenantContext:jest.fn(),getPool:jest.fn()};
+    > 16 |     await expect(new PartiesService(db as any).createParty(ctx,body as any)).rejects.toMatchObject({status:422});
+         |           ^
+      17 |     expect(db.withTenantContext).not.toHaveBeenCalled();expect(db.getPool).not.toHaveBeenCalled();
+      18 |   });
+      19 |   it('D03 does not let a guest create a party using a stale internal role claim',async()=>{
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at test/phase2-next-five.spec.ts:16:11
+
+  ● Phase2 next five directory and organisation boundaries › D02 validates bounded directory inputs before SQL
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: undefined
+
+      14 |     {...input(),phone:'call me'},{...input(),status:'ACTIVE'},{...input(),name:'x'.repeat(201)}])('D02 validates bounded directory inputs before SQL',async body=>{
+      15 |     const db={withTenantContext:jest.fn(),getPool:jest.fn()};
+    > 16 |     await expect(new PartiesService(db as any).createParty(ctx,body as any)).rejects.toMatchObject({status:422});
+         |           ^
+      17 |     expect(db.withTenantContext).not.toHaveBeenCalled();expect(db.getPool).not.toHaveBeenCalled();
+      18 |   });
+      19 |   it('D03 does not let a guest create a party using a stale internal role claim',async()=>{
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at test/phase2-next-five.spec.ts:16:11
+
+  ● Phase2 next five directory and organisation boundaries › D02 validates bounded directory inputs before SQL
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: undefined
+
+      14 |     {...input(),phone:'call me'},{...input(),status:'ACTIVE'},{...input(),name:'x'.repeat(201)}])('D02 validates bounded directory inputs before SQL',async body=>{
+      15 |     const db={withTenantContext:jest.fn(),getPool:jest.fn()};
+    > 16 |     await expect(new PartiesService(db as any).createParty(ctx,body as any)).rejects.toMatchObject({status:422});
+         |           ^
+      17 |     expect(db.withTenantContext).not.toHaveBeenCalled();expect(db.getPool).not.toHaveBeenCalled();
+      18 |   });
+      19 |   it('D03 does not let a guest create a party using a stale internal role claim',async()=>{
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at test/phase2-next-five.spec.ts:16:11
+
+  ● Phase2 next five directory and organisation boundaries › D02 validates bounded directory inputs before SQL
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: undefined
+
+      14 |     {...input(),phone:'call me'},{...input(),status:'ACTIVE'},{...input(),name:'x'.repeat(201)}])('D02 validates bounded directory inputs before SQL',async body=>{
+      15 |     const db={withTenantContext:jest.fn(),getPool:jest.fn()};
+    > 16 |     await expect(new PartiesService(db as any).createParty(ctx,body as any)).rejects.toMatchObject({status:422});
+         |           ^
+      17 |     expect(db.withTenantContext).not.toHaveBeenCalled();expect(db.getPool).not.toHaveBeenCalled();
+      18 |   });
+      19 |   it('D03 does not let a guest create a party using a stale internal role claim',async()=>{
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at test/phase2-next-five.spec.ts:16:11
+
+  ● Phase2 next five directory and organisation boundaries › D02 validates bounded directory inputs before SQL
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: undefined
+
+      14 |     {...input(),phone:'call me'},{...input(),status:'ACTIVE'},{...input(),name:'x'.repeat(201)}])('D02 validates bounded directory inputs before SQL',async body=>{
+      15 |     const db={withTenantContext:jest.fn(),getPool:jest.fn()};
+    > 16 |     await expect(new PartiesService(db as any).createParty(ctx,body as any)).rejects.toMatchObject({status:422});
+         |           ^
+      17 |     expect(db.withTenantContext).not.toHaveBeenCalled();expect(db.getPool).not.toHaveBeenCalled();
+      18 |   });
+      19 |   it('D03 does not let a guest create a party using a stale internal role claim',async()=>{
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at test/phase2-next-five.spec.ts:16:11
+
+  ● Phase2 next five directory and organisation boundaries › D02 validates bounded directory inputs before SQL
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: undefined
+
+      14 |     {...input(),phone:'call me'},{...input(),status:'ACTIVE'},{...input(),name:'x'.repeat(201)}])('D02 validates bounded directory inputs before SQL',async body=>{
+      15 |     const db={withTenantContext:jest.fn(),getPool:jest.fn()};
+    > 16 |     await expect(new PartiesService(db as any).createParty(ctx,body as any)).rejects.toMatchObject({status:422});
+         |           ^
+      17 |     expect(db.withTenantContext).not.toHaveBeenCalled();expect(db.getPool).not.toHaveBeenCalled();
+      18 |   });
+      19 |   it('D03 does not let a guest create a party using a stale internal role claim',async()=>{
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at test/phase2-next-five.spec.ts:16:11
+
+  ● Phase2 next five directory and organisation boundaries › D02 validates bounded directory inputs before SQL
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: undefined
+
+      14 |     {...input(),phone:'call me'},{...input(),status:'ACTIVE'},{...input(),name:'x'.repeat(201)}])('D02 validates bounded directory inputs before SQL',async body=>{
+      15 |     const db={withTenantContext:jest.fn(),getPool:jest.fn()};
+    > 16 |     await expect(new PartiesService(db as any).createParty(ctx,body as any)).rejects.toMatchObject({status:422});
+         |           ^
+      17 |     expect(db.withTenantContext).not.toHaveBeenCalled();expect(db.getPool).not.toHaveBeenCalled();
+      18 |   });
+      19 |   it('D03 does not let a guest create a party using a stale internal role claim',async()=>{
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at test/phase2-next-five.spec.ts:16:11
+
+  ● Phase2 next five directory and organisation boundaries › D02 validates bounded directory inputs before SQL
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: undefined
+
+      14 |     {...input(),phone:'call me'},{...input(),status:'ACTIVE'},{...input(),name:'x'.repeat(201)}])('D02 validates bounded directory inputs before SQL',async body=>{
+      15 |     const db={withTenantContext:jest.fn(),getPool:jest.fn()};
+    > 16 |     await expect(new PartiesService(db as any).createParty(ctx,body as any)).rejects.toMatchObject({status:422});
+         |           ^
+      17 |     expect(db.withTenantContext).not.toHaveBeenCalled();expect(db.getPool).not.toHaveBeenCalled();
+      18 |   });
+      19 |   it('D03 does not let a guest create a party using a stale internal role claim',async()=>{
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at test/phase2-next-five.spec.ts:16:11
+
+  ● Phase2 next five directory and organisation boundaries › D03 does not let a guest create a party using a stale internal role claim
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: undefined
+
+      19 |   it('D03 does not let a guest create a party using a stale internal role claim',async()=>{
+      20 |     const db={withTenantContext:jest.fn(),getPool:jest.fn()};
+    > 21 |     await expect(new PartiesService(db as any).createParty({...ctx,actorType:'GUEST',guestGrantId:ctx.userId},input()))
+         |           ^
+      22 |       .rejects.toMatchObject({status:403});
+      23 |     expect(db.withTenantContext).not.toHaveBeenCalled();expect(db.getPool).not.toHaveBeenCalled();
+      24 |   });
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at Object.<anonymous> (test/phase2-next-five.spec.ts:21:11)
+
+  ● Phase2 next five directory and organisation boundaries › D05 resolves current for invitation writes while rejecting another tenant before SQL
+
+    expect(received).rejects.toThrow(expected)
+
+    Expected substring: "DATABASE_REACHED"
+    Received message:   "ORGANISATION_NOT_FOUND"
+
+          410 |     dto: { email: string; role: string },
+          411 |   ) {
+        > 412 |     if (orgId !== ctx.orgId) throw new NotFoundException('ORGANISATION_NOT_FOUND');
+              |                                    ^
+          413 |     const email=canonicalAuthenticationEmail(dto?.email);
+          414 |     if (!email || typeof dto?.role !== 'string') {
+          415 |       throw new UnprocessableEntityException({code:'INVALID_INVITATION_INPUT'});
+
+      at OrganisationsService.createInvitation (src/modules/organisations/organisations.service.ts:412:36)
+      at Object.<anonymous> (test/phase2-next-five.spec.ts:29:26)
+      at Object.toThrow (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at Object.<anonymous> (test/phase2-next-five.spec.ts:30:16)
+
+Test Suites: 1 failed, 1 total
+Tests:       17 failed, 17 total
+Snapshots:   0 total
+Time:        3.182 s
+Ran all test suites matching /test\/phase2-next-five.spec.ts/i.
+Error: ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL
+
+  × "pnpm recursive exec" failed in /tmp/tco-phase2-reaudit/apps/api
+

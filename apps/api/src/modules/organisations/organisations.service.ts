@@ -19,7 +19,7 @@ import { hasPermission, isValidIndianGstin, IndianPanSchema, canonicalAuthentica
 import { OwnershipTransfersService } from './ownership-transfers.service';
 import { TransactionalMailGateway } from '../identity/identity.controller';
 import { isProductionEnvironment } from '../identity/auth-security';
-import { OrgProfilePatch } from './organisation-validation';
+import { OrgProfilePatch, resolveOrganisationTarget } from './organisation-validation';
 
 export interface OffboardingGapReport {
   targetUserId: string;
@@ -375,8 +375,7 @@ export class OrganisationsService {
    * API-013: GET /api/v1/orgs/:orgId/members
    */
   async listMembers(ctx: TenantActorContext, targetOrgId: string) {
-    const orgId = targetOrgId === 'current' ? ctx.orgId : targetOrgId;
-    if (orgId !== ctx.orgId) throw new NotFoundException('ORGANISATION_NOT_FOUND');
+    const orgId=resolveOrganisationTarget(ctx.orgId,targetOrgId);
 
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
       const { rows: members } = await client.query(
@@ -409,7 +408,7 @@ export class OrganisationsService {
     orgId: string,
     dto: { email: string; role: string },
   ) {
-    if (orgId !== ctx.orgId) throw new NotFoundException('ORGANISATION_NOT_FOUND');
+    orgId=resolveOrganisationTarget(ctx.orgId,orgId);
     const email=canonicalAuthenticationEmail(dto?.email);
     if (!email || typeof dto?.role !== 'string') {
       throw new UnprocessableEntityException({code:'INVALID_INVITATION_INPUT'});
@@ -568,7 +567,7 @@ export class OrganisationsService {
    * API-015: DELETE /api/v1/orgs/:orgId/invitations/:id
    */
   async revokeInvitation(ctx: TenantActorContext, orgId: string, invitationId: string) {
-    if (orgId !== ctx.orgId) throw new NotFoundException('ORGANISATION_NOT_FOUND');
+    orgId=resolveOrganisationTarget(ctx.orgId,orgId);
 
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
       const { rows } = await client.query(
@@ -597,7 +596,7 @@ export class OrganisationsService {
     targetUserId: string,
     dto: { role: string },
   ) {
-    if (orgId !== ctx.orgId) throw new NotFoundException('ORGANISATION_NOT_FOUND');
+    orgId=resolveOrganisationTarget(ctx.orgId,orgId);
 
     if (!dto || typeof dto.role !== 'string') {
       throw new UnprocessableEntityException({code:'INVALID_MEMBER_ROLE'});
@@ -941,7 +940,7 @@ export class OrganisationsService {
    * API-017: DELETE /orgs/:orgId/members/:userId wrapper
    */
   async suspendMember(ctx: TenantActorContext, orgId: string, targetUserId: string) {
-    if (orgId !== ctx.orgId) throw new NotFoundException('ORGANISATION_NOT_FOUND');
+    orgId=resolveOrganisationTarget(ctx.orgId,orgId);
     return this.offboardOrReassignMember(ctx,{
       targetUserId,action:'SUSPEND',
     });
@@ -956,7 +955,7 @@ export class OrganisationsService {
     targetUserId: string,
     reassignToUserId?: string,
   ) {
-    if (orgId !== ctx.orgId) throw new NotFoundException('ORGANISATION_NOT_FOUND');
+    orgId=resolveOrganisationTarget(ctx.orgId,orgId);
     return this.offboardOrReassignMember(ctx, {
       targetUserId,
       action: 'REMOVE',
@@ -1004,7 +1003,7 @@ export class OrganisationsService {
     orgId: string,
     dto: { fromUserId: string; toUserId: string },
   ) {
-    if (orgId !== ctx.orgId) throw new NotFoundException('ORGANISATION_NOT_FOUND');
+    orgId=resolveOrganisationTarget(ctx.orgId,orgId);
     return this.offboardOrReassignMember(ctx, {
       targetUserId: dto.fromUserId,
       action: 'REASSIGN_ONLY',
@@ -1016,7 +1015,7 @@ export class OrganisationsService {
    * API-018: GET /orgs/:orgId/members/:userId/offboarding-gap-report
    */
   async getOffboardingGapReport(ctx: TenantActorContext, orgId: string, targetUserId: string) {
-    if (orgId !== ctx.orgId) throw new NotFoundException('ORGANISATION_NOT_FOUND');
+    orgId=resolveOrganisationTarget(ctx.orgId,orgId);
 
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
       return this.computeMemberGapReport(client, orgId, targetUserId);

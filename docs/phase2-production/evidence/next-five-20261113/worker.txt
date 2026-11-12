@@ -1,0 +1,216 @@
+$ node --import tsx --test --test-concurrency=1 test/*.spec.ts
+TAP version 13
+# Subtest: G01-R4: worker mode/configuration fails closed before background jobs
+ok 1 - G01-R4: worker mode/configuration fails closed before background jobs
+  ---
+  duration_ms: 2.054322
+  type: 'test'
+  ...
+# Subtest: G01-R4: worker checks connected PostgreSQL session and rejects role escalation
+ok 2 - G01-R4: worker checks connected PostgreSQL session and rejects role escalation
+  ---
+  duration_ms: 0.876898
+  type: 'test'
+  ...
+# Subtest: PH1-G24-005: bounded/fenced notification delivery with per-recipient recovery
+    # Subtest: slow provider does not hold DB locks; concurrent workers never double-claim
+    ok 1 - slow provider does not hold DB locks; concurrent workers never double-claim
+      ---
+      duration_ms: 42.117115
+      type: 'test'
+      ...
+    # Subtest: provider timeout/rejection retries same ID with backoff and bounded terminal failure
+    ok 2 - provider timeout/rejection retries same ID with backoff and bounded terminal failure
+      ---
+      duration_ms: 101.184384
+      type: 'test'
+      ...
+    # Subtest: lease expiry reclaims with a new token; old acknowledger is fenced
+    ok 3 - lease expiry reclaims with a new token; old acknowledger is fenced
+      ---
+      duration_ms: 33.777313
+      type: 'test'
+      ...
+    # Subtest: quiet hours defer SMS before LIMIT; email and other tenants make progress
+    ok 4 - quiet hours defer SMS before LIMIT; email and other tenants make progress
+      ---
+      duration_ms: 123.304516
+      type: 'test'
+      ...
+    # Subtest: crashed fifth claim and pre-existing exhausted claims get explicit dead letter
+    ok 5 - crashed fifth claim and pre-existing exhausted claims get explicit dead letter
+      ---
+      duration_ms: 23.715012
+      type: 'test'
+      ...
+    1..5
+ok 3 - PH1-G24-005: bounded/fenced notification delivery with per-recipient recovery
+  ---
+  duration_ms: 2163.867435
+  type: 'test'
+  ...
+# Subtest: PH1-G24-005: real gateway HTTP contract refuses redirect, oversize and unverified acceptance
+ok 4 - PH1-G24-005: real gateway HTTP contract refuses redirect, oversize and unverified acceptance
+  ---
+  duration_ms: 112.563408
+  type: 'test'
+  ...
+# Subtest: PH2-G20-001: external templates discard untrusted legacy financial and internal fields
+ok 5 - PH2-G20-001: external templates discard untrusted legacy financial and internal fields
+  ---
+  duration_ms: 2.020511
+  type: 'test'
+  ...
+# Subtest: PH1-G24-003/004: Postgres outbox claims release locks before network I/O, fence ack and dead-letter
+    # Subtest: parallel dispatchers never claim the same event; row identities override forgery
+    ok 1 - parallel dispatchers never claim the same event; row identities override forgery
+      ---
+      duration_ms: 83.180104
+      type: 'test'
+      ...
+    # Subtest: short failure leaves a durable backoff and later outcome is acknowledged
+    ok 2 - short failure leaves a durable backoff and later outcome is acknowledged
+      ---
+      duration_ms: 35.972576
+      type: 'test'
+      ...
+    # Subtest: a late owner cannot acknowledge after the lease is reclaimed
+    ok 3 - a late owner cannot acknowledge after the lease is reclaimed
+      ---
+      duration_ms: 20.79543
+      type: 'test'
+      ...
+    # Subtest: PH1-G24-009: malformed or future executable event is never admitted to Redis
+    ok 4 - PH1-G24-009: malformed or future executable event is never admitted to Redis
+      ---
+      duration_ms: 27.726955
+      type: 'test'
+      ...
+    # Subtest: directory and procurement audit events acknowledge without provider execution
+    ok 5 - directory and procurement audit events acknowledge without provider execution
+      ---
+      duration_ms: 25.602708
+      type: 'test'
+      ...
+    # Subtest: unknown events dead-letter after bounded attempts; crashed last attempt is recovered
+    ok 6 - unknown events dead-letter after bounded attempts; crashed last attempt is recovered
+      ---
+      duration_ms: 82.224759
+      type: 'test'
+      ...
+    1..6
+ok 6 - PH1-G24-003/004: Postgres outbox claims release locks before network I/O, fence ack and dead-letter
+  ---
+  duration_ms: 2144.90986
+  type: 'test'
+  ...
+# Subtest: Isolated worker DB/Redis and storage HTTP contract regressions
+    # Subtest: SCHED-01/02: real Redis NX excludes concurrent owner and old owner cannot delete replacement lock
+    ok 1 - SCHED-01/02: real Redis NX excludes concurrent owner and old owner cannot delete replacement lock
+      ---
+      duration_ms: 4.609263
+      type: 'test'
+      ...
+    # Subtest: SCHED-03/04: successful period runs once; failed period retries; India year boundary
+    ok 2 - SCHED-03/04: successful period runs once; failed period retries; India year boundary
+      ---
+      duration_ms: 47.604962
+      type: 'test'
+      ...
+# OWNER_DIGEST_TENANT_FAILED
+    # Subtest: PH1-G24-002: tenant-scoped active owner digests are delivered once and missing owners fail visibly
+    ok 3 - PH1-G24-002: tenant-scoped active owner digests are delivered once and missing owners fail visibly
+      ---
+      duration_ms: 43.410825
+      type: 'test'
+      ...
+    # Subtest: PH1-G27-002: verifier includes genesis and verifies real tenant chains
+    ok 4 - PH1-G27-002: verifier includes genesis and verifies real tenant chains
+      ---
+      duration_ms: 13.951656
+      type: 'test'
+      ...
+    # Subtest: TX-05/06: cleanup retains expired unresolved claims after committed effect
+    ok 5 - TX-05/06: cleanup retains expired unresolved claims after committed effect
+      ---
+      duration_ms: 11.029721
+      type: 'test'
+      ...
+    # Subtest: G01-020: abandoned unconfirmed invitations never become redeemable
+    ok 6 - G01-020: abandoned unconfirmed invitations never become redeemable
+      ---
+      duration_ms: 14.944627
+      type: 'test'
+      ...
+# NOTIFICATION_DELIVERY_RETRY_OR_FAILURE { count: 4 }
+# NOTIFICATION_DELIVERY_RETRY_OR_FAILURE { count: 1 }
+    # Subtest: NOTIF-01/04: no configuration, rejection and invalid ack stay queued; matching capture acknowledgment permits SENT
+    ok 7 - NOTIF-01/04: no configuration, rejection and invalid ack stay queued; matching capture acknowledgment permits SENT
+      ---
+      duration_ms: 112.9426
+      type: 'test'
+      ...
+    # Subtest: ARC-02: ZIP contains exact pinned bytes; durable readback and replay are verified independently
+    ok 8 - ARC-02: ZIP contains exact pinned bytes; durable readback and replay are verified independently
+      ---
+      duration_ms: 117.123415
+      type: 'test'
+      ...
+    # Subtest: ARC-03/04: missing source prevents completion
+    ok 9 - ARC-03/04: missing source prevents completion
+      ---
+      duration_ms: 14.840223
+      type: 'test'
+      ...
+    # Subtest: ARC-03/04: wrong digest prevents completion
+    ok 10 - ARC-03/04: wrong digest prevents completion
+      ---
+      duration_ms: 19.045544
+      type: 'test'
+      ...
+    # Subtest: ARC-03/04: unversioned source prevents completion
+    ok 11 - ARC-03/04: unversioned source prevents completion
+      ---
+      duration_ms: 5.358507
+      type: 'test'
+      ...
+    # Subtest: ARC-03/04: unsafe path prevents completion
+    ok 12 - ARC-03/04: unsafe path prevents completion
+      ---
+      duration_ms: 6.194569
+      type: 'test'
+      ...
+# An error was encountered in a non-retryable streaming request.
+    # Subtest: PKG-05: failed output upload and missing storage configuration cannot complete
+    ok 13 - PKG-05: failed output upload and missing storage configuration cannot complete
+      ---
+      duration_ms: 43.799376
+      type: 'test'
+      ...
+    # Subtest: N19 / V09: BoundedByteStream validates ceilings and aborts transfer when exceeded
+    ok 14 - N19 / V09: BoundedByteStream validates ceilings and aborts transfer when exceeded
+      ---
+      duration_ms: 5.361928
+      type: 'test'
+      ...
+    # Subtest: N18 / V02: OUTBOX_EVENT_REGISTRY covers 100% of application-emitted event types
+    ok 15 - N18 / V02: OUTBOX_EVENT_REGISTRY covers 100% of application-emitted event types
+      ---
+      duration_ms: 0.198596
+      type: 'test'
+      ...
+    1..15
+ok 7 - Isolated worker DB/Redis and storage HTTP contract regressions
+  ---
+  duration_ms: 2358.140763
+  type: 'test'
+  ...
+1..7
+# tests 33
+# suites 0
+# pass 33
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 8909.920398

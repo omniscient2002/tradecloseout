@@ -1,4 +1,4 @@
-import { UnprocessableEntityException } from '@nestjs/common';
+import { NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { isValidIndianGstin, IndianPanSchema, canonicalAuthenticationEmail } from '@tradecloseout/shared';
 
 // Fail before binding untrusted HTTP identifiers to uuid-typed PostgreSQL predicates.
@@ -130,4 +130,10 @@ export function parseOrgProfilePatch(dto: unknown): {rowVersion: number; input: 
     }
   }
   return {rowVersion: raw.rowVersion as number, input: result as OrgProfilePatch};
+}
+
+/** Resolve only the documented active-organisation alias, never a foreign tenant. */
+export function resolveOrganisationTarget(activeOrgId:string,target:unknown):string {
+  if(target!=='current'&&target!==activeOrgId)throw new NotFoundException('ORGANISATION_NOT_FOUND');
+  return activeOrgId;
 }

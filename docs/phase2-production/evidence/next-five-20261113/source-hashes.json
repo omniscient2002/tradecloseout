@@ -1,0 +1,10 @@
+{
+  "apps/api/src/modules/parties/parties.service.ts": "5602e9047e77f23627daa97f7641f92f17811227767035d685a5d41eb2202fa3",
+  "apps/api/src/modules/parties/party-validation.ts": "7489c4ba8ffbe2162a9c9613baf0ecf00721533abcee3169e2706a22c247710f",
+  "apps/api/src/modules/organisations/organisation-validation.ts": "039f5b3031077596c5f0514817478c53ac97a81ac8cef298508116929408c478",
+  "apps/api/src/modules/organisations/organisations.service.ts": "ea9f616c6700f8638847a6b776ab9fd032767304c81f54c0d2bb36f07b8a0ce7",
+  "apps/api/test/phase2-next-five.spec.ts": "90d73743b3e75e0696bd2523c1167d1a86a53f0863f65a5ef105bc4dab20466e",
+  "apps/api/test/phase2-next-five-db.spec.ts": "448d3ba263ad10472780d4c2c25c31f2d14ea4b4f9671ba8066c54ab85b99058",
+  "apps/worker/src/event-registry.ts": "8791a12c807928f7c9ae9d0d3d93b2a1bb0403dfefe52df2dac13ee7ba5ca220",
+  "apps/worker/test/outbox-claim.spec.ts": "43ae15d8140d242768d37047d1972e395b6cd438ec80e5266131ad550e6585b7"
+}
