@@ -4,7 +4,7 @@ import { PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { TenantDbService } from '../../database/tenant-db.service';
 import {
-  decryptFactor, encryptFactor, hashRecoveryCode,
+  decryptFactor, encryptFactor, hashRecoveryCode, hashRecoveryCodeCandidates,
   newRecoveryCodes, newTotpSecret, verifyTotp,
 } from './mfa-crypto';
 
@@ -109,6 +109,7 @@ export class MfaEnrollmentStore {
   private async rotateCurrentSession(
     client: PoolClient,
     ctx: MfaEnrollmentSession,
+    revokeOtherDevices = false,
   ): Promise<{ newSessionToken: string; csrfToken: string }> {
     const newSessionToken = randomBytes(32).toString('hex');
     const csrfToken = randomBytes(24).toString('hex');
@@ -127,13 +128,15 @@ export class MfaEnrollmentStore {
     if (replaced.rowCount !== 1) {
       throw new UnauthorizedException({ code: 'SESSION_CONTEXT_CHANGED' });
     }
-    // A verified first-factor enrollment must not leave older non-MFA
-    // device sessions able to use the newly protected account.
-    await client.query(
-      `UPDATE sessions SET revoked_at=now(), mfa_verified=false
-        WHERE user_id=$1 AND id<>$2 AND revoked_at IS NULL`,
-      [ctx.userId, ctx.sessionId],
-    );
+    // First enrollment invalidates old devices. Subsequent MFA verification
+    // must NOT unexpectedly log out unrelated devices.
+    if (revokeOtherDevices) {
+      await client.query(
+        `UPDATE sessions SET revoked_at=now(), mfa_verified=false
+          WHERE user_id=$1 AND id<>$2 AND revoked_at IS NULL`,
+        [ctx.userId, ctx.sessionId],
+      );
+    }
     return { newSessionToken, csrfToken };
   }
 
@@ -228,8 +231,85 @@ export class MfaEnrollmentStore {
       // Rotate token and CSRF in the SAME transaction as factor activation.
       // The HTTP integration must atomically set the returned HttpOnly cookie
       // and deliver the new CSRF token, without generic idempotency receipts.
-      const newSession = await this.rotateCurrentSession(client, ctx);
+      const newSession = await this.rotateCurrentSession(client, ctx, true);
       return { confirmed: true as const, recoveryCodes, ...newSession };
+    });
+  }
+
+  /**
+   * Verify an already-enrolled factor. The successful TOTP step is committed
+   * before rotation, so the same factor code cannot be replayed on any device.
+   * Successful old-key decrypts are re-encrypted with the current key.
+   *
+   * Caller MUST reserve a durable distributed attempt budget BEFORE invoking
+   * this low-level operation; it intentionally exposes no HTTP route.
+   */
+  async verifyFactor(ctx: MfaEnrollmentSession, code: string): Promise<{
+    newSessionToken: string; csrfToken: string; mfaVerified: true;
+  }> {
+    this.assertContext(ctx);
+    if (!/^[0-9]{6}$/.test(code)) {
+      throw new ForbiddenException({ code: 'MFA_CODE_INVALID' });
+    }
+    return this.db.withUserContext(ctx.userId, async client => {
+      const account = await this.lockAccountAndSession(client, ctx);
+      if (!account.mfa_enabled_at || !account.mfa_totp_secret) {
+        throw new ConflictException({ code: 'MFA_NOT_ENROLLED' });
+      }
+      const plaintext = decryptFactor(account.mfa_totp_secret);
+      const step = verifyTotp(plaintext, code, Number(account.mfa_totp_last_step));
+      if (step === null) {
+        throw new UnauthorizedException({ code: 'MFA_CODE_INVALID_OR_REPLAYED' });
+      }
+      const update = await client.query(
+        `UPDATE users
+            SET mfa_totp_secret=$2, mfa_totp_last_step=$3
+          WHERE id=$1 AND mfa_enabled_at IS NOT NULL`,
+        [ctx.userId, encryptFactor(plaintext), step],
+      );
+      if (update.rowCount !== 1) throw new UnauthorizedException({ code: 'ACCOUNT_UNAVAILABLE' });
+      const creds = await this.rotateCurrentSession(client, ctx);
+      return { ...creds, mfaVerified: true as const };
+    });
+  }
+
+  /**
+   * Consume a single recovery code once under row locks, then rotate the
+   * authenticated session. Expired old-key HMACs are never considered.
+   * Rate limiting and emergency-recovery supervision are separate gates.
+   */
+  async useRecoveryCode(ctx: MfaEnrollmentSession, code: string): Promise<{
+    newSessionToken: string; csrfToken: string; mfaVerified: true;
+  }> {
+    this.assertContext(ctx);
+    if (typeof code !== 'string' || !/^[0-9A-Fa-f]{24}$/.test(code)) {
+      throw new ForbiddenException({ code: 'RECOVERY_CODE_INVALID' });
+    }
+    return this.db.withUserContext(ctx.userId, async client => {
+      const account = await this.lockAccountAndSession(client, ctx);
+      if (!account.mfa_enabled_at || !account.mfa_totp_secret) {
+        throw new ConflictException({ code: 'MFA_NOT_ENROLLED' });
+      }
+      const digests = hashRecoveryCodeCandidates(code);
+      const { rows } = await client.query(
+        `SELECT id FROM mfa_recovery_codes
+           WHERE user_id=$1 AND code_hash=ANY($2::text[])
+             AND consumed_at IS NULL FOR UPDATE`,
+        [ctx.userId, digests],
+      );
+      if (rows.length !== 1) {
+        throw new UnauthorizedException({ code: 'RECOVERY_CODE_INVALID' });
+      }
+      const result = await client.query(
+        `UPDATE mfa_recovery_codes SET consumed_at=now()
+           WHERE id=$1 AND consumed_at IS NULL`,
+        [rows[0].id],
+      );
+      if (result.rowCount !== 1) {
+        throw new UnauthorizedException({ code: 'RECOVERY_CODE_INVALID' });
+      }
+      const creds = await this.rotateCurrentSession(client, ctx);
+      return { ...creds, mfaVerified: true as const };
     });
   }
 
