@@ -12,6 +12,7 @@ import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
 import { reconcileStorageQuotaOnFileStatusChange } from '@tradecloseout/db/tenant-tx';
 import { TradeCloseoutScheduler } from './scheduler';
+import { TrackedScheduler } from './tracked-scheduler';
 import { verifyAndScanUploadedFile } from './queues/file.processor';
 import { convertSupportingFormatToPdf } from './queues/format-converter';
 import { compileAndPersistHandoverPackage, markHandoverPackageFailed } from './queues/handover-package.processor';
@@ -63,85 +64,106 @@ async function bootWorker() {
   await checkDependencies();
 
   // 1. Scheduled Background Tasks
-  const runScheduledCycles = async () => {
+  // Each independent task is scheduled every tick. A slow or failing task
+  // cannot overlap itself in this process or starve the other task families.
+  // Redis period leases still provide cross-worker coordination.
+  type ScheduledTask =
+    | 'daily-expiry'
+    | 'weekly-owner-digest'
+    | 'audit-hash-chain'
+    | 'storage-lifecycle-cleanup'
+    | 'idempotency-reconciliation'
+    | 'notification-dispatch';
+  const scheduledTasks = new TrackedScheduler<ScheduledTask>((_task, error) => {
+    reportWorkerFailure('SCHEDULER_CYCLE_FAILED', error);
+  });
+
+  const runScheduledCycles = async (): Promise<void> => {
+    let periods: ReturnType<TradeCloseoutScheduler['getIndiaSchedulePeriods']>;
     try {
-      const periods = scheduler.getIndiaSchedulePeriods();
-      await scheduler.runWithPeriodLock(
+      periods = scheduler.getIndiaSchedulePeriods();
+    } catch (error) {
+      reportWorkerFailure('SCHEDULER_CYCLE_FAILED', error);
+      return;
+    }
+
+    const pending: Promise<void>[] = [];
+    pending.push(scheduledTasks.run('daily-expiry', () =>
+      scheduler.runWithPeriodLock(
         `daily-expiry:${periods.day}`,
         `sched:done:daily-expiry:${periods.day}`,
-        300,
-        36 * 60 * 60,
+        300, 36 * 60 * 60,
         async () => {
-        const expired = await scheduler.runDailyExpiryJob();
-        if (expired > 0) {
-          console.log(`[Scheduler] Marked ${expired} expired requirements.`);
-        }
+          const expired = await scheduler.runDailyExpiryJob();
+          if (expired > 0) console.log(`[Scheduler] Marked ${expired} expired requirements.`);
         },
-      );
+      ),
+    ));
 
-      if (periods.weekday === 'Mon') {
-        await scheduler.runWithPeriodLock(
+    if (periods.weekday === 'Mon') {
+      pending.push(scheduledTasks.run('weekly-owner-digest', () =>
+        scheduler.runWithPeriodLock(
           `weekly-owner-digest:${periods.week}`,
           `sched:done:weekly-owner-digest:${periods.week}`,
-          600,
-          9 * 24 * 60 * 60,
+          600, 9 * 24 * 60 * 60,
           async () => scheduler.runWeeklyOwnerRetentionAtRiskDigest(),
-        );
-      }
+        ),
+      ));
+    }
 
-      await scheduler.runWithPeriodLock(
+    pending.push(scheduledTasks.run('audit-hash-chain', () =>
+      scheduler.runWithPeriodLock(
         `audit-hash-chain:${periods.day}`,
         `sched:done:audit-hash-chain:${periods.day}`,
-        600,
-        36 * 60 * 60,
+        600, 36 * 60 * 60,
         async () => {
           const { orgCount, verifiedEvents } = await scheduler.verifyAuditHashChainIntegrity();
           if (verifiedEvents > 0) {
             console.log(`[Scheduler] Verified audit hash-chain integrity across ${orgCount} orgs (${verifiedEvents} events).`);
           }
         },
-      );
+      ),
+    ));
 
-      await scheduler.runWithPeriodLock(
+    pending.push(scheduledTasks.run('storage-lifecycle-cleanup', () =>
+      scheduler.runWithPeriodLock(
         `storage-lifecycle-cleanup:${periods.hourSlot}`,
         `sched:done:storage-lifecycle-cleanup:${periods.hourSlot}`,
-        300,
-        2 * 60 * 60,
+        300, 2 * 60 * 60,
         async () => {
           const { purgedPendingVersions, purgedPendingObjects } = await scheduler.runStorageLifecycleCleanup();
           if (purgedPendingVersions > 0 || purgedPendingObjects > 0) {
-            console.log(
-              `[Scheduler] Cleaned up ${purgedPendingVersions} stale pending versions and ${purgedPendingObjects} unattached pending objects.`,
-            );
+            console.log(`[Scheduler] Cleaned up ${purgedPendingVersions} stale pending versions and ${purgedPendingObjects} unattached pending objects.`);
           }
         },
-      );
+      ),
+    ));
 
-      await scheduler.runWithPeriodLock(
+    pending.push(scheduledTasks.run('idempotency-reconciliation', () =>
+      scheduler.runWithPeriodLock(
         `idempotency-reconciliation:${periods.hourSlot}`,
         `sched:done:idempotency-reconciliation:${periods.hourSlot}`,
-        300,
-        2 * 60 * 60,
+        300, 2 * 60 * 60,
         async () => {
           const count = await scheduler.reconcileIdempotencyClaims();
-          if (count > 0) {
-            console.log(`[Scheduler] Purged ${count} expired completed idempotency receipts.`);
-          }
+          if (count > 0) console.log(`[Scheduler] Purged ${count} expired completed idempotency receipts.`);
         },
-      );
+      ),
+    ));
 
-      // Notification delivery cycle honoring IST quiet hours
-      const sentNotifications = await scheduler.dispatchQueuedNotifications();
-      if (sentNotifications > 0) {
-        console.log(`[Scheduler] Dispatched ${sentNotifications} queued notifications.`);
-      }
-    } catch (err) {
-      reportWorkerFailure('SCHEDULER_CYCLE_FAILED', err);
-    }
+    // Notification delivery is independently retried each minute and retains
+    // its own quiet-hours logic; a Redis job error must not prevent it running.
+    pending.push(scheduledTasks.run('notification-dispatch', async () => {
+      const sent = await scheduler.dispatchQueuedNotifications();
+      if (sent > 0) console.log(`[Scheduler] Dispatched ${sent} queued notifications.`);
+    }));
+
+    await Promise.all(pending);
   };
 
-  await runScheduledCycles();
-  const cycleInterval = setInterval(runScheduledCycles, 60 * 1000);
+  // Do not delay BullMQ/outbox startup behind a slow scheduler task.
+  void runScheduledCycles();
+  const cycleInterval = setInterval(() => { void runScheduledCycles(); }, 60 * 1000);
 
   // 2. BullMQ Queues
   const fileQueue = new Queue('file-processing', { connection: redis });
@@ -497,10 +519,13 @@ async function bootWorker() {
 
   const shutdown = async () => {
     console.log('Shutting down TradeCloseout Worker...');
+    scheduledTasks.close();
     clearInterval(cycleInterval);
     clearInterval(outboxInterval);
     await Promise.all([fileWorker.close(), pdfWorker.close(), formatWorker.close(), archiveWorker.close()]);
     await Promise.all([fileQueue.close(), pdfQueue.close(), formatQueue.close(), archiveQueue.close()]);
+    // Do not tear down shared clients while scheduler transactions are active.
+    await scheduledTasks.drain();
     await pool.end();
     await redis.quit();
     process.exit(0);
