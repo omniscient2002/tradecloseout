@@ -33,7 +33,7 @@ describe('PH5-G22-004 current upload authority for deliberate local draft recove
     const { service } = makeService([]);
     await expect(service.validateDraftRecoveryAuthority(
       { orgId: 'org-1', actorType: 'MEMBER', guestGrantId: null } as any,
-      'project-1', 'requirement-1',
+      'project-1', 'requirement-1', 7,
     )).rejects.toThrow('DRAFT_RECOVERY_TARGET_NO_LONGER_ELIGIBLE');
   });
 
@@ -52,7 +52,7 @@ describe('PH5-G22-004 current upload authority for deliberate local draft recove
     ]);
     await expect(service.validateDraftRecoveryAuthority(
       { orgId: 'org-1', actorType: 'GUEST', guestGrantId: 'grant-1' } as any,
-      'project-1', 'requirement-1',
+      'project-1', 'requirement-1', 7,
     )).rejects.toThrow('GUEST_DRAFT_RECOVERY_NOT_SUPPORTED');
     expect(query).not.toHaveBeenCalled();
   });
