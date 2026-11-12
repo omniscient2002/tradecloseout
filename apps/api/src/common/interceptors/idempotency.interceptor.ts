@@ -23,11 +23,18 @@ import { OMIT_GENERIC_IDEMPOTENCY_RECEIPT } from '../decorators/no-generic-idemp
  */
 export function containsCredentialReceiptData(value: unknown): boolean {
   const seen = new WeakSet<object>();
-  const secretKey = /(?:password|secret|token|otp|recoverycode|csrf|cookie|privatekey|manualsetupkey|qrcode|qrpayload|magiclink|signedurl|presignedurl|uploadurl|downloadurl|sessionkey)/i;
+  const secretKey = /(?:password|passphrase|secret|credential|authorization|api.?key|token|otp|totp|mfa|recoverycode|csrf|cookie|privatekey|manualsetupkey|qrcode|qrpayload|magiclink|signedurl|presignedurl|uploadurl|downloadurl|sessionkey)/i;
   const visit = (node: unknown, depth: number): boolean => {
     if (depth > 32) return true;
     if (typeof node === 'string') {
-      return /[?&](?:X-Amz-Signature|X-Goog-Signature|signature|access_token|token)=/i.test(node);
+      // Credential data can hide under innocent keys such as "value", "href",
+      // "text" or "payload". Block known one-time factor and bearer formats,
+      // not just fields whose names happen to look sensitive.
+      return /[?&](?:X-Amz-Signature|X-Goog-Signature|signature|access_token|token|api_key|client_secret)=/i.test(node) ||
+        /otpauth:\/\//i.test(node) ||
+        /-----BEGIN (?:[A-Z ]* )?PRIVATE KEY-----/i.test(node) ||
+        /(?:^|[\s"'=:])(?:Bearer|Basic)\s+[A-Za-z0-9._~+\/-]{12,}={0,2}(?=$|[\s"'&])/i.test(node) ||
+        /(?:^|[\s"'=:])(?:sk-(?:live|test)-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9_]{16,})(?=$|[\s"'&])/i.test(node);
     }
     if (node === null || typeof node !== 'object') return false;
     if (seen.has(node)) return true;
