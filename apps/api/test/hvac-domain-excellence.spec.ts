@@ -914,8 +914,8 @@ describe('HVAC Domain Excellence Suite (XP11..XP18)', () => {
 
         // Missing artifact.objectId throws ARCHIVE_ARTIFACT_INTEGRITY_MISSING
         await admin.query(`
-          INSERT INTO archive_exports (id, org_id, project_id, schema_version, status, archive_sha256, verification_receipt_json)
-          VALUES ($1, $2, $3, '2.0', 'COMPLETED', $4, $5)
+          INSERT INTO archive_exports (id, org_id, project_id, schema_version, status, archive_sha256, manifest_json, verification_receipt_json)
+          VALUES ($1, $2, $3, '2.0', 'COMPLETED', $4, '{"objects":[]}'::jsonb, $5)
         `, [exportId, orgIdA, projectA0, archiveSha, JSON.stringify({ artifact: { objectKey: actualArchiveKey, providerVersionId: 'v1' } })]);
 
         await expect(
