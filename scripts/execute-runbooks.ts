@@ -63,17 +63,15 @@ async function executeRunbook() {
           targetCount = 1;
           projectId = version.rows[0].project_id;
           if (args.execute) {
-            // Do not rewrite historical review_status='APPROVED': the DB correctly
-            // forbids APPROVED with non-READY file_status. Quarantine the backing
-            // object instead; all document download/preview/stream paths already
-            // deny storage_status != READY, independent of the historical decision.
+            // Historical approval stays attributable; quarantining the backing
+            // object immediately denies new app download, preview and stream.
+            // Idempotent replay must report zero newly changed objects.
             const result = await client.query(
               `UPDATE storage_objects SET status = 'QUARANTINED'
-                WHERE org_id = $1 AND id = $2 RETURNING id`,
+                WHERE org_id = $1 AND id = $2 AND status <> 'QUARANTINED' RETURNING id`,
               [args.orgId, version.rows[0].storage_object_id],
             );
-            if (result.rowCount !== 1) throw new Error('Storage quarantine did not affect exactly one object.');
-            affected = 1;
+            affected = result.rowCount || 0;
           }
         } else if (args.code === 'RB-12') {
           const pkg = await client.query(
@@ -89,16 +87,15 @@ async function executeRunbook() {
             const update = await client.query(
               `UPDATE handover_packages
                   SET status = 'REJECTED', row_version = row_version + 1, updated_at = now()
-                WHERE org_id = $1 AND id = $2 RETURNING id`,
+                WHERE org_id = $1 AND id = $2 AND status <> 'REJECTED' RETURNING id`,
               [args.orgId, args.entityId],
             );
-            if (update.rowCount !== 1) throw new Error('Package containment did not affect exactly one package.');
-            await client.query(
+            const quarantined = await client.query(
               `UPDATE storage_objects SET status = 'QUARANTINED'
-                WHERE org_id = $1 AND id = ANY($2::uuid[])`,
+                WHERE org_id = $1 AND id = ANY($2::uuid[]) AND status <> 'QUARANTINED' RETURNING id`,
               [args.orgId, [pkg.rows[0].pdf_object_id, pkg.rows[0].zip_object_id, pkg.rows[0].manifest_object_id].filter(Boolean)],
             );
-            affected = 1;
+            affected = (update.rowCount || 0) > 0 || (quarantined.rowCount || 0) > 0 ? 1 : 0;
           }
         }
 
