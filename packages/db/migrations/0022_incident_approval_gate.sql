@@ -1,5 +1,8 @@
 -- PH5-G28-001: independently issued, single-use incident approval gate.
 -- Deliberately NO credentials and NO approval records are created here.
+-- Role policy changes require migrator-supervisor authority, not the DDL
+-- owner's restricted tc_migrator role.
+ALTER ROLE tc_incident_operator NOLOGIN;
 SET ROLE tc_migrator;
 
 CREATE TABLE IF NOT EXISTS public.incident_runbook_approvals (
@@ -73,6 +76,5 @@ GRANT EXECUTE ON FUNCTION public.claim_incident_runbook_approval(uuid,uuid,text,
   TO tc_incident_operator;
 
 -- Per-person login membership is granted only by an independent security
--- administrator, outside this migration. The shared operator role cannot log in.
-ALTER ROLE tc_incident_operator NOLOGIN;
+-- administrator, outside this migration. No default operator login is created.
 RESET ROLE;
