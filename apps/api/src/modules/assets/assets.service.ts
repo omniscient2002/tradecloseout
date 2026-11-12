@@ -1220,7 +1220,7 @@ export class AssetsService {
 
         // 1. Exact Tag Boundary Match (e.g. "CH-01")
         // AssetTagSchema permits only letters, digits, underscore, hyphen and dot.
-        const escapedTag = upperTag.replace(/\./g, '\\.');
+        const escapedTag = upperTag.replace(/[^A-Z0-9_-]/g, (char) => String.fromCharCode(92) + char);
         const tagRegex = new RegExp(`(^|[^A-Z0-9])${escapedTag}([^A-Z0-9]|$)`, 'i');
         if (tagRegex.test(targetText)) {
           candidates.push({
