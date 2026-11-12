@@ -1322,7 +1322,7 @@ export class HandoverService {
       if (record.status === 'COMPLETED' && this.storage) {
         const artifact = record.verification_receipt_json?.artifact;
         // Security Invariant (V06 / F06): Require verified immutable artifact identity; forbid unversioned fallback
-        if (!artifact?.objectId || !artifact?.objectKey || !artifact?.providerVersionId) {
+        if (!artifact?.objectId || !artifact?.objectKey || !isImmutableStorageVersion(artifact?.providerVersionId)) {
           throw new ConflictException({
             code: 'ARCHIVE_ARTIFACT_INTEGRITY_MISSING',
             detail: `Completed archive export ${exportId} lacks immutable artifact objectId, objectKey or providerVersionId.`,
@@ -1352,8 +1352,7 @@ export class HandoverService {
         // Security Invariant (Gap 3 / PA12): READY row must possess non-null provider_version_id, bucket, key,
         // authoritative observed_size_bytes matching declared size_bytes, and matching sha
         if (
-          !so.provider_version_id ||
-          so.provider_version_id === 'null' ||
+          !isImmutableStorageVersion(so.provider_version_id) ||
           !so.bucket ||
           !so.object_key ||
           !so.sha256 ||
