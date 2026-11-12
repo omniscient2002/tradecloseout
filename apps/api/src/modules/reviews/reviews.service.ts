@@ -493,19 +493,40 @@ export class ReviewsService {
     ctx: ExecutionContext,
     dto: { reviewIds: string[]; decision: 'APPROVE' | 'REJECT'; comment?: string },
   ) {
-    const results: any[] = [];
+    // Per-item outcomes are intentional (not an atomic batch); every item is
+    // independently re-authorised inside its own transaction. Reject malformed
+    // requests before any item is processed, avoiding partial malformed writes.
+    const validId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!dto || !Array.isArray(dto.reviewIds) || dto.reviewIds.length === 0 ||
+        dto.reviewIds.length > 100 || dto.reviewIds.some(id => typeof id !== 'string' || !validId.test(id)) ||
+        new Set(dto.reviewIds).size !== dto.reviewIds.length ||
+        (dto.decision !== 'APPROVE' && dto.decision !== 'REJECT')) {
+      throw new BadRequestException('INVALID_BULK_REVIEW_REQUEST');
+    }
+    if (dto.decision === 'REJECT' && (!dto.comment || dto.comment.trim().length < 5)) {
+      throw new BadRequestException('COMMENT_REQUIRED');
+    }
+    const results: Array<{ reviewId: string; success: boolean; status?: string; decision?: string; versionId?: string; errorCode?: string }> = [];
     for (const reviewId of dto.reviewIds) {
       try {
         const res = await this.decideReview(ctx, reviewId, {
           decision: dto.decision,
-          comment: dto.comment || 'Bulk review decision',
+          comment: dto.comment,
         });
         results.push({ reviewId, success: true, ...res });
-      } catch (err: any) {
-        results.push({ reviewId, success: false, error: err.message });
+      } catch (err: unknown) {
+        // Do not expose raw SQL, identifiers, or internal errors in a mixed
+        // batch. Return stable per-item results so legitimate items are visible.
+        const httpStatus = err instanceof HttpException ? err.getStatus() : 500;
+        const errorCode = httpStatus === 404 ? 'REVIEW_NOT_FOUND'
+          : httpStatus === 403 ? 'REVIEW_ACCESS_DENIED'
+          : httpStatus === 409 || httpStatus === 412 ? 'REVIEW_CONFLICT'
+          : httpStatus === 400 || httpStatus === 422 ? 'REVIEW_INVALID'
+          : 'REVIEW_FAILED';
+        results.push({ reviewId, success: false, errorCode });
       }
     }
-    return { count: results.length, results };
+    return { count: results.length, succeeded: results.filter(result => result.success).length, results };
   }
 
   async recordVersionReview(
