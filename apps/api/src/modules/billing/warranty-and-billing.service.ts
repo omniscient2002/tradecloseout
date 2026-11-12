@@ -25,7 +25,7 @@ export class WarrantyAndBillingService {
     objectId: string, assetId: string | null,
   ): Promise<string> {
     const { rows } = await client.query(
-      `SELECT dv.id
+      `SELECT dv.id, dv.document_id
          FROM document_versions dv
          JOIN documents d
            ON d.org_id = dv.org_id AND d.project_id = dv.project_id
@@ -49,6 +49,21 @@ export class WarrantyAndBillingService {
         code: 'DEFECT_REMEDY_VERSION_AMBIGUOUS_OR_INELIGIBLE',
         detail: 'Evidence requires one current approved, correctly asset-linked document version.',
       });
+    }
+    if (assetId) {
+      // The EXISTS qualification above takes no row lock. Hold a shared lock
+      // on the exact asset association until the defect write commits, so a
+      // concurrent unlink cannot invalidate the evidence during submission.
+      const binding = await client.query(
+        `SELECT id FROM document_assets
+          WHERE org_id = $1 AND project_id = $2
+            AND document_id = $3 AND asset_id = $4
+          FOR SHARE`,
+        [orgId, projectId, rows[0].document_id, assetId],
+      );
+      if (!binding.rows.length) {
+        throw new ConflictException({ code: 'DEFECT_REMEDY_ASSET_LINK_REVOKED' });
+      }
     }
     return rows[0].id;
   }
