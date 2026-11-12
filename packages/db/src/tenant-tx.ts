@@ -173,14 +173,23 @@ export async function withTenantTransaction<T>(
  * Locks the org's usage_counters row FOR UPDATE and enforces plan ceilings
  * inside the active transaction (AUD-A-08).
  */
+const POSTGRES_BIGINT_MAX = 9223372036854775807n;
+
 export async function consumePlanQuota(
   client: PoolClient,
   orgId: string,
-  metric: 'ACTIVE_PROJECTS' | 'SEATS' | 'STORAGE_BYTES' | 'PACKAGE_GENERATIONS',
+  metric: 'ACTIVE_PROJECTS' | 'SEATS' | 'STORAGE_BYTES' | 'PACKAGES_MONTH',
   period: string, // 'ALL_TIME' or 'YYYY-MM'
   delta: bigint,
   limitCeiling: bigint,
 ): Promise<void> {
+  // Match the actual usage_counters metric CHECK and BIGINT range. A negative
+  // delta may release quota, but must never underflow or wrap the counter.
+  if (typeof delta !== 'bigint' || typeof limitCeiling !== 'bigint' ||
+      delta < -POSTGRES_BIGINT_MAX || delta > POSTGRES_BIGINT_MAX ||
+      limitCeiling < 0n || limitCeiling > POSTGRES_BIGINT_MAX) {
+    throw new Error('INVALID_PLAN_QUOTA_ARGUMENT');
+  }
   await client.query(
     `INSERT INTO usage_counters (id, org_id, metric, period, value)
      VALUES ($1, $2, $3, $4, 0)
@@ -195,8 +204,14 @@ export async function consumePlanQuota(
     [orgId, metric, period],
   );
 
-  const currentVal = BigInt(rows[0]?.value ?? '0');
-  if (currentVal + delta > limitCeiling) {
+  if (rows.length !== 1) throw new Error('PLAN_COUNTER_NOT_FOUND');
+  const currentVal = BigInt(rows[0].value);
+  const newVal = currentVal + delta;
+  if (currentVal < 0n || currentVal > POSTGRES_BIGINT_MAX ||
+      newVal < 0n || newVal > POSTGRES_BIGINT_MAX) {
+    throw new Error('PLAN_COUNTER_OUT_OF_RANGE');
+  }
+  if (newVal > limitCeiling) {
     const err = new Error(`Plan limit exceeded for ${metric} (${currentVal + delta} > ${limitCeiling})`);
     (err as any).code = 'PLAN_LIMIT_EXCEEDED';
     throw err;
