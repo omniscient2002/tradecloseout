@@ -1,7 +1,7 @@
 // apps/api/src/modules/notifications/notifications.service.ts
 // IST Quiet Hours, Deduplication & Rupee-at-Risk Owner Digest (FR-NOT-001..014, RT-029)
 
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, ConflictException, ForbiddenException, NotFoundException, ServiceUnavailableException, UnprocessableEntityException } from '@nestjs/common';
 import { PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { TenantDbService, ExecutionContext } from '../../database/tenant-db.service';
@@ -18,6 +18,19 @@ export class NotificationsService {
     return isIndiaQuietHour(date);
   }
 
+  /** Canonical equality rejects attempts to reuse a notification identity with new meaning. */
+  private canonicalNotificationJson(value: unknown): string {
+    const sort = (entry: unknown): unknown => {
+      if (Array.isArray(entry)) return entry.map(sort);
+      if (entry && typeof entry === 'object') {
+        return Object.fromEntries(Object.entries(entry).sort(([a], [b]) => a.localeCompare(b))
+          .map(([key, val]) => [key, sort(val)]));
+      }
+      return entry;
+    };
+    return JSON.stringify(sort(value));
+  }
+
   /**
    * API-130 POST /notifications (Deduplicated with quiet hour deferral)
    */
@@ -32,48 +45,79 @@ export class NotificationsService {
       isUrgent?: boolean;
     },
   ) {
+    // PH2-G20-001: external delivery is an internal template-only workflow.
+    // A user cannot turn arbitrary JSON into an email or SMS by changing channel.
+    if (dto.channel !== 'IN_APP') {
+      throw new ServiceUnavailableException({
+        code: 'EXTERNAL_NOTIFICATION_TEMPLATES_REQUIRED',
+        detail: 'External notifications require a reviewed server-owned event template.',
+      });
+    }
+    if (typeof dto.eventKey !== 'string' || !/^[A-Za-z0-9_.:-]{1,128}$/.test(dto.eventKey) ||
+        typeof dto.dedupKey !== 'string' || !/^[A-Za-z0-9_.:-]{1,160}$/.test(dto.dedupKey) ||
+        !dto.payload || Array.isArray(dto.payload) || typeof dto.payload !== 'object' ||
+        (dto.projectId !== undefined && (typeof dto.projectId !== 'string' ||
+          !/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(dto.projectId)))) {
+      throw new UnprocessableEntityException({ code: 'INVALID_NOTIFICATION_INPUT' });
+    }
+    const canonicalPayload = this.canonicalNotificationJson(dto.payload);
+    if (Buffer.byteLength(canonicalPayload, 'utf8') > 4096) {
+      throw new UnprocessableEntityException({ code: 'NOTIFICATION_PAYLOAD_TOO_LARGE' });
+    }
+
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
-      const isQuiet = this.isIstQuietHour();
-      const shouldDefer = (dto.channel === 'SMS' || dto.channel === 'WHATSAPP') && isQuiet && !dto.isUrgent;
+      // PH2-G20-002: a global POST guard cannot authorize a project ID
+      // carried only in the body. Recheck membership under the same transaction.
+      if (dto.projectId) {
+        const { rows: projects } = await client.query(
+          `SELECT id FROM projects
+            WHERE org_id = $1 AND id = $2 AND purged_at IS NULL
+            FOR SHARE`,
+          [ctx.orgId, dto.projectId],
+        );
+        if (!projects.length) throw new NotFoundException('PROJECT_NOT_FOUND');
+        if (ctx.orgRole !== 'R-OWNER' && ctx.orgRole !== 'R-ADMIN') {
+          const { rows: members } = await client.query(
+            `SELECT 1 FROM project_members
+              WHERE org_id = $1 AND project_id = $2 AND user_id = $3
+                AND status = 'ACTIVE' FOR SHARE`,
+            [ctx.orgId, dto.projectId, ctx.userId],
+          );
+          if (!members.length) throw new NotFoundException('PROJECT_NOT_FOUND');
+        }
+      }
 
-      const notificationId = uuidv7();
-      // External channels without active delivery provider adapters must be recorded as QUEUED,
-      // never falsely reported as SENT (TC-F017 / Sol Part A1). IN_APP notifications are delivered in-app.
-      const isExternal = dto.channel === 'SMS' || dto.channel === 'WHATSAPP' || dto.channel === 'EMAIL';
-      const status = isExternal ? 'QUEUED' : (shouldDefer ? 'QUEUED' : 'SENT');
-      const sentAt = status === 'SENT' ? new Date() : null;
-
-      const res = await client.query(
+      const { rows: inserted } = await client.query(
         `INSERT INTO notifications (
-          id, org_id, project_id, recipient_user_id, channel, event_key, payload_json, status, dedup_key, sent_at, gateway_state
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          id, org_id, project_id, recipient_user_id, channel, event_key,
+          payload_json, status, dedup_key, sent_at, gateway_state
+        ) VALUES ($1, $2, $3, $4, 'IN_APP', $5, $6, 'SENT', $7, now(), 'DELIVERED')
         ON CONFLICT (org_id, dedup_key, channel, COALESCE(recipient_user_id, recipient_party_id))
-        -- A duplicate producer may not rewrite content already dispatched or
-        -- claimed by a worker. Provider idempotency is bound to the row ID.
-        DO UPDATE SET payload_json = CASE
-          WHEN notifications.status='QUEUED' AND notifications.delivery_attempts=0
-               AND notifications.claim_token IS NULL THEN EXCLUDED.payload_json
-          ELSE notifications.payload_json END
-        RETURNING *`,
-        [
-          notificationId,
-          ctx.orgId,
-          dto.projectId || null,
-          ctx.userId,
-          dto.channel,
-          dto.eventKey,
-          JSON.stringify(dto.payload),
-          status,
-          dto.dedupKey,
-          sentAt,
-          isExternal ? 'PENDING' : 'DELIVERED',
-        ],
+        DO NOTHING RETURNING *`,
+        [uuidv7(), ctx.orgId, dto.projectId ?? null, ctx.userId,
+          dto.eventKey, canonicalPayload, dto.dedupKey],
       );
+      if (inserted.length) return { notification: inserted[0], deferredForQuietHours: false };
 
-      return {
-        notification: res.rows[0],
-        deferredForQuietHours: shouldDefer,
-      };
+      const { rows: existing } = await client.query(
+        `SELECT * FROM notifications
+          WHERE org_id = $1 AND dedup_key = $2 AND channel = 'IN_APP'
+            AND recipient_user_id = $3 FOR SHARE`,
+        [ctx.orgId, dto.dedupKey, ctx.userId],
+      );
+      const previous = existing[0];
+      const previousPayload = typeof previous?.payload_json === 'string'
+        ? JSON.parse(previous.payload_json) : previous?.payload_json;
+      if (!previous || previous.project_id !== (dto.projectId ?? null) ||
+          previous.event_key !== dto.eventKey ||
+          this.canonicalNotificationJson(previousPayload) !== canonicalPayload) {
+        throw new ConflictException({
+          code: 'NOTIFICATION_DEDUP_CONFLICT',
+          detail: 'A notification key was reused with different content or scope.',
+        });
+      }
+      // The first event wins; retries may not rewrite delivered content.
+      return { notification: previous, deferredForQuietHours: false };
     });
   }
 
