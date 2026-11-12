@@ -56,7 +56,7 @@ export async function resolveLiveProjectCommandAuthority(
   client: PoolClient,
   ctx: ExecutionContext,
   projectId: string,
-  permission: 'review.decide' | 'document.delete',
+  permission: 'review.decide' | 'document.delete' | 'document.read',
 ): Promise<LiveReviewAuthority> {
   if (ctx.actorType === 'GUEST' || ctx.guestGrantId || !projectId || !ctx.userId || !ctx.orgId) return denied();
 
@@ -77,7 +77,13 @@ export async function resolveLiveProjectCommandAuthority(
     `SELECT status FROM projects WHERE org_id=$1 AND id=$2 FOR SHARE`,
     [ctx.orgId, projectId],
   );
-  if (project.rows.length !== 1 || !['ACTIVE', 'HANDOVER'].includes(project.rows[0].status)) return denied();
+  if (project.rows.length !== 1) return denied();
+  // Reads of retained evidence remain available in DRAFT/CLOSED/ARCHIVED
+  // projects, but cancelled projects do not grant new access. Mutations need
+  // an active lifecycle and always respect restrictive member scopes.
+  const isRead = permission === 'document.read';
+  if (isRead ? project.rows[0].status === 'CANCELLED' :
+    !['ACTIVE', 'HANDOVER'].includes(project.rows[0].status)) return denied();
 
   let projectRole: string | undefined;
   let scope: ReviewMemberScope = {};
@@ -90,7 +96,7 @@ export async function resolveLiveProjectCommandAuthority(
     if (projectMember.rows.length !== 1) return denied();
     projectRole = projectMember.rows[0].role;
     scope = validateScope(projectMember.rows[0].scope_json);
-    if (scope.readOnly || scope.mode === 'READ_ONLY') return denied();
+    if (!isRead && (scope.readOnly || scope.mode === 'READ_ONLY')) return denied();
   }
 
   if (!hasPermission({ orgRole, projectRole }, permission).allowed) return denied();
