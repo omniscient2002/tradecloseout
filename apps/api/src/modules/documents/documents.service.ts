@@ -1230,23 +1230,25 @@ export class DocumentsService {
       revisionCode: string;
     },
   ) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
-      const docRes = await client.query(
-        `SELECT * FROM documents WHERE org_id = $1 AND id = $2 AND deleted_at IS NULL`,
+    // Do not hold one tenant transaction open while createUploadIntent opens
+    // another one and obtains signed storage URLs. The upload transaction
+    // re-locks and validates the parent document's project before writing.
+    const projectId = await this.db.withTenantContext(ctx, async (client: PoolClient) => {
+      const { rows } = await client.query(
+        `SELECT project_id FROM documents
+          WHERE org_id = $1 AND id = $2 AND deleted_at IS NULL`,
         [ctx.orgId, documentId],
       );
-      if (!docRes.rows.length) {
-        throw new NotFoundException('DOCUMENT_NOT_FOUND');
-      }
-      const doc = docRes.rows[0];
+      if (rows.length !== 1) throw new NotFoundException('DOCUMENT_NOT_FOUND');
+      return rows[0].project_id as string;
+    });
 
-      return this.createUploadIntent(ctx, doc.project_id, {
-        documentId,
-        fileName: dto.fileName,
-        mimeType: dto.mimeType,
-        sizeBytes: dto.sizeBytes,
-        revisionCode: dto.revisionCode,
-      });
+    return this.createUploadIntent(ctx, projectId, {
+      documentId,
+      fileName: dto.fileName,
+      mimeType: dto.mimeType,
+      sizeBytes: dto.sizeBytes,
+      revisionCode: dto.revisionCode,
     });
   }
 
