@@ -159,6 +159,10 @@ export function resolveConfigV021(
   const result: Record<string, any> = {};
   const provenance: Record<string, { level: ConfigLevel; versionId: string }> = {};
   const conflicts: ConfigConflict[] = [];
+  // Preserve the source encoding across layers. A legacy flat requirements
+  // array must use the *same keyed lock semantics* as registered requirements.
+  // Mixed encodings need a reviewed schema migration, not last-writer-wins.
+  let requirementsEncoding: 'requirements' | 'checklist.requirements' | null = null;
 
   // RT-019: Installed orgs iterate [PLATFORM, ORG, CLIENT_CONTRACT, PROJECT]; preview iterates [PLATFORM, TRADE]
   const orderedLevels: ConfigLevel[] = isPreview
@@ -185,32 +189,39 @@ export function resolveConfigV021(
       continue;
     }
 
-    for (const [path, rawVal] of Object.entries(cfg.payload)) {
+    for (const [inputPath, rawVal] of Object.entries(cfg.payload)) {
+      const isRequirements = inputPath === 'requirements' ||
+        inputPath === 'checklist.requirements';
+      if (isRequirements) {
+        const otherPath = inputPath === 'requirements'
+          ? 'checklist.requirements' : 'requirements';
+        if (Object.hasOwn(cfg.payload, otherPath) ||
+            (requirementsEncoding !== null && requirementsEncoding !== inputPath)) {
+          conflicts.push({ path: 'requirements', level,
+            message: 'Mixed checklist requirement schemas require explicit migration.' });
+          continue;
+        }
+      }
+      const path = inputPath === 'requirements'
+        ? 'checklist.requirements' : inputPath;
       const schema: FieldSchema | undefined =
         Object.hasOwn(registry, path) ? registry[path] : undefined;
       if (!schema) {
-        conflicts.push({ path, level, message: 'Field is not registered in this configuration schema.' });
+        conflicts.push({ path: inputPath, level,
+          message: 'Field is not registered in this configuration schema.' });
         continue;
       }
       if (rawVal === undefined || rawVal === null) {
-        // A null/absent child is NOT an authorization to clear a locked field.
-        if (rawVal === null) conflicts.push({ path, level, message: 'Explicit null configuration is not supported.' });
+        if (rawVal === null) conflicts.push({ path: inputPath, level,
+          message: 'Explicit null configuration is not supported.' });
         continue;
       }
       if (!validateConfigValue(schema, rawVal)) {
-        conflicts.push({ path, level, message: 'Configuration value has invalid type, size or structure.' });
+        conflicts.push({ path: inputPath, level,
+          message: 'Configuration value has invalid type, size or structure.' });
         continue;
       }
-      // Flat and registered requirement arrays describe the same obligation
-      // family. Never permit either form to bypass the other's item locks.
-      const otherPath = path === 'requirements' ? 'checklist.requirements'
-        : path === 'checklist.requirements' ? 'requirements' : null;
-      if (otherPath && (
-        Object.hasOwn(cfg.payload, otherPath) || Object.hasOwn(result, otherPath)
-      )) {
-        conflicts.push({ path: 'requirements', level, message: 'Mixed checklist requirement schemas require explicit migration.' });
-        continue;
-      }
+      if (isRequirements) requirementsEncoding = inputPath;
 
       // 1. LOCKED fields require their authoritative owner, even when
       // the owner omitted a value. Missing platform policy is not permission
@@ -271,24 +282,13 @@ export function resolveConfigV021(
     }
   }
 
-  // PH2-G06-002: checklist snapshots and their consumers use "requirements",
-  // while the registered keyed configuration schema uses "checklist.requirements".
-  // Keep the public snapshot contract canonical without silently allowing two
-  // contradictory lists to describe different active obligations.
+  // Present the canonical keyed merge in the legacy snapshot-consumer key.
+  // Both encodings now execute identical lock/mandatory/reviewer rules, so a
+  // lower layer cannot weaken an obligation merely by changing path spelling.
   const registeredRequirements = result['checklist.requirements'];
   if (registeredRequirements !== undefined) {
-    if (result.requirements !== undefined &&
-        JSON.stringify(sortDeepKeys(result.requirements)) !==
-          JSON.stringify(sortDeepKeys(registeredRequirements))) {
-      conflicts.push({
-        path: 'requirements',
-        level: provenance.requirements?.level ?? 'PROJECT',
-        message: 'Conflicting legacy and registered checklist requirements.',
-      });
-    } else {
-      result.requirements = structuredClone(registeredRequirements);
-      provenance.requirements = provenance['checklist.requirements']!;
-    }
+    result.requirements = structuredClone(registeredRequirements);
+    provenance.requirements = provenance['checklist.requirements']!;
   }
 
   const canonical = JSON.stringify(sortDeepKeys(result));
