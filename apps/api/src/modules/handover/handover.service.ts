@@ -768,7 +768,18 @@ export class HandoverService {
         `SELECT hp.status, hp.version_no, hp.checksum,
                 so.object_key, so.original_filename, so.mime, so.size_bytes,
                 so.sha256, so.status AS object_status, so.provider_version_id,
-                so.observed_size_bytes
+                so.observed_size_bytes,
+                (SELECT count(*)
+                   FROM package_items pi
+                   JOIN document_versions dv
+                     ON dv.org_id = pi.org_id AND dv.project_id = pi.project_id
+                    AND dv.id = pi.document_version_id
+                   JOIN storage_objects evidence
+                     ON evidence.org_id = dv.org_id AND evidence.id = dv.object_id
+                  WHERE pi.org_id = hp.org_id AND pi.project_id = hp.project_id
+                    AND pi.package_id = hp.id AND pi.included = true
+                    AND (dv.file_status <> 'READY' OR evidence.status <> 'READY')
+                ) AS untrusted_evidence_count
            FROM handover_packages hp
            JOIN storage_objects so
              ON so.org_id = hp.org_id AND so.id = hp.pdf_object_id
@@ -777,6 +788,15 @@ export class HandoverService {
       );
       if (!rows.length) throw new NotFoundException({ code: 'PACKAGE_NOT_FOUND', detail: 'Handover package not found.' });
       const row = rows[0];
+      // Emergency quarantine of a source object must invalidate all *future*
+      // package downloads without rewriting the historical reviewer verdict.
+      // Previously issued provider URLs require provider-side revocation.
+      if (Number(row.untrusted_evidence_count) > 0) {
+        throw new UnprocessableEntityException({
+          code: 'PACKAGE_EVIDENCE_QUARANTINED',
+          detail: 'Package contains evidence that is no longer authorized for distribution.',
+        });
+      }
       if (row.status !== 'READY' || row.object_status !== 'READY' ||
           !row.provider_version_id || !row.sha256 || row.sha256 !== row.checksum ||
           Number(row.observed_size_bytes) !== Number(row.size_bytes)) {
