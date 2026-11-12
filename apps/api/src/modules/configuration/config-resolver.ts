@@ -183,6 +183,11 @@ export function resolveConfigV021(
       conflicts.push({ path: '$level', level, message: 'Configuration layer identity does not match its position.' });
       continue;
     }
+    if (typeof cfg.versionId !== 'string' || !cfg.versionId.trim() ||
+        cfg.versionId.length > 128) {
+      conflicts.push({ path: '$versionId', level, message: 'Missing or invalid immutable source version identity.' });
+      continue;
+    }
 
     if (!isConfigRecord(cfg.payload) || Object.keys(cfg.payload).length > 64) {
       conflicts.push({ path: '$payload', level, message: 'Invalid or excessive configuration fields.' });
@@ -233,7 +238,7 @@ export function resolveConfigV021(
         continue;
       }
       if (schema.overridePolicy === 'LOCKED' && provenance[path]) {
-        if (JSON.stringify(rawVal) !== JSON.stringify(result[path])) {
+        if (JSON.stringify(sortDeepKeys(rawVal)) !== JSON.stringify(sortDeepKeys(result[path]))) {
           conflicts.push({
             path,
             level,
