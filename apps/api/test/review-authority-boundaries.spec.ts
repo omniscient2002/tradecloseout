@@ -92,7 +92,7 @@ describe('review authority and expiry', () => {
   });
 
   it('rejects external approval when the document version has changed', async () => {
-    const query = jest.fn().mockResolvedValue({ rows: [{ id: 'version-1', row_version: 2 }] });
+    const query = jest.fn().mockResolvedValue({ rows: [{ id: 'version-1', review_status: 'IN_REVIEW', row_version: 2 }] });
     const service = new ReviewsService({ withTenantContext: async (_ctx: unknown, work: any) => work({ query }) } as any);
     await expect(service.recordExternalApproval(actor, 'version-1', {
       decision: 'APPROVE', externalMethod: 'EMAIL', externalPartyId: 'party-1',
