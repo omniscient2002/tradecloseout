@@ -231,7 +231,9 @@ export async function reconcileStorageQuotaOnFileStatusChange(
   sizeBytes: bigint,
   transition: 'MARKED_READY' | 'DELETED_OR_PURGED',
 ): Promise<void> {
-  const delta = transition === 'MARKED_READY' ? sizeBytes : -sizeBytes;
+  if (typeof sizeBytes !== 'bigint' || sizeBytes <= 0n || sizeBytes > POSTGRES_BIGINT_MAX) {
+    throw new Error('INVALID_STORAGE_QUOTA_SIZE');
+  }
   await client.query(
     `INSERT INTO usage_counters (id, org_id, metric, period, value)
      VALUES ($1, $2, 'STORAGE_BYTES', 'ALL_TIME', 0)
@@ -239,13 +241,25 @@ export async function reconcileStorageQuotaOnFileStatusChange(
     [uuidv7(), orgId],
   );
 
-  await client.query(
+  // Never mask lifecycle double-debits with GREATEST(..., 0), nor allow a
+  // successful file state change to silently overflow the persisted counter.
+  // The conditional UPDATE is atomic under PostgreSQL's row-level locking.
+  const condition = transition === 'MARKED_READY'
+    ? 'value <= 9223372036854775807::bigint - $2::bigint'
+    : 'value >= $2::bigint';
+  const arithmetic = transition === 'MARKED_READY'
+    ? 'value + $2::bigint'
+    : 'value - $2::bigint';
+  const updated = await client.query(
     `UPDATE usage_counters
-        SET value = GREATEST(0::numeric, value::numeric + $2::numeric)::bigint,
-            updated_at = now()
-      WHERE org_id = $1 AND metric = 'STORAGE_BYTES' AND period = 'ALL_TIME'`,
-    [orgId, delta.toString()],
+        SET value = ${arithmetic}, updated_at = now()
+      WHERE org_id = $1 AND metric = 'STORAGE_BYTES' AND period = 'ALL_TIME'
+        AND ${condition}`,
+    [orgId, sizeBytes.toString()],
   );
+  if (updated.rowCount !== 1) {
+    throw new Error('STORAGE_QUOTA_RECONCILIATION_REQUIRED');
+  }
 }
 
 /**
