@@ -909,7 +909,20 @@ export class ProjectsService {
            COUNT(id) FILTER (WHERE status = 'WAIVED' AND superseded_at IS NULL)::int as waived,
            COUNT(id) FILTER (WHERE status IN ('IN_REVIEW', 'UPLOADED') AND superseded_at IS NULL)::int as in_review,
            COUNT(id) FILTER (WHERE status IN ('NOT_STARTED', 'REQUESTED', 'CHANGES_REQUESTED', 'REJECTED', 'MISSING', 'EXPIRED') AND superseded_at IS NULL)::int as missing_or_expired,
-           COUNT(id) FILTER (WHERE status NOT IN ('APPROVED', 'APPROVED_EXTERNAL', 'WAIVED', 'NOT_APPLICABLE') AND superseded_at IS NULL AND due_at IS NOT NULL AND due_at BETWEEN now() AND now() + INTERVAL '14 days')::int as expiring_soon
+           COUNT(id) FILTER (WHERE status NOT IN ('APPROVED', 'APPROVED_EXTERNAL', 'WAIVED', 'NOT_APPLICABLE') AND superseded_at IS NULL AND due_at IS NOT NULL AND due_at BETWEEN now() AND now() + INTERVAL '14 days')::int as expiring_soon,
+           -- These are due-date categories, not qualified document-expiry or
+           -- closeout-readiness determinations. Explicitly distinguish them.
+           COUNT(id) FILTER (WHERE mandatory = true AND superseded_at IS NULL
+             AND status <> 'NOT_APPLICABLE'
+             AND (status = 'EXPIRED' OR
+               (due_at IS NOT NULL AND due_at < now() AND
+                status NOT IN ('APPROVED','APPROVED_EXTERNAL','WAIVED','NOT_APPLICABLE','HANDED_OVER'))))::int AS overdue_count,
+           COUNT(id) FILTER (WHERE mandatory = true AND superseded_at IS NULL
+             AND status NOT IN ('APPROVED','APPROVED_EXTERNAL','WAIVED','NOT_APPLICABLE','HANDED_OVER','EXPIRED')
+             AND due_at >= now() AND due_at <= now() + INTERVAL '14 days')::int AS due_soon_count,
+           COUNT(id) FILTER (WHERE mandatory = true AND superseded_at IS NULL
+             AND owner_user_id IS NULL AND owner_party_id IS NULL
+             AND status NOT IN ('APPROVED','APPROVED_EXTERNAL','WAIVED','NOT_APPLICABLE','HANDED_OVER'))::int AS unassigned_count
          FROM requirements
          WHERE org_id = $1 AND project_id = $2`,
         [ctx.orgId, projectId],
@@ -951,6 +964,9 @@ export class ProjectsService {
           inReviewCount: Number(c.in_review) || 0,
           missingOrExpiredCount: Number(c.missing_or_expired) || 0,
           expiringSoonCount: Number(c.expiring_soon) || 0,
+          overdueCount: Number(c.overdue_count) || 0,
+          dueSoonCount: Number(c.due_soon_count) || 0,
+          unassignedCount: Number(c.unassigned_count) || 0,
         },
         rowVersion: p.row_version || 1,
       };
