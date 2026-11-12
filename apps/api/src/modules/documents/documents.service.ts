@@ -113,6 +113,7 @@ export class DocumentsService {
       category_key?: string | null;
       document_created_at?: Date | string | null;
     },
+    permission: 'document.download' | 'document.upload' = 'document.download',
   ): Promise<void> {
     if (ctx.actorType === 'GUEST' || ctx.guestGrantId) return;
     if (!version.project_id || !version.document_id) {
@@ -120,7 +121,7 @@ export class DocumentsService {
     }
     try {
       const authority = await resolveLiveProjectCommandAuthority(
-        client, ctx, version.project_id, 'document.download',
+        client, ctx, version.project_id, permission,
       );
       await assertReviewDocumentScope(client, authority, ctx, version.project_id, {
         id: version.document_id,
@@ -645,37 +646,48 @@ export class DocumentsService {
    * API-082A POST /document-versions/:id/refresh-upload-urls (RT-012, CB-003 join fix)
    */
   async refreshUploadUrls(ctx: ExecutionContext, versionId: string) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+    // Authorize the current principal against the actual document, not only a
+    // route-level permission snapshot. Finish the RLS transaction before any
+    // storage presigner I/O; no DB locks remain held during network calls.
+    const ver = await this.db.withTenantContext(ctx, async (client: PoolClient) => {
       const verRes = await client.query(
-        `SELECT dv.*, so.object_key, so.s3_upload_id, so.size_bytes
-         FROM document_versions dv
-         JOIN storage_objects so ON so.id = dv.object_id
-         WHERE dv.org_id = $1 AND dv.id = $2`,
+        `SELECT dv.*, so.object_key, so.s3_upload_id, so.size_bytes,
+                d.doc_type_key, d.category_key,
+                d.created_at AS document_created_at
+           FROM document_versions dv
+           JOIN storage_objects so ON so.org_id = dv.org_id AND so.id = dv.object_id
+           JOIN documents d ON d.org_id = dv.org_id AND d.project_id = dv.project_id AND d.id = dv.document_id
+          WHERE dv.org_id = $1 AND dv.id = $2
+            AND dv.deleted_at IS NULL AND d.deleted_at IS NULL`,
         [ctx.orgId, versionId],
       );
-
-      if (!verRes.rows.length) {
-        throw new NotFoundException('VERSION_NOT_FOUND');
-      }
+      if (verRes.rows.length !== 1) throw new NotFoundException('VERSION_NOT_FOUND');
 
       await this.assertGuestVersionScope(client, ctx, versionId, 'document.upload');
-
-      const ver = verRes.rows[0];
-      if (!ver.s3_upload_id) {
-        throw new BadRequestException('NOT_A_MULTIPART_UPLOAD');
+      const current = verRes.rows[0];
+      await this.assertMemberVersionScope(client, ctx, current, 'document.upload');
+      if (current.file_status !== 'PENDING_UPLOAD') {
+        throw new ConflictException('UPLOAD_NOT_PENDING');
       }
-      const refreshed = await this.storageAdapter.refreshUploadUrls({
-        objectKey: ver.object_key,
-        uploadId: ver.s3_upload_id,
-        sizeBytes: Number(ver.size_bytes),
-      });
+      if (!current.s3_upload_id) throw new BadRequestException('NOT_A_MULTIPART_UPLOAD');
       return {
-        versionId: ver.id,
-        s3UploadId: ver.s3_upload_id,
-        refreshedParts: refreshed.parts,
-        expiresInSeconds: refreshed.expiresInSeconds,
+        id: current.id,
+        objectKey: current.object_key as string,
+        uploadId: current.s3_upload_id as string,
+        sizeBytes: Number(current.size_bytes),
       };
     });
+    const refreshed = await this.storageAdapter.refreshUploadUrls({
+      objectKey: ver.objectKey,
+      uploadId: ver.uploadId,
+      sizeBytes: ver.sizeBytes,
+    });
+    return {
+      versionId: ver.id,
+      s3UploadId: ver.uploadId,
+      refreshedParts: refreshed.parts,
+      expiresInSeconds: refreshed.expiresInSeconds,
+    };
   }
 
   /**
