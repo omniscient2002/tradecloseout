@@ -102,6 +102,14 @@ describe('PH4-G14-002: atomic frozen handover package manifest', () => {
     const packageInsert = queries.find(q => q.sql.includes('INSERT INTO handover_packages'));
     expect(packageInsert?.sql).toContain('manifest_format_version');
     expect(packageInsert?.sql).toContain("'FULL_HANDOVER', 2");
+    const cover = JSON.parse(packageInsert?.params[8]);
+    expect(cover).toEqual({
+      orgName: 'Engineering Company',
+      projectCode: 'PROJECT-A',
+      projectName: 'HVAC Site A',
+      contractRef: 'CONTRACT-1',
+      clientName: 'Customer Ltd',
+    });
     const sourceInsert = queries.find(q => q.sql.includes('INSERT INTO package_items'));
     expect(sourceInsert?.sql).toContain('source_object_id');
     expect(sourceInsert?.params[10]).toBe(objectId);
