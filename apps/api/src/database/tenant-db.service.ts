@@ -17,6 +17,7 @@ export interface ExecutionContext {
   guestCapabilities?: string[];
   sessionId?: string;
   sessionTokenHash?: string;
+  mfaVerified?: boolean;
 }
 
 @Injectable()
