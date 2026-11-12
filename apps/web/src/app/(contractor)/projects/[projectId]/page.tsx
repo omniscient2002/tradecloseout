@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
@@ -247,6 +247,7 @@ export default function ProjectWorkspacePage() {
   const [loadingWarranties, setLoadingWarranties] = useState(false);
   const [warrantyLoadError, setWarrantyLoadError] = useState<string | null>(null);
   const [defectsLoadError, setDefectsLoadError] = useState<string | null>(null);
+  const warrantyRequestGeneration = useRef(0);
 
   // Filter & Modals State
   const [statusFilter, setStatusFilter] = useState<string>("");
@@ -404,6 +405,7 @@ export default function ProjectWorkspacePage() {
 
   const fetchWarranties = useCallback(async () => {
     if (!projectId) return;
+    const generation = ++warrantyRequestGeneration.current;
     // Do not leave another project's old records on screen after a context
     // change, or convert denied/failed requests into fictitious empty data.
     setWarranties([]);
@@ -424,6 +426,9 @@ export default function ProjectWorkspacePage() {
         apiFetch<unknown>(`/api/v1/projects/${encodeURIComponent(projectId)}/warranty-events`),
         apiFetch<unknown>(`/api/v1/projects/${encodeURIComponent(projectId)}/defects`),
       ]);
+      // A late response from a previous project or a slower retry must never
+      // repopulate this view with an old project's privileged records.
+      if (generation !== warrantyRequestGeneration.current) return;
       try {
         if (warrantyResult.status === "rejected") throw warrantyResult.reason;
         setWarranties(parseRows(warrantyResult.value));
@@ -437,7 +442,9 @@ export default function ProjectWorkspacePage() {
         setDefectsLoadError(error instanceof Error ? error.message : "Unable to load defects.");
       }
     } finally {
-      setLoadingWarranties(false);
+      if (generation === warrantyRequestGeneration.current) {
+        setLoadingWarranties(false);
+      }
     }
   }, [projectId]);
 
