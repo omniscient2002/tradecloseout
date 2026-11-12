@@ -11,6 +11,7 @@ import path from 'path';
 import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
 import { reconcileStorageQuotaOnFileStatusChange } from '@tradecloseout/db/tenant-tx';
+import { isImmutableObjectVersionId } from '@tradecloseout/shared';
 import { TradeCloseoutScheduler } from './scheduler';
 import { verifyAndScanUploadedFile } from './queues/file.processor';
 import { convertSupportingFormatToPdf } from './queues/format-converter';
@@ -155,7 +156,7 @@ async function bootWorker() {
       console.log(`[BullMQ] Processing file job ${job.id}`);
       const { originalFilename, expectedSha256, clamdHost, clamdPort, versionId, orgId, storageObjectId,
         bucket, objectKey, providerVersionId } = job.data;
-      if (!versionId || !orgId || !storageObjectId || !bucket || !objectKey || !providerVersionId) {
+      if (!versionId || !orgId || !storageObjectId || !bucket || !objectKey || !isImmutableObjectVersionId(providerVersionId)) {
         throw new Error('FILE_SCAN_SOURCE_UNAVAILABLE: event is missing tenant-bound immutable storage identity');
       }
       const tempDir = await mkdtemp(path.join(os.tmpdir(), 'tradecloseout-scan-'));
@@ -167,6 +168,7 @@ async function bootWorker() {
           Key: objectKey,
           VersionId: providerVersionId,
         }));
+        if (storedObject.VersionId !== providerVersionId) throw new Error('FILE_SCAN_SOURCE_VERSION_MISMATCH');
         if (!storedObject.Body) throw new Error('OBJECT_STORAGE_EMPTY_RESPONSE');
 
         // N19 / V09: Bounded streaming transform with validated finite positive integer ceiling
@@ -210,7 +212,8 @@ async function bootWorker() {
           );
           const current = currentRows[0];
           if (!current || current.file_status !== 'PROCESSING' ||
-              current.storage_status !== 'PROCESSING' || current.provider_version_id !== providerVersionId) {
+              current.storage_status !== 'PROCESSING' || !isImmutableObjectVersionId(current.provider_version_id) ||
+              current.provider_version_id !== providerVersionId) {
             await client.query('COMMIT');
             return { ...result, finalStatus: 'IGNORED_STALE_RECEIPT' };
           }
@@ -336,7 +339,7 @@ async function bootWorker() {
     if (!job || job.attemptsMade < Number(job.opts.attempts || 1)) return;
 
     const { orgId, versionId, storageObjectId, providerVersionId } = job.data;
-    if (!orgId || !versionId || !storageObjectId || !providerVersionId) return;
+    if (!orgId || !versionId || !storageObjectId || !isImmutableObjectVersionId(providerVersionId)) return;
 
     const failureCode = String(err?.message || '').startsWith('SCAN_UNAVAILABLE:')
       ? 'SCAN_UNAVAILABLE'
