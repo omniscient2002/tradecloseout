@@ -22,10 +22,20 @@ export interface LiveSessionFenceContext {
   guestGrantId?: string;
 }
 
+/** Coded, non-secret authorization denial consumed by the API error filter. */
+export class LiveSessionAuthorityChangedError extends Error {
+  readonly code = 'AUTH_SESSION_CONTEXT_CHANGED';
+
+  constructor() {
+    super('AUTH_SESSION_CONTEXT_CHANGED');
+    this.name = 'LiveSessionAuthorityChangedError';
+  }
+}
+
 const changed = (): never => {
   // Do not reveal whether the user, organisation, session, membership, guest
   // grant or issuing party was suspended. Caller must re-authenticate.
-  throw new Error('AUTH_SESSION_CONTEXT_CHANGED');
+  throw new LiveSessionAuthorityChangedError();
 };
 
 export async function assertLiveSessionEligibleInTransaction(
