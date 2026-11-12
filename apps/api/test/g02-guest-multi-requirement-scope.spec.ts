@@ -25,8 +25,8 @@ describe('PH1-G02-006 — guest version and detail scope (restricted PostgreSQL 
       );
       await admin.query(
         `INSERT INTO guest_grants
-           (id,org_id,project_id,party_id,role,grant_type,capabilities,scope_json,token_hash,expires_at,created_by)
-         VALUES ($1,$2,$3,$4,'R-SUPPLIER-OEM','SUPPLIER_UPLOAD',
+           (id,org_id,project_id,party_id,target_email,role,grant_type,capabilities,scope_json,token_hash,expires_at,created_by)
+         VALUES ($1,$2,$3,$4,'supplier-audit@example.test','R-SUPPLIER-OEM','SUPPLIER_UPLOAD',
            ARRAY['document.upload','document.download']::text[],$5::jsonb,$6,now()+interval '1 day',$7)`,
         [grantId, a.orgId, projectId, partyId,
           JSON.stringify({ requirementIds: [allowedRequirementId] }), randomUUID(), userId],
