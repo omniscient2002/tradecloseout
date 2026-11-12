@@ -99,6 +99,42 @@ export class DocumentsService {
   }
 
   /**
+   * A signed URL or streamed response must be authorized against the actual
+   * document parent, current member scope and live project in the same RLS
+   * transaction. A route guard's project ID is not sufficient evidence.
+   */
+  private async assertMemberVersionScope(
+    client: PoolClient,
+    ctx: ExecutionContext,
+    version: {
+      project_id?: string;
+      document_id?: string;
+      doc_type_key?: string | null;
+      category_key?: string | null;
+      document_created_at?: Date | string | null;
+    },
+  ): Promise<void> {
+    if (ctx.actorType === 'GUEST' || ctx.guestGrantId) return;
+    if (!version.project_id || !version.document_id) {
+      throw new NotFoundException('VERSION_NOT_FOUND');
+    }
+    try {
+      const authority = await resolveLiveProjectCommandAuthority(
+        client, ctx, version.project_id, 'document.download',
+      );
+      await assertReviewDocumentScope(client, authority, ctx, version.project_id, {
+        id: version.document_id,
+        doc_type_key: version.doc_type_key,
+        category_key: version.category_key,
+        created_at: version.document_created_at,
+      });
+    } catch (error) {
+      if (error instanceof ForbiddenException) throw new NotFoundException('VERSION_NOT_FOUND');
+      throw error;
+    }
+  }
+
+  /**
    * API-080 GET /projects/:projectId/documents
    * Lists documents in a project with optional filters.
    */
@@ -809,7 +845,8 @@ export class DocumentsService {
   async getDownloadUrl(ctx: ExecutionContext, versionId: string) {
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
       const verRes = await client.query(
-        `SELECT dv.*, so.object_key, so.mime, so.size_bytes, so.provider_version_id,
+        `SELECT dv.*, d.doc_type_key, d.category_key, d.created_at AS document_created_at,
+                so.object_key, so.mime, so.size_bytes, so.provider_version_id,
                 so.status AS storage_status, so.sha256, so.observed_size_bytes
            FROM document_versions dv
            JOIN storage_objects so ON so.org_id = dv.org_id AND so.id = dv.object_id
@@ -823,6 +860,7 @@ export class DocumentsService {
       const version = verRes.rows[0];
 
       await this.assertGuestVersionScope(client, ctx, versionId, 'document.download');
+      await this.assertMemberVersionScope(client, ctx, version);
       if (version.file_status !== 'READY' || version.storage_status !== 'READY' ||
           !version.provider_version_id || !version.sha256 ||
           version.observed_size_bytes == null || String(version.observed_size_bytes) !== String(version.size_bytes)) {
@@ -855,7 +893,8 @@ export class DocumentsService {
   async getPreviewUrl(ctx: ExecutionContext, versionId: string) {
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
       const verRes = await client.query(
-        `SELECT dv.*, so.object_key, so.mime, so.size_bytes, so.provider_version_id,
+        `SELECT dv.*, d.doc_type_key, d.category_key, d.created_at AS document_created_at,
+                so.object_key, so.mime, so.size_bytes, so.provider_version_id,
                 so.status AS storage_status, so.sha256, so.observed_size_bytes
            FROM document_versions dv
            JOIN storage_objects so ON so.org_id = dv.org_id AND so.id = dv.object_id
@@ -869,6 +908,7 @@ export class DocumentsService {
       const version = verRes.rows[0];
 
       await this.assertGuestVersionScope(client, ctx, versionId, 'document.download');
+      await this.assertMemberVersionScope(client, ctx, version);
       if (version.file_status !== 'READY' || version.storage_status !== 'READY' ||
           !version.provider_version_id || !version.sha256 ||
           version.observed_size_bytes == null || String(version.observed_size_bytes) !== String(version.size_bytes)) {
@@ -907,7 +947,8 @@ export class DocumentsService {
     const res = resOptional || reqOrRes;
     const fileRecord = await this.db.withTenantContext(ctx, async (client: PoolClient) => {
       const { rows } = await client.query(
-        `SELECT dv.id, dv.file_status, dv.revision_code, d.title,
+        `SELECT dv.id, dv.project_id, dv.document_id, dv.file_status, dv.revision_code,
+                d.title, d.doc_type_key, d.category_key, d.created_at AS document_created_at,
                 so.object_key, so.mime, so.size_bytes, so.sha256, so.provider_version_id,
                 so.status AS storage_status, so.observed_size_bytes
            FROM document_versions dv
@@ -928,6 +969,7 @@ export class DocumentsService {
       const row = rows[0];
 
       await this.assertGuestVersionScope(client, ctx, versionId, 'document.download');
+      await this.assertMemberVersionScope(client, ctx, row);
 
       if (row.file_status !== 'READY' || row.storage_status !== 'READY' || !row.sha256 ||
           !row.provider_version_id || row.observed_size_bytes == null ||
