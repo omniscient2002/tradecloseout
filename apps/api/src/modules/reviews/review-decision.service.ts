@@ -5,6 +5,7 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { PoolClient } from 'pg';
+import { isProductionEnvironment } from '../identity/auth-security';
 
 export interface SessionContext {
   userId: string;
@@ -38,6 +39,16 @@ export async function executeReviewDecision(
   ctx: SessionContext,
   input: ReviewDecisionInput,
 ) {
+  // This low-level legacy helper cannot verify a party-authenticated offline
+  // decision or two independent attestations. Production external decisions
+  // MUST pass through ReviewsService.recordExternalApproval and its trusted
+  // G01-001 exact-revision/proof/party verification function instead.
+  if (input.method === 'EXTERNAL' && isProductionEnvironment()) {
+    throw new ForbiddenException({
+      code:'EXTERNAL_REVIEW_REQUIRES_INDEPENDENT_EVIDENCE_WORKFLOW',
+      detail:'Use the independently attested external approval workflow.',
+    });
+  }
   await client.query('BEGIN');
   try {
     // 1. Bind transaction-local RLS context (08 §5.2)

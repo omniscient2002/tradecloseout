@@ -3,6 +3,7 @@
 
 import { Injectable, Optional, ForbiddenException } from '@nestjs/common';
 import { Pool, PoolClient } from 'pg';
+import { assertCurrentProjectAuthority, assertCurrentSessionEligibility } from '@tradecloseout/db/tenant-tx';
 
 export interface ExecutionContext {
   orgId: string;
@@ -11,9 +12,15 @@ export interface ExecutionContext {
   requestId: string;
   orgRole?: string;
   projectRole?: string;
+  projectId?: string;
+  projectScope?: Record<string, unknown>;
+  permission?: string;
+  docControllerOrgWideDownload?: boolean;
   guestGrantId?: string;
   guestScope?: Record<string, unknown>;
   guestCapabilities?: string[];
+  sessionId?: string;
+  authGeneration?: string;
 }
 
 @Injectable()
@@ -27,6 +34,7 @@ export class TenantDbService {
       this.pool = new Pool({
         connectionString: process.env.APP_DATABASE_URL,
         max: 20,
+        connectionTimeoutMillis:5000,
       });
     } else {
       this.pool = new Pool({
@@ -57,21 +65,34 @@ export class TenantDbService {
     }
 
     const client = await this.pool.connect();
+    let destroyConnection = false;
     try {
       await client.query('BEGIN');
+      // Transaction-local timeouts prevent indefinite queueing behind a
+      // stalled session/row lock; none survive COMMIT or ROLLBACK.
+      await client.query("SET LOCAL lock_timeout='15s'");
+      await client.query("SET LOCAL statement_timeout='90s'");
+      await client.query("SET LOCAL idle_in_transaction_session_timeout='60s'");
       // Set transaction-local configuration parameters (is_local = true)
       await client.query("SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)", [ctx.orgId]);
       await client.query("SELECT set_config('app.current_user', $1, true)", [ctx.userId]);
       await client.query("SELECT set_config('app.actor_type', $1, true)", [ctx.actorType]);
 
+      await assertCurrentSessionEligibility(client, ctx);
+
+      await assertCurrentProjectAuthority(client, {...ctx, actorType:ctx.actorType});
+
       const result = await fn(client);
       await client.query('COMMIT');
       return result;
     } catch (error) {
-      await client.query('ROLLBACK');
+      try { await client.query('ROLLBACK'); }
+      catch { destroyConnection = true; }
+      // Preserve the original transaction error. If rollback itself failed,
+      // the pooled connection may still carry unsafe local RLS settings.
       throw error;
     } finally {
-      client.release();
+      client.release(destroyConnection);
     }
   }
 
@@ -83,17 +104,26 @@ export class TenantDbService {
     fn: (client: PoolClient) => Promise<T>,
   ): Promise<T> {
     const client = await this.pool.connect();
+    let destroyConnection = false;
     try {
       await client.query('BEGIN');
+      // Transaction-local timeouts prevent indefinite queueing behind a
+      // stalled session/row lock; none survive COMMIT or ROLLBACK.
+      await client.query("SET LOCAL lock_timeout='15s'");
+      await client.query("SET LOCAL statement_timeout='90s'");
+      await client.query("SET LOCAL idle_in_transaction_session_timeout='60s'");
       await client.query("SELECT set_config('app.current_user', $1, true)", [userId]);
       const result = await fn(client);
       await client.query('COMMIT');
       return result;
     } catch (error) {
-      await client.query('ROLLBACK');
+      try { await client.query('ROLLBACK'); }
+      catch { destroyConnection = true; }
+      // Preserve the original transaction error. If rollback itself failed,
+      // the pooled connection may still carry unsafe local RLS settings.
       throw error;
     } finally {
-      client.release();
+      client.release(destroyConnection);
     }
   }
 
@@ -105,17 +135,26 @@ export class TenantDbService {
     fn: (client: PoolClient) => Promise<T>,
   ): Promise<T> {
     const client = await this.pool.connect();
+    let destroyConnection = false;
     try {
       await client.query('BEGIN');
+      // Transaction-local timeouts prevent indefinite queueing behind a
+      // stalled session/row lock; none survive COMMIT or ROLLBACK.
+      await client.query("SET LOCAL lock_timeout='15s'");
+      await client.query("SET LOCAL statement_timeout='90s'");
+      await client.query("SET LOCAL idle_in_transaction_session_timeout='60s'");
       await client.query("SELECT set_config('app.current_token_hash', $1, true)", [tokenHash]);
       const result = await fn(client);
       await client.query('COMMIT');
       return result;
     } catch (error) {
-      await client.query('ROLLBACK');
+      try { await client.query('ROLLBACK'); }
+      catch { destroyConnection = true; }
+      // Preserve the original transaction error. If rollback itself failed,
+      // the pooled connection may still carry unsafe local RLS settings.
       throw error;
     } finally {
-      client.release();
+      client.release(destroyConnection);
     }
   }
 

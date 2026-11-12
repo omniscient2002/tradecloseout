@@ -88,6 +88,26 @@ describe('Complete Application User Journey & Real Storage/Scanner Integration (
           VALUES ($1, 'AirCon MEP Contracting Pvt Ltd', 'AirCon MEP', 'TG', false)
         `, [orgId]);
 
+        // PH2-G18-005: generation requires a genuine configured entitlement.
+        // This disposable E2E tenant has an explicit test subscription rather
+        // than depending on the former hardcoded fifty-package allowance.
+        const planId = uuidv7();
+        await admin.query(
+          `INSERT INTO plans (id, code, name, limits_json, price_paise, interval, status)
+           VALUES ($1, 'E2E_HANDOVER_PLAN', 'E2E Handover Plan',
+             $2::jsonb, 0, 'MONTH', 'ACTIVE')`,
+          [planId, JSON.stringify({
+            maxActiveProjects: 5, maxSeats: 5, maxStorageBytes: 1073741824,
+            maxPackageGenerationsPerMonth: 3,
+          })],
+        );
+        await admin.query(
+          `INSERT INTO subscriptions
+             (id, org_id, plan_id, status, current_period_start, current_period_end)
+           VALUES ($1, $2, $3, 'TRIAL', now() - interval '1 day', now() + interval '30 days')`,
+          [uuidv7(), orgId, planId],
+        );
+
         // Seed project
         await admin.query(`
           INSERT INTO projects (id, org_id, code, name, project_type, created_by, status)
@@ -164,10 +184,22 @@ describe('Complete Application User Journey & Real Storage/Scanner Integration (
           ip: '127.0.0.1',
           userAgent: 'jest-test',
         };
+        // Recipient acceptance must use an independently authenticated
+        // party-bound grant, not an internal R-OWNER session.
+        const clientGrantId = uuidv7();
+        await admin.query(`INSERT INTO guest_grants
+          (id,org_id,project_id,party_id,grant_type,role,capabilities,
+           target_email,token_hash,status,expires_at,created_by,independent_authority_verified_at,independent_authority_evidence_ref)
+          VALUES($1,$2,$3,$4,'CLIENT_VIEW','R-CLIENT',$5,$6,$7,'ACTIVE',now()+interval '1 day',$8,now(),'TEST_FIXTURE:INDEPENDENTLY_APPROVED')`,
+          [clientGrantId,orgId,projectId,clientPartyId,['package.accept'],
+           'anand@hyderabadmetro.in',uuidv7().replace(/-/g,''),contractorUserId]);
         const clientActorCtx: TenantActorContext = {
           orgId,
           userId: clientUserId,
-          actorType: 'MEMBER',
+          actorType: 'GUEST',
+          guestGrantId: clientGrantId,
+          guestCapabilities: ['package.accept'],
+          guestProjectId: projectId,
           requestId: 'req-actor-2',
           ip: '127.0.0.1',
           userAgent: 'jest-test',

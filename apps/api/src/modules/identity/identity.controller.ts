@@ -1,5 +1,7 @@
+import { reserveActiveSeatForMembership } from '@tradecloseout/db';
 import {
   Body,
+  ConflictException,
   Controller,
   Get,
   HttpCode,
@@ -7,26 +9,31 @@ import {
   HttpStatus,
   NotFoundException,
   Post,
+  Param,
   Req,
   Res,
   UnauthorizedException,
   UnprocessableEntityException,
   UseGuards,
 } from '@nestjs/common';
-import { createHash, randomBytes, randomInt } from 'crypto';
+import { createHash, createHmac, randomBytes, randomInt, timingSafeEqual } from 'crypto';
 import { Response } from 'express';
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import Redis from 'ioredis';
 import { uuidv7 } from 'uuidv7';
+import type { AuthDeliveryContext } from '@tradecloseout/db';
+import { canonicalAuthenticationEmail, canonicalAuthenticationPhone, isSafeIdentityName } from '@tradecloseout/shared';
 import { AuthenticatedRequest, SessionCsrfGuard } from '../../common/guards/session-csrf.guard';
+import { safeAuthenticationDeviceLabel, requestIdFor } from '../../common/security/audit-metadata';
+import { assertAuthenticationOrigin, assertAuthenticationIntent, AUTH_INTENT_COOKIE, consumeAuthenticationBudget, deriveSessionCsrf, recordAuthenticationEvent, isProductionEnvironment, setAuthenticationIntent } from './auth-security';
 
 export abstract class DltSmsGateway {
-  abstract sendOtpSms(phoneE164: string, otp: string, templateId: string): Promise<{ delivered: boolean }>;
+  abstract sendOtpSms(phoneE164: string, otp: string, templateId: string, context?: AuthDeliveryContext): Promise<{ delivered: boolean }>;
 }
 
 export abstract class TransactionalMailGateway {
-  abstract sendMagicLinkEmail(email: string, magicUrl: string): Promise<void>;
-  abstract sendOtpEmail(email: string, otp: string, purpose: string): Promise<void>;
+  abstract sendMagicLinkEmail(email: string, magicUrl: string, context?: AuthDeliveryContext): Promise<void>;
+  abstract sendOtpEmail(email: string, otp: string, purpose: string, context?: AuthDeliveryContext): Promise<void>;
 }
 
 @Controller('api/v1/auth')
@@ -47,10 +54,16 @@ export class IdentityController {
   async requestOtp(
     @Body() body: { identifier?: string; phoneOrEmail?: string },
     @Req() req: AuthenticatedRequest,
+    @Res({ passthrough: true }) res?: Response,
   ) {
-    const rawId = (body.identifier || body.phoneOrEmail || '').trim().toLowerCase();
-    const isPhone = /^\+91[6-9][0-9]{9}$/.test(rawId);
-    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawId);
+    assertAuthenticationOrigin(req);
+    const supplied = body?.identifier ?? body?.phoneOrEmail;
+    if (typeof supplied !== 'string' || supplied.length > 320) {
+      throw new UnprocessableEntityException({ code: 'INVALID_IDENTIFIER', detail: 'A valid email or mobile number is required.' });
+    }
+    const phone=canonicalAuthenticationPhone(supplied),email=canonicalAuthenticationEmail(supplied);
+    const rawId=phone||email||'';
+    const isPhone=Boolean(phone),isEmail=Boolean(email);
 
     if (!isPhone && !isEmail) {
       throw new UnprocessableEntityException({
@@ -60,10 +73,23 @@ export class IdentityController {
       });
     }
 
+    if (isProductionEnvironment()) {
+      const ip = String(req?.ip || req?.socket?.remoteAddress || 'unknown');
+      await consumeAuthenticationBudget(this.pool, 'otp:ip:hour', ip, 20, 3600);
+      await consumeAuthenticationBudget(this.pool, 'otp:contact:hour', rawId, 5, 3600);
+      await consumeAuthenticationBudget(this.pool, 'otp:global:hour', 'all', 6000, 3600);
+    }
+
     // Rate limit: max 5 OTP requests / hour / identifier (10 §10), atomic Lua increment and expiry
     const isProductionLike = process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging';
     const isExplicitDebug = process.env.ENABLE_DEBUG_OTP === 'true' && !isProductionLike;
-    const rateKey = `rl:otp:req:${rawId}`;
+    // Redis is a shared operational store. Never expose identifiers
+    // through Redis keys or MONITOR traffic in staging/production.
+    const redisContactKey = isProductionEnvironment()
+      ? createHmac('sha256', process.env.AUTH_OTP_HMAC_KEY!)
+        .update(`redis-contact:v1:${rawId}`).digest('hex')
+      : rawId;
+    const rateKey = `rl:otp:req:${redisContactKey}`;
     const count = Number(await this.redis.eval(
       `local c = redis.call('INCR', KEYS[1])
        if c == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
@@ -71,7 +97,8 @@ export class IdentityController {
       1,
       rateKey,
       3600,
-    ));
+    ).catch(()=>{throw new HttpExceptionWithRetry(503,'AUTH_RATE_LIMIT_STORAGE_UNAVAILABLE',
+      'Authentication is temporarily unavailable.',5);}));
     if (count > 5 || !Number.isFinite(count)) {
       throw new HttpExceptionWithRetry(429, 'RATE_LIMITED', 'Too many OTP requests. Try again later.', 300);
     }
@@ -79,11 +106,19 @@ export class IdentityController {
     const challengeId = uuidv7();
     const otp = String(randomInt(100000, 999999));
     const salt = randomBytes(16).toString('hex');
-    const otpHash = createHash('sha1').update(`${salt}:${otp}`).digest('hex');
-    const challengePayload = JSON.stringify({ id: challengeId, identifier: rawId, salt, otpHash, attempts: 0 });
+    const otpScheme = isProductionEnvironment() ? 'HMAC_SHA256_V1' : 'SHA1_LEGACY_DEV';
+    const otpHash = otpScheme === 'HMAC_SHA256_V1'
+      ? createHmac('sha256', process.env.AUTH_OTP_HMAC_KEY!).update(`LOGIN:${challengeId}:${rawId}:${otp}`).digest('hex')
+      : createHash('sha1').update(`${salt}:${otp}`).digest('hex');
+    const authIntentHash = setAuthenticationIntent(res, req);
+    const challengePayload = JSON.stringify({
+      id: challengeId, identifier: rawId, salt, otpHash, otpScheme, authIntentHash, attempts: 0,
+    });
 
     // Atomic issuance & supersession (V01, N02): Atomically delete old generation and register new challenge
-    await this.redis.eval(
+    // PostgreSQL owns production OTP verification and lifecycle; Redis
+    // caches only anonymous request budgets, not challenge contact payloads.
+    if (!isProductionEnvironment()) await this.redis.eval(
       `local oldId = redis.call('GET', KEYS[1])
        if oldId and oldId ~= '' then
          redis.call('DEL', 'otp:challenge:' .. oldId)
@@ -102,6 +137,31 @@ export class IdentityController {
       rawId,
     );
 
+    if (isProductionEnvironment()) {
+      // The OTP's authoritative proof is now transactional with onboarding
+      // in PostgreSQL. Redis remains only a rate-limit/legacy cache.
+      const c = await this.pool.connect();
+      try {
+        await c.query('BEGIN');
+        await c.query('SELECT pg_advisory_xact_lock(hashtext($1))', [rawId]);
+        await c.query(
+          `UPDATE otp_challenges SET consumed_at = now()
+            WHERE identifier = $1 AND purpose = 'LOGIN' AND consumed_at IS NULL`,
+          [rawId],
+        );
+        await c.query(
+          `INSERT INTO otp_challenges
+            (id,channel,identifier,purpose,code_hash,expires_at,delivery_status,auth_intent_hash)
+           VALUES($1,$2,$3,'LOGIN',$4,now()+interval '5 minutes','PENDING',$5)`,
+          [challengeId,isPhone ? 'SMS' : 'EMAIL',rawId,otpHash,authIntentHash],
+        );
+        await c.query('COMMIT');
+      } catch (err) {
+        await c.query('ROLLBACK').catch(() => {});
+        throw err;
+      } finally { c.release(); }
+    }
+
     if (isExplicitDebug) {
       return {
         challengeId,
@@ -113,10 +173,25 @@ export class IdentityController {
     }
 
     if (isPhone) {
-      const smsFailKey = `sms:fail:${rawId}`;
+      const smsFailKey = `sms:fail:${redisContactKey}`;
       try {
-        const res = await this.smsGateway.sendOtpSms(rawId, otp, process.env.DLT_OTP_TEMPLATE_ID || '');
+        const res = await this.smsGateway.sendOtpSms(rawId, otp, process.env.DLT_OTP_TEMPLATE_ID || '',
+          {kind:'LOGIN_OTP',targetId:challengeId});
         if (!res.delivered) throw new Error('DLT_DELIVERY_FAILED');
+        if (isProductionEnvironment()) {
+          const status = await this.pool.query(
+            `UPDATE otp_challenges SET delivery_status='SENT'
+              WHERE id=$1 AND delivery_status='PENDING'
+                AND consumed_at IS NULL AND expires_at>now()`,
+            [challengeId],
+          );
+          if (!status.rowCount) {
+            throw new ConflictException({
+              code: 'OTP_CHALLENGE_SUPERSEDED',
+              detail: 'A newer code has replaced this OTP; use the newest code.',
+            });
+          }
+        }
         await this.redis.del(smsFailKey);
         return {
           challengeId,
@@ -125,7 +200,16 @@ export class IdentityController {
           expiresInSeconds: 300,
           debugOtp: isExplicitDebug ? otp : undefined,
         };
-      } catch {
+      } catch (err) {
+        // A delayed provider response must never make a superseded code
+        // appear successfully delivered. Preserve the actual 409 contract.
+        if (err instanceof ConflictException) throw err;
+        if (isProductionEnvironment()) {
+          await this.pool.query(
+            `UPDATE otp_challenges SET delivery_status='AMBIGUOUS'
+              WHERE id=$1 AND delivery_status='PENDING'`, [challengeId],
+          ).catch(() => {});
+        }
         // Atomic generation-safe cleanup (PA10): only delete alias/raw challenge if it still points to this challengeId
         const cleanupScript = `
           if redis.call('GET', KEYS[1]) == ARGV[1] then
@@ -135,7 +219,7 @@ export class IdentityController {
           redis.call('DEL', KEYS[3])
           return 1
         `;
-        await this.redis.eval(
+        if (!isProductionEnvironment()) await this.redis.eval(
           cleanupScript,
           3,
           `otp:alias:${rawId}`,
@@ -158,8 +242,30 @@ export class IdentityController {
 
     // Email OTP / Magic Link
     try {
-      await this.mailGateway.sendOtpEmail(rawId, otp, 'SIGN_IN');
+      await this.mailGateway.sendOtpEmail(rawId, otp, 'SIGN_IN',
+        {kind:'LOGIN_OTP',targetId:challengeId});
+      if (isProductionEnvironment()) {
+        const status = await this.pool.query(
+          `UPDATE otp_challenges SET delivery_status='SENT'
+            WHERE id=$1 AND delivery_status='PENDING'
+              AND consumed_at IS NULL AND expires_at>now()`,
+          [challengeId],
+        );
+        if (!status.rowCount) {
+          throw new ConflictException({
+            code: 'OTP_CHALLENGE_SUPERSEDED',
+            detail: 'A newer code has replaced this OTP; use the newest code.',
+          });
+        }
+      }
     } catch (err) {
+      if (err instanceof ConflictException) throw err;
+      if (isProductionEnvironment()) {
+        await this.pool.query(
+          `UPDATE otp_challenges SET delivery_status='AMBIGUOUS'
+            WHERE id=$1 AND delivery_status='PENDING'`, [challengeId],
+        ).catch(() => {});
+      }
       // Atomic generation-safe cleanup (PA10): only delete alias/raw challenge if it still points to this challengeId
       const cleanupScript = `
         if redis.call('GET', KEYS[1]) == ARGV[1] then
@@ -169,7 +275,7 @@ export class IdentityController {
         redis.call('DEL', KEYS[3])
         return 1
       `;
-      await this.redis.eval(
+      if (!isProductionEnvironment()) await this.redis.eval(
         cleanupScript,
         3,
         `otp:alias:${rawId}`,
@@ -202,13 +308,33 @@ export class IdentityController {
       otp?: string;
       code?: string;
       signupProfile?: { fullName: string; orgName: string; state: string };
+      invitationToken?: string;
     },
     @Req() req: AuthenticatedRequest,
     @Res({ passthrough: true }) res: Response,
   ) {
-    let rawId = (body.identifier || '').trim().toLowerCase();
-    const candidateCode = (body.otp || body.code || '').trim();
-    const challengeParam = (body.challengeId || '').trim();
+    assertAuthenticationOrigin(req);
+    if (!body || typeof body !== 'object' || Array.isArray(body) ||
+        (body.identifier !== undefined && typeof body.identifier !== 'string') ||
+        (body.challengeId !== undefined && typeof body.challengeId !== 'string') ||
+        (body.invitationToken !== undefined && typeof body.invitationToken !== 'string') ||
+        (body.otp !== undefined && typeof body.otp !== 'string') ||
+        (body.code !== undefined && typeof body.code !== 'string')) {
+      throw new UnprocessableEntityException({ code: 'INVALID_OTP_INPUT', detail: 'Invalid OTP verification request.' });
+    }
+    const invitationToken = body.invitationToken || null;
+    if (invitationToken && !/^[0-9a-f]{64}$/i.test(invitationToken)) {
+      throw new UnprocessableEntityException({ code: 'INVALID_INVITATION_TOKEN' });
+    }
+    let rawId = body.identifier ? canonicalAuthenticationPhone(body.identifier)||canonicalAuthenticationEmail(body.identifier)||'' : '';
+    if(body.identifier && !rawId)throw new UnprocessableEntityException({code:'INVALID_IDENTIFIER'});
+    const candidateCode = (body.otp ?? body.code ?? '').trim();
+    const challengeParam = (body.challengeId ?? '').trim();
+    if (!/^\d{6}$/.test(candidateCode) ||
+        (body.challengeId !== undefined && !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(challengeParam)) ||
+        rawId.length > 320) {
+      throw new UnprocessableEntityException({ code: 'INVALID_OTP_INPUT', detail: 'Verification requires a six-digit code and valid challenge ID.' });
+    }
 
     const inputKey = challengeParam
       ? `otp:challenge:${challengeParam}`
@@ -224,8 +350,81 @@ export class IdentityController {
       });
     }
 
-    const candidateHash = rawId ? createHash('sha256').update(`${rawId}:${candidateCode}`).digest('hex') : '';
+    if (isProductionEnvironment() && !challengeParam) {
+      throw new UnprocessableEntityException({
+        code: 'CHALLENGE_ID_REQUIRED',
+        detail: 'Production OTP verification requires the original challenge ID.',
+      });
+    }
+    // Verify the originating browser's nonce before accepting an OTP. A valid
+    // code submitted in a different browser must never replace its session.
+    if (challengeParam && !isProductionEnvironment()) {
+      const preview = await this.redis.get(`otp:challenge:${challengeParam}`);
+      let expectedIntent: string | null = null;
+      try { expectedIntent = preview ? JSON.parse(preview)?.authIntentHash ?? null : null; }
+      catch { /* malformed challenge is rejected by Redis atomic validation */ }
+      assertAuthenticationIntent(req, expectedIntent);
+    }
+    // Production verifies the intent against the locked PostgreSQL challenge,
+    // not the Redis preview or a missing expected hash.
 
+    let verifyOutcome = 'EXPIRED';
+    let authDbClient: PoolClient | null = null;
+    let proofCreatedAt:string|undefined;
+    if (isProductionEnvironment()) {
+      // The PostgreSQL OTP row is authoritative in production. Lock the proof
+      // and retain its transaction across identity lookup and session INSERT.
+      // A database rollback therefore never consumes a valid OTP.
+      const candidateClient = await this.pool.connect();
+      try {
+        await candidateClient.query('BEGIN');
+        const { rows: challengeRows } = await candidateClient.query(
+          `SELECT id, identifier, code_hash, attempts, auth_intent_hash,created_at::text AS proof_created_at
+            FROM otp_challenges
+            WHERE id=$1 AND purpose='LOGIN' AND consumed_at IS NULL
+              AND delivery_status='SENT' AND expires_at>now()
+            FOR UPDATE`,
+          [challengeParam],
+        );
+        if (!challengeRows.length) {
+          verifyOutcome = 'EXPIRED';
+          await candidateClient.query('ROLLBACK');
+          candidateClient.release();
+        } else {
+          const proof = challengeRows[0];
+          proofCreatedAt=proof.proof_created_at;
+          assertAuthenticationIntent(req, proof.auth_intent_hash);
+          const computed = createHmac('sha256', process.env.AUTH_OTP_HMAC_KEY!)
+            .update(`LOGIN:${proof.id}:${proof.identifier}:${candidateCode}`).digest('hex');
+          const actual = Buffer.from(proof.code_hash, 'hex');
+          const expected = Buffer.from(computed, 'hex');
+          if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
+            const attempts = Math.min(5, Number(proof.attempts || 0) + 1);
+            await candidateClient.query(
+              `UPDATE otp_challenges
+                  SET attempts=$2,
+                      consumed_at=CASE WHEN $2 >= 5 THEN now() ELSE consumed_at END
+                WHERE id=$1`,
+              [challengeParam, attempts],
+            );
+            await candidateClient.query('COMMIT');
+            candidateClient.release();
+            verifyOutcome = attempts >= 5 ? 'MAX' : 'INVALID';
+          } else {
+            rawId = String(proof.identifier);
+            verifyOutcome = 'OK';
+            authDbClient = candidateClient;
+          }
+        }
+      } catch (err) {
+        await candidateClient.query('ROLLBACK').catch(() => {});
+        candidateClient.release();
+        throw err;
+      }
+    } else {
+      // Legacy in-memory/Redis fixture path is restricted to nonproduction.
+      // It continues to exercise the historical tests without holding a DB
+      // transaction across a nonauthoritative development proof.
     const rawResult = await this.redis.eval(
       `local raw = redis.call('GET', KEYS[1])
        local realChallengeId = nil
@@ -281,14 +480,19 @@ export class IdentityController {
          return 'MAX'
        end
 
-       -- Hash-only validation (V01): Compute SHA-1 over salt:candidateCode
-       if not challenge.salt or not challenge.otpHash then
-         return 'EXPIRED'
-       end
-
-       local computedHash = redis.sha1hex(challenge.salt .. ':' .. ARGV[1])
-       if challenge.otpHash ~= computedHash then
-         return 'INVALID'
+       -- Production proofs use a server-secret HMAC, never an offline-searchable
+       -- six-digit SHA-1/SHA-256 digest. Compare the server-computed keyed proof
+       -- only after checking active challenge generation in this Lua operation.
+       if ARGV[3] == '1' then
+         if challenge.otpScheme ~= 'HMAC_SHA256_V1' or
+            not challenge.otpHash or challenge.otpHash ~= ARGV[2] then
+           return 'INVALID'
+         end
+       else
+         if not challenge.salt or not challenge.otpHash then return 'EXPIRED' end
+         if challenge.otpHash ~= redis.sha1hex(challenge.salt .. ':' .. ARGV[1]) then
+           return 'INVALID'
+         end
        end
 
        -- Success: Atomically consume authoritative challenge, shared attempts, and clean alias only if current
@@ -304,9 +508,10 @@ export class IdentityController {
       inputKey || aliasKey,
       aliasKey || inputKey,
       candidateCode,
+      '',
+      isProductionEnvironment() ? '1' : '0',
     );
 
-    let verifyOutcome = 'EXPIRED';
     if (typeof rawResult === 'string') {
       try {
         const parsed = JSON.parse(rawResult);
@@ -319,6 +524,14 @@ export class IdentityController {
       } catch {
         verifyOutcome = rawResult;
       }
+    }
+
+    }
+
+    if (isProductionEnvironment() && verifyOutcome !== 'OK') {
+      await recordAuthenticationEvent(this.pool, 'INTERNAL_OTP_VERIFICATION',
+        verifyOutcome === 'MAX' ? 'THROTTLED' : 'DENIED',
+        { subject: rawId || challengeParam });
     }
 
     if (verifyOutcome === 'EXPIRED') {
@@ -347,9 +560,9 @@ export class IdentityController {
       });
     }
 
-    const client = await this.pool.connect();
+    const client = authDbClient ?? await this.pool.connect();
     try {
-      await client.query('BEGIN');
+      if (!authDbClient) await client.query('BEGIN');
 
       const idType = rawId.startsWith('+91') ? 'PHONE' : 'EMAIL';
       const { rows: existingIdentities } = await client.query(
@@ -357,21 +570,102 @@ export class IdentityController {
         [idType, rawId],
       );
 
+      // An invitation is claimed only after the server-derived OTP identity
+      // has been verified. The RLS invitation claim policy requires a matching
+      // 256-bit token hash; this query also verifies the intended destination.
+      let invitation: { id: string; org_id: string; role: string } | null = null;
+      if (invitationToken) {
+        const invitationHash = createHash('sha256').update(invitationToken).digest('hex');
+        await client.query("SELECT set_config('app.invitation_hash', $1, true)", [invitationHash]);
+        const { rows } = await client.query(
+          `SELECT i.id, i.org_id, i.role FROM invitations i
+             JOIN organisations o ON o.id = i.org_id AND o.status = 'ACTIVE'
+            WHERE i.token_hash = $1 AND i.status = 'PENDING'
+              AND i.expires_at > now()
+              AND (($3 = 'EMAIL' AND i.email = $2) OR
+                   ($3 = 'PHONE' AND i.phone_e164 = $2))
+            FOR UPDATE OF i`,
+          [invitationHash, rawId, idType],
+        );
+        if (!rows.length) {
+          throw new UnauthorizedException({ code: 'INVITATION_INVALID_OR_MISMATCHED' });
+        }
+        invitation = rows[0];
+      }
+
+      const acceptInvitation = async (subjectUserId: string) => {
+        if (!invitation) return;
+        await client.query(
+          "SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)",
+          [invitation.org_id],
+        );
+        await client.query("SELECT set_config('app.current_user', $1, true)", [subjectUserId]);
+        const { rows: existing } = await client.query(
+          `SELECT id, status, role FROM memberships
+            WHERE org_id = $1 AND user_id = $2 FOR UPDATE`,
+          [invitation.org_id, subjectUserId],
+        );
+        if (existing.length && existing[0].status !== 'ACTIVE') {
+          throw new UnauthorizedException({
+            code: 'INVITATION_CANNOT_REACTIVATE_SUSPENDED_MEMBER',
+          });
+        }
+        if (existing.length && existing[0].role !== invitation.role) {
+          throw new UnauthorizedException({ code: 'INVITATION_CANNOT_CHANGE_EXISTING_MEMBER_ROLE' });
+        }
+        if (!existing.length) {
+          const allocation=await reserveActiveSeatForMembership(client,invitation.org_id);
+          if (allocation!=='RESERVED') {
+            throw new UnauthorizedException({code:allocation});
+          }
+          await client.query(
+            `INSERT INTO memberships(id,org_id,user_id,role,status,joined_at)
+             VALUES($1,$2,$3,$4,'ACTIVE',now())`,
+            [uuidv7(),invitation.org_id,subjectUserId,invitation.role],
+          );
+        }
+        const { rowCount } = await client.query(
+          `UPDATE invitations SET status='ACCEPTED'
+            WHERE id=$1 AND org_id=$2 AND status='PENDING' AND expires_at>now()`,
+          [invitation.id,invitation.org_id],
+        );
+        if (!rowCount) throw new UnauthorizedException({ code: 'INVITATION_ALREADY_CONSUMED' });
+      };
+
       let userId: string;
       let activeOrgId: string;
-      let fullName = body.signupProfile?.fullName?.trim() || 'Principal Contractor';
+      let currentRole = 'R-OWNER';
+      // Request payloads are untrusted JavaScript objects at runtime. An
+      // object/number fullName must not throw before explicit validation.
+      const proposedName = body.signupProfile?.fullName;
+      let fullName = typeof proposedName === 'string' && proposedName.trim()
+        ? proposedName.trim() : 'Principal Contractor';
 
       if (existingIdentities.length > 0) {
         userId = existingIdentities[0].user_id;
+        const { rows: eligibleUsers } = await client.query(
+          `SELECT id,($2::timestamptz IS NULL OR $2::timestamptz>auth_proof_valid_after) AS proof_is_current
+             FROM users WHERE id = $1 AND status = 'ACTIVE' FOR NO KEY UPDATE`,
+          [userId,proofCreatedAt??null],
+        );
+        if (proofCreatedAt && eligibleUsers[0]?.proof_is_current===false) {
+          throw new UnauthorizedException({code:'OTP_REISSUE_REQUIRED_AFTER_RECOVERY'});
+        }
+        if (!eligibleUsers.length) {
+          throw new UnauthorizedException({ code: 'ACCOUNT_UNAVAILABLE', detail: 'This account is not eligible to sign in.' });
+        }
         await client.query(`SELECT set_config('app.current_user', $1, true)`, [userId]);
         await client.query(
           `UPDATE user_identities SET verified_at = COALESCE(verified_at, now()) WHERE type = $1 AND value = $2`,
           [idType, rawId],
         );
         await client.query(`UPDATE users SET last_login_at = now() WHERE id = $1`, [userId]);
+        await acceptInvitation(userId);
 
         const { rows: memberships } = await client.query(
-          `SELECT org_id FROM memberships WHERE user_id = $1 AND status = 'ACTIVE' ORDER BY joined_at DESC LIMIT 1`,
+          `SELECT m.org_id, m.role FROM memberships m JOIN organisations o ON o.id = m.org_id
+            WHERE m.user_id = $1 AND m.status = 'ACTIVE' AND o.status = 'ACTIVE'
+            ORDER BY m.joined_at DESC LIMIT 1 FOR SHARE OF m, o`,
           [userId],
         );
         if (memberships.length === 0) {
@@ -381,16 +675,48 @@ export class IdentityController {
             detail: 'Your account has no active organisation memberships.',
           });
         }
-        activeOrgId = memberships[0].org_id;
+        activeOrgId = invitation?.org_id || memberships[0].org_id;
+        currentRole = invitation?.role || memberships[0].role;
 
         const { rows: userRows } = await client.query(`SELECT name FROM users WHERE id = $1`, [userId]);
         if (userRows.length > 0 && userRows[0].name) {
           fullName = userRows[0].name;
         }
+      } else if (invitation) {
+        // Invited verified identity joins the intended existing organisation.
+        // An invitation must not silently create an unrelated owner company.
+        userId = uuidv7();
+        activeOrgId = invitation.org_id;
+        currentRole = invitation.role;
+        const suppliedName = body.signupProfile?.fullName;
+        fullName = isSafeIdentityName(suppliedName,120)
+          ? suppliedName.trim() : 'Invited team member';
+        await client.query("SELECT set_config('app.current_user',$1,true)", [userId]);
+        await client.query(
+          `INSERT INTO users(id,name,status,last_login_at)
+           VALUES($1,$2,'ACTIVE',now())`,
+          [userId,fullName],
+        );
+        await client.query(
+          `INSERT INTO user_identities(id,user_id,type,value,verified_at)
+           VALUES($1,$2,$3,$4,now())`,
+          [uuidv7(),userId,idType,rawId],
+        );
+        await acceptInvitation(userId);
       } else {
         // New Org + Owner Registration (WF-01 / FR-ORG-001)
-        const orgName = body.signupProfile?.orgName?.trim() || 'Apex MEP Engineers';
-        const state = body.signupProfile?.state?.trim() || 'MH';
+        const profile = body.signupProfile;
+        if (!profile || !isSafeIdentityName(profile.fullName,120) ||
+            !isSafeIdentityName(profile.orgName,200) || typeof profile.state !== 'string' ||
+            !/^[A-Z]{2}$/.test(profile.state.trim().toUpperCase())) {
+          throw new UnprocessableEntityException({
+            code: 'SIGNUP_PROFILE_REQUIRED',
+            detail: 'New organisations require an explicit valid name, company name and Indian state.',
+          });
+        }
+        fullName = profile.fullName.trim();
+        const orgName = profile.orgName.trim();
+        const state = profile.state.trim().toUpperCase();
 
         userId = uuidv7();
         activeOrgId = uuidv7();
@@ -425,15 +751,16 @@ export class IdentityController {
 
       // Issue opaque session token + CSRF token (10 §1 & FR-IAM-003: 30-day idle timeout)
       const rawSessionToken = randomBytes(32).toString('hex');
-      const rawCsrfToken = randomBytes(24).toString('hex');
+      const authGeneration = uuidv7();
+      const rawCsrfToken = deriveSessionCsrf(rawSessionToken, authGeneration);
       const sessionTokenHash = createHash('sha256').update(rawSessionToken).digest('hex');
       const csrfTokenHash = createHash('sha256').update(rawCsrfToken).digest('hex');
       const sessionId = uuidv7();
 
       await client.query(
         `INSERT INTO sessions
-          (id, user_id, token_hash, csrf_token_hash, active_org_id, expires_at, ip, user_agent)
-         VALUES ($1, $2, $3, $4, $5, now() + interval '30 days', $6, $7)`,
+          (id, user_id, token_hash, csrf_token_hash, active_org_id, expires_at, ip, user_agent, auth_generation)
+         VALUES ($1, $2, $3, $4, $5, now() + interval '30 days', $6, $7, $8)`,
         [
           sessionId,
           userId,
@@ -441,7 +768,8 @@ export class IdentityController {
           csrfTokenHash,
           activeOrgId,
           req?.ip || '0.0.0.0',
-          req?.headers?.['user-agent'] || 'unknown',
+          safeAuthenticationDeviceLabel(req?.headers?.['user-agent']),
+          authGeneration,
         ],
       );
 
@@ -453,26 +781,50 @@ export class IdentityController {
           activeOrgId,
           userId,
           req?.ip || '0.0.0.0',
-          req?.headers?.['user-agent'] || 'unknown',
-          (req?.headers?.['x-request-id'] as string) || 'req_auth',
+          safeAuthenticationDeviceLabel(req?.headers?.['user-agent']),
+          requestIdFor(req),
         ],
       );
 
+      if (authDbClient) {
+        const { rowCount } = await client.query(
+          `UPDATE otp_challenges SET consumed_at=now()
+            WHERE id=$1 AND purpose='LOGIN'
+              AND consumed_at IS NULL AND delivery_status='SENT' AND expires_at>now()`,
+          [challengeParam],
+        );
+        if (!rowCount) throw new UnauthorizedException({ code: 'OTP_EXPIRED' });
+      }
+
+      await client.query(
+        `INSERT INTO auth_security_events
+          (id,actor_user_id,org_id,session_id,event_type,outcome)
+         VALUES (gen_random_uuid(),$1,$2,$3,'INTERNAL_OTP_LOGIN','SUCCESS')`,
+        [userId,activeOrgId,sessionId],
+      );
       await client.query('COMMIT');
 
       const isProductionLike = process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging';
+      res.clearCookie(AUTH_INTENT_COOKIE, {
+        httpOnly: true, secure: isProductionLike, sameSite: 'strict', path: '/',
+      });
       res.cookie('tc_session', rawSessionToken, {
         httpOnly: true,
         secure: isProductionLike,
         sameSite: 'lax',
         path: '/',
-        maxAge: 30 * 24 * 60 * 60 * 1000,
+        // Browser credential may persist 90 days, but server independently
+        // enforces 30-day inactivity and a hard 90-day absolute expiry.
+        maxAge: 90 * 24 * 60 * 60 * 1000,
       });
 
       return {
         userId,
         activeOrgId,
         csrfToken: rawCsrfToken,
+        authGeneration,
+        mfaRequired: currentRole === 'R-OWNER' || currentRole === 'R-ADMIN',
+        mfaVerified: false,
         sessionToken: isProductionLike ? undefined : rawSessionToken,
         user: {
           id: userId,
@@ -493,6 +845,33 @@ export class IdentityController {
    * API-003: GET /api/v1/auth/me
    * Returns current identity and active organisation only (10 §2.1 Step 4).
    */
+  /**
+   * Restore the generation-bound CSRF token from the HttpOnly session cookie.
+   * This is a no-store same-origin authenticated GET; it does not disclose
+   * the raw bearer token and does not mutate the server session.
+   */
+  @Get('session/bootstrap')
+  @UseGuards(SessionCsrfGuard)
+  async bootstrapSession(@Req() req: AuthenticatedRequest) {
+    const raw = (req as any).cookies?.tc_session;
+    if (typeof raw !== 'string' || raw.length < 32) {
+      throw new UnauthorizedException({ code: 'SESSION_COOKIE_REQUIRED' });
+    }
+    const csrfToken = deriveSessionCsrf(raw, req.auth.authGeneration);
+    const computedHash = createHash('sha256').update(csrfToken).digest('hex');
+    // Legacy pre-generation sessions require reauthentication rather than
+    // silently resetting an arbitrary old CSRF value.
+    const { rows } = await this.pool.query(
+      `SELECT csrf_token_hash FROM sessions
+        WHERE id = $1 AND revoked_at IS NULL AND expires_at > now()`,
+      [req.auth.sessionId],
+    );
+    if (!rows.length || rows[0].csrf_token_hash !== computedHash) {
+      throw new UnauthorizedException({ code: 'SESSION_REAUTHENTICATION_REQUIRED' });
+    }
+    return { csrfToken, authGeneration: req.auth.authGeneration };
+  }
+
   @Get('me')
   @UseGuards(SessionCsrfGuard)
   async getMe(@Req() req: AuthenticatedRequest) {
@@ -517,6 +896,9 @@ export class IdentityController {
       activeOrg: rows[0] ?? null,
       orgRole: req.auth.orgRole,
       org_role: req.auth.orgRole,
+      authGeneration: req.auth.authGeneration,
+      mfaRequired: req.auth.orgRole === 'R-OWNER' || req.auth.orgRole === 'R-ADMIN',
+      mfaVerified: req.auth.mfaVerified,
     };
   }
 
@@ -542,7 +924,7 @@ export class IdentityController {
       const { rows } = await client.query(
         `SELECT o.id, o.legal_name, o.display_name, m.role
            FROM memberships m
-           JOIN organisations o ON o.id = m.org_id
+           JOIN organisations o ON o.id = m.org_id AND o.status = 'ACTIVE'
           WHERE m.user_id = $1 AND m.status = 'ACTIVE'`,
         [req.auth.userId],
       );
@@ -566,17 +948,35 @@ export class IdentityController {
   async switchActiveOrg(
     @Body() body: { targetOrgId: string },
     @Req() req: AuthenticatedRequest,
+    @Res({ passthrough: true }) res?: Response,
   ) {
     if ((req as any).userContext?.actorType === 'GUEST') {
       throw new UnauthorizedException('GUEST_ORGANISATION_SWITCH_DENIED');
     }
-    if (!body?.targetOrgId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.targetOrgId)) {
+    // G01-R2: JSON/DTO types are not runtime validation. RegExp.test()
+    // coerces a singleton array to text; pg encodes that array as a different
+    // type, turning a malformed request into an internal database error.
+    if (typeof body?.targetOrgId !== 'string' ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.targetOrgId)) {
       throw new UnprocessableEntityException({ code: 'INVALID_TARGET_ORGANISATION' });
     }
 
+    // G01-R1: a valid bearer-only session can pass SessionCsrfGuard, but an
+    // organisation switch must rotate an HttpOnly cookie. Reject before pool
+    // acquisition. All work after connect, including token generation, stays
+    // in the protected try/finally so no failing branch can strand a client.
+    const rawToken = (req as any).cookies?.tc_session;
+    if (typeof rawToken !== 'string' || rawToken.length < 32) {
+      throw new UnauthorizedException({ code: 'SESSION_COOKIE_REQUIRED' });
+    }
+    if (isProductionEnvironment() && !res) {
+      throw new UnauthorizedException({ code: 'SESSION_ROTATION_UNAVAILABLE' });
+    }
     const client = await this.pool.connect();
-    const csrfToken = randomBytes(32).toString('hex');
     try {
+      const authGeneration = uuidv7();
+      const rotatedToken = randomBytes(32).toString('hex');
+      const csrfToken = deriveSessionCsrf(rotatedToken, authGeneration);
       await client.query('BEGIN');
       await client.query(
         `SELECT set_config('app.current_org', $1, true),
@@ -588,7 +988,7 @@ export class IdentityController {
         `SELECT m.id FROM memberships m
           JOIN organisations o ON o.id = m.org_id AND o.status = 'ACTIVE'
           WHERE m.org_id = $1 AND m.user_id = $2 AND m.status = 'ACTIVE'
-          LIMIT 1`,
+          LIMIT 1 FOR SHARE OF m, o`,
         [body.targetOrgId, req.auth.userId],
       );
       if (!memberships.length) {
@@ -601,19 +1001,129 @@ export class IdentityController {
 
       const { rowCount } = await client.query(
         `UPDATE sessions
-            SET active_org_id = $1, csrf_token_hash = $2
-          WHERE id = $3 AND user_id = $4 AND revoked_at IS NULL AND expires_at > now()`,
-        [body.targetOrgId, createHash('sha256').update(csrfToken).digest('hex'), req.auth.sessionId, req.auth.userId],
+            SET active_org_id = $1, csrf_token_hash = $2, auth_generation = $5,
+                token_hash = $6, mfa_verified=false, mfa_verified_at=NULL
+          WHERE id = $3 AND user_id = $4 AND revoked_at IS NULL AND expires_at > now()
+            AND token_hash=$7 AND auth_generation=$8`,
+        [body.targetOrgId, createHash('sha256').update(csrfToken).digest('hex'),
+          req.auth.sessionId, req.auth.userId, authGeneration,
+          createHash('sha256').update(rotatedToken).digest('hex'),
+          createHash('sha256').update(rawToken).digest('hex'), req.auth.authGeneration],
       );
       if (!rowCount) throw new UnauthorizedException('SESSION_EXPIRED');
+      await client.query(`INSERT INTO auth_security_events
+        (id,actor_user_id,org_id,session_id,event_type,outcome)
+        VALUES(gen_random_uuid(),$1,$2,$3,'SESSION_ORGANISATION_SWITCHED','SUCCESS')`,
+        [req.auth.userId,body.targetOrgId,req.auth.sessionId]);
       await client.query('COMMIT');
-      return { activeOrgId: body.targetOrgId, csrfToken };
+      res?.cookie('tc_session', rotatedToken, {
+        httpOnly: true, secure: isProductionEnvironment(), sameSite: 'lax',
+        path: '/', maxAge: 90 * 24 * 3600 * 1000,
+      });
+      return { activeOrgId: body.targetOrgId, csrfToken, authGeneration };
     } catch (err) {
       await client.query('ROLLBACK').catch(() => {});
       throw err;
     } finally {
       client.release();
     }
+  }
+
+  /** Current-device inventory never exposes bearer credentials or CSRF. */
+  @Get('sessions')
+  @UseGuards(SessionCsrfGuard)
+  async listOwnSessions(@Req() req: AuthenticatedRequest) {
+    const { rows } = await this.pool.query(
+      `SELECT id, created_at, last_activity_at, expires_at,
+              user_agent, (id = $2) AS is_current
+         FROM sessions
+        WHERE user_id = $1 AND revoked_at IS NULL
+          AND expires_at > now() AND absolute_expires_at > now()
+        ORDER BY created_at DESC LIMIT 100`,
+      [req.auth.userId, req.auth.sessionId],
+    );
+    return { sessions: rows };
+  }
+
+  /**
+   * Revoke one of the authenticated user's device sessions. Session IDs are
+   * never credentials: the account identity comes exclusively from the
+   * authenticated cookie, and a foreign/unknown device receives the same 404.
+   * The decision and redacted security event commit in one SQL statement.
+   */
+  @Post('sessions/:sessionId/revoke')
+  @UseGuards(SessionCsrfGuard)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async revokeDeviceSession(
+    @Param('sessionId') sessionId: string,
+    @Req() req: AuthenticatedRequest,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    if (typeof sessionId !== 'string' ||
+        !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(sessionId)) {
+      throw new NotFoundException({code:'SESSION_NOT_FOUND'});
+    }
+    // The security ledger is append-only and not generally readable by the
+    // runtime role. Never require INSERT RETURNING on it: RETURNING triggers
+    // SELECT RLS, turning a legitimate revocation into a policy error.
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows } = await client.query(
+        `UPDATE sessions SET revoked_at=now(),mfa_verified=false,
+            mfa_verified_at=NULL
+           WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL
+           RETURNING id,user_id,active_org_id`,
+        [sessionId,req.auth.userId],
+      );
+      if (!rows.length) throw new NotFoundException({code:'SESSION_NOT_FOUND'});
+      await client.query(
+        `INSERT INTO auth_security_events
+          (id,actor_user_id,org_id,session_id,event_type,outcome)
+         VALUES (gen_random_uuid(),$1,$2,$3,'DEVICE_SESSION_REVOKED','SUCCESS')`,
+        [rows[0].user_id,rows[0].active_org_id,rows[0].id],
+      );
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw error;
+    } finally {
+      client.release();
+    }
+    if (sessionId === req.auth.sessionId) {
+      res.clearCookie('tc_session',{
+        httpOnly:true,secure:isProductionEnvironment(),sameSite:'lax',path:'/',
+      });
+    }
+    return undefined;
+  }
+
+  /**
+   * Emergency revocation is intentionally available without a new MFA step.
+   * Revocations and redacted events commit atomically.
+   */
+  @Post('sessions/revoke-all')
+  @UseGuards(SessionCsrfGuard)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async revokeAllSessions(@Req() req: AuthenticatedRequest, @Res({ passthrough: true }) res: Response) {
+    await this.pool.query(
+      `WITH revoked AS (
+         UPDATE sessions SET revoked_at = now()
+         WHERE user_id = $1 AND revoked_at IS NULL
+         RETURNING id, user_id, active_org_id
+       )
+       INSERT INTO auth_security_events
+         (id, actor_user_id, org_id, session_id, event_type, outcome)
+       SELECT gen_random_uuid(), user_id, active_org_id, id,
+              'SESSION_REVOKED_ALL', 'SUCCESS' FROM revoked`,
+      [req.auth.userId],
+    );
+    res.clearCookie('tc_session', {
+      httpOnly: true,
+      secure: isProductionEnvironment(),
+      sameSite: 'lax',
+      path: '/',
+    });
   }
 
   /**
@@ -630,7 +1140,15 @@ export class IdentityController {
     if (rawSessionToken && typeof rawSessionToken === 'string') {
       const tokenHash = createHash('sha256').update(rawSessionToken).digest('hex');
       await this.pool.query(
-        `UPDATE sessions SET revoked_at = now() WHERE token_hash = $1 AND revoked_at IS NULL`,
+        `WITH revoked AS (
+           UPDATE sessions SET revoked_at = now()
+           WHERE token_hash = $1 AND revoked_at IS NULL
+           RETURNING id, user_id, active_org_id
+         )
+         INSERT INTO auth_security_events
+           (id, actor_user_id, org_id, session_id, event_type, outcome)
+         SELECT gen_random_uuid(), user_id, active_org_id, id,
+                'SESSION_REVOKED', 'SUCCESS' FROM revoked`,
         [tokenHash],
       );
     }

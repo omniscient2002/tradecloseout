@@ -1,15 +1,18 @@
 import { Pool } from 'pg';
+import { openDisposableDatabaseForSuite } from '../../../packages/db/test/helpers/disposable-database';
 import assert from 'assert';
 import { uuidv7 } from 'uuidv7';
 import { withTenantTransaction } from '@tradecloseout/db';
 import { isValidIndianGstin } from '@tradecloseout/shared';
 
-const appPool = new Pool({
+let appPool = new Pool({
   connectionString: process.env.APP_DATABASE_URL || 'postgres://tc_app:tc_app_pass@127.0.0.1:5432/tradecloseout',
 });
-const adminPool = new Pool({
+let adminPool = new Pool({
   connectionString: process.env.MIGRATOR_DATABASE_URL || 'postgres://postgres:postgres@127.0.0.1:5432/tradecloseout',
 });
+
+let fixture: Awaited<ReturnType<typeof openDisposableDatabaseForSuite>>;
 
 const orgA = '0192e000-0000-7000-8000-000000000001';
 const ownerA = '0192e000-0000-7000-8000-000000000101';
@@ -43,14 +46,21 @@ async function setupTestData() {
 const isJest = typeof describe !== 'undefined';
 
 if (isJest) {
+  jest.setTimeout(180_000);
   describe('TradeCloseout Database RLS & Integrity Suite (05 §12)', () => {
     beforeAll(async () => {
+      // Legacy test cases operate on an isolated migrated database, never
+      // an existing local database whose rows may belong to other work.
+      await appPool.end();
+      await adminPool.end();
+      fixture = await openDisposableDatabaseForSuite();
+      appPool = fixture.app;
+      adminPool = fixture.admin;
       await setupTestData();
     });
 
     afterAll(async () => {
-      await appPool.end();
-      await adminPool.end();
+      await fixture?.close();
     });
 
     it('TC-SEC-01 (AUD-035): Unset app.current_org MUST fail closed with 0 rows', async () => {

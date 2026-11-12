@@ -1,5 +1,28 @@
 import { z } from 'zod';
 
+/** Supported auth email policy: ASCII dot-atom local part and IDNA DNS domain. */
+export function canonicalAuthenticationEmail(raw:unknown):string|null {
+  if(typeof raw!=='string' || raw.length>320 || /[\p{Cc}\p{Cf}\p{Cs}]/u.test(raw))return null;
+  const value=raw.trim().normalize('NFC');
+  const parts=value.split('@');if(parts.length!==2)return null;
+  const [local,domain]=parts;
+  if(!local || local.length>64 || !/^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+$/.test(local) ||
+    local.startsWith('.') || local.endsWith('.') || local.includes('..') || /[\s/%:?#\\]/u.test(domain))return null;
+  let ascii:string;try{ascii=new URL('https://'+domain).hostname;}catch{return null;}
+  const labels=ascii.split('.');
+  if(labels.length<2 || labels.some(label=>!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(label)))return null;
+  const result=local.toLowerCase()+'@'+ascii.toLowerCase();return result.length<=254?result:null;
+}
+
+export function canonicalAuthenticationPhone(raw:unknown):string|null {
+  if(typeof raw!=='string' || raw.length>32 || /[\p{Cc}\p{Cf}\p{Cs}]/u.test(raw))return null;
+  const value=raw.trim();return /^\+91[6-9][0-9]{9}$/.test(value)?value:null;
+}
+
+export function isSafeIdentityName(raw:unknown,max:number):raw is string {
+  return typeof raw==='string' && raw.trim().length>=2 && raw.trim().length<=max && !/[\p{Cc}\p{Cs}]/u.test(raw);
+}
+
 const GSTIN_CHARS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
 /**

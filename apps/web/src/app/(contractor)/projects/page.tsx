@@ -14,29 +14,34 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { apiFetch, ApiProblemError } from "../../../lib/api-client";
+import { parseInrToPaise } from "@tradecloseout/shared";
 
 interface ProjectItem {
   id: string;
   code: string;
   name: string;
-  status: "DRAFT" | "ACTIVE" | "SUSPENDED" | "HANDOVER" | "CLOSED";
-  clientName: string;
-  mcName: string;
-  pmcName: string;
-  targetHandoverDate: string;
-  contractValuePaise: string;
-  retentionAtRiskPaise: string;
-  approvedCount: number;
-  applicableCount: number;
+  status: "DRAFT" | "ACTIVE" | "SUSPENDED" | "HANDOVER" | "CLOSED" | "CANCELLED" | "ARCHIVED";
+  clientName?: string | null;
+  client_name?: string | null;
+  mcName?: string | null;
+  pmcName?: string | null;
+  targetHandoverDate?: string | null;
+  target_handover_date?: string | null;
+  contractValuePaise?: string | null;
+  contract_value_paise?: string | null;
+  retentionAtRiskPaise?: string | null;
+  approvedCount?: number;
+  applicableCount?: number;
 }
 
-function formatInr(paise: string): string {
-  const rupees = Number(BigInt(paise || "0")) / 100;
-  return new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 0,
-  }).format(rupees);
+function formatInr(paise: string | null | undefined): string {
+  if (paise == null || !/^[0-9]+$/.test(paise)) return "Not available";
+  try {
+    const exact = BigInt(paise);
+    return `₹${(exact / 100n).toLocaleString("en-IN")}.${(exact % 100n).toString().padStart(2, "0")}`;
+  } catch {
+    return "Not available";
+  }
 }
 
 function ProjectsDirectoryContent() {
@@ -66,15 +71,14 @@ function ProjectsDirectoryContent() {
     setLoading(true);
     try {
       const data = await apiFetch<any>("/api/v1/projects");
-      const list = Array.isArray(data) ? data : data?.projects || data?.data || [];
+      const list = Array.isArray(data) ? data : data?.projects ?? data?.data;
+      if (!Array.isArray(list)) throw new Error("INVALID_PROJECT_LIST");
       setProjects(list);
-    } catch (err: any) {
-      try {
-        const d = await apiFetch<any>("/api/v1/orgs/current/dashboard");
-        setProjects(d?.projects || []);
-      } catch (e) {
-        console.error(e);
-      }
+      setError(null);
+    } catch (err: unknown) {
+      setProjects([]);
+      setError(err instanceof ApiProblemError
+        ? err.message : "Could not load projects. Retry to refresh the directory.");
     } finally {
       setLoading(false);
     }
@@ -83,7 +87,7 @@ function ProjectsDirectoryContent() {
   useEffect(() => {
     fetchProjects();
     apiFetch<any[]>("/api/v1/parties")
-      .then((data) => setPartiesList(data || []))
+      .then((data) => setPartiesList(Array.isArray(data) ? data : []))
       .catch(() => {});
   }, [fetchProjects]);
 
@@ -97,7 +101,7 @@ function ProjectsDirectoryContent() {
         body: JSON.stringify({
           code: code.trim().toUpperCase(),
           name: name.trim(),
-          contractValuePaise: BigInt(Math.round(Number(contractValue || "0") * 100)).toString(),
+          contractValuePaise: parseInrToPaise(contractValue),
           targetHandoverDate: targetDate || undefined,
           clientPartyId: clientPartyId || undefined,
           mcPartyId: mcPartyId || undefined,
@@ -107,7 +111,12 @@ function ProjectsDirectoryContent() {
       setCreateModalOpen(false);
       router.push(`/projects/${res.projectId}`);
     } catch (err: any) {
-      setError(err instanceof ApiProblemError ? err.message : "Failed to create project.");
+      setError(err instanceof ApiProblemError ? err.message
+        : err instanceof Error && err.message === "INR_AMOUNT_OUT_OF_RANGE"
+          ? "Contract value is too large."
+          : err instanceof Error && err.message === "INVALID_INR_AMOUNT"
+            ? "Enter a nonnegative INR amount with at most two decimal places."
+            : "Failed to create project.");
     } finally {
       setCreating(false);
     }
@@ -115,9 +124,9 @@ function ProjectsDirectoryContent() {
 
   const filtered = projects.filter((p) => {
     const matchSearch =
-      p.code.toLowerCase().includes(search.toLowerCase()) ||
-      p.name.toLowerCase().includes(search.toLowerCase()) ||
-      p.clientName.toLowerCase().includes(search.toLowerCase());
+      (p.code ?? "").toLowerCase().includes(search.toLowerCase()) ||
+      (p.name ?? "").toLowerCase().includes(search.toLowerCase()) ||
+      (p.clientName ?? p.client_name ?? "").toLowerCase().includes(search.toLowerCase());
     const matchStatus = statusFilter === "ALL" || p.status === statusFilter;
     return matchSearch && matchStatus;
   });
@@ -128,7 +137,7 @@ function ProjectsDirectoryContent() {
         <div>
           <h1 className="text-xl font-bold text-slate-900">Projects Portfolio</h1>
           <p className="text-xs text-slate-500">
-            All commercial HVAC and MEP projects contracted under Deccan EnviroTech MEP Pvt Ltd.
+            Manage projects and track their current lifecycle status.
           </p>
         </div>
         <button
@@ -139,6 +148,16 @@ function ProjectsDirectoryContent() {
           <span>New Project</span>
         </button>
       </div>
+
+      {error && !createModalOpen && (
+        <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800">
+          <span>{error}</span>
+          <button type="button" onClick={fetchProjects}
+            className="inline-flex items-center gap-1 rounded border border-red-300 px-3 py-1.5 font-semibold hover:bg-red-100">
+            <RefreshCw className="h-3.5 w-3.5" /> Retry
+          </button>
+        </div>
+      )}
 
       {/* Filter and Search Bar */}
       <div className="flex flex-col sm:flex-row items-center gap-3 bg-white p-3 rounded-lg border border-slate-200">
@@ -164,6 +183,9 @@ function ProjectsDirectoryContent() {
             <option value="HANDOVER">HANDOVER</option>
             <option value="CLOSED">CLOSED</option>
             <option value="DRAFT">DRAFT</option>
+            <option value="SUSPENDED">SUSPENDED</option>
+            <option value="CANCELLED">CANCELLED</option>
+            <option value="ARCHIVED">ARCHIVED</option>
           </select>
         </div>
       </div>
@@ -185,8 +207,8 @@ function ProjectsDirectoryContent() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map((proj) => {
             const pct =
-              proj.applicableCount > 0
-                ? Math.round((proj.approvedCount / proj.applicableCount) * 100)
+              (proj.applicableCount ?? 0) > 0
+                ? Math.round(((proj.approvedCount ?? 0) / (proj.applicableCount ?? 1)) * 100)
                 : 0;
 
             return (
@@ -220,19 +242,19 @@ function ProjectsDirectoryContent() {
                   </h3>
 
                   <div className="mt-2 space-y-1 text-xs text-slate-600">
-                    <div>Client: <strong className="text-slate-800">{proj.clientName}</strong></div>
-                    <div>General Contractor: <strong className="text-slate-800">{proj.mcName}</strong></div>
-                    <div>PMC: <strong className="text-slate-800">{proj.pmcName}</strong></div>
+                    <div>Client: <strong className="text-slate-800">{proj.clientName ?? proj.client_name ?? 'Not assigned'}</strong></div>
+                    <div>General Contractor: <strong className="text-slate-800">{proj.mcName ?? 'Not assigned'}</strong></div>
+                    <div>PMC: <strong className="text-slate-800">{proj.pmcName ?? 'Not assigned'}</strong></div>
                   </div>
                 </div>
 
                 <div className="mt-4 pt-3 border-t border-slate-100 space-y-2">
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-slate-500">Closeout Completion</span>
-                    <span className="font-mono font-bold text-slate-800">{pct}% ({proj.approvedCount}/{proj.applicableCount})</span>
+                    <span className="font-mono font-bold text-slate-800">{proj.applicableCount == null ? 'Not available' : `${pct}% (${proj.approvedCount ?? 0}/${proj.applicableCount})`}</span>
                   </div>
                   <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                    <div style={{ width: `${pct}%` }} className="h-full bg-emerald-600 rounded-full" />
+                    <div style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} className="h-full bg-emerald-600 rounded-full" />
                   </div>
                   <div className="flex items-center justify-between pt-1 text-[11px]">
                     <span className="font-mono text-slate-600">Retention: <strong>{formatInr(proj.retentionAtRiskPaise)}</strong></span>
@@ -293,7 +315,8 @@ function ProjectsDirectoryContent() {
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Base Contract Value (₹ INR)</label>
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   required
                   value={contractValue}
                   onChange={(e) => setContractValue(e.target.value)}

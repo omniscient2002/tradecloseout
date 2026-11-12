@@ -81,6 +81,15 @@ describe('Production Re-Audit Remediation Suite (PROD-001..PROD-018)', () => {
       expect(allowedResult).toBeDefined();
       expect(allowedResult.id).toBe(allowedProjectId);
 
+      // An absent project binding on a guest grant is not a license to
+      // enumerate arbitrary tenant projects, even through direct service use.
+      await expect(
+        projectsService.getProject({ ...guestCtx, guestProjectId: undefined }, allowedProjectId),
+      ).rejects.toThrow(NotFoundException);
+      await expect(
+        projectsService.getProjectDashboard({ ...guestCtx, guestProjectId: undefined }, allowedProjectId),
+      ).rejects.toThrow(NotFoundException);
+
       // 2. Guest querying an unpermitted project throws NotFoundException
       await expect(
         projectsService.getProject(guestCtx, forbiddenProjectId),
@@ -407,6 +416,12 @@ describe('Production Re-Audit Remediation Suite (PROD-001..PROD-018)', () => {
 
       const mockClient: any = {
         query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
+          if (sql.includes('SELECT p.client_party_id,p.consultant_party_id')) {
+            return { rows: [{
+              project_status:'ACTIVE',party_status:'ACTIVE',
+              client_party_id:partyId,consultant_party_id:partyId,
+            }] };
+          }
           if (sql.includes('INSERT INTO guest_grants')) {
             insertedParams = params;
             return {
@@ -433,6 +448,7 @@ describe('Production Re-Audit Remediation Suite (PROD-001..PROD-018)', () => {
 
       const result = await partiesService.createGuestGrant(ctx, projectId, {
         partyId,
+        email: 'supplier@g01.example',
       });
 
       expect(result.grantId).toBeDefined();
@@ -449,6 +465,12 @@ describe('Production Re-Audit Remediation Suite (PROD-001..PROD-018)', () => {
 
       const mockClient: any = {
         query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
+          if (sql.includes('SELECT p.client_party_id,p.consultant_party_id')) {
+            return { rows: [{
+              project_status:'ACTIVE',party_status:'ACTIVE',
+              client_party_id:partyId,consultant_party_id:partyId,
+            }] };
+          }
           if (sql.includes('INSERT INTO guest_grants')) {
             insertedParams = params;
             return {
@@ -476,6 +498,7 @@ describe('Production Re-Audit Remediation Suite (PROD-001..PROD-018)', () => {
       const result = await partiesService.createGuestGrant(ctx, projectId, {
         partyId,
         grantType: 'CONSULTANT',
+        email: 'consultant@g01.example',
       });
 
       expect(insertedParams[4]).toBe('CONSULTANT_REVIEW');
@@ -492,6 +515,7 @@ describe('Production Re-Audit Remediation Suite (PROD-001..PROD-018)', () => {
         partiesService.createGuestGrant(ctx, uuidv7(), {
           partyId: uuidv7(),
           grantType: 'CLIENT',
+          email: 'client@g01.example',
           role: 'R-OWNER',
         }),
       ).rejects.toThrow(BadRequestException);
@@ -506,6 +530,7 @@ describe('Production Re-Audit Remediation Suite (PROD-001..PROD-018)', () => {
         partiesService.createGuestGrant(ctx, uuidv7(), {
           partyId: uuidv7(),
           grantType: 'CLIENT',
+          email: 'client@g01.example',
           capabilities: ['org.manage'],
         }),
       ).rejects.toThrow(BadRequestException);
@@ -520,6 +545,7 @@ describe('Production Re-Audit Remediation Suite (PROD-001..PROD-018)', () => {
         partiesService.createGuestGrant(ctx, uuidv7(), {
           partyId: uuidv7(),
           grantType: 'CLIENT',
+          email: 'client@g01.example',
         }),
       ).rejects.toThrow(ForbiddenException);
     });
@@ -686,6 +712,11 @@ describe('Production Re-Audit Remediation Suite (PROD-001..PROD-018)', () => {
 
       const mockClient: any = {
         query: jest.fn().mockImplementation(async (sql: string) => {
+          // Current financial policy checks the LIVE organisation membership,
+          // not only the caller-supplied orgRole claim.
+          if (sql.includes('FROM memberships')) {
+            return { rows: [{ role: 'R-OWNER' }] };
+          }
           if (sql.includes('FROM projects p')) {
             return {
               rows: [

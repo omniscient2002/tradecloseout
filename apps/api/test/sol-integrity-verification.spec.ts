@@ -26,8 +26,14 @@ describe('Sol Integrity & Audit Invariants Suite', () => {
       const mockClient = {
         query: jest.fn(async (sql: string) => {
           executedQueries.push(sql);
-          if (sql.includes('SELECT uc.value AS current_storage')) {
-            return { rows: [] };
+          if (sql.includes("maxStorageBytes' AS max_storage_bytes")) {
+            return { rows: [{ max_storage_bytes: '1048576' }] };
+          }
+          if (sql.includes("metric='STORAGE_BYTES'") && sql.includes('FOR UPDATE')) {
+            return { rows: [{ value: '0' }] };
+          }
+          if (sql.includes('SUM(size_bytes)')) {
+            return { rows: [{ reserved_bytes: '0' }] };
           }
           if (sql.includes('SELECT id, doc_type_key FROM documents WHERE')) {
             return { rows: [{ id: existingDocId, doc_type_key: 'DT-001' }] };
@@ -145,7 +151,7 @@ describe('Sol Integrity & Audit Invariants Suite', () => {
   });
 
   describe('4. External notifications stored as QUEUED without fake SENT (TC-F017, SOL A1(b))', () => {
-    it('sets status to QUEUED and sent_at to null for SMS, WHATSAPP and EMAIL', async () => {
+    it('rejects unapproved external messages and delivers addressed in-app notifications', async () => {
       let insertParams: any[] = [];
       const mockClient = {
         query: jest.fn(async (sql: string, params: any[]) => {
@@ -161,17 +167,16 @@ describe('Sol Integrity & Audit Invariants Suite', () => {
       const mockDb = new TenantDbService({ connect: jest.fn().mockResolvedValue(mockClient) } as any);
       const service = new NotificationsService(mockDb);
 
-      const smsResult = await service.createNotification(actor, {
+      // Untrusted clients may not queue arbitrary SMS/email content.
+      await expect(service.createNotification(actor, {
         channel: 'SMS',
         eventKey: 'TEST_EVENT',
         payload: { text: 'Hello' },
         dedupKey: 'dedup-1',
+      })).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'EXTERNAL_NOTIFICATION_TEMPLATES_REQUIRED' }),
       });
-
-      expect(smsResult.notification.status).toBe('QUEUED');
-      expect(smsResult.notification.sent_at).toBeNull();
-      expect(insertParams[7]).toBe('QUEUED');
-      expect(insertParams[9]).toBeNull();
+      expect(insertParams).toHaveLength(0);
 
       const inAppResult = await service.createNotification(actor, {
         channel: 'IN_APP',

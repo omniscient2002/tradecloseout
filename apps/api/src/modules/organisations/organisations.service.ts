@@ -7,13 +7,17 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
+  ServiceUnavailableException,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { Pool, PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { randomBytes, createHash } from 'crypto';
 import { withTenantTransaction, TenantActorContext, DomainOutboxEvent } from '@tradecloseout/db';
-import { hasPermission, isValidIndianGstin, IndianPanSchema } from '@tradecloseout/shared';
+import { hasPermission, isValidIndianGstin, IndianPanSchema, canonicalAuthenticationEmail } from '@tradecloseout/shared';
+import { TransactionalMailGateway } from '../identity/identity.controller';
+import { isProductionEnvironment } from '../identity/auth-security';
 
 export interface OffboardingGapReport {
   targetUserId: string;
@@ -34,27 +38,46 @@ export interface OffboardingGapReport {
 
 @Injectable()
 export class OrganisationsService {
-  constructor(private readonly pool: Pool) {}
+  constructor(
+    private readonly pool: Pool,
+    @Optional() private readonly mailGateway?: TransactionalMailGateway,
+  ) {}
 
   /**
    * API-010: GET /api/v1/orgs/:orgId
    */
   async getDashboard(ctx: TenantActorContext, targetOrgId: string) {
     const orgId = targetOrgId === 'current' ? ctx.orgId : targetOrgId;
-    if (ctx.guestGrantId) throw new NotFoundException('ORGANISATION_NOT_FOUND');
-    const projectRead = hasPermission({ orgRole: ctx.orgRole, projectRole: ctx.projectRole }, 'project.read');
-    if (!projectRead.allowed) throw new NotFoundException('ORGANISATION_NOT_FOUND');
-    const projectScopeClause = projectRead.scope === 'S'
-      ? `AND EXISTS (SELECT 1 FROM project_members pm
-                      WHERE pm.org_id = p.org_id AND pm.project_id = p.id
-                        AND pm.user_id = $2 AND pm.status = 'ACTIVE')`
-      : '';
-    const requirementsScopeClause = projectRead.scope === 'S'
-      ? `AND EXISTS (SELECT 1 FROM project_members pm
-                      WHERE pm.org_id = r.org_id AND pm.project_id = r.project_id
-                        AND pm.user_id = $2 AND pm.status = 'ACTIVE')`
-      : '';
+    if (orgId !== ctx.orgId || ctx.actorType === 'GUEST' || ctx.guestGrantId) {
+      throw new NotFoundException('ORGANISATION_NOT_FOUND');
+    }
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+      // PH2-G03: a previously privileged user must not enumerate projects or
+      // receive commercial metrics after demotion. Resolve the live current
+      // org grant before building either the scoped queries or the DTO.
+      const { rows: userRows } = await client.query(
+        `SELECT u.id, u.name, m.role
+           FROM users u JOIN memberships m ON m.user_id=u.id AND m.org_id=$1
+          WHERE u.id=$2 AND u.status='ACTIVE' AND m.status='ACTIVE'
+          FOR SHARE OF u,m`,
+        [orgId,ctx.userId],
+      );
+      if (!userRows.length) throw new NotFoundException('ORGANISATION_NOT_FOUND');
+      const user=userRows[0];
+      const projectRead = hasPermission({orgRole:user.role}, 'project.read');
+      if (!projectRead.allowed) throw new NotFoundException('ORGANISATION_NOT_FOUND');
+      const mayReadCommercial = hasPermission({orgRole:user.role}, 'contract.manage').allowed;
+      const projectScopeClause = projectRead.scope === 'S'
+        ? `AND EXISTS (SELECT 1 FROM project_members pm
+                        WHERE pm.org_id=p.org_id AND pm.project_id=p.id
+                          AND pm.user_id=$2 AND pm.status='ACTIVE')` : '';
+      const requirementsScopeClause = projectRead.scope === 'S'
+        ? `AND EXISTS (SELECT 1 FROM project_members pm
+                        WHERE pm.org_id=r.org_id AND pm.project_id=r.project_id
+                          AND pm.user_id=$2 AND pm.status='ACTIVE')` : '';
+      // PostgreSQL rejects extra bind parameters. Only scoped queries use $2.
+      const dashboardQueryArgs = projectRead.scope === 'S'
+        ? [orgId, ctx.userId] : [orgId];
       // 1. Fetch Org and Profile
       const { rows: orgRows } = await client.query(
         `SELECT o.id, o.legal_name, o.display_name, o.state, op.gstin
@@ -68,17 +91,7 @@ export class OrganisationsService {
       }
       const org = orgRows[0];
 
-      // 2. Fetch User & Membership
-      const { rows: userRows } = await client.query(
-        `SELECT u.id, u.name, m.role
-           FROM users u
-           JOIN memberships m ON m.user_id = u.id AND m.org_id = $1
-          WHERE u.id = $2 LIMIT 1`,
-        [orgId, ctx.userId],
-      );
-      const user = userRows[0] || { id: ctx.userId, name: 'Team Member', role: 'R-SITE' };
-
-      // 3. Fetch Projects with Pre-Aggregated Contracts, Counterparties & Requirement Counts (Finding N21)
+      // 2. Fetch Projects with Pre-Aggregated Contracts, Counterparties & Requirement Counts (Finding N21)
       const { rows: projRows } = await client.query(
         `WITH contract_summary AS (
            SELECT project_id, org_id,
@@ -117,7 +130,7 @@ export class OrganisationsService {
           LEFT JOIN parties p_pmc ON p_pmc.id = p.consultant_party_id
          WHERE p.org_id = $1 ${projectScopeClause}
          ORDER BY p.created_at DESC`,
-        [orgId, ctx.userId],
+        dashboardQueryArgs,
       );
 
       const projects = projRows.map((p) => ({
@@ -130,8 +143,8 @@ export class OrganisationsService {
         pmcName: p.pmc_name || '—',
         city: p.city || '—',
         targetHandoverDate: p.target_handover_date || '',
-        contractValuePaise: p.contract_value_paise,
-        retentionAtRiskPaise: p.retention_at_risk_paise,
+        contractValuePaise: mayReadCommercial ? p.contract_value_paise : null,
+        retentionAtRiskPaise: mayReadCommercial ? p.retention_at_risk_paise : null,
         approvedCount: Number(p.approved_count || 0),
         applicableCount: Number(p.applicable_count || 0),
         missingCount: Number(p.missing_count || 0),
@@ -162,7 +175,7 @@ export class OrganisationsService {
             AND dv.expiry_date IS NOT NULL
             AND dv.expiry_date BETWEEN (now() AT TIME ZONE 'Asia/Kolkata')::date
                                    AND ((now() AT TIME ZONE 'Asia/Kolkata') + interval '30 days')::date`,
-        [orgId, ctx.userId],
+        dashboardQueryArgs,
       );
       const expiringSoonCount = Number(expiringRows[0]?.count || 0);
 
@@ -181,7 +194,7 @@ export class OrganisationsService {
             AND r.superseded_at IS NULL
           ORDER BY r.due_at ASC NULLS LAST, r.created_at DESC
           LIMIT 5`,
-        [orgId, ctx.userId],
+        dashboardQueryArgs,
       );
 
       const needsAttention = attentionRows.map((r) => ({
@@ -214,7 +227,7 @@ export class OrganisationsService {
           totalMissingOrExpiredCount: totalMissingOrExpired,
           awaitingMyReviewCount: awaitingReview,
           expiringSoonCount,
-          totalRetentionAtRiskPaise: totalRetentionAtRisk.toString(),
+          totalRetentionAtRiskPaise: mayReadCommercial ? totalRetentionAtRisk.toString() : null,
         },
         projects,
         needsAttention,
@@ -427,9 +440,43 @@ export class OrganisationsService {
     dto: { email: string; role: string },
   ) {
     if (orgId !== ctx.orgId) throw new NotFoundException('ORGANISATION_NOT_FOUND');
-    const email = dto.email.trim().toLowerCase();
+    const email=canonicalAuthenticationEmail(dto?.email);
+    if (!email || typeof dto?.role !== 'string') {
+      throw new UnprocessableEntityException({code:'INVALID_INVITATION_INPUT'});
+    }
+    // Owner authority is transferred only through the audited transfer path.
+    const invitedRoles = new Set([
+      'R-ADMIN','R-BILLING','R-PM','R-SITE','R-DOC','R-PROC',
+      'R-QC','R-SAFETY','R-REVIEWER','R-AUDITOR',
+    ]);
+    if (!invitedRoles.has(dto.role)) {
+      throw new UnprocessableEntityException({code:'INVALID_INVITATION_ROLE'});
+    }
+    if (isProductionEnvironment() && !this.mailGateway) {
+      throw new ServiceUnavailableException({
+        code:'INVITATION_DELIVERY_UNAVAILABLE',
+        detail:'Invitation delivery is not configured.',
+      });
+    }
 
-    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+    const issued = await withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+      const { rows: issuer } = await client.query(
+        `SELECT role FROM memberships
+         WHERE org_id=$1 AND user_id=$2 AND status='ACTIVE' FOR SHARE`,
+        [orgId,ctx.userId],
+      );
+      const issuerRole = issuer[0]?.role;
+      if (!['R-OWNER','R-ADMIN'].includes(issuerRole) ||
+          (dto.role === 'R-ADMIN' && issuerRole !== 'R-OWNER')) {
+        throw new ForbiddenException({code:'INVITATION_ROLE_EXCEEDS_ISSUER'});
+      }
+      // Serialize invitation creation by target identity. There must never be
+      // two independently usable pending proofs granting potentially different
+      // roles to the same intended organisation member.
+      await client.query(
+        `SELECT pg_advisory_xact_lock(hashtext($1))`,
+        [`org-invitation:${orgId}:${email}`],
+      );
       const { rows: existing } = await client.query(
         `SELECT m.id FROM memberships m
            JOIN user_identities i ON i.user_id = m.user_id
@@ -445,15 +492,25 @@ export class OrganisationsService {
         });
       }
 
+      await client.query(
+        `UPDATE invitations SET status='REVOKED'
+          WHERE org_id=$1 AND lower(email)=lower($2)
+            AND status IN ('PENDING','DELIVERY_PENDING')`,
+        [orgId,email],
+      );
       const rawToken = randomBytes(32).toString('hex');
       const tokenHash = createHash('sha256').update(rawToken).digest('hex');
       const invId = uuidv7();
 
+      // Until a delivery provider has actually accepted the invitation,
+      // its token cannot be redeemed. Crashes and ambiguous timeouts leave
+      // DELIVERY_PENDING, never an implicitly usable PENDING grant.
+      const initialStatus = this.mailGateway ? 'DELIVERY_PENDING' : 'PENDING';
       const { rows: inv } = await client.query(
         `INSERT INTO invitations (id, org_id, email, role, token_hash, status, expires_at, invited_by)
-         VALUES ($1, $2, $3, $4, $5, 'PENDING', now() + interval '7 days', $6)
+         VALUES ($1, $2, $3, $4, $5, $6, now() + interval '7 days', $7)
          RETURNING id, email, role, status, expires_at, created_at`,
-        [invId, orgId, email, dto.role, tokenHash, ctx.userId],
+        [invId, orgId, email, dto.role, tokenHash, initialStatus, ctx.userId],
       );
 
       return {
@@ -461,6 +518,75 @@ export class OrganisationsService {
         invitationToken: rawToken,
       };
     });
+    if (this.mailGateway) {
+      const appOrigin = process.env.FRONTEND_URL || process.env.PUBLIC_APP_URL;
+      const failDelivery = async () => {
+        // This recovery does not assume the issuer still holds authority:
+        // expiry, role change or a process restart must never convert an
+        // unconfirmed delivery into a valid invitation.
+        await withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+          await client.query(
+            `UPDATE invitations SET status='REVOKED'
+               WHERE org_id=$1 AND id=$2 AND status='DELIVERY_PENDING'`,
+            [orgId, issued.id],
+          );
+        });
+      };
+      if (!appOrigin || (isProductionEnvironment() && !appOrigin.startsWith('https://'))) {
+        await failDelivery();
+        throw new ServiceUnavailableException({code:'INVITATION_APP_ORIGIN_INVALID'});
+      }
+      try {
+        const link = new URL('/login',appOrigin);
+        link.searchParams.set('invite',issued.invitationToken);
+        await this.mailGateway.sendMagicLinkEmail(email,link.toString(),
+          {kind:'INVITATION',targetId:issued.id,orgId,actorUserId:ctx.userId});
+
+        // This conditional promotion is atomic and protects concurrent
+        // invitation supersession: provider acceptance for an old challenge
+        // cannot revive it or make its response appear successful.
+        const promoted = await withTenantTransaction(this.pool, ctx, async (client: PoolClient) =>
+          client.query(
+            `UPDATE invitations i SET status='PENDING'
+               WHERE i.org_id=$1 AND i.id=$2 AND i.status='DELIVERY_PENDING'
+                 AND i.expires_at>now()
+                 AND EXISTS (
+                   SELECT 1 FROM memberships m
+                    WHERE m.org_id=i.org_id AND m.user_id=i.invited_by
+                      AND m.status='ACTIVE'
+                      AND (m.role='R-OWNER' OR
+                           (m.role='R-ADMIN' AND i.role<>'R-ADMIN'))
+                 )
+               RETURNING i.id`,
+            [orgId, issued.id],
+          ),
+        );
+        if (!promoted.rowCount) {
+          throw new ConflictException({code:'INVITATION_SUPERSEDED_DURING_DELIVERY'});
+        }
+        return { id: issued.id, email: issued.email,
+          role: issued.role, status: 'PENDING',
+          expires_at: issued.expires_at, created_at:issued.created_at,
+          deliveryStatus:'SENT' };
+      } catch (error) {
+        // The provider may have accepted and then timed out. The invitation
+        // remains non-redeemable unless its accepted state was committed.
+        // Retried issuances generate fresh tokens.
+        // A durable attempt/receipt can reconcile an accepted-but-lost
+        // acknowledgement. Keep the token nonredeemable; supersession, issuer
+        // authority checks and expiry still prevent a late receipt reviving it.
+        if (error instanceof ConflictException) throw error;
+        throw new ServiceUnavailableException({
+          code:'INVITATION_DELIVERY_UNVERIFIED',
+          detail:'Could not confirm the invitation email. Create a new invitation.',
+        });
+      }
+    }
+    // Nonproduction fixtures may expose a token for local test flows only.
+    if (isProductionEnvironment()) {
+      throw new ServiceUnavailableException({code:'INVITATION_DELIVERY_UNAVAILABLE'});
+    }
+    return issued;
   }
 
   /**
@@ -472,8 +598,8 @@ export class OrganisationsService {
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
       const { rows } = await client.query(
         `UPDATE invitations
-            SET status = 'REVOKED', updated_at = now()
-          WHERE org_id = $1 AND id = $2 AND status = 'PENDING'
+            SET status = 'REVOKED'
+          WHERE org_id = $1 AND id = $2 AND status IN ('PENDING','DELIVERY_PENDING')
           RETURNING id, status`,
         [orgId, invitationId],
       );
@@ -497,7 +623,40 @@ export class OrganisationsService {
   ) {
     if (orgId !== ctx.orgId) throw new NotFoundException('ORGANISATION_NOT_FOUND');
 
-    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+    if (!dto || typeof dto.role !== 'string') {
+      throw new UnprocessableEntityException({code:'INVALID_MEMBER_ROLE'});
+    }
+    const changeableRoles = new Set([
+      'R-ADMIN','R-BILLING','R-PM','R-SITE','R-DOC','R-PROC',
+      'R-QC','R-SAFETY','R-REVIEWER','R-AUDITOR',
+    ]);
+    if (!changeableRoles.has(dto.role)) {
+      throw new UnprocessableEntityException({code:'OWNER_ROLE_REQUIRES_TRANSFER'});
+    }
+    return withTenantTransaction(this.pool, ctx, async (
+      client: PoolClient, emit: (ev: DomainOutboxEvent) => void,
+    ) => {
+      const { rows: actorRows } = await client.query(
+        `SELECT role FROM memberships WHERE org_id=$1 AND user_id=$2
+          AND status='ACTIVE' FOR SHARE`,
+        [orgId,ctx.userId],
+      );
+      const activeActorRole = actorRows[0]?.role;
+      if (!['R-OWNER','R-ADMIN'].includes(activeActorRole) ||
+          (dto.role === 'R-ADMIN' && activeActorRole !== 'R-OWNER')) {
+        throw new ForbiddenException({code:'MEMBER_ROLE_CHANGE_NOT_AUTHORIZED'});
+      }
+      const { rows: targetRoles } = await client.query(
+        `SELECT role FROM memberships WHERE org_id=$1 AND user_id=$2
+          AND status='ACTIVE' FOR UPDATE`,
+        [orgId,targetUserId],
+      );
+      if (!targetRoles.length) throw new NotFoundException('MEMBERSHIP_NOT_FOUND');
+      if (targetRoles[0].role === 'R-OWNER' ||
+          (activeActorRole !== 'R-OWNER' && targetRoles[0].role === 'R-ADMIN') ||
+          (ctx.userId === targetUserId && activeActorRole === 'R-ADMIN')) {
+        throw new ForbiddenException({code:'PROTECTED_MEMBER_ROLE_CHANGE'});
+      }
       if (dto.role !== 'R-OWNER') {
         const { rows: ownerRows } = await client.query(
           `SELECT user_id FROM memberships
@@ -522,6 +681,43 @@ export class OrganisationsService {
       );
 
       if (rows.length === 0) throw new NotFoundException('MEMBERSHIP_NOT_FOUND');
+
+      // Invalidate grants of *future membership authority* created by this
+      // person whenever the new role would not be permitted to issue them.
+      // This shares a transaction with the role edit; concurrent invitation
+      // redemption serializes on the invitation row.
+      const revokedInvitations = await client.query(
+        `UPDATE invitations SET status='REVOKED'
+          WHERE org_id=$1 AND invited_by=$2 AND status IN ('PENDING','DELIVERY_PENDING')
+            AND ($3 <> 'R-ADMIN' OR role='R-ADMIN')`,
+        [orgId,targetUserId,dto.role],
+      );
+      // Role changes cross an authentication-strength boundary. Invalidate
+      // any browser sessions selected into this organisation so their tokens,
+      // CSRF material and MFA state cannot survive privilege transitions.
+      await client.query(
+        `WITH revoked AS (
+           UPDATE sessions SET revoked_at=now(),mfa_verified=false,
+                 mfa_verified_at=NULL
+            WHERE user_id=$1 AND active_org_id=$2 AND revoked_at IS NULL
+            RETURNING id,user_id,active_org_id
+         )
+         INSERT INTO auth_security_events
+           (id,actor_user_id,org_id,session_id,event_type,outcome)
+         SELECT gen_random_uuid(),user_id,active_org_id,id,
+           'MEMBER_ROLE_CHANGED_SESSION_REVOKED','SUCCESS' FROM revoked`,
+        [targetUserId,orgId],
+      );
+      emit({
+        eventType:'ORG_MEMBER_ROLE_CHANGED',
+        entityType:'MEMBERSHIP',
+        entityId:rows[0].id,
+        beforeJson:{role:targetRoles[0].role,userId:targetUserId},
+        afterJson:{
+          role:dto.role,userId:targetUserId,sessionsRevoked:true,
+          invitationsRevoked:revokedInvitations.rowCount || 0,
+        },
+      });
       return rows[0];
     });
   }
@@ -538,7 +734,18 @@ export class OrganisationsService {
       replacementUserId?: string;
     },
   ) {
+    if (input.replacementUserId === input.targetUserId) {
+      throw new UnprocessableEntityException({ code: 'SELF_REPLACEMENT_NOT_ALLOWED' });
+    }
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      const { rows: actorRows } = await client.query(
+        `SELECT role FROM memberships
+           WHERE org_id=$1 AND user_id=$2 AND status='ACTIVE' FOR SHARE`,
+        [ctx.orgId, ctx.userId],
+      );
+      if (!['R-OWNER','R-ADMIN'].includes(actorRows[0]?.role)) {
+        throw new ForbiddenException({ code: 'OFFBOARDING_NOT_AUTHORIZED' });
+      }
       const { rows: targetMemberRows } = await client.query(
         `SELECT id, role, status FROM memberships
           WHERE org_id = $1 AND user_id = $2
@@ -550,6 +757,13 @@ export class OrganisationsService {
         throw new NotFoundException({ code: 'NOT_FOUND', detail: 'Member not found in organisation.' });
       }
       const targetMember = targetMemberRows[0];
+      if (targetMember.status === 'REMOVED') {
+        throw new ConflictException({ code: 'MEMBERSHIP_ALREADY_REMOVED' });
+      }
+      if (actorRows[0]?.role !== 'R-OWNER' &&
+          ['R-OWNER','R-ADMIN'].includes(targetMember.role)) {
+        throw new ForbiddenException({ code: 'PROTECTED_MEMBER_TRANSITION' });
+      }
 
       // Guardrail (11 §4.13 & WF-21): Cannot suspend or remove the sole Owner
       if (targetMember.role === 'R-OWNER' && input.action !== 'REASSIGN_ONLY') {
@@ -558,6 +772,16 @@ export class OrganisationsService {
           title: 'Cannot remove organisation owner',
           detail: 'Transfer ownership to another active member before suspending or removing the owner (FR-IAM-004).',
         });
+      }
+
+      if (input.action === 'SUSPEND' || input.action === 'REMOVE') {
+        // An offboarded identity must not leave live invitation credentials
+        // delegating its former organisation authority to others.
+        await client.query(
+          `UPDATE invitations SET status='REVOKED'
+             WHERE org_id=$1 AND invited_by=$2 AND status IN ('PENDING','DELIVERY_PENDING')`,
+          [ctx.orgId,input.targetUserId],
+        );
       }
 
       // 1. Revoke all active sessions for the departing user in this org immediately (FR-IAM-007)
@@ -588,19 +812,80 @@ export class OrganisationsService {
         });
       }
 
-      // 3. Perform Bulk Reassignment if replacementUserId is provided (FR-IAM-008 / SCR-056 / Top 25 Item 19)
+      // PH2-G03-004: acquire replacement membership and current identity
+      // locks before project locks, matching live project-member admission.
+      // Org membership alone does not grant every project responsibility.
+      let replacementOrgRole: string | null = null;
       if (input.replacementUserId) {
-        const { rows: repRows } = await client.query(
-          `SELECT role, status FROM memberships WHERE org_id = $1 AND user_id = $2`,
+        const { rows: eligibleReplacement } = await client.query(
+          `SELECT m.role FROM memberships m
+             JOIN users u ON u.id=m.user_id AND u.status='ACTIVE'
+            WHERE m.org_id=$1 AND m.user_id=$2 AND m.status='ACTIVE'
+            FOR SHARE OF m, u`,
           [ctx.orgId, input.replacementUserId],
         );
-        if (repRows.length === 0 || repRows[0].status !== 'ACTIVE') {
-          throw new UnprocessableEntityException({
-            code: 'INVALID_REPLACEMENT_MEMBER',
-            detail: 'Replacement user must be an ACTIVE member of this organisation.',
+        if (!eligibleReplacement.length) {
+          throw new UnprocessableEntityException({ code: 'INVALID_REPLACEMENT_MEMBER' });
+        }
+        replacementOrgRole = eligibleReplacement[0].role;
+      }
+
+      // PH2-G03-003: project closure and reassignment must serialize on the
+      // same project rows. Checking status before acquiring these locks would
+      // let a concurrent closure commit while responsibilities are rewritten.
+      if (input.replacementUserId) {
+        const { rows: affectedProjects } = await client.query(
+          `SELECT p.id,p.status FROM projects p
+             WHERE p.org_id=$1 AND (
+               EXISTS (SELECT 1 FROM requirements r
+                 WHERE r.org_id=p.org_id AND r.project_id=p.id AND r.owner_user_id=$2
+                   AND r.status NOT IN ('APPROVED','WAIVED','NOT_APPLICABLE','SUPERSEDED'))
+               OR EXISTS (SELECT 1 FROM reviews rv
+                 WHERE rv.org_id=p.org_id AND rv.project_id=p.id
+                   AND rv.reviewer_user_id=$2 AND rv.status IN ('PENDING','IN_REVIEW'))
+               OR EXISTS (SELECT 1 FROM handover_packages hp
+                 WHERE hp.org_id=p.org_id AND hp.project_id=p.id AND hp.requested_by=$2
+                   AND hp.status IN ('DRAFT','QUEUED','GENERATING'))
+               OR EXISTS (SELECT 1 FROM defects d
+                 WHERE d.org_id=p.org_id AND d.project_id=p.id AND d.assigned_user_id=$2
+                   AND d.status IN ('OPEN','IN_PROGRESS'))
+             ) ORDER BY p.id FOR UPDATE OF p`,
+          [ctx.orgId, input.targetUserId],
+        );
+        if (affectedProjects.some(project => !['DRAFT','ACTIVE','HANDOVER'].includes(project.status))) {
+          throw new ConflictException({
+            code: 'PROJECT_LIFECYCLE_BLOCKS_REASSIGNMENT',
+            detail: 'Reopen the affected project before moving its outstanding responsibilities.',
           });
         }
+        if (!['R-OWNER','R-ADMIN'].includes(replacementOrgRole ?? '')) {
+          for (const affected of affectedProjects) {
+            const { rows: scope } = await client.query(
+              `SELECT role FROM project_members
+                WHERE org_id=$1 AND project_id=$2 AND user_id=$3
+                  AND status='ACTIVE' FOR SHARE`,
+              [ctx.orgId, affected.id, input.replacementUserId],
+            );
+            if (!scope.length) {
+              throw new UnprocessableEntityException({
+                code: 'REPLACEMENT_PROJECT_SCOPE_REQUIRED',
+              });
+            }
+          }
+        }
+        const { rows: externalReviews } = await client.query(
+          `SELECT id FROM reviews WHERE org_id=$1 AND reviewer_user_id=$2
+             AND status IN ('PENDING','IN_REVIEW')
+             AND reviewer_subject_type IS DISTINCT FROM 'USER' LIMIT 1`,
+          [ctx.orgId, input.targetUserId],
+        );
+        if (externalReviews.length) {
+          throw new ConflictException({ code: 'EXTERNAL_REVIEW_AUTHORITY_REQUIRES_REVERIFICATION' });
+        }
+      }
 
+      // 3. Perform Bulk Reassignment if replacementUserId is provided (FR-IAM-008 / SCR-056 / Top 25 Item 19)
+      if (input.replacementUserId) {
         await client.query(
           `UPDATE requirements
               SET owner_user_id = $3, row_version = row_version + 1, updated_at = now()
@@ -614,6 +899,7 @@ export class OrganisationsService {
               SET reviewer_subject_id = $3, reviewer_user_id = $3,
                   row_version = row_version + 1
             WHERE org_id = $1 AND reviewer_user_id = $2
+              AND reviewer_subject_type = 'USER'
               AND status IN ('PENDING', 'IN_REVIEW')`,
           [ctx.orgId, input.targetUserId, input.replacementUserId],
         );
@@ -689,12 +975,20 @@ export class OrganisationsService {
    * Atomically transfers R-OWNER to another active member (FR-IAM-004, FR-ORG-014).
    */
   async transferOwnership(ctx: TenantActorContext, newOwnerUserId: string) {
+    if (typeof newOwnerUserId !== 'string' ||
+        !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(newOwnerUserId)) {
+      throw new UnprocessableEntityException({code:'INVALID_TARGET_OWNER'});
+    }
+    if (newOwnerUserId === ctx.userId) {
+      throw new UnprocessableEntityException({code:'OWNER_TRANSFER_REQUIRES_DIFFERENT_MEMBER'});
+    }
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
       const { rows: currentOwnerRows } = await client.query(
-        `SELECT id, role FROM memberships WHERE org_id = $1 AND user_id = $2 FOR UPDATE`,
+        `SELECT id, role, status FROM memberships WHERE org_id = $1 AND user_id = $2 FOR UPDATE`,
         [ctx.orgId, ctx.userId],
       );
-      if (currentOwnerRows[0]?.role !== 'R-OWNER') {
+      if (currentOwnerRows[0]?.role !== 'R-OWNER' ||
+          currentOwnerRows[0]?.status !== 'ACTIVE') {
         throw new ForbiddenException({
           code: 'FORBIDDEN',
           detail: 'Only the current Organisation Owner can transfer ownership.',
@@ -721,6 +1015,33 @@ export class OrganisationsService {
         `UPDATE memberships SET role = 'R-OWNER', row_version = row_version + 1, updated_at = now()
           WHERE org_id = $1 AND user_id = $2`,
         [ctx.orgId, newOwnerUserId],
+      );
+
+      // The former owner is now an administrator. Any outstanding R-ADMIN
+      // invitations that relied on owner-only issuance authority are void.
+      await client.query(
+        `UPDATE invitations SET status='REVOKED'
+          WHERE org_id=$1 AND invited_by=$2 AND status IN ('PENDING','DELIVERY_PENDING')
+            AND role='R-ADMIN'`,
+        [ctx.orgId,ctx.userId],
+      );
+
+      // A privilege transfer changes assurance requirements for BOTH parties.
+      // The old and new owners must reauthenticate; stale MFA and CSRF cannot
+      // authorise any action after ownership has changed.
+      await client.query(
+        `WITH revoked AS (
+           UPDATE sessions SET revoked_at=now(),mfa_verified=false,
+                 mfa_verified_at=NULL
+            WHERE active_org_id=$1 AND user_id=ANY($2::uuid[])
+              AND revoked_at IS NULL
+            RETURNING id,user_id,active_org_id
+         )
+         INSERT INTO auth_security_events
+           (id,actor_user_id,org_id,session_id,event_type,outcome)
+         SELECT gen_random_uuid(),user_id,active_org_id,id,
+           'OWNERSHIP_TRANSFER_SESSION_REVOKED','SUCCESS' FROM revoked`,
+        [ctx.orgId,[ctx.userId,newOwnerUserId]],
       );
 
       emit({
@@ -898,8 +1219,27 @@ export class OrganisationsService {
     };
   }
 
-  async getAuditLog(ctx: TenantActorContext, orgId: string) {
+  async getAuditLog(ctx: TenantActorContext, targetOrgId: string) {
+    const orgId = targetOrgId === 'current' ? ctx.orgId : targetOrgId;
+    if (orgId !== ctx.orgId || ctx.actorType === 'GUEST' || ctx.guestGrantId) {
+      throw new NotFoundException('ORGANISATION_NOT_FOUND');
+    }
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+      // PH2-G03: a project-scoped audit grant cannot turn the unscoped
+      // organisation audit endpoint into a full-tenant data leak.
+      // Fetch the CURRENT account and org membership inside the transaction,
+      // not the possibly stale role claims in the browser session.
+      const { rows: liveMembers } = await client.query(
+        `SELECT m.role FROM memberships m
+           JOIN users u ON u.id=m.user_id AND u.status='ACTIVE'
+          WHERE m.org_id=$1 AND m.user_id=$2 AND m.status='ACTIVE'
+          FOR SHARE OF m,u`,
+        [orgId, ctx.userId],
+      );
+      if (!liveMembers.length ||
+          !hasPermission({orgRole:liveMembers[0].role}, 'audit.read').allowed) {
+        throw new ForbiddenException({code:'AUDIT_READ_RESTRICTED'});
+      }
       const { rows } = await client.query(
         `SELECT a.id, a.org_id, a.project_id, a.actor_type, a.actor_user_id, a.action, a.entity_type, a.entity_id,
                 a.before_json, a.after_json, a.ip, a.user_agent, a.request_id, a.prev_hash, a.hash, a.chain_seq, a.created_at,

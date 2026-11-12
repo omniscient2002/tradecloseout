@@ -3,10 +3,9 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
-  UnauthorizedException,
   UnprocessableEntityException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
-import { createHmac, timingSafeEqual } from 'crypto';
 import { Pool } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { withTenantTransaction, TenantActorContext } from '@tradecloseout/db/tenant-tx';
@@ -555,7 +554,7 @@ export class WarrantyAndBillingService {
   async getSubscription(ctx: TenantActorContext) {
     return withTenantTransaction(this.pool, ctx, async (client) => {
       const { rows } = await client.query(
-        `SELECT s.*, p.name AS plan_name, p.code AS plan_tier, p.limits_json, p.price_paise, p.interval
+        `SELECT s.*, p.name AS plan_name, p.code AS plan_tier, p.limits_json, p.price_paise, p.interval, p.status AS plan_status
            FROM subscriptions s
            JOIN plans p ON p.id = s.plan_id
           WHERE s.org_id = $1
@@ -570,20 +569,38 @@ export class WarrantyAndBillingService {
           status: 'INACTIVE',
           seatLimit: 0,
           storageQuotaBytes: 0,
-          pricePaise: 0,
-          limitsJson: { maxActiveProjects: 0, maxSeats: 0, maxStorageBytes: 0 },
+          pricePaise: null,
+          limitsJson: { maxActiveProjects: 0, maxSeats: 0, maxStorageBytes: 0, maxPackageGenerationsPerMonth: 0 },
           plan_name: 'No Subscription',
           plan_tier: 'NONE',
           seat_limit: 0,
           storage_quota_bytes: 0,
-          price_paise: 0,
+          price_paise: null,
         };
       }
       const sub = rows[0];
-      const limits = sub.limits_json || {};
-      const seatLimit = Number(limits.maxSeats ?? 20);
-      const storageQuotaBytes = Number(limits.maxStorageBytes ?? (100 * 1024 * 1024 * 1024));
-      const maxActiveProjects = Number(limits.maxActiveProjects ?? 15);
+      // PH2-G18-001: API capacity must agree with activation and package
+      // writes. Expired, inactive, cancelled or malformed policies grant no
+      // new consumption; a legacy missing field is not a free Starter plan.
+      const now = Date.now();
+      const start = new Date(sub.current_period_start).getTime();
+      const end = new Date(sub.current_period_end).getTime();
+      const cancelled = sub.cancel_at == null ? false : new Date(sub.cancel_at).getTime() <= now;
+      const eligible = ['TRIAL', 'ACTIVE'].includes(sub.status) && sub.plan_status === 'ACTIVE' &&
+        Number.isFinite(start) && Number.isFinite(end) && start <= now && now < end && !cancelled;
+      const configured = sub.limits_json && typeof sub.limits_json === 'object'
+        ? sub.limits_json : {};
+      const limit = (key: string): number => {
+        const raw = eligible ? configured[key] : 0;
+        return typeof raw === 'number' && Number.isSafeInteger(raw) && raw >= 0 ? raw : 0;
+      };
+      const seatLimit = limit('maxSeats');
+      const storageQuotaBytes = limit('maxStorageBytes');
+      const maxActiveProjects = limit('maxActiveProjects');
+      const limits = {
+        maxActiveProjects, maxSeats: seatLimit, maxStorageBytes: storageQuotaBytes,
+        maxPackageGenerationsPerMonth: limit('maxPackageGenerationsPerMonth'),
+      };
       return {
         id: sub.id,
         orgId: sub.org_id,
@@ -598,7 +615,8 @@ export class WarrantyAndBillingService {
         updatedAt: sub.updated_at,
         planName: sub.plan_name,
         planTier: sub.plan_tier,
-        pricePaise: Number(sub.price_paise),
+        // PostgreSQL BIGINT must not be converted to an unsafe JS number.
+        pricePaise: String(sub.price_paise),
         interval: sub.interval,
         limitsJson: limits,
         seatLimit,
@@ -606,7 +624,7 @@ export class WarrantyAndBillingService {
         maxActiveProjects,
         plan_name: sub.plan_name,
         plan_tier: sub.plan_tier,
-        price_paise: Number(sub.price_paise),
+        price_paise: String(sub.price_paise),
         seat_limit: seatLimit,
         storage_quota_bytes: storageQuotaBytes,
       };
@@ -614,71 +632,20 @@ export class WarrantyAndBillingService {
   }
 
   /**
-   * API-160: POST /api/v1/webhooks/razorpay
-   * Verifies Razorpay HMAC-SHA256 signature, deduplicates by event_id (10 §12.1),
-   * and updates subscription state.
+   * Legacy payment-settlement implementation is intentionally retired.
+   * It used untrusted webhook notes as the tenant selector, and could modify
+   * entitlements without independently reconciled provider references.
+   *
+   * Verified events are now *only* accepted by BillingService's durable
+   * read-only receipt. Do not resurrect automatic fulfillment here.
    */
   async processRazorpayWebhook(rawBody: string, signatureHeader: string) {
-    const secret = process.env.RAZORPAY_WEBHOOK_SECRET || '';
-    const expectedHmac = createHmac('sha256', secret).update(rawBody).digest('hex');
-
-    const expectedBuf = Buffer.from(expectedHmac, 'utf8');
-    const actualBuf = Buffer.from(signatureHeader || '', 'utf8');
-    if (expectedBuf.length !== actualBuf.length || !timingSafeEqual(expectedBuf, actualBuf)) {
-      throw new UnauthorizedException({
-        code: 'WEBHOOK_SIGNATURE_INVALID',
-        detail: 'Razorpay webhook HMAC verification failed.',
-      });
-    }
-
-    const event = JSON.parse(rawBody);
-    const eventId: string = event.id;
-    const orgId: string | undefined = event.payload?.subscription?.entity?.notes?.orgId;
-
-    const client = await this.pool.connect();
-    try {
-      await client.query('BEGIN');
-
-      // Idempotent deduplication by event_id (10 §12.1)
-      const { rowCount } = await client.query(
-        `INSERT INTO payment_events (id, org_id, provider, event_id, type, payload_json)
-         VALUES ($1, $2, 'RAZORPAY', $3, $4, $5)
-         ON CONFLICT (event_id) DO NOTHING`,
-        [uuidv7(), orgId ?? null, eventId, event.event, JSON.stringify({ id: eventId, event: event.event })],
-      );
-
-      if (rowCount === 0) {
-        await client.query('COMMIT');
-        return { processed: false, duplicate: true };
-      }
-
-      if (orgId) {
-        await client.query(`SELECT set_config('app.current_org', $1, true)`, [orgId]);
-        if (event.event === 'subscription.charged') {
-          await client.query(
-            `UPDATE subscriptions
-                SET status = 'ACTIVE', row_version = row_version + 1, updated_at = now()
-              WHERE org_id = $1`,
-            [orgId],
-          );
-        } else if (event.event === 'subscription.halted') {
-          await client.query(
-            `UPDATE subscriptions
-                SET status = 'PAST_DUE', row_version = row_version + 1, updated_at = now()
-              WHERE org_id = $1`,
-            [orgId],
-          );
-        }
-      }
-
-      await client.query('COMMIT');
-      return { processed: true, duplicate: false };
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
+    void rawBody;
+    void signatureHeader;
+    throw new ServiceUnavailableException({
+      code: 'AUTOMATED_PAYMENT_FULFILLMENT_DISABLED',
+      detail: 'Subscription changes require independent provider reconciliation and explicit enablement.',
+    });
   }
 
   /**

@@ -20,7 +20,7 @@ export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
 
   @Get('notifications')
-  @RequirePermission('document.read')
+  @RequirePermission('notification.read')
   async listNotifications(@Req() req: any) {
     return this.notificationsService.listNotifications(req.userContext);
   }

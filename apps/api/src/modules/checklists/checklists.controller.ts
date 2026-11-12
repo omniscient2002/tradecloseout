@@ -35,6 +35,24 @@ export class ChecklistsController {
     return this.checklistsService.createRequirement(req.userContext, projectId, dto);
   }
 
+  @Get('projects/:projectId/checklists/approved-templates')
+  @RequirePermission('project.manage')
+  async listApprovedTemplates(@Req() req: any, @Param('projectId') projectId: string) {
+    return this.checklistsService.listApprovedHvacTemplates(req.userContext, projectId);
+  }
+
+  @Post('projects/:projectId/checklists/apply-template')
+  @RequirePermission('project.manage')
+  async applyApprovedTemplate(
+    @Req() req: any,
+    @Param('projectId') projectId: string,
+    @Body() dto: { templatePackId: string },
+  ) {
+    return this.checklistsService.applyApprovedHvacTemplate(
+      req.userContext, projectId, dto?.templatePackId,
+    );
+  }
+
   @Post(['projects/:projectId/snapshots', 'projects/:projectId/checklist/snapshots'])
   @RequirePermission('project.manage')
   async createSnapshot(

@@ -12,6 +12,7 @@ import { createHash } from 'node:crypto';
 import { Pool, PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { withTenantTransaction, TenantActorContext, DomainOutboxEvent } from '@tradecloseout/db';
+import { assertMemberResourceScope } from '@tradecloseout/db/tenant-tx';
 import { AssetTagSchema } from '@tradecloseout/shared';
 import { ResolvedRequirementSpec } from '../checklists/checklists.service';
 
@@ -35,6 +36,28 @@ export interface CreateAssetInput {
 export class AssetsService {
   constructor(private readonly pool: Pool) {}
 
+  private async lockEditableProject(client: PoolClient, ctx: TenantActorContext, projectId: string): Promise<void> {
+    // Closure and all asset register/evidence mutations must serialize on the
+    // same project row, with lifecycle checked AFTER acquiring the lock.
+    const { rows } = await client.query(
+      `SELECT status, purged_at FROM projects WHERE org_id = $1 AND id = $2 FOR UPDATE`,
+      [ctx.orgId, projectId],
+    );
+    if (!rows.length) throw new NotFoundException('PROJECT_NOT_FOUND');
+    if (rows[0].purged_at != null) {
+      throw new ConflictException({ code: 'PROJECT_PURGED', detail: 'Purged projects cannot be amended.' });
+    }
+    if (rows[0].status === 'CLOSED') {
+      throw new ConflictException({
+        code: 'CLOSED_PROJECT_REQUIRES_FORMAL_REOPEN',
+        detail: 'Reopen the closed project before changing its asset or evidence register.',
+      });
+    }
+    if (!['DRAFT', 'ACTIVE', 'HANDOVER'].includes(rows[0].status)) {
+      throw new ConflictException({ code: 'PROJECT_ASSETS_NOT_EDITABLE', detail: 'Project state forbids asset changes.' });
+    }
+  }
+
   /**
    * API-071: POST /api/v1/projects/:id/assets
    * Registers an equipment unit and automatically instantiates asset-scoped requirements
@@ -54,6 +77,7 @@ export class AssetsService {
     }
 
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      await this.lockEditableProject(client, ctx, projectId);
       const normalizedTag = tagParse.data;
 
       // Check case-insensitive tag uniqueness per project (FR-AST-004)
@@ -73,6 +97,7 @@ export class AssetsService {
       }
 
       const assetId = uuidv7();
+      assertMemberResourceScope(ctx,'asset',{id:assetId,categoryKey:input.categoryKey},true);
       const { rows: insertedRows } = await client.query(
         `INSERT INTO assets
           (id, org_id, project_id, tag, name, category_key, make, model, serial_no,
@@ -149,6 +174,7 @@ export class AssetsService {
    */
   async deleteOrRetireAsset(ctx: TenantActorContext, projectId: string, assetId: string) {
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      await this.lockEditableProject(client, ctx, projectId);
       const { rows: approvedDocs } = await client.query(
         `SELECT da.document_id
            FROM document_assets da
@@ -205,7 +231,17 @@ export class AssetsService {
          ORDER BY tag ASC`,
         [ctx.orgId, projectId],
       );
-      return res.rows;
+      // Scope is enforced on the rows *before* counts/lists leave the
+      // transaction. No API-side projection can repair a leaked list.
+      return res.rows.filter((row:any)=>{
+        try {
+          assertMemberResourceScope(ctx,'asset',{
+            id:row.id,categoryKey:row.category_key,
+            createdAt:row.created_at?.toISOString?.()||String(row.created_at),
+          },false);
+          return true;
+        }catch{return false;}
+      });
     });
   }
 
@@ -220,7 +256,14 @@ export class AssetsService {
         [ctx.orgId, projectId, assetId],
       );
       if (!res.rows.length) throw new NotFoundException('ASSET_NOT_FOUND');
-      return res.rows[0];
+      const row=res.rows[0];
+      try {
+        assertMemberResourceScope(ctx,'asset',{
+          id:row.id,categoryKey:row.category_key,
+          createdAt:row.created_at?.toISOString?.()||String(row.created_at),
+        },false);
+      }catch{throw new NotFoundException('ASSET_NOT_FOUND');}
+      return row;
     });
   }
 
@@ -247,6 +290,7 @@ export class AssetsService {
     },
   ) {
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      await this.lockEditableProject(client, ctx, projectId);
       // 1. Fetch current asset
       const curRes = await client.query(
         `SELECT * FROM assets WHERE org_id = $1 AND project_id = $2 AND id = $3 AND deleted_at IS NULL FOR UPDATE`,
@@ -254,6 +298,12 @@ export class AssetsService {
       );
       if (!curRes.rows.length) throw new NotFoundException('ASSET_NOT_FOUND');
       const current = curRes.rows[0];
+      try {
+        assertMemberResourceScope(ctx,'asset',{
+          id:current.id,categoryKey:current.category_key,
+          createdAt:current.created_at?.toISOString?.()||String(current.created_at),
+        },true);
+      }catch{throw new NotFoundException('ASSET_NOT_FOUND');}
 
       // 2. Detect identity attribute modifications
       const tagChanged = dto.tag !== undefined && dto.tag.trim().toUpperCase() !== current.tag;
@@ -479,6 +529,7 @@ export class AssetsService {
     dto: { status: 'CONFIRMED' | 'MISMATCH' | 'EXEMPT'; notes?: string; expectedRowVersion?: number },
   ) {
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit) => {
+      await this.lockEditableProject(client, ctx, projectId);
       // 1. Fetch current revalidation and ensure qualified verifier cannot self-approve (F01, V04)
       const current = await client.query(
         `SELECT er.*, dv.uploaded_by AS uploader_user_id
