@@ -80,6 +80,80 @@ export function normalizeCreateParty(input: unknown): CreatePartyDto {
   return { name: value.name.trim(), types: types as string[], gstin, email, phone };
 }
 
+/** PH3-G04-003: validate issued procurement facts before any DB mutation. */
+export function assertValidProcurementOrderInput(input: unknown): void {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    throw new BadRequestException('PROCUREMENT_ORDER_INVALID');
+  }
+  const value = input as Record<string, unknown>;
+  if (typeof value.poNumber !== 'string' ||
+      !/^[A-Za-z0-9][A-Za-z0-9._\/-]{0,79}$/.test(value.poNumber.trim()) ||
+      typeof value.supplierPartyId !== 'string' ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.supplierPartyId)) {
+    throw new BadRequestException('PROCUREMENT_ORDER_IDENTITY_INVALID');
+  }
+  const validDate = (date: unknown): boolean => {
+    if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
+    const parsed = new Date(date);
+    return Number.isFinite(parsed.valueOf()) && parsed.toISOString().slice(0, 10) === date;
+  };
+  if ((value.orderedAt !== undefined && !validDate(value.orderedAt)) ||
+      (value.promisedDeliveryAt !== undefined && !validDate(value.promisedDeliveryAt)) ||
+      (value.totalAmountPaise !== undefined &&
+        (!Number.isSafeInteger(value.totalAmountPaise) || (value.totalAmountPaise as number) < 0)) ||
+      (value.notes !== undefined &&
+        (typeof value.notes !== 'string' || value.notes.length > 2000))) {
+    throw new BadRequestException('PROCUREMENT_ORDER_FIELDS_INVALID');
+  }
+  const lines = value.lines;
+  if (!Array.isArray(lines) || lines.length < 1 || lines.length > 200) {
+    throw new BadRequestException('PROCUREMENT_LINES_REQUIRED');
+  }
+  const lineNos = new Set<number>();
+  for (const item of lines) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      throw new BadRequestException('PROCUREMENT_LINE_INVALID');
+    }
+    const line = item as Record<string, unknown>;
+    if (!Number.isSafeInteger(line.lineNo) ||
+        (line.lineNo as number) < 1 || (line.lineNo as number) > 100000 ||
+        lineNos.has(line.lineNo as number) ||
+        typeof line.assetCategoryKey !== 'string' ||
+        !/^[A-Za-z0-9_.:-]{1,80}$/.test(line.assetCategoryKey) ||
+        typeof line.description !== 'string' ||
+        line.description.trim().length < 2 || line.description.trim().length > 500 ||
+        (line.quantity !== undefined &&
+          (!Number.isSafeInteger(line.quantity) || (line.quantity as number) < 1 ||
+           (line.quantity as number) > 1_000_000))) {
+      throw new BadRequestException('PROCUREMENT_LINE_INVALID');
+    }
+    lineNos.add(line.lineNo as number);
+    if ((line.make !== undefined && (typeof line.make !== 'string' || line.make.length > 200)) ||
+        (line.model !== undefined && (typeof line.model !== 'string' || line.model.length > 200))) {
+      throw new BadRequestException('PROCUREMENT_LINE_METADATA_INVALID');
+    }
+    const obligations = line.obligations ?? [];
+    if (!Array.isArray(obligations) || obligations.length > 20) {
+      throw new BadRequestException('PROCUREMENT_OBLIGATIONS_INVALID');
+    }
+    for (const ob of obligations) {
+      if (!ob || typeof ob !== 'object' || Array.isArray(ob)) {
+        throw new BadRequestException('PROCUREMENT_OBLIGATION_INVALID');
+      }
+      const item = ob as Record<string, unknown>;
+      if (typeof item.docTypeKey !== 'string' ||
+          !/^[A-Za-z0-9_.:-]{1,80}$/.test(item.docTypeKey) ||
+          (item.stageKey !== undefined &&
+           !['MANUFACTURING', 'FAT', 'DISPATCH', 'DELIVERY', 'INSTALLATION', 'HANDOVER', 'WARRANTY'].includes(String(item.stageKey))) ||
+          typeof item.title !== 'string' || item.title.trim().length < 2 ||
+          item.title.trim().length > 200 ||
+          (item.dueDate !== undefined && !validDate(item.dueDate))) {
+        throw new BadRequestException('PROCUREMENT_OBLIGATION_INVALID');
+      }
+    }
+  }
+}
+
 export interface GuestGrantProfile {
   grantType: 'SUPPLIER_UPLOAD' | 'SUPPLIER_CONTRIBUTOR' | 'CONSULTANT_REVIEW' | 'CLIENT_VIEW' | 'MC_VIEW' | 'AUDITOR_READ';
   role: string;
@@ -710,7 +784,33 @@ export class PartiesService {
       }>;
     },
   ) {
+    assertValidProcurementOrderInput(input);
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+      const project = await client.query(
+        `SELECT status FROM projects WHERE org_id = $1 AND id = $2
+          AND purged_at IS NULL FOR UPDATE`,
+        [ctx.orgId, projectId],
+      );
+      if (!project.rows.length) throw new NotFoundException('PROJECT_NOT_FOUND');
+      if (project.rows[0].status !== 'ACTIVE') {
+        throw new BadRequestException('PROCUREMENT_PROJECT_NOT_ACTIVE');
+      }
+      const supplier = await client.query(
+        `SELECT id FROM parties WHERE org_id = $1 AND id = $2
+          AND status = 'ACTIVE' AND deleted_at IS NULL FOR SHARE`,
+        [ctx.orgId, input.supplierPartyId],
+      );
+      if (!supplier.rows.length) throw new NotFoundException('SUPPLIER_PARTY_NOT_FOUND');
+      for (const line of input.lines) {
+        if (!line.assetId) continue;
+        const asset = await client.query(
+          `SELECT id FROM assets WHERE org_id = $1 AND project_id = $2
+            AND id = $3 AND deleted_at IS NULL FOR SHARE`,
+          [ctx.orgId, projectId, line.assetId],
+        );
+        if (!asset.rows.length) throw new NotFoundException('PROCUREMENT_ASSET_NOT_FOUND');
+      }
+
       const poId = uuidv7();
       await client.query(
         `INSERT INTO procurement_orders (
