@@ -31,7 +31,7 @@
 | PH5-G28-001 | PARTIAL (P0 OPEN) | Scoped incident parser, explicit dry-run/execute, restricted-role requirement, backing-storage quarantine, dependent package download denial. No IAM/operator role provisioning, signed-URL revocation, archive/acceptance invalidation or real PG test yet |
 | PH5-G28-002 | OPEN | Validated deployable infrastructure, privilege and network contract |
 | PH5-G28-003 | OPEN | Promoted image/DB migration/rollback pipeline |
-| PH5-G28-004 | OPEN | Actual PITR and object/key recovery evidence |
+| PH5-G28-004 | PARTIAL | Isolated DB dump/restore drill uses its own consistent snapshot, cleanup trap, restricted file permissions and safe preflight; actual PITR, RPO/RTO, S3 bytes and KMS recovery unverified |
 | PH5-G28-005 | BLOCKED_EXTERNAL | Load/soak/on-call/alert/chaos receipts |
 | PH5-G28-006 | PARTIAL | Real queue module exercised in Chromium with IndexedDB, provider loopback and concurrency; full service E2E pending |
 | PH5-G28-007 | PARTIAL | Runbook demands independent operator role; approved IAM/admin surface not yet implemented |
@@ -67,6 +67,10 @@ pnpm tsx scripts/execute-runbooks.ts RB-09 <org-uuid> <document-version-uuid> "<
 ```
 
 RB09 changes the **storage_objects** state rather than overwriting an APPROVED document version to violate `review_status <> APPROVED OR file_status = READY`. Existing document download/preview/stream endpoints deny non-READY storage objects. Package PDF download now additionally rejects included source evidence whose storage status is not READY. These controls **do not revoke previously distributed provider-signed URLs or copied exports**, and they are not sufficient to close the P0. Real restricted-PG dry-run/execute/replay, audit-chain, package/acceptance/archives propagation and operator IAM must be accepted independently.
+
+## Database restore drill hardening
+
+`scripts/run-restore-drill.sh` now refuses to run without `RESTORE_DRILL_SCOPE=disposable-staging-only` and explicit `RESTORE_SOURCE_DATABASE_URL`, uses `umask 077`, an isolated randomized database, an EXIT cleanup trap and `psql -v ON_ERROR_STOP=1`. The previous live-source COUNT comparison after `pg_dump` was removed because it measures a different snapshot during concurrent writes. The script verifies the restored snapshot's metadata, basic hash links and row counts but **does not recover object bytes, KMS keys, independent audit anchors, WAL PITR, or certify production RPO/RTO**. Preflight tests validate Bash syntax and reject unacknowledged execution; a genuine isolated PG restore run is still mandatory.
 
 ## Remaining prerequisite integration
 
