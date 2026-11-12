@@ -41,9 +41,11 @@ export class WarrantyAndBillingService {
           previous_row_version, next_row_version, actor_user_id,
           assigned_user_id, assigned_party_id, due_at,
           from_severity, to_severity,
-          evidence_object_id, remedy_document_version_id, reason)
+          evidence_object_id, remedy_document_version_id, reason,
+          previous_assigned_user_id, previous_assigned_party_id, previous_due_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-               $11, $12, $13, $14, $15, $16, $17, $18)`,
+               $11, $12, $13, $14, $15, $16, $17, $18,
+               $19, $20, $21)`,
       [eventId, ctx.orgId, defect.project_id, defect.id, action,
         defect.status, toStatus, defect.row_version,
         defect.row_version + 1, ctx.userId,
@@ -52,7 +54,8 @@ export class WarrantyAndBillingService {
         details.dueAt === undefined ? (defect.due_at ?? null) : details.dueAt,
         defect.severity ?? null, details.toSeverity ?? defect.severity ?? null,
         details.evidenceObjectId ?? null, details.remedyVersionId ?? null,
-        details.reason ?? null],
+        details.reason ?? null, defect.assigned_user_id ?? null,
+        defect.assigned_party_id ?? null, defect.due_at ?? null],
     );
     return eventId;
   }
@@ -900,10 +903,12 @@ export class WarrantyAndBillingService {
       if (userId) {
         const { rows } = await client.query(
           `SELECT pm.user_id FROM project_members pm
+             JOIN memberships m ON m.org_id = pm.org_id
+               AND m.user_id = pm.user_id AND m.status = 'ACTIVE'
              JOIN users u ON u.id = pm.user_id
             WHERE pm.org_id = $1 AND pm.project_id = $2 AND pm.user_id = $3
               AND pm.status = 'ACTIVE' AND u.status = 'ACTIVE'
-            FOR SHARE OF pm, u`,
+            FOR SHARE OF pm, m, u`,
           [ctx.orgId, targetProjectId, userId],
         );
         if (!rows.length) throw new ConflictException({ code: 'DEFECT_ASSIGNEE_INACTIVE' });
@@ -921,6 +926,13 @@ export class WarrantyAndBillingService {
           partyId === (defect.assigned_party_id ?? null) &&
           String(dueAt ?? '') === String(defect.due_at ?? '')) {
         throw new ConflictException({ code: 'DEFECT_ASSIGNMENT_UNCHANGED' });
+      }
+      if ((defect.assigned_user_id || defect.assigned_party_id || defect.due_at) &&
+          !assignmentReason) {
+        throw new UnprocessableEntityException({
+          code: 'DEFECT_REASSIGNMENT_REASON_REQUIRED',
+          detail: 'Reassignment or deadline change requires an attributable reason.',
+        });
       }
       const nextStatus = userId || partyId ? 'IN_PROGRESS' : 'OPEN';
       const updated = await client.query(
