@@ -71,6 +71,50 @@ void test('Isolated worker DB/Redis and storage HTTP contract regressions', asyn
           await admin.query("UPDATE organisations SET status='SUSPENDED' WHERE id=$1", [orphanOrg]);
         }
       });
+      await t.test('PH1-G27-002: audit genesis and content tampering are detected without leaking event metadata', async () => {
+        const eventId = randomUUID();
+        await scoped(app, a.orgId, client => client.query(
+          `INSERT INTO audit_events (id,org_id,actor_type,action,entity_type,entity_id,request_id)
+           VALUES ($1,$2,'SYSTEM','CHAIN_VERIFIER_TEST','PROJECT',$3,'worker-verifier')`,
+          [eventId, a.orgId, a.projectIds[0]],
+        ));
+        const positive = await scheduler.verifyAuditHashChainIntegrity();
+        assert(positive.verifiedEvents >= 1);
+        const original = (await admin.query(
+          'SELECT prev_hash,after_json FROM audit_events WHERE id=$1 AND org_id=$2',
+          [eventId, a.orgId],
+        )).rows[0];
+
+        // Only the disposable privileged test connection may temporarily
+        // disable both legacy and new append-only guards to simulate tampering.
+        const tamper = async (sql: string, params: unknown[]) => {
+          await admin.query('ALTER TABLE audit_events DISABLE TRIGGER USER');
+          try { await admin.query(sql, params); }
+          finally { await admin.query('ALTER TABLE audit_events ENABLE TRIGGER USER'); }
+        };
+        try {
+          await tamper('UPDATE audit_events SET prev_hash=$1 WHERE id=$2 AND org_id=$3', [
+            'FORGED_GENESIS', eventId, a.orgId,
+          ]);
+          await assert.rejects(
+            scheduler.verifyAuditHashChainIntegrity(),
+            error => error instanceof Error && error.message === 'AUDIT_HASH_CHAIN_CORRUPT',
+          );
+          await tamper('UPDATE audit_events SET prev_hash=$1, after_json=$2 WHERE id=$3 AND org_id=$4', [
+            original.prev_hash, JSON.stringify({ forged: true }), eventId, a.orgId,
+          ]);
+          await assert.rejects(
+            scheduler.verifyAuditHashChainIntegrity(),
+            error => error instanceof Error && error.message === 'AUDIT_CONTENT_TAMPERED',
+          );
+        } finally {
+          await tamper('UPDATE audit_events SET prev_hash=$1, after_json=$2 WHERE id=$3 AND org_id=$4', [
+            original.prev_hash, original.after_json, eventId, a.orgId,
+          ]);
+        }
+        const restored = await scheduler.verifyAuditHashChainIntegrity();
+        assert(restored.verifiedEvents >= 1);
+      });
       await t.test('SCHED-01/02: real Redis NX excludes concurrent owner and old owner cannot delete replacement lock', async () => {
         const name = randomUUID();
         let enter!: () => void;
