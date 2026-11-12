@@ -398,6 +398,12 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
             executedQueries.push({ sql, params });
+            if (sql.includes('SELECT id, status, closed_at, purged_at') &&
+                sql.includes('FROM projects')) {
+              expect(sql).toContain('FOR UPDATE');
+              return { rows: [{ id: projectId, status: 'ACTIVE',
+                closed_at: null, purged_at: null }] };
+            }
             if (sql.includes('SELECT d.*, a.tag AS asset_tag')) {
               return { rows: [{ id: 'def-1', title: 'Damper stuck', raised_at: new Date() }] };
             }
