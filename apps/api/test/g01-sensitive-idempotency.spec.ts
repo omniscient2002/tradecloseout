@@ -97,6 +97,31 @@ describe('G01 secret-bearing idempotency contract', () => {
     expect(queries.some(sql => sql.includes('DELETE FROM idempotency_keys'))).toBe(false);
   });
 
+  it('destroys an uncertain receipt-store connection when rollback also fails', async () => {
+    const client = {
+      query: jest.fn(async (sql: string) => {
+        if (sql.includes('INSERT INTO idempotency_keys')) throw new Error('claim failed');
+        if (sql === 'ROLLBACK') throw new Error('rollback failed');
+        return { rows: [] };
+      }),
+      release: jest.fn(),
+    };
+    const pool = { connect: jest.fn().mockResolvedValue(client) };
+    const interceptor = new IdempotencyInterceptor(pool as any, new Reflector());
+    class ReceiptController { action() { return null; } }
+    const context = {
+      getClass: () => ReceiptController,
+      getHandler: () => ReceiptController.prototype.action,
+      switchToHttp: () => ({ getRequest: () => request, getResponse: () => ({ statusCode: 200 }) }),
+    };
+    const next = { handle: jest.fn() };
+    await expect(interceptor.intercept(context as any, next as any)).rejects.toMatchObject({
+      response: { code: 'IDEMPOTENCY_STORE_UNAVAILABLE' },
+    });
+    expect(next.handle).not.toHaveBeenCalled();
+    expect(client.release).toHaveBeenCalledWith(true);
+  });
+
   it('rejects conflicting receipt requirements before invoking a secret-bearing command', async () => {
     const pool = { connect: jest.fn() };
     const interceptor = new IdempotencyInterceptor(pool as any, new Reflector());
