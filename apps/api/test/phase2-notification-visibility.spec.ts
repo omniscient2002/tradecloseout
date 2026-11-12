@@ -2,8 +2,8 @@ import { NotificationsService } from '../src/modules/notifications/notifications
 
 describe('PH2-G20-002: notification recipient and project visibility', () => {
   it('never returns nullable-recipient broadcasts and gates project rows by live membership', async () => {
-    const query = jest.fn().mockResolvedValue({ rows: [] });
-    const db = { withTenantContext: jest.fn(async (_ctx, handler) => handler({ query })) };
+    const query = jest.fn(async (_sql: string, _params?: unknown[]) => ({ rows: [] }));
+    const db = { withTenantContext: jest.fn(async (_ctx: unknown, handler: (client: { query: typeof query }) => Promise<unknown>) => handler({ query })) };
     const service = new NotificationsService(db as any);
     await service.listNotifications({
       orgId: '00000000-0000-4000-8000-000000000001',
@@ -21,8 +21,8 @@ describe('PH2-G20-002: notification recipient and project visibility', () => {
   });
 
   it('permits organisation administrators to see only addressed project notifications', async () => {
-    const query = jest.fn().mockResolvedValue({ rows: [] });
-    const db = { withTenantContext: jest.fn(async (_ctx, handler) => handler({ query })) };
+    const query = jest.fn(async (_sql: string, _params?: unknown[]) => ({ rows: [] }));
+    const db = { withTenantContext: jest.fn(async (_ctx: unknown, handler: (client: { query: typeof query }) => Promise<unknown>) => handler({ query })) };
     await new NotificationsService(db as any).listNotifications({
       orgId: '00000000-0000-4000-8000-000000000001',
       userId: '00000000-0000-4000-8000-000000000002',
