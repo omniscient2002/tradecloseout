@@ -17,12 +17,15 @@ describe('guest session boundaries', () => {
         guest_grant_id: 'grant-1', user_name: 'Guest', user_status: 'ACTIVE', org_status: 'ACTIVE', expires_at: '2099-01-01' }] }),
       connect: jest.fn().mockResolvedValue(client),
     };
-    const req: any = { cookies: { tc_session: 'opaque-token' }, headers: {}, method: 'GET', params: {}, path: '/api/v1/guest/me/context' };
+    // A caller-controlled session id in the body must never replace the
+    // session identity derived from the opaque cookie.
+    const req: any = { cookies: { tc_session: 'opaque-token' }, headers: {}, body: { sessionId: 'spoofed' }, method: 'GET', params: {}, path: '/api/v1/guest/me/context' };
     const guard = new SessionCsrfGuard(pool as any);
     await expect(guard.canActivate({ switchToHttp: () => ({ getRequest: () => req }) } as any)).resolves.toBe(true);
     expect(statements.findIndex((sql) => sql.includes("set_config('app.current_org'")))
       .toBeLessThan(statements.findIndex((sql) => sql.includes('FROM guest_grants')));
     expect(req.userContext.guestGrantId).toBe('grant-1');
+    expect(req.userContext.sessionId).toBe('session-1');
   });
 
   it('does not create bearer-only sessions for legacy grants', async () => {
