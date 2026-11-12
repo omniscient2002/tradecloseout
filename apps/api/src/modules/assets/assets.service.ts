@@ -316,18 +316,29 @@ export class AssetsService {
       reason?: string;
     },
   ) {
+    const tagUpdate = dto.tag === undefined ? undefined : AssetTagSchema.safeParse(dto.tag);
+    if (tagUpdate && !tagUpdate.success) {
+      throw new UnprocessableEntityException({
+        code: 'INVALID_ASSET_TAG',
+        detail: tagUpdate.error.issues[0]?.message ?? 'Invalid asset tag.',
+      });
+    }
+    const normalizedUpdateTag = tagUpdate?.data;
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      const currentScope = await this.getCurrentAssetScope(client, ctx, projectId);
       // 1. Fetch current asset
       const curRes = await client.query(
         `SELECT * FROM assets WHERE org_id = $1 AND project_id = $2 AND id = $3 AND deleted_at IS NULL FOR UPDATE`,
         [ctx.orgId, projectId, assetId],
       );
       if (!curRes.rows.length) throw new NotFoundException('ASSET_NOT_FOUND');
-      await this.assertCurrentAssetAccess(client, ctx, projectId, assetId, true);
       const current = curRes.rows[0];
+      assertAssetInScope(currentScope, {
+        id: current.id, categoryKey: current.category_key, createdAt: current.created_at,
+      }, true);
 
       // 2. Detect identity attribute modifications
-      const tagChanged = dto.tag !== undefined && dto.tag.trim().toUpperCase() !== current.tag;
+      const tagChanged = normalizedUpdateTag !== undefined && normalizedUpdateTag !== current.tag;
       const nameChanged = dto.name !== undefined && dto.name.trim() !== current.name;
       const makeChanged = dto.make !== undefined && dto.make.trim() !== (current.make || '');
       const modelChanged = dto.model !== undefined && dto.model.trim() !== (current.model || '');
@@ -339,7 +350,7 @@ export class AssetsService {
       let identityRevisionMeta: any = null;
 
       if (identityChanged) {
-        const newTag = dto.tag ? dto.tag.trim().toUpperCase() : current.tag;
+        const newTag = normalizedUpdateTag ?? current.tag;
         const newName = dto.name ? dto.name.trim() : current.name;
         const newMake = dto.make !== undefined ? dto.make.trim() : current.make;
         const newModel = dto.model !== undefined ? dto.model.trim() : current.model;
@@ -484,7 +495,7 @@ export class AssetsService {
           WHERE org_id = $8 AND project_id = $9 AND id = $10 AND deleted_at IS NULL
           RETURNING *`,
         [
-          dto.tag ? dto.tag.trim().toUpperCase() : null,
+          normalizedUpdateTag ?? null,
           dto.name?.trim() || null,
           dto.make !== undefined ? dto.make.trim() : null,
           dto.model !== undefined ? dto.model.trim() : null,
@@ -642,6 +653,9 @@ export class AssetsService {
     options: { conflictStrategy?: 'SKIP' | 'FAIL' | 'UPDATE'; atomic?: boolean } = {},
   ) {
     const conflictStrategy = options.conflictStrategy || 'SKIP';
+    if (conflictStrategy === 'UPDATE') {
+      throw new UnprocessableEntityException('IMPORT_UPDATE_NOT_SUPPORTED');
+    }
     const isAtomic = options.atomic !== false;
 
     // 1. Fetch existing tags in project to detect collisions
@@ -677,7 +691,18 @@ export class AssetsService {
         continue;
       }
 
-      const normalizedTag = item.tag.trim().toUpperCase();
+      const tagValidation = AssetTagSchema.safeParse(item.tag);
+      if (!tagValidation.success) {
+        results.push({
+          rowNumber,
+          tag: typeof item.tag === 'string' ? item.tag : 'UNKNOWN',
+          status: 'ERROR',
+          conflictType: 'INVALID_TAG_FORMAT',
+          error: tagValidation.error.issues[0]?.message ?? 'Invalid asset tag.',
+        });
+        continue;
+      }
+      const normalizedTag = tagValidation.data;
 
       if (seenInFile.has(normalizedTag)) {
         results.push({
@@ -1164,7 +1189,8 @@ export class AssetsService {
         const upperModel = a.model ? a.model.toUpperCase() : null;
 
         // 1. Exact Tag Boundary Match (e.g. "CH-01")
-        const tagRegex = new RegExp(`(^|[^A-Z0-9])${upperTag}([^A-Z0-9]|$)`, 'i');
+        const escapedTag = upperTag.replace(/[.*+?^\$\{\}()|[\]\\]/g, '\\        const tagRegex = new RegExp(`(^|[^A-Z0-9])${upperTag}([^A-Z0-9]|$)`, 'i');');
+        const tagRegex = new RegExp(`(^|[^A-Z0-9])${escapedTag}([^A-Z0-9]|$)`, 'i');
         if (tagRegex.test(targetText)) {
           candidates.push({
             assetId: a.id,
