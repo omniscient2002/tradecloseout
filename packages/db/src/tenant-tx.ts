@@ -17,6 +17,7 @@ export interface TenantActorContext {
   guestCapabilities?: string[];
   guestScope?: Record<string, any>;
   sessionId?: string;
+  sessionTokenHash?: string;
 }
 
 export interface DomainOutboxEvent {
