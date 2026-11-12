@@ -12,7 +12,7 @@ if [[ "${RESTORE_DRILL_SCOPE:-}" != "disposable-staging-only" ]]; then
   exit 2
 fi
 SOURCE_DB_URL="${RESTORE_SOURCE_DATABASE_URL:?RESTORE_SOURCE_DATABASE_URL must point to an authorized disposable staging source}"
-DRILL_DB_NAME="tradecloseout_restore_drill_$(date +%s)_$_$RANDOM"
+DRILL_DB_NAME="tradecloseout_restore_drill_$(date +%s)_${BASHPID}_${RANDOM}"
 DUMP_FILE="$(mktemp "${TMPDIR:-/tmp}/tradecloseout-restore.XXXXXXXX")"
 START_TS=$(date +%s)
 CREATED_DB=0
