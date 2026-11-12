@@ -1,6 +1,6 @@
--- PH4-G14-002 / PH4-G25-005: freeze the selected evidence and decision facts.
--- Historical package rows remain distinguishable (all NULL pin fields) and
--- MUST NOT be silently reconstructed from mutable document metadata.
+-- PH4-G14-002 / PH4-G25-005: freeze exact selected evidence and waiver facts.
+-- Historical rows remain at format 1; new full handover requests create format 2.
+-- Unpinned old rows must not be silently reconstructed from newer live versions.
 SET ROLE tc_migrator;
 
 ALTER TABLE handover_packages
@@ -31,26 +31,10 @@ ALTER TABLE package_items
       source_object_key IS NOT NULL AND length(source_object_key) > 0 AND
       source_mime IS NOT NULL AND source_mime = 'application/pdf' AND
       source_size_bytes IS NOT NULL AND source_size_bytes > 0 AND
-      source_sha256 IS NOT NULL AND source_sha256 ~ '^[a-fA-F0-9]{64}
-      btrim(lower(source_provider_version_id)) NOT IN ('', 'null', 'undefined', 'none', 'unversioned')
-    )
-  );
-
-ALTER TABLE package_requirements
-  ADD COLUMN revision_code_at_generation TEXT,
-  ADD COLUMN waiver_id_at_generation UUID,
-  ADD COLUMN waiver_reason_at_generation TEXT,
-  ADD COLUMN second_approved_by_at_generation UUID;
-
-COMMENT ON COLUMN package_items.source_object_id IS
-  'Immutable storage object selected when this handover manifest was created. Never reconstruct from later live document_version state.';
-COMMENT ON COLUMN package_requirements.waiver_id_at_generation IS
-  'Frozen waiver identity and approval provenance for this package revision; not proof that a later revoked waiver remains valid.';
-
-RESET ROLE;
- AND
+      source_sha256 IS NOT NULL AND source_sha256 ~ '^[a-fA-F0-9]{64}$' AND
       source_provider_version_id IS NOT NULL AND
-      btrim(lower(source_provider_version_id)) NOT IN ('', 'null', 'undefined', 'none', 'unversioned')
+      btrim(lower(source_provider_version_id))
+        NOT IN ('', 'null', 'undefined', 'none', 'unversioned')
     )
   );
 
@@ -61,8 +45,8 @@ ALTER TABLE package_requirements
   ADD COLUMN second_approved_by_at_generation UUID;
 
 COMMENT ON COLUMN package_items.source_object_id IS
-  'Immutable storage object selected when this handover manifest was created. Never reconstruct from later live document_version state.';
+  'Object identity and immutable byte receipt selected for this exact handover manifest.';
 COMMENT ON COLUMN package_requirements.waiver_id_at_generation IS
-  'Frozen waiver identity and approval provenance for this package revision; not proof that a later revoked waiver remains valid.';
+  'Frozen approval identity, not proof that a revoked waiver remains currently valid.';
 
 RESET ROLE;
