@@ -252,7 +252,7 @@ describe('Production Review Remediation Suite (NP01..NP06, NP09, NP10)', () => {
   // NP03: Warranty Events & Effective Asset Dates
   // --------------------------------------------------------------------------
   describe('NP03: Warranty Event Date Derivation and Coverage', () => {
-    it('extends effective warranty_end on assets when an EXTENSION event is confirmed', async () => {
+    it('records an unverified OEM extension without expanding asset coverage', async () => {
       const assetId = uuidv7();
       let updatedEnd = '';
       const mockPool: any = {
@@ -292,9 +292,12 @@ describe('Production Review Remediation Suite (NP01..NP06, NP09, NP10)', () => {
         basis: 'HANDOVER',
       });
 
-      expect(res.status).toBe('CONFIRMED');
+      expect(res.status).toBe('RECORDED');
       expect(res.hasBasisConflict).toBe(false);
-      expect(updatedEnd).toBe('2028-11-07');
+      expect(res.hasDateConflict).toBe(false);
+      expect(res.coverageUpdated).toBe(false);
+      expect(res.requiresIndependentVerification).toBe(true);
+      expect(updatedEnd).toBe('');
     });
 
     it('does not alter asset warranty dates when a CLAIM event is recorded', async () => {
