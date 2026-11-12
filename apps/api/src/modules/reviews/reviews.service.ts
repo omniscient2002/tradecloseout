@@ -953,6 +953,12 @@ export class ReviewsService {
       }
       const version = verRes.rows[0];
       assertReviewVersionNotTerminal(version.review_status);
+      // An external response records a decision against a submitted review;
+      // it must not manufacture acceptance from an unsubmitted or withdrawn
+      // document version, even with otherwise valid supporting proof.
+      if (version.review_status !== 'IN_REVIEW') {
+        throw new ConflictException('DOCUMENT_VERSION_NOT_IN_REVIEW');
+      }
       if (version.row_version !== expectedRowVersion) {
         throw new HttpException({ code: 'VERSION_CHANGED', detail: 'Refresh the document version before recording a response.' }, 412);
       }
