@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
-import { deliverNotification, hasConfiguredNotificationGateway } from '../src/notification-delivery';
+import { deliverNotification, hasConfiguredNotificationGateway, projectNotificationForGateway } from '../src/notification-delivery';
 
 void test('PH1-G24-005: real gateway HTTP contract refuses redirect, oversize and unverified acceptance',async()=>{
   const prior={url:process.env.NOTIFICATION_DELIVERY_URL,token:process.env.NOTIFICATION_DELIVERY_TOKEN,
@@ -51,4 +51,33 @@ void test('PH1-G24-005: real gateway HTTP contract refuses redirect, oversize an
       if(value===undefined)delete process.env[key];else process.env[key]=value;
     }
   }
+});
+
+void test('PH2-G20-001: external templates discard untrusted legacy financial and internal fields',()=>{
+  const fromLegacy = {
+    id: randomUUID(), org_id: randomUUID(), channel: 'EMAIL',
+    event_key: 'WEEKLY_OWNER_DIGEST', recipient_user_id: randomUUID(),
+    payload_json: JSON.stringify({
+      orgDisplayName: 'Private organisation',
+      totalRetentionAtRiskPaise: '90000000000',
+      internalComment: 'secret note',
+      projects: [{
+        projectCode: 'HVAC-01',
+        projectName: 'private contract',
+        retentionAtRiskPaise: '90000000000',
+        missingOrExpiredCount: 3,
+      }],
+    }),
+  };
+  const projection = projectNotificationForGateway(fromLegacy);
+  assert.deepEqual(projection, {
+    templateVersion: 1, projects: [{ projectCode: 'HVAC-01', missingOrExpiredCount: 3 }],
+    totalProjects: 1,
+  });
+  assert.equal(JSON.stringify(projection).includes('Private'),false);
+  assert.equal(JSON.stringify(projection).includes('90000000000'),false);
+  assert.equal(projectNotificationForGateway({ ...fromLegacy, event_key: 'UNAPPROVED' }),null);
+  assert.equal(projectNotificationForGateway({
+    ...fromLegacy, payload_json: { projects: [{ projectCode: 'HVAC-01', missingOrExpiredCount: -2 }] },
+  }),null);
 });
