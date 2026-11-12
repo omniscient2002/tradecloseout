@@ -437,6 +437,59 @@ export class DocumentsService {
         }
       }
 
+      // Live upload authority is mandatory even when a route-level guard
+      // permitted the request earlier. New documents cannot bypass restrictive
+      // member scope, and replacement must be authorised for the actual parent.
+      if (isGuest) {
+        // Revoking/closing a project must also fence previously issued grants.
+        const lifecycle = await client.query(
+          'SELECT status FROM projects WHERE org_id=$1 AND id=$2 FOR SHARE',
+          [ctx.orgId, projectId],
+        );
+        if (lifecycle.rows.length !== 1 ||
+            !['ACTIVE', 'HANDOVER'].includes(lifecycle.rows[0].status)) {
+          throw new ForbiddenException('PROJECT_UPLOAD_DISABLED');
+        }
+      } else {
+        const authority = await resolveLiveProjectCommandAuthority(
+          client, ctx, projectId, 'document.upload',
+        );
+        const scope = authority.scope;
+        const parentId = dto.documentId || existingDocumentId;
+        if (parentId) {
+          const parent = await client.query(
+            `SELECT id, project_id, doc_type_key, category_key, created_at
+               FROM documents
+              WHERE org_id=$1 AND project_id=$2 AND id=$3 AND deleted_at IS NULL
+              FOR UPDATE`,
+            [ctx.orgId, projectId, parentId],
+          );
+          if (parent.rows.length !== 1) throw new NotFoundException('DOCUMENT_NOT_FOUND_IN_PROJECT');
+          await assertReviewDocumentScope(client, authority, ctx, projectId, parent.rows[0]);
+        } else {
+          // A create has no pre-assigned document id, so an allowlist of existing
+          // document ids must not confer permission to mint arbitrary new rows.
+          if (scope.documentIds) throw new ForbiddenException('DOCUMENT_UPLOAD_OUTSIDE_SCOPE');
+          const type = linkedDocumentType || dto.docTypeKey || 'DT-001';
+          const category = dto.categoryKey || 'HANDOVER_DOCS';
+          if (scope.documentTypes && !scope.documentTypes.includes(type) &&
+              !scope.documentTypes.includes(category)) {
+            throw new ForbiddenException('DOCUMENT_UPLOAD_OUTSIDE_SCOPE');
+          }
+          const currentDay = new Date().toISOString().slice(0, 10);
+          if ((scope.startDate && currentDay < scope.startDate) ||
+              (scope.endDate && currentDay > scope.endDate)) {
+            throw new ForbiddenException('DOCUMENT_UPLOAD_OUTSIDE_SCOPE');
+          }
+        }
+        // For both new and existing evidence, new associations must also be
+        // entirely within the actor's currently allowed requirement set.
+        if (scope.requirementIds && (requestedRequirementIds.length === 0 ||
+            requestedRequirementIds.some(id => !scope.requirementIds!.includes(id)))) {
+          throw new ForbiddenException('DOCUMENT_UPLOAD_OUTSIDE_SCOPE');
+        }
+      }
+
       // Soft check plan storage limit without premature deduction (Bug 2 / Dimension 10)
       const { rows: quotaRows } = await client.query(
         `SELECT uc.value AS current_storage, p.limits_json
