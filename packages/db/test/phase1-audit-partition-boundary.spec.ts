@@ -13,6 +13,8 @@ async function assertRuntimeCannotUseChild(app: Pool, name: string, orgId: strin
   // The identifier originates from pg_catalog and is still quoted in SQL.
   const qualified = 'public."' + name.replace(/"/g, '""') + '"';
   for (const sql of [
+    `ALTER TABLE ${qualified} DISABLE ROW LEVEL SECURITY`,
+    `DROP TABLE ${qualified}`,
     `SELECT id FROM ${qualified} LIMIT 1`,
     `INSERT INTO ${qualified} DEFAULT VALUES`,
     `UPDATE ${qualified} SET action = action`,
@@ -29,6 +31,9 @@ async function assertRuntimeCannotUseChild(app: Pool, name: string, orgId: strin
 async function assertPartitionContract(admin: Pool, name: string): Promise<void> {
   const { rows } = await admin.query(`
     SELECT c.relrowsecurity AS rls, c.relforcerowsecurity AS forced,
+           pg_get_userbyid(c.relowner) AS owner,
+           has_table_privilege('tc_app', c.oid, 'TRIGGER') AS can_trigger,
+           has_table_privilege('tc_app', c.oid, 'REFERENCES') AS can_reference,
            has_table_privilege('tc_app', c.oid, 'SELECT') AS can_select,
            has_table_privilege('tc_app', c.oid, 'INSERT') AS can_insert,
            has_table_privilege('tc_app', c.oid, 'UPDATE') AS can_update,
@@ -46,6 +51,9 @@ async function assertPartitionContract(admin: Pool, name: string): Promise<void>
   `, [name]);
   assert.equal(rows.length, 1, `Expected attached audit child ${name}`);
   const row = rows[0];
+  assert.equal(row.owner, 'tc_migrator', `Audit child ${name} must not belong to runtime`);
+  assert.equal(row.can_trigger, false, `Runtime could install a bypass trigger on ${name}`);
+  assert.equal(row.can_reference, false, `Runtime has unnecessary REFERENCES on ${name}`);
   assert(row.rls && row.forced, `Audit child ${name} lacks forced RLS`);
   assert(row.tenant_policy, `Audit child ${name} lacks reviewed policy`);
   assert(row.truncate_guard, `Audit child ${name} lacks explicit TRUNCATE trigger`);
@@ -72,6 +80,10 @@ async function asMigrator<T>(admin: Pool, work: (client: PoolClient) => Promise<
 test('PH1-G26-001: fresh PG16 parent access and every existing/default child are tenant-safe and immutable', async () => {
   await withDisposableDatabase(async ({ admin, app }) => {
     const { tenants: [a, b] } = await seedTenants(admin);
+    const schemaCreate = await admin.query(
+      "SELECT has_schema_privilege('tc_app', 'public', 'CREATE') AS allowed",
+    );
+    assert.equal(schemaCreate.rows[0].allowed, false, 'runtime must not create shadow tables/partitions');
     const eventId = randomUUID();
     await scoped(app, a.orgId, async client => {
       const inserted = await client.query(`
