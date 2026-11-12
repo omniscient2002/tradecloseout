@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Pool } from 'pg';
-import { withTenantTransaction } from '../src/tenant-tx';
+import { withSavepoint, withTenantTransaction } from '../src/tenant-tx';
 
 const context = {
   orgId: 'test-org',
@@ -96,4 +96,49 @@ void test('PH1-G26-006: failed BEGIN discards client without assuming a transact
   await assert.rejects(withTenantTransaction(pool, context, async () => 'result'), error => error === failure);
   assert.deepEqual(calls, ['BEGIN']);
   assert.deepEqual(released, [true]);
+});
+
+void test('PH1-G26-006: savepoints use valid bounded non-colliding SQL identifiers', async () => {
+  const sql: string[] = [];
+  const client = { query: async (statement: string) => { sql.push(statement); return { rows: [] }; } };
+  await withSavepoint(client as any, '123 bad-name;DROP TABLE users', async () => 'ok');
+  await withSavepoint(client as any, 'x'.repeat(90) + 'a', async () => 'ok');
+  await withSavepoint(client as any, 'x'.repeat(90) + 'b', async () => 'ok');
+  const names = sql.filter(x => x.startsWith('SAVEPOINT ')).map(x => x.slice('SAVEPOINT '.length));
+  assert.equal(names.length, 3);
+  assert.equal(new Set(names).size, 3, 'long names must retain distinct digest suffixes');
+  for (const name of names) {
+    assert.match(name, /^sp_[A-Za-z0-9_]+$/);
+    assert(name.length <= 63, 'PostgreSQL must not truncate this identifier');
+  }
+  assert.equal(sql.filter(x => x.startsWith('RELEASE SAVEPOINT ')).length, 3);
+});
+
+void test('PH1-G26-006: failed savepoint cleanup preserves the primary SQL failure', async () => {
+  const failure = new Error('original query failed');
+  const cleanupFailure = new Error('savepoint rollback failed');
+  const sql: string[] = [];
+  const client = {
+    query: async (statement: string) => {
+      sql.push(statement);
+      if (statement.startsWith('ROLLBACK TO SAVEPOINT ')) throw cleanupFailure;
+      return { rows: [] };
+    },
+  };
+  await assert.rejects(withSavepoint(client as any, 'nested', async () => {
+    throw failure;
+  }), err => err === failure);
+  assert(sql[0].startsWith('SAVEPOINT '));
+  assert(sql[1].startsWith('ROLLBACK TO SAVEPOINT '));
+});
+
+void test('PH1-G26-006: successful savepoint rollback releases it and rethrows original error', async () => {
+  const failure = new Error('constraint violation');
+  const sql: string[] = [];
+  const client = { query: async (statement: string) => { sql.push(statement); return { rows: [] }; } };
+  await assert.rejects(withSavepoint(client as any, 'nested', async () => { throw failure; }), err => err === failure);
+  assert.equal(sql.length, 3);
+  assert(sql[0].startsWith('SAVEPOINT '));
+  assert(sql[1].startsWith('ROLLBACK TO SAVEPOINT '));
+  assert(sql[2].startsWith('RELEASE SAVEPOINT '));
 });
