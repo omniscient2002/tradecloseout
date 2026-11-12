@@ -55,6 +55,22 @@ export async function assertConverterWorkspace(
   }
 }
 
+function assertPngPixelBudget(bytes: Uint8Array): void {
+  const data = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  // IHDR is first in a conforming PNG. Validate dimensions BEFORE pdf-lib
+  // decodes potentially enormous compressed pixel buffers.
+  if (data.length < 24 ||
+      !data.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) ||
+      data.toString('ascii', 12, 16) !== 'IHDR') {
+    throw new Error('CONVERSION_PNG_HEADER_INVALID');
+  }
+  const width = data.readUInt32BE(16);
+  const height = data.readUInt32BE(20);
+  if (width < 1 || height < 1 || width * height > MAX_IMAGE_PIXELS) {
+    throw new Error('CONVERSION_IMAGE_PIXELS_EXCEEDED');
+  }
+}
+
 async function assertBoundedOutput(pdfPath: string, pageCount: number): Promise<void> {
   const output = await stat(pdfPath);
   if (!output.isFile() || !Number.isSafeInteger(output.size) ||
@@ -109,7 +125,13 @@ export async function convertSupportingFormatToPdf(params: {
         const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'webp-conv-'));
         try {
           const tmpPng = path.join(tmpDir, 'converted.png');
-          await execFileAsync('convert', [sourcePath, tmpPng], { timeout: 10_000, maxBuffer: 1024 * 1024 });
+          await execFileAsync('convert', [
+            '-limit', 'memory', '128MiB',
+            '-limit', 'map', '256MiB',
+            '-limit', 'disk', '256MiB',
+            '-limit', 'area', '60MP',
+            sourcePath, tmpPng,
+          ], { timeout: 10_000, maxBuffer: 1024 * 1024 });
           await assertRegularBoundedInput(tmpPng, MAX_IMAGE_SOURCE_BYTES);
           finalImgBytes = await readFile(tmpPng);
         } finally {
@@ -120,6 +142,7 @@ export async function convertSupportingFormatToPdf(params: {
       }
     }
 
+    if (!isJpeg) assertPngPixelBudget(finalImgBytes);
     const page = pdfDoc.addPage([595.28, 841.89]); // A4 Portrait
     const embeddedImg = isJpeg
       ? await pdfDoc.embedJpg(finalImgBytes)
