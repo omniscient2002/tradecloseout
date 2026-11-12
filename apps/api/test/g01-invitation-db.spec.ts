@@ -15,6 +15,23 @@ async function seedInvitation(admin: Pool) {
     VALUES($1,'Invitation Test HVAC','Invitation Test HVAC','KA','ACTIVE')`,[orgId]);
   await admin.query(`INSERT INTO memberships(id,org_id,user_id,role,status)
     VALUES($1,$2,$3,'R-OWNER','ACTIVE')`,[uuidv7(),orgId,owner]);
+  // PH2-G18-002: invitation acceptance must reserve a real, current seat.
+  // An absent plan is a deliberate denial, not a starter-plan fallback.
+  const planId = uuidv7();
+  await admin.query(
+    `INSERT INTO plans(id,code,name,limits_json,price_paise,interval,status)
+     VALUES($1,$2,'Invitation test plan',
+       $3::jsonb,0,'MONTH','ACTIVE')`,
+    [planId,`G01-INV-${planId}`,JSON.stringify({
+      maxSeats: 2, maxActiveProjects: 1, maxStorageBytes: 0,
+      maxPackageGenerationsPerMonth: 0,
+    })],
+  );
+  await admin.query(
+    `INSERT INTO subscriptions(id,org_id,plan_id,status,current_period_start,current_period_end)
+     VALUES($1,$2,$3,'ACTIVE',now()-interval '1 day',now()+interval '30 days')`,
+    [uuidv7(),orgId,planId],
+  );
   await admin.query(`INSERT INTO invitations(id,org_id,email,role,token_hash,status,expires_at,invited_by)
     VALUES($1,$2,$3,'R-SITE',$4,'PENDING',now()+interval '2 days',$5)`,
     [invitationId,orgId,email,createHash('sha256').update(token).digest('hex'),owner]);
