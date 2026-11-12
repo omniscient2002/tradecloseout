@@ -993,6 +993,9 @@ export class DocumentsService {
     }
 
     const totalBytes = Number(fileRecord.size_bytes);
+    if (!Number.isSafeInteger(totalBytes) || totalBytes <= 0) {
+      throw new ForbiddenException({ code: 'FILE_SIZE_INVALID', detail: 'Verified file size is not streamable.' });
+    }
     const etag = `"${fileRecord.sha256}"`;
 
     res.setHeader('Content-Type', fileRecord.mime || 'application/pdf');
@@ -1036,30 +1039,40 @@ export class DocumentsService {
       }
     };
 
-    // Range handling: bytes=start-end (VQ01)
+    // Strict single-range support. parseInt accepts trailing garbage and would
+    // turn malformed/multi-range input into an unintended byte disclosure.
     const rangeHeader = req.headers?.['range'];
-    if (rangeHeader && typeof rangeHeader === 'string' && rangeHeader.startsWith('bytes=')) {
-      const parts = rangeHeader.slice(6).split('-');
-      let start = parts[0] ? parseInt(parts[0], 10) : NaN;
-      let end = parts[1] ? parseInt(parts[1], 10) : NaN;
-
-      if (isNaN(start) && !isNaN(end)) {
-        // Suffix range: bytes=-500 (last 500 bytes)
-        start = Math.max(0, totalBytes - end);
-        end = totalBytes - 1;
-      } else if (!isNaN(start) && isNaN(end)) {
-        // Open-ended range: bytes=1000-
-        end = totalBytes - 1;
-      }
-
-      // Check range validity (HTTP 416 if unsatisfiable)
-      if (isNaN(start) || isNaN(end) || start < 0 || start > end || start >= totalBytes) {
+    if (typeof rangeHeader === 'string' && rangeHeader.startsWith('bytes=')) {
+      const match = /^bytes=([0-9]*)-([0-9]*)$/.exec(rangeHeader);
+      const unsatisfiable = () => {
         res.status(416);
         res.setHeader('Content-Range', `bytes */${totalBytes}`);
         res.end();
+      };
+      if (!match || (!match[1] && !match[2])) {
+        unsatisfiable();
         return;
       }
 
+      let start: number;
+      let end: number;
+      if (!match[1]) {
+        const suffixLength = Number(match[2]);
+        if (!Number.isSafeInteger(suffixLength) || suffixLength <= 0) {
+          unsatisfiable();
+          return;
+        }
+        start = Math.max(0, totalBytes - suffixLength);
+        end = totalBytes - 1;
+      } else {
+        start = Number(match[1]);
+        end = match[2] ? Number(match[2]) : totalBytes - 1;
+      }
+      if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) ||
+          start < 0 || start > end || start >= totalBytes) {
+        unsatisfiable();
+        return;
+      }
       end = Math.min(end, totalBytes - 1);
       const chunkSize = end - start + 1;
 
