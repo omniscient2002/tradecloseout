@@ -185,12 +185,12 @@ describe('PH1-G01-004 / PH1-G26-004: session eligibility inside real tenant tran
         `INSERT INTO sessions
            (id,user_id,active_org_id,guest_grant_id,token_hash,csrf_token_hash,expires_at)
          VALUES ($1,$2,$3,$4,$5,$6,now()+interval '1 day')`,
-        [sessionId, userId, a.orgId, grantId, 'g'.repeat(64), 'h'.repeat(64)],
+        [sessionId, userId, a.orgId, grantId, '0'.repeat(64), 'h'.repeat(64)],
       );
       const service = new TenantDbService(app);
       const ctx = {
         orgId: a.orgId, userId, actorType: 'GUEST' as const,
-        guestGrantId: grantId, sessionId, sessionTokenHash: 'g'.repeat(64), requestId: 'guest-revocation-fence',
+        guestGrantId: grantId, sessionId, sessionTokenHash: '0'.repeat(64), requestId: 'guest-revocation-fence',
       };
       await expect(service.withTenantContext(ctx, async () => 'guest-authorized'))
         .resolves.toBe('guest-authorized');
