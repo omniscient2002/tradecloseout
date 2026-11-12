@@ -165,7 +165,10 @@ describe('PH3-G07-001/002/003 — canonical waiver lifecycle and retries', () =>
     await withDisposableDatabase(async ({admin,app})=>{
       const f=await setup(admin,app);
       const id=f.byKey['MANDATORY-WAIVE'].id;
-      const one=await f.service.requestWaiver(f.primary,id,'Documented exception for design scope','WAIVE');
+      const originalCommandId=uuidv7();
+      const one=await f.service.requestWaiver(
+        f.primary,id,'Documented exception for design scope','WAIVE',{commandId:originalCommandId},
+      );
       await expect(f.service.rejectWaiver(f.primary,one.waiverId,'Not enough technical evidence'))
         .rejects.toThrow(ForbiddenException);
       const rejected=await f.service.rejectWaiver(f.second,one.waiverId,
@@ -178,6 +181,17 @@ describe('PH3-G07-001/002/003 — canonical waiver lifecycle and retries', () =>
       expect(replay.idempotentReplay).toBe(true);
       await expect(f.service.countersignWaiver(f.second,one.waiverId))
         .rejects.toThrow(ConflictException);
+      const finalizedReplay=await f.service.requestWaiver(
+        f.primary,id,'Documented exception for design scope','WAIVE',
+        {commandId:originalCommandId},
+      );
+      expect(finalizedReplay).toMatchObject({
+        waiverId:one.waiverId,status:'REJECTED',currentEffective:false,idempotentReplay:true,
+      });
+      await expect(f.service.requestWaiver(
+        f.primary,id,'Changed payload for old command','WAIVE',
+        {commandId:originalCommandId},
+      )).rejects.toThrow('WAIVER_COMMAND_REPLAY_MISMATCH');
       const two=await f.service.requestWaiver(f.primary,id,
         'Revised technical waiver request after rejected evidence','WAIVE');
       expect(two.waiverId).not.toBe(one.waiverId);
