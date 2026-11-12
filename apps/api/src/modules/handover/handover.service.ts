@@ -795,26 +795,34 @@ export class HandoverService {
         });
       }
 
-      // Read and lock included versions and backing objects before signing.
-      // LEFT JOIN means missing/soft-deleted references cannot be mistaken for
-      // clean evidence. The snapshot's included rows are immutable.
+      // Lock included manifest entries first, then the matching versions
+      // and backing objects. Compare counts to reject missing source rows;
+      // PostgreSQL disallows FOR SHARE against nullable outer-join tables.
+      const parameters = [ctx.orgId, projectId, packageId];
+      const { rows: includedItems } = await client.query(
+        `SELECT pi.id FROM package_items pi
+          WHERE pi.org_id = $1 AND pi.project_id = $2
+            AND pi.package_id = $3 AND pi.included = true
+          ORDER BY pi.id FOR SHARE OF pi`,
+        parameters,
+      );
       const { rows: included } = await client.query(
         `SELECT pi.id AS item_id, dv.id AS version_id, dv.file_status,
                 dv.deleted_at AS version_deleted_at,
                 evidence.id AS storage_id, evidence.status AS storage_status
            FROM package_items pi
-           LEFT JOIN document_versions dv
+           JOIN document_versions dv
              ON dv.org_id = pi.org_id AND dv.project_id = pi.project_id
             AND dv.id = pi.document_version_id
-           LEFT JOIN storage_objects evidence
+           JOIN storage_objects evidence
              ON evidence.org_id = dv.org_id AND evidence.id = dv.object_id
           WHERE pi.org_id = $1 AND pi.project_id = $2
             AND pi.package_id = $3 AND pi.included = true
           ORDER BY pi.id
           FOR SHARE OF dv, evidence`,
-        [ctx.orgId, projectId, packageId],
+        parameters,
       );
-      if (included.some((row) =>
+      if (included.length !== includedItems.length || included.some((row) =>
         !row.version_id || !row.storage_id || row.version_deleted_at ||
         row.file_status !== 'READY' || row.storage_status !== 'READY'
       )) {
