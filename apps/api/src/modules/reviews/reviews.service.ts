@@ -613,7 +613,7 @@ export class ReviewsService {
       );
       if (!preliminaryRes.rows.length) throw new NotFoundException('REVIEW_NOT_FOUND');
       const preliminary = preliminaryRes.rows[0];
-      if (ctx.actorType === 'GUEST' || preliminary.reviewer_subject_type !== 'USER' ||
+      if (ctx.actorType === 'GUEST' || ctx.guestGrantId || preliminary.reviewer_subject_type !== 'USER' ||
           preliminary.reviewer_subject_id !== ctx.userId ||
           (preliminary.reviewer_user_id && preliminary.reviewer_user_id !== ctx.userId)) {
         throw new ForbiddenException('REVIEW_ASSIGNMENT_REQUIRED');
@@ -640,7 +640,7 @@ export class ReviewsService {
       if (review.status !== 'IN_REVIEW' && review.status !== 'PENDING') {
         throw new ConflictException(`INVALID_STATE_TRANSITION: Review is already in status ${review.status}`);
       }
-      if (ctx.actorType === 'GUEST' || review.reviewer_subject_type !== 'USER' ||
+      if (ctx.guestGrantId || review.reviewer_subject_type !== 'USER' ||
           review.reviewer_subject_id !== ctx.userId ||
           (review.reviewer_user_id && review.reviewer_user_id !== ctx.userId)) {
         throw new ForbiddenException('REVIEW_ASSIGNMENT_REQUIRED');
