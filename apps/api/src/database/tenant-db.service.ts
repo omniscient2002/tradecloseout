@@ -3,6 +3,7 @@
 
 import { Injectable, Optional, ForbiddenException } from '@nestjs/common';
 import { Pool, PoolClient } from 'pg';
+import { assertLiveSessionEligibleInTransaction } from '@tradecloseout/db';
 
 export interface ExecutionContext {
   orgId: string;
@@ -14,6 +15,7 @@ export interface ExecutionContext {
   guestGrantId?: string;
   guestScope?: Record<string, unknown>;
   guestCapabilities?: string[];
+  sessionId?: string;
 }
 
 @Injectable()
@@ -71,6 +73,9 @@ export class TenantDbService {
       await client.query("SELECT set_config('app.current_user', $1, true)", [ctx.userId]);
       await client.query("SELECT set_config('app.actor_type', $1, true)", [ctx.actorType]);
 
+      // Only guarded browser requests carry sessionId. Internal jobs retain
+      // their existing explicit service-authority contracts.
+      await assertLiveSessionEligibleInTransaction(client, ctx);
       const result = await fn(client);
       // COMMIT can succeed even when its acknowledgement is lost.
       commitAttempted = true;
