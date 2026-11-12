@@ -73,6 +73,46 @@ describe('PH4-G17-003 PostgreSQL aftercare lifecycle and immutable accepted cont
         [result.defectId, uuidv7()],
       )).rejects.toThrow(/defects_aftercare_accepted_package_fk/i);
 
+      // Raced closeout defect: a closure transaction holds the same project
+      // row that createDefect must lock before inserting mandatory evidence.
+      const racingProjectId = uuidv7();
+      await admin.query(
+        `INSERT INTO projects (id, org_id, code, name, status, created_by)
+         VALUES ($1, $2, 'AFTERCARE-02', 'Concurrent closure fencing', 'ACTIVE', $3)`,
+        [racingProjectId, orgId, userId],
+      );
+      const closing = await admin.connect();
+      try {
+        await closing.query('BEGIN');
+        await closing.query(
+          'SELECT id FROM projects WHERE org_id = $1 AND id = $2 FOR UPDATE',
+          [orgId, racingProjectId],
+        );
+        const concurrentCreate = service.createDefect(ctx, racingProjectId, {
+          title: 'Late mandatory defect during closure',
+        });
+        // Closing is authoritative. The competing writer either has not begun
+        // or must wait for this lock; it cannot commit into the CLOSED baseline.
+        await closing.query(
+          `UPDATE projects SET status = 'CLOSED', closed_at = now()
+           WHERE org_id = $1 AND id = $2`,
+          [orgId, racingProjectId],
+        );
+        await closing.query('COMMIT');
+        await expect(concurrentCreate).rejects.toMatchObject({
+          response: {code: 'DEFECT_PROJECT_LIFECYCLE_BLOCKED'},
+        });
+      } finally {
+        await closing.query('ROLLBACK').catch(() => undefined);
+        closing.release();
+      }
+      const { rows: [late] } = await admin.query(
+        `SELECT COUNT(*)::int AS count FROM defects
+         WHERE org_id = $1 AND project_id = $2`,
+        [orgId, racingProjectId],
+      );
+      expect(late.count).toBe(0);
+
       const { rows: [project] } = await admin.query(
         'SELECT status, closed_at FROM projects WHERE id = $1', [projectId],
       );
