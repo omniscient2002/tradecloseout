@@ -1093,11 +1093,21 @@ export class AssetsService {
                     ))
                ) AS has_valid_waiver
            ) qualification ON true
-          WHERE r.org_id = $1 AND r.project_id = $2 AND (r.asset_id = $3 OR r.id IN (
-            SELECT dr.requirement_id FROM document_requirements dr
-            JOIN document_assets da ON da.document_id = dr.document_id
-            WHERE da.asset_id = $3 AND da.org_id = $1
-          ))
+          WHERE r.org_id = $1 AND r.project_id = $2 AND (
+            r.asset_id = $3 OR (
+              -- A shared document may link this asset to a requirement owned
+              -- by a different, hidden asset. Only project-level requirements
+              -- are eligible through the indirect document relationship.
+              r.asset_id IS NULL AND r.id IN (
+                SELECT dr.requirement_id FROM document_requirements dr
+                JOIN document_assets da
+                  ON da.org_id = dr.org_id AND da.project_id = dr.project_id
+                 AND da.document_id = dr.document_id
+                WHERE dr.org_id = $1 AND dr.project_id = $2
+                  AND da.asset_id = $3
+              )
+            )
+          )
             AND r.superseded_at IS NULL
           ORDER BY r.requirement_key ASC`,
         [ctx.orgId, projectId, assetId],
