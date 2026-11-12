@@ -38,6 +38,65 @@ export interface ResolvedRequirementSpec {
   validityRule?: Record<string, unknown>;
 }
 
+/**
+ * PH2-G06-001/006: the configuration resolver sees each requested layer,
+ * not the previously accepted project snapshot. A new single-layer import
+ * must not erase or weaken a locked obligation carried by that snapshot.
+ * Compare immutable obligation semantics (not volatile provenance metadata)
+ * before the active snapshot is superseded.
+ */
+export function assertLockedChecklistBaselineInvariant(previous: unknown, proposed: unknown): void {
+  if (previous == null) return;
+  let oldPayload: Record<string, unknown>;
+  try {
+    const decoded = typeof previous === 'string' ? JSON.parse(previous) : previous;
+    if (!decoded || typeof decoded !== 'object' || Array.isArray(decoded)) {
+      throw new Error('invalid snapshot object');
+    }
+    oldPayload = decoded as Record<string, unknown>;
+  } catch {
+    throw new ConflictException({ code: 'ACTIVE_CHECKLIST_SNAPSHOT_INVALID' });
+  }
+  const priorItems = oldPayload.requirements ?? oldPayload['checklist.requirements'];
+  if (priorItems === undefined) return;
+  if (!Array.isArray(priorItems)) {
+    throw new ConflictException({ code: 'ACTIVE_CHECKLIST_SNAPSHOT_INVALID' });
+  }
+  const nextItems = (proposed as Record<string, unknown> | null)?.requirements;
+  if (!Array.isArray(nextItems)) {
+    throw new ConflictException({ code: 'CHECKLIST_REQUIREMENTS_MISSING' });
+  }
+  const nextByKey = new Map(
+    nextItems.filter((item): item is Record<string, unknown> =>
+      Boolean(item && typeof item === 'object' && !Array.isArray(item) &&
+        typeof item.key === 'string')).map(item => [item.key, item]),
+  );
+  const canonical = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(canonical);
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(Object.entries(value)
+        .filter(([key]) => key !== 'provenanceLevel')
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, next]) => [key, canonical(next)]));
+    }
+    return value;
+  };
+  for (const item of priorItems) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      throw new ConflictException({ code: 'ACTIVE_CHECKLIST_SNAPSHOT_INVALID' });
+    }
+    if (item.locked !== true) continue;
+    if (typeof item.key !== 'string' || !item.key.trim() ||
+        !nextByKey.has(item.key) ||
+        JSON.stringify(canonical(item)) !== JSON.stringify(canonical(nextByKey.get(item.key)))) {
+      throw new ConflictException({
+        code: 'LOCKED_CHECKLIST_CHANGE_REQUIRES_REVIEW',
+        detail: 'Locked contractual obligations cannot be removed or redefined by a checklist import.',
+      });
+    }
+  }
+}
+
 @Injectable()
 export class ChecklistsService {
   constructor(private readonly pool: Pool) {}
@@ -124,12 +183,13 @@ export class ChecklistsService {
       await this.lockEditableProject(client, ctx.orgId, projectId);
       // Supersede prior ACTIVE snapshot if one exists (06 §3.5)
       const { rows: priorSnaps } = await client.query(
-        `SELECT id, version_no FROM checklist_snapshots
+        `SELECT id, version_no, resolved_payload_json FROM checklist_snapshots
           WHERE org_id = $1 AND project_id = $2
           ORDER BY version_no DESC LIMIT 1
           FOR UPDATE`,
         [ctx.orgId, projectId],
       );
+      assertLockedChecklistBaselineInvariant(priorSnaps[0]?.resolved_payload_json, resolved.payload);
 
       const nextVersionNo = (priorSnaps[0]?.version_no ?? 0) + 1;
       if (priorSnaps.length > 0) {
