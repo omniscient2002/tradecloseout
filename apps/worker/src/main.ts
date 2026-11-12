@@ -2,7 +2,7 @@ import { Pool } from 'pg';
 import Redis from 'ioredis';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { Worker, Queue } from 'bullmq';
+import { Worker, Queue, DelayedError } from 'bullmq';
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { createWriteStream } from 'fs';
 import { mkdtemp, rm } from 'fs/promises';
@@ -14,7 +14,7 @@ import { lockStorageCapacity, reconcileStorageCapacity } from '@tradecloseout/db
 import { TradeCloseoutScheduler } from './scheduler';
 import { verifyAndScanUploadedFile } from './queues/file.processor';
 import { convertSupportingFormatToPdf } from './queues/format-converter';
-import { compileAndPersistHandoverPackage, markHandoverPackageFailed } from './queues/handover-package.processor';
+import { compileAndPersistHandoverPackage } from './queues/handover-package.processor';
 import { compileAndPersistPortableArchive } from './queues/portable-archive.processor';
 import { BoundedByteStream } from './queues/bounded-stream';
 import { dispatchDueOutbox } from './outbox-dispatch';
@@ -371,15 +371,20 @@ async function bootWorker() {
 
   const pdfWorker = new Worker(
     'pdf-compilation',
-    async (job) => {
-      console.log(`[BullMQ] Compiling PDF package job ${job.id}`);
+    async (job, token) => {
       try {
-        return await compileAndPersistHandoverPackage(pool, s3, job.data, String(job.id), qpdfAvailable);
-      } catch (err) {
-        if (job.attemptsMade + 1 >= Number(job.opts.attempts || 1)) {
-          await markHandoverPackageFailed(pool, job.data, String(job.id), err);
+        return await compileAndPersistHandoverPackage(
+          pool, s3, job.data, String(job.id), qpdfAvailable,
+          job.attemptsMade + 1 >= Number(job.opts.attempts || 1),
+        );
+      } catch (error) {
+        if ((error as Error).message === 'PACKAGE_BUILD_IN_PROGRESS') {
+          // Retain delivery until the owner finishes or its DB lease expires.
+          // DelayedError does not spend a provider-failure retry attempt.
+          await job.moveToDelayed(Date.now() + 30_000, token);
+          throw new DelayedError();
         }
-        throw err;
+        throw error;
       }
     },
     { connection: redis, concurrency: 2 },
@@ -458,9 +463,6 @@ async function bootWorker() {
   });
   pdfWorker.on('failed', (job, err) => {
     console.error(`Job ${job?.id} failed:`, err);
-    if (job && job.attemptsMade >= Number(job.opts.attempts || 1)) {
-      void markHandoverPackageFailed(pool, job.data, String(job.id), err);
-    }
   });
   formatWorker.on('failed', (job, err) => console.error(`Job ${job?.id} failed:`, err));
 

@@ -45,12 +45,26 @@ export async function compileAndPersistHandoverPackage(
   job: PackageJob,
   jobId: string,
   qpdfAvailable: boolean,
+  terminalAttempt = true,
+): Promise<Record<string, unknown>> {
+  // Queue IDs survive retries and stalled redelivery; ownership must not.
+  const owner = `PACKAGE_ATTEMPT:${uuidv7()}`;
+  try {
+    return await compilePackageAttempt(pool, s3, job, jobId, qpdfAvailable, owner);
+  } catch (error) {
+    await settlePackageAttempt(pool, job, owner, terminalAttempt);
+    throw error;
+  }
+}
+
+async function compilePackageAttempt(
+  pool: Pool, s3: S3Client, job: PackageJob, jobId: string,
+  qpdfAvailable: boolean, owner: string,
 ): Promise<Record<string, unknown>> {
   const packageId = job.packageId || (job.entityId && job.entityType === 'HANDOVER_PACKAGE' ? job.entityId : undefined);
   const orgId = job.orgId;
   if (!packageId || !orgId) throw new Error('PACKAGE_IDENTITY_REQUIRED');
 
-  const owner = `PACKAGE_JOB:${jobId}`;
   const client = await pool.connect();
   let destroyInitial=false;
   let packageMeta: any;
@@ -65,6 +79,7 @@ export async function compileAndPersistHandoverPackage(
     const { rows: packages } = await client.query(
       `SELECT hp.id, hp.org_id, hp.project_id, hp.version_no, hp.status,
               hp.snapshot_checksum, hp.created_at, hp.updated_at, hp.requested_by,
+              hp.updated_at > statement_timestamp() - interval '30 minutes' AS lease_active,
               hp.error_code, hp.pdf_object_id,
               p.code AS project_code, p.name AS project_name,
               o.display_name AS org_name,
@@ -91,10 +106,8 @@ export async function compileAndPersistHandoverPackage(
       await client.query('COMMIT');
       return { packageId, status: 'READY', replayed: true };
     }
-    if (packageMeta.status === 'GENERATING' && packageMeta.error_code !== owner &&
-        new Date(packageMeta.updated_at).getTime() > Date.now() - 30 * 60 * 1000) {
-      await client.query('COMMIT');
-      return { packageId, status: 'GENERATING', skipped: 'Another worker owns this package build.' };
+    if (packageMeta.status === 'GENERATING' && packageMeta.lease_active) {
+      throw new Error('PACKAGE_BUILD_IN_PROGRESS');
     }
     const claimed = await client.query(
       `UPDATE handover_packages
@@ -365,15 +378,16 @@ export async function compileAndPersistHandoverPackage(
   }
 }
 
-export async function markHandoverPackageFailed(
+async function settlePackageAttempt(
   pool: Pool,
   job: PackageJob,
-  jobId: string,
-  error: unknown,
+  owner: string,
+  terminalAttempt: boolean,
 ): Promise<void> {
   const packageId = job.packageId || (job.entityId && job.entityType === 'HANDOVER_PACKAGE' ? job.entityId : undefined);
   if (!packageId || !job.orgId) return;
   const client = await pool.connect();
+  let destroy = false;
   try {
     await client.query('BEGIN');
     await client.query(
@@ -382,17 +396,16 @@ export async function markHandoverPackageFailed(
     );
     await client.query(
       `UPDATE handover_packages
-          SET status = 'FAILED', error_code = 'PACKAGE_BUILD_FAILED',
-              error_detail = $4, row_version = row_version + 1, updated_at = now()
+          SET status = $4, error_code = CASE WHEN $4 = 'FAILED' THEN 'PACKAGE_BUILD_FAILED' ELSE NULL END,
+              error_detail = NULL, row_version = row_version + 1, updated_at = now()
         WHERE org_id = $1 AND id = $2 AND status = 'GENERATING' AND error_code = $3`,
-      [job.orgId, packageId, `PACKAGE_JOB:${jobId}`,
-        String((error as Error)?.message || 'Package build failed').slice(0, 1000)],
+      [job.orgId, packageId, owner, terminalAttempt ? 'FAILED' : 'QUEUED'],
     );
     await client.query('COMMIT');
   } catch (persistError) {
-    await client.query('ROLLBACK').catch(() => undefined);
-    console.error(`Could not persist package failure for ${packageId}:`, persistError);
+    try { await client.query('ROLLBACK'); } catch { destroy = true; }
+    console.error('PACKAGE_ATTEMPT_SETTLEMENT_FAILED');
   } finally {
-    client.release();
+    client.release(destroy);
   }
 }

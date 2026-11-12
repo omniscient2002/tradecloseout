@@ -625,9 +625,9 @@
     {
       "id": "PH2-NEW-007",
       "title": "Package build owners need distinct attempt fencing and abandoned-lease recovery",
-      "state": "OPEN",
-      "evidenceLevel": "SOURCE_CONFIRMED_RISK",
-      "notes": "Current owner derives from job id; distinct worker attempts can share it. Package READY compare-and-set prevents stale second publication, but attempt/recovery lifecycle still needs hardening in Pass10."
+      "state": "CANDIDATE_FIX_TESTED",
+      "evidenceLevel": "TARGETED_POSTGRESQL",
+      "notes": "Unique per-invocation ownership fences reservation/publication/terminal failure; retryable failures release to QUEUED. Busy BullMQ jobs delay until completion or DB-clock lease expiry. Recovered attempts allocate distinct object keys and preserve cleanup tombstones. Actual compiler/PG fixture and old-behavior mutation verified; real provider cleanup, Redis delivery acceptance, exact-head CI and independent review remain pending."
     }
   ],
   "candidateWork": [

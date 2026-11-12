@@ -1,0 +1,33 @@
+FAIL test/phase2-package-artifact-publication-db.spec.ts (6.123 s)
+  Phase2 generated artifact admission through the actual compiler
+    ✕ reserves before provider PUT, publishes only a verified reservation, replays once and fences a lost build owner (2244 ms)
+
+  ● Phase2 generated artifact admission through the actual compiler › reserves before provider PUT, publishes only a verified reservation, replays once and fences a lost build owner
+
+    expect(received).rejects.toThrow()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"checksum": "29fceddbaecfdee4bd3bf8ed22531cd81188a932b6cd8a130d0f106e5dac6dfa", "includedSourceCount": 1, "packageId": "01a1d0d8-373b-7846-9104-b2710a41c339", "pdfObjectId": "01a1d0d8-37d1-7273-b7e9-2425a95102cc", "sizeBytes": 107399, "status": "READY", "totalPages": 3}
+
+      78 |         await atPut;
+      79 |         const first=(await admin.query('SELECT error_code,build_object_id FROM handover_packages WHERE id=$1',[stale.packageId])).rows[0];
+    > 80 |         await expect(compileAndPersistHandoverPackage(app,storage.s3,stale,'same-queue-job',true))
+         |               ^
+      81 |           .rejects.toThrow('PACKAGE_BUILD_IN_PROGRESS');
+      82 |         expect((await admin.query('SELECT error_code FROM handover_packages WHERE id=$1',[stale.packageId])).rows[0].error_code).toBe(first.error_code);
+      83 |         // Model a crashed/stalled owner's lease using DB time, then redeliver the SAME job.
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at test/phase2-package-artifact-publication-db.spec.ts:80:15
+      at async withDisposableDatabase (../../packages/db/test/helpers/disposable-database.ts:107:5)
+      at async Object.<anonymous> (test/phase2-package-artifact-publication-db.spec.ts:19:10)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 1 total
+Snapshots:   0 total
+Time:        6.177 s
+Ran all test suites matching /test\/phase2-package-artifact-publication-db.spec.ts/i.
+Error: ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL
+
+  × "pnpm recursive exec" failed in /tmp/tco-phase2-reaudit/apps/api
+
