@@ -258,6 +258,24 @@ export class ProjectsService {
     projectId: string,
     dto: { name?: string; code?: string; clientPartyId?: string },
   ) {
+    // Validate the actual runtime JSON before calling trim() or issuing SQL.
+    if (!dto || typeof dto !== 'object' || Array.isArray(dto) ||
+        Object.keys(dto).some(k => !['name','code','clientPartyId'].includes(k)) ||
+        !Object.entries(dto).some(([,value]) => value !== undefined)) {
+      throw new UnprocessableEntityException({ code: 'INVALID_PROJECT_UPDATE' });
+    }
+    if (dto.name !== undefined && (typeof dto.name !== 'string' ||
+        dto.name.trim().length < 2 || dto.name.trim().length > 200)) {
+      throw new UnprocessableEntityException({ code: 'INVALID_PROJECT_NAME' });
+    }
+    if (dto.code !== undefined && (typeof dto.code !== 'string' ||
+        !ProjectCodeSchema.safeParse(dto.code.trim().toUpperCase()).success)) {
+      throw new UnprocessableEntityException({ code: 'INVALID_PROJECT_CODE' });
+    }
+    if (dto.clientPartyId !== undefined && (typeof dto.clientPartyId !== 'string' ||
+        !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(dto.clientPartyId))) {
+      throw new UnprocessableEntityException({ code: 'INVALID_PROJECT_PARTY_ID' });
+    }
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
       const { rows: projRows } = await client.query(
         `SELECT * FROM projects WHERE org_id = $1 AND id = $2 FOR UPDATE`,
@@ -266,8 +284,8 @@ export class ProjectsService {
       if (!projRows.length) throw new NotFoundException('PROJECT_NOT_FOUND');
       const proj = projRows[0];
 
-      // TC-PRJ-02: Write operations on SUSPENDED, CLOSED, or ARCHIVED project are rejected
-      if (['SUSPENDED', 'CLOSED', 'ARCHIVED'].includes(proj.status)) {
+      // HANDOVER/terminal scopes cannot be edited through a generic profile PATCH.
+      if (proj.purged_at != null || !['DRAFT', 'ACTIVE'].includes(proj.status)) {
         throw new ConflictException({
           code: 'PROJECT_IMMUTABLE',
           title: 'Project is locked',
@@ -304,6 +322,16 @@ export class ProjectsService {
         ],
       );
 
+      const changedFields = (Object.keys(dto) as Array<keyof typeof dto>)
+        .filter(key => dto[key] !== undefined);
+      emit({
+        eventType: 'PROJECT_METADATA_UPDATED',
+        projectId,
+        entityType: 'PROJECT',
+        entityId: projectId,
+        beforeJson: { rowVersion: proj.row_version, status: proj.status },
+        afterJson: { rowVersion: updatedRows[0].row_version, changedFields },
+      });
       return updatedRows[0];
     });
   }
@@ -413,6 +441,14 @@ export class ProjectsService {
         [ctx.orgId, projectId],
       );
       if (!rows.length) throw new NotFoundException('PROJECT_NOT_FOUND_OR_NOT_ACTIVE');
+      emit({
+        eventType: 'PROJECT_SUSPENDED',
+        projectId,
+        entityType: 'PROJECT',
+        entityId: projectId,
+        beforeJson: { status: 'ACTIVE', rowVersion: rows[0].row_version - 1 },
+        afterJson: { status: 'SUSPENDED', rowVersion: rows[0].row_version },
+      });
       return rows[0];
     });
   }
@@ -873,7 +909,7 @@ export class ProjectsService {
       completionDate?: string;
     },
   ) {
-    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
       await this.lockEditableCommercialProject(client, ctx.orgId, projectId);
       const contractId = uuidv7();
       const res = await client.query(
@@ -896,6 +932,13 @@ export class ProjectsService {
           ctx.userId,
         ],
       );
+      emit({
+        eventType: 'CONTRACT_CREATED',
+        projectId,
+        entityType: 'CONTRACT',
+        entityId: contractId,
+        afterJson: { reference: dto.contractRef.trim(), status: 'ACTIVE' },
+      });
       return res.rows[0];
     });
   }
@@ -977,7 +1020,7 @@ export class ProjectsService {
     projectId: string,
     dto: { specNumber: string; title: string; division?: string; documentId?: string },
   ) {
-    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
       await this.lockEditableCommercialProject(client, ctx.orgId, projectId);
       const specId = uuidv7();
       const res = await client.query(
@@ -996,6 +1039,13 @@ export class ProjectsService {
           ctx.userId,
         ],
       );
+      emit({
+        eventType: 'PROJECT_SPECIFICATION_ADDED',
+        projectId,
+        entityType: 'SPECIFICATION_REF',
+        entityId: specId,
+        afterJson: { specNumber: dto.specNumber.trim(), documentLinked: Boolean(dto.documentId) },
+      });
       return res.rows[0];
     });
   }
