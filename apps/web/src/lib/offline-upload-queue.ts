@@ -492,9 +492,9 @@ async function drainLockedUploadQueue(
 
     const currentActorPartition = window.localStorage.getItem(ACTOR_PARTITION_KEY);
     if (!currentActorPartition || item.actorPartition !== currentActorPartition) {
-      item.status = 'BLOCKED_SCOPE';
-      item.lastError = 'This draft belongs to a different signed-in account or guest grant.';
-      await saveQueueItem(db, item);
+      // Another signed-in account must not rewrite this user's original,
+      // even just to mark it blocked. The original epoch will be fenced on
+      // the owner's next drain, after a subsequent authenticated sign-in.
       continue;
     }
     // Never silently revive a blocked draft after a session/grant change.
@@ -661,6 +661,11 @@ async function drainLockedUploadQueue(
       const error = err instanceof Error ? err.message : 'Upload interrupted';
       const authBlocked = error === 'UPLOAD_ACTOR_CONTEXT_CHANGED' ||
         (err instanceof ApiProblemError && (err.status === 401 || err.status === 403));
+      // Do not persist an in-flight previous account's state to IndexedDB
+      // after another tab logs out or switches organisations.
+      if (window.localStorage.getItem(ACTOR_PARTITION_KEY) !== item.actorPartition) {
+        continue;
+      }
       item.status = authBlocked ? 'BLOCKED_SCOPE' :
         (typeof navigator !== 'undefined' && !navigator.onLine ? 'QUEUED_OFFLINE' : 'FAILED');
       item.lastError = authBlocked
