@@ -67,6 +67,7 @@ export async function withTenantTransaction<T>(
   pool: Pool,
   ctx: TenantActorContext,
   work: (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => Promise<T>,
+  options?: { isolationLevel?: 'REPEATABLE READ' },
 ): Promise<T> {
   if (!ctx.orgId || !ctx.userId) {
     throw new Error('SECURITY_INVARIANT_VIOLATION: Missing orgId or userId in RLS context');
@@ -78,6 +79,11 @@ export async function withTenantTransaction<T>(
 
   try {
     await client.query('BEGIN');
+    // Explicitly requested snapshot isolation MUST be set before any data read.
+    // Normal callers preserve their existing READ COMMITTED behavior.
+    if (options?.isolationLevel === 'REPEATABLE READ') {
+      await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+    }
     // Server-side limits bound stranded locks and idle sessions. Transaction-
     // local settings are automatically cleared after COMMIT/ROLLBACK.
     await client.query(`SET LOCAL lock_timeout = '15s'`);
