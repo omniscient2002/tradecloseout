@@ -796,7 +796,8 @@ export class DocumentsService {
            FROM document_versions dv
            JOIN storage_objects so ON so.org_id = dv.org_id AND so.id = dv.object_id
            JOIN documents d ON d.org_id = dv.org_id AND d.project_id = dv.project_id AND d.id = dv.document_id
-          WHERE dv.org_id = $1 AND dv.id = $2 AND dv.deleted_at IS NULL AND d.deleted_at IS NULL`,
+          WHERE dv.org_id = $1 AND dv.id = $2 AND dv.deleted_at IS NULL AND d.deleted_at IS NULL
+          FOR SHARE OF dv, so`,
         [ctx.orgId, versionId],
       );
       if (!verRes.rows.length) {
@@ -842,7 +843,8 @@ export class DocumentsService {
            FROM document_versions dv
            JOIN storage_objects so ON so.org_id = dv.org_id AND so.id = dv.object_id
            JOIN documents d ON d.org_id = dv.org_id AND d.project_id = dv.project_id AND d.id = dv.document_id
-          WHERE dv.org_id = $1 AND dv.id = $2 AND dv.deleted_at IS NULL AND d.deleted_at IS NULL`,
+          WHERE dv.org_id = $1 AND dv.id = $2 AND dv.deleted_at IS NULL AND d.deleted_at IS NULL
+          FOR SHARE OF dv, so`,
         [ctx.orgId, versionId],
       );
       if (!verRes.rows.length) {
