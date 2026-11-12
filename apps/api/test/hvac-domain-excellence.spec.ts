@@ -487,6 +487,14 @@ describe('HVAC Domain Excellence Suite (XP11..XP18)', () => {
         const orgIdB = tB.orgId;
         const projectB0 = tB.projectIds[0];
 
+        // seedTenants creates organisations/projects without membership rows.
+        // Explicitly seed the live owner used by the asset authorization path.
+        await admin.query(
+          `INSERT INTO memberships (id, org_id, user_id, role, status)
+            VALUES ($1, $2, $3, 'R-OWNER', 'ACTIVE')`,
+          [uuidv7(), orgIdA, seededUserId],
+        );
+
         // Seed an independent user for independent verification / approval
         const independentUserId = uuidv7();
         await admin.query(`INSERT INTO users (id, name, status) VALUES ($1, 'Independent Verifier', 'ACTIVE')`, [independentUserId]);
