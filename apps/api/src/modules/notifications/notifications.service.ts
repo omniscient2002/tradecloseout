@@ -129,7 +129,25 @@ export class NotificationsService {
    * API-131 GET /notifications
    */
   async listNotifications(ctx: ExecutionContext) {
+    // The inbox belongs to a live internal user, not a grant token or an
+    // organisation-wide "document.read" capability.
+    if (ctx.actorType !== 'USER' || ctx.guestGrantId) {
+      throw new ForbiddenException({ code: 'NOTIFICATION_INBOX_RESTRICTED' });
+    }
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+      // G03 offboarding / PH2-G20-002: a stale R-OWNER session must not
+      // retain the owner-wide project visibility bypass after demotion.
+      const { rows: members } = await client.query(
+        `SELECT m.role FROM memberships m
+          JOIN users u ON u.id=m.user_id AND u.status='ACTIVE'
+         WHERE m.org_id=$1 AND m.user_id=$2 AND m.status='ACTIVE'
+         FOR SHARE OF m,u`,
+        [ctx.orgId, ctx.userId],
+      );
+      if (!members.length) {
+        throw new ForbiddenException({ code: 'NOTIFICATION_INBOX_RESTRICTED' });
+      }
+      const liveOrgWide = members[0].role === 'R-OWNER' || members[0].role === 'R-ADMIN';
       const res = await client.query(
         `SELECT * FROM notifications
          WHERE org_id = $1 AND recipient_user_id = $2
@@ -150,7 +168,7 @@ export class NotificationsService {
              )
            )
          ORDER BY created_at DESC LIMIT 50`,
-        [ctx.orgId, ctx.userId, ctx.orgRole === 'R-OWNER' || ctx.orgRole === 'R-ADMIN'],
+        [ctx.orgId, ctx.userId, liveOrgWide],
       );
       return res.rows;
     });
