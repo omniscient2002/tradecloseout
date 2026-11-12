@@ -808,7 +808,7 @@ export class HandoverService {
       );
       const { rows: included } = await client.query(
         `SELECT pi.id AS item_id, dv.id AS version_id, dv.file_status,
-                dv.deleted_at AS version_deleted_at,
+                dv.review_status, dv.deleted_at AS version_deleted_at,
                 evidence.id AS storage_id, evidence.status AS storage_status
            FROM package_items pi
            JOIN document_versions dv
@@ -824,7 +824,8 @@ export class HandoverService {
       );
       if (included.length !== includedItems.length || included.some((row) =>
         !row.version_id || !row.storage_id || row.version_deleted_at ||
-        row.file_status !== 'READY' || row.storage_status !== 'READY'
+        row.file_status !== 'READY' || row.review_status !== 'APPROVED' ||
+        row.storage_status !== 'READY'
       )) {
         throw new UnprocessableEntityException({
           code: 'PACKAGE_EVIDENCE_QUARANTINED',
