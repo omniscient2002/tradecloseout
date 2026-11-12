@@ -91,6 +91,7 @@ export class DocumentsService {
    */
   private async assertEditableDocumentProject(
     client: PoolClient, orgId: string, documentId: string,
+    action: 'DELETE' | 'RESTORE',
   ): Promise<void> {
     const { rows: identities } = await client.query(
       `SELECT project_id FROM documents WHERE org_id = $1 AND id = $2 LIMIT 1`,
@@ -113,6 +114,47 @@ export class DocumentsService {
       [orgId, documentId, projectId],
     );
     if (!lockedDocuments.length) throw new NotFoundException('DOCUMENT_NOT_FOUND');
+
+    // A project can be ACTIVE while its evidence is independently retained
+    // by a legal hold, accepted/ready package or an approved version.
+    const { rows: protectedRows } = await client.query(
+      `SELECT
+          EXISTS (
+            SELECT 1 FROM legal_holds lh
+             WHERE lh.org_id = $1 AND lh.project_id = $2
+               AND lh.released_at IS NULL
+          ) AS legal_hold,
+          EXISTS (
+            SELECT 1 FROM document_versions dv
+             WHERE dv.org_id = $1 AND dv.project_id = $2
+               AND dv.document_id = $3 AND dv.deleted_at IS NULL
+               AND dv.review_status = 'APPROVED'
+          ) AS approved_version,
+          EXISTS (
+            SELECT 1 FROM package_items pi
+            JOIN handover_packages hp
+              ON hp.org_id = pi.org_id AND hp.project_id = pi.project_id
+             AND hp.id = pi.package_id
+            JOIN document_versions dv
+              ON dv.org_id = pi.org_id AND dv.project_id = pi.project_id
+             AND dv.id = pi.document_version_id
+           WHERE pi.org_id = $1 AND pi.project_id = $2
+             AND dv.document_id = $3 AND pi.included = true
+             AND hp.status IN (
+               'READY', 'SUBMITTED', 'PARTIALLY_ACCEPTED',
+               'ACCEPTED', 'REJECTED', 'SUPERSEDED'
+             )
+          ) AS packaged_version`,
+      [orgId, projectId, documentId],
+    );
+    const protectedEvidence = protectedRows[0];
+    if (protectedEvidence?.legal_hold) {
+      throw new ConflictException('DOCUMENT_UNDER_LEGAL_HOLD');
+    }
+    if (action === 'DELETE' &&
+        (protectedEvidence?.approved_version || protectedEvidence?.packaged_version)) {
+      throw new ConflictException('DOCUMENT_RETAINED_EVIDENCE');
+    }
   }
 
   private async assertGuestVersionScope(client: PoolClient, ctx: ExecutionContext, versionId: string, capability: 'document.upload' | 'document.download') {
@@ -1033,7 +1075,7 @@ export class DocumentsService {
    */
   async deleteDocument(ctx: ExecutionContext, documentId: string) {
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
-      await this.assertEditableDocumentProject(client, ctx.orgId, documentId);
+      await this.assertEditableDocumentProject(client, ctx.orgId, documentId, 'DELETE');
       const res = await client.query(
         `UPDATE documents
             SET deleted_at = now(), row_version = row_version + 1
@@ -1072,7 +1114,7 @@ export class DocumentsService {
    */
   async restoreDocument(ctx: ExecutionContext, documentId: string) {
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
-      await this.assertEditableDocumentProject(client, ctx.orgId, documentId);
+      await this.assertEditableDocumentProject(client, ctx.orgId, documentId, 'RESTORE');
       const res = await client.query(
         `UPDATE documents
             SET deleted_at = NULL, row_version = row_version + 1
