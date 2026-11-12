@@ -81,6 +81,41 @@ export class HandoverService {
           detail: 'Final handover generation requires an active or handover project.',
         });
       }
+      // Freeze the identity and contract facts shown in the dossier cover.
+      // Never synthesize them later from whichever contract is active then.
+      const { rows: coverRows } = await client.query(
+        `SELECT p.code AS project_code, p.name AS project_name,
+                o.display_name AS org_name,
+                COALESCE(contract.contract_ref, contract.reference, '') AS contract_ref,
+                COALESCE(client_party.name, '') AS client_name
+           FROM projects p
+           JOIN organisations o ON o.id = p.org_id
+           LEFT JOIN LATERAL (
+             SELECT c.contract_ref, c.reference, c.party_id
+               FROM contracts c
+              WHERE c.org_id = p.org_id AND c.project_id = p.id
+                AND c.status = 'ACTIVE'
+              ORDER BY c.created_at DESC, c.id DESC LIMIT 1
+           ) contract ON true
+           LEFT JOIN parties client_party ON client_party.org_id = p.org_id
+             AND client_party.id = contract.party_id
+          WHERE p.org_id = $1 AND p.id = $2`,
+        [ctx.orgId, projectId],
+      );
+      const cover = coverRows[0];
+      if (!cover || !cover.project_code || !cover.project_name || !cover.org_name) {
+        throw new UnprocessableEntityException({
+          code: 'PACKAGE_METADATA_NOT_QUALIFIED',
+          detail: 'Project and organisation identity must be fully configured for a final dossier.',
+        });
+      }
+      const metadataSnapshot = {
+        orgName: cover.org_name,
+        projectCode: cover.project_code,
+        projectName: cover.project_name,
+        contractRef: cover.contract_ref || '',
+        clientName: cover.client_name || '',
+      };
       const readiness = await evaluateReadinessInTransaction(client, ctx.orgId, projectId);
       if (!readiness.readyWithoutOverride) {
         throw new UnprocessableEntityException({
@@ -123,8 +158,9 @@ export class HandoverService {
       await client.query(
         `INSERT INTO handover_packages
           (id, org_id, project_id, version_no, status, snapshot_id, snapshot_checksum,
-           override_reason, requested_by, package_purpose, manifest_format_version)
-         VALUES ($1, $2, $3, $4, 'QUEUED', $5, $6, $7, $8, 'FULL_HANDOVER', 2)`,
+           override_reason, requested_by, package_purpose, manifest_format_version,
+           metadata_snapshot_json)
+         VALUES ($1, $2, $3, $4, 'QUEUED', $5, $6, $7, $8, 'FULL_HANDOVER', 2, $9::jsonb)`,
         [
           packageId,
           ctx.orgId,
@@ -134,6 +170,7 @@ export class HandoverService {
           activeSnapshot.checksum,
           null,
           ctx.userId,
+          JSON.stringify(metadataSnapshot),
         ],
       );
 
