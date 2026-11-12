@@ -1,0 +1,710 @@
+{
+  "policies": [
+    {
+      "tablename": "admin_audit_events",
+      "policyname": "tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "approval_overrides",
+      "policyname": "approval_overrides_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "archive_exports",
+      "policyname": "archive_exports_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = current_app_org_id())",
+      "with_check": "(org_id = current_app_org_id())"
+    },
+    {
+      "tablename": "asset_categories",
+      "policyname": "shared_catalogue_read",
+      "roles": "{public}",
+      "cmd": "SELECT",
+      "qual": "((org_id IS NULL) OR (org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid))",
+      "with_check": null
+    },
+    {
+      "tablename": "asset_categories",
+      "policyname": "tenant_write",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "asset_identity_revisions",
+      "policyname": "asset_identity_revisions_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = current_app_org_id())",
+      "with_check": "(org_id = current_app_org_id())"
+    },
+    {
+      "tablename": "assets",
+      "policyname": "assets_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "audit_chain_positions",
+      "policyname": "audit_chain_positions_migrator",
+      "roles": "{tc_migrator}",
+      "cmd": "ALL",
+      "qual": "true",
+      "with_check": "true"
+    },
+    {
+      "tablename": "audit_events",
+      "policyname": "audit_events_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "audit_events_2026_10",
+      "policyname": "phase1_audit_child_select",
+      "roles": "{tc_app}",
+      "cmd": "SELECT",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": null
+    },
+    {
+      "tablename": "audit_events_2026_11",
+      "policyname": "phase1_audit_child_select",
+      "roles": "{tc_app}",
+      "cmd": "SELECT",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": null
+    },
+    {
+      "tablename": "audit_events_2026_12",
+      "policyname": "phase1_audit_child_select",
+      "roles": "{tc_app}",
+      "cmd": "SELECT",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": null
+    },
+    {
+      "tablename": "audit_events_default",
+      "policyname": "phase1_audit_child_select",
+      "roles": "{tc_app}",
+      "cmd": "SELECT",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": null
+    },
+    {
+      "tablename": "bulk_import_jobs",
+      "policyname": "bulk_import_jobs_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "checklist_snapshots",
+      "policyname": "checklist_snapshots_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "client_profiles",
+      "policyname": "client_profiles_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "config_versions",
+      "policyname": "shared_catalogue_read",
+      "roles": "{public}",
+      "cmd": "SELECT",
+      "qual": "((org_id IS NULL) OR (org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid))",
+      "with_check": null
+    },
+    {
+      "tablename": "config_versions",
+      "policyname": "tenant_write",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "contracts",
+      "policyname": "contracts_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "credit_notes",
+      "policyname": "credit_notes_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "defects",
+      "policyname": "defects_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "deletion_requests",
+      "policyname": "deletion_requests_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "digital_signatures",
+      "policyname": "digital_signatures_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "document_assets",
+      "policyname": "document_assets_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "document_contracts",
+      "policyname": "document_contracts_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "document_events",
+      "policyname": "document_events_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "document_requirements",
+      "policyname": "document_requirements_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "document_versions",
+      "policyname": "document_versions_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "documents",
+      "policyname": "documents_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "evidence_companion_rules",
+      "policyname": "evidence_companion_rules_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = current_app_org_id())",
+      "with_check": "(org_id = current_app_org_id())"
+    },
+    {
+      "tablename": "evidence_revalidations",
+      "policyname": "evidence_revalidations_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = current_app_org_id())",
+      "with_check": "(org_id = current_app_org_id())"
+    },
+    {
+      "tablename": "guest_grants",
+      "policyname": "guest_grants_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "guest_grants",
+      "policyname": "guest_grants_token_lookup",
+      "roles": "{public}",
+      "cmd": "SELECT",
+      "qual": "((token_hash = NULLIF(current_setting('app.current_token_hash'::text, true), ''::text)) AND (status = 'ACTIVE'::text) AND (expires_at > now()))",
+      "with_check": null
+    },
+    {
+      "tablename": "handover_packages",
+      "policyname": "handover_packages_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "idempotency_keys",
+      "policyname": "idempotency_keys_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "invitations",
+      "policyname": "invitations_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "invoice_lines",
+      "policyname": "invoice_lines_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "invoice_tds",
+      "policyname": "invoice_tds_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "invoices",
+      "policyname": "invoices_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "job_executions",
+      "policyname": "tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "legal_holds",
+      "policyname": "legal_holds_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "memberships",
+      "policyname": "memberships_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "((org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid) OR (user_id = (NULLIF(current_setting('app.current_user'::text, true), ''::text))::uuid))",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "mfa_attempt_budgets",
+      "policyname": "mfa_attempt_actor",
+      "roles": "{tc_app}",
+      "cmd": "ALL",
+      "qual": "(user_id = (NULLIF(current_setting('app.current_user'::text, true), ''::text))::uuid)",
+      "with_check": "(user_id = (NULLIF(current_setting('app.current_user'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "mfa_enrollment_proposals",
+      "policyname": "mfa_enrollment_actor_policy",
+      "roles": "{tc_app}",
+      "cmd": "ALL",
+      "qual": "(user_id = (NULLIF(current_setting('app.current_user'::text, true), ''::text))::uuid)",
+      "with_check": "(user_id = (NULLIF(current_setting('app.current_user'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "mfa_recovery_codes",
+      "policyname": "mfa_recovery_codes_owner",
+      "roles": "{tc_app}",
+      "cmd": "ALL",
+      "qual": "(user_id = (NULLIF(current_setting('app.current_user'::text, true), ''::text))::uuid)",
+      "with_check": "(user_id = (NULLIF(current_setting('app.current_user'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "notification_preferences",
+      "policyname": "notification_preferences_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "notification_templates",
+      "policyname": "shared_catalogue_read",
+      "roles": "{public}",
+      "cmd": "SELECT",
+      "qual": "((org_id IS NULL) OR (org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid))",
+      "with_check": null
+    },
+    {
+      "tablename": "notification_templates",
+      "policyname": "tenant_write",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "notifications",
+      "policyname": "notifications_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "org_profiles",
+      "policyname": "org_profiles_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "outbox_events",
+      "policyname": "outbox_events_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "package_items",
+      "policyname": "package_items_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "package_layouts",
+      "policyname": "package_layouts_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "package_requirements",
+      "policyname": "package_requirements_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "parties",
+      "policyname": "parties_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "party_contacts",
+      "policyname": "party_contacts_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "payment_events",
+      "policyname": "tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "procurement_order_lines",
+      "policyname": "procurement_order_lines_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = current_app_org_id())",
+      "with_check": "(org_id = current_app_org_id())"
+    },
+    {
+      "tablename": "procurement_orders",
+      "policyname": "procurement_orders_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = current_app_org_id())",
+      "with_check": "(org_id = current_app_org_id())"
+    },
+    {
+      "tablename": "project_members",
+      "policyname": "project_members_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "projects",
+      "policyname": "projects_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "quality_inspections",
+      "policyname": "quality_inspections_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = current_app_org_id())",
+      "with_check": "(org_id = current_app_org_id())"
+    },
+    {
+      "tablename": "requirement_change_requests",
+      "policyname": "requirement_change_requests_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "requirement_revisions",
+      "policyname": "requirement_revisions_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "requirements",
+      "policyname": "requirements_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "retention_policies",
+      "policyname": "shared_catalogue_read",
+      "roles": "{public}",
+      "cmd": "SELECT",
+      "qual": "((org_id IS NULL) OR (org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid))",
+      "with_check": null
+    },
+    {
+      "tablename": "retention_policies",
+      "policyname": "tenant_write",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "review_comments",
+      "policyname": "review_comments_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "reviews",
+      "policyname": "reviews_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "seasonal_commissioning_schedules",
+      "policyname": "seasonal_commissioning_schedules_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = current_app_org_id())",
+      "with_check": "(org_id = current_app_org_id())"
+    },
+    {
+      "tablename": "security_events",
+      "policyname": "security_events_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "specification_refs",
+      "policyname": "specification_refs_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "storage_objects",
+      "policyname": "storage_objects_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "submission_events",
+      "policyname": "submission_events_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "submission_recipients",
+      "policyname": "submission_recipients_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "submissions",
+      "policyname": "submissions_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "subscriptions",
+      "policyname": "subscriptions_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "supplier_document_obligations",
+      "policyname": "supplier_document_obligations_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = current_app_org_id())",
+      "with_check": "(org_id = current_app_org_id())"
+    },
+    {
+      "tablename": "tab_worksheets",
+      "policyname": "tab_worksheets_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = current_app_org_id())",
+      "with_check": "(org_id = current_app_org_id())"
+    },
+    {
+      "tablename": "transmittal_items",
+      "policyname": "transmittal_items_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "transmittals",
+      "policyname": "transmittals_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "usage_counters",
+      "policyname": "usage_counters_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "variations",
+      "policyname": "variations_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "waivers",
+      "policyname": "waivers_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    },
+    {
+      "tablename": "warranty_events",
+      "policyname": "warranty_events_tenant_isolation",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)",
+      "with_check": "(org_id = (NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid)"
+    }
+  ],
+  "functions": [
+    {
+      "signature": "current_app_org_id()",
+      "prosecdef": false,
+      "definition": "CREATE OR REPLACE FUNCTION public.current_app_org_id()\n RETURNS uuid\n LANGUAGE plpgsql\n STABLE\nAS $function$\nDECLARE\n  v_org text := nullif(current_setting('app.current_org', true), '');\n  v_org_id text := nullif(current_setting('app.current_org_id', true), '');\nBEGIN\n  IF v_org IS NOT NULL AND v_org_id IS NOT NULL AND v_org <> v_org_id THEN\n    RAISE EXCEPTION 'TENANT_ALIAS_MISMATCH: app.current_org (%) does not match app.current_org_id (%)', v_org, v_org_id\n      USING ERRCODE = 'data_exception';\n  END IF;\n  RETURN COALESCE(v_org, v_org_id)::uuid;\nEND;\n$function$\n",
+      "runtime": true
+    },
+    {
+      "signature": "phase1_audit_expected_head(uuid)",
+      "prosecdef": true,
+      "definition": "CREATE OR REPLACE FUNCTION public.phase1_audit_expected_head(p_org uuid)\n RETURNS TABLE(event_count bigint, head_seq bigint, head_hash text)\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nDECLARE\n  v_count bigint;\n  v_seq bigint;\n  v_hash text;\nBEGIN\n  IF p_org IS NULL OR public.current_app_org_id() IS DISTINCT FROM p_org THEN\n    RAISE EXCEPTION 'AUDIT_HEAD_TENANT_CONTEXT_REQUIRED' USING ERRCODE = '42501';\n  END IF;\n  SELECT count(*)::bigint INTO v_count\n    FROM public.audit_chain_positions WHERE org_id = p_org;\n  SELECT chain_seq, event_hash INTO v_seq, v_hash\n    FROM public.audit_chain_positions\n   WHERE org_id = p_org ORDER BY chain_seq DESC LIMIT 1;\n  RETURN QUERY SELECT v_count, v_seq, v_hash;\nEND\n$function$\n",
+      "runtime": true
+    },
+    {
+      "signature": "phase1_create_audit_month_partition(integer,integer)",
+      "prosecdef": false,
+      "definition": "CREATE OR REPLACE FUNCTION public.phase1_create_audit_month_partition(p_year integer, p_month integer)\n RETURNS text\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nDECLARE\n  partition_name text;\n  partition_table regclass;\n  from_boundary timestamptz;\n  to_boundary timestamptz;\nBEGIN\n  IF p_year < 2026 OR p_year > 9998 OR p_month < 1 OR p_month > 12\n  THEN\n    RAISE EXCEPTION 'AUDIT_PARTITION_INVALID_MONTH' USING ERRCODE = '22023';\n  END IF;\n\n  partition_name := format('audit_events_%s_%s', p_year, lpad(p_month::text, 2, '0'));\n  from_boundary := make_date(p_year, p_month, 1)::timestamp AT TIME ZONE 'UTC';\n  to_boundary := (make_date(p_year, p_month, 1) + interval '1 month')::timestamp AT TIME ZONE 'UTC';\n\n  partition_table := to_regclass(format('public.%I', partition_name));\n  IF partition_table IS NULL THEN\n    EXECUTE format(\n      'CREATE TABLE public.%I PARTITION OF public.audit_events FOR VALUES FROM (%L) TO (%L)',\n      partition_name, from_boundary, to_boundary\n    );\n    partition_table := to_regclass(format('public.%I', partition_name));\n  END IF;\n\n  -- Never harden an unrelated table simply because its name resembles the\n  -- planned partition. A malicious/conflicting name must fail closed.\n  IF NOT EXISTS (\n    SELECT 1 FROM pg_catalog.pg_inherits\n     WHERE inhrelid = partition_table\n       AND inhparent = 'public.audit_events'::regclass\n  ) THEN\n    RAISE EXCEPTION 'AUDIT_PARTITION_NOT_ATTACHED' USING ERRCODE = '42501';\n  END IF;\n\n  -- A child is never an executable runtime API. PostgreSQL's table defaults\n  -- are already revoked by 0021; enforce the explicit ACL again here.\n  EXECUTE format('REVOKE ALL PRIVILEGES ON TABLE %s FROM tc_app, PUBLIC', partition_table);\n  EXECUTE format('ALTER TABLE %s ENABLE ROW LEVEL SECURITY', partition_table);\n  EXECUTE format('ALTER TABLE %s FORCE ROW LEVEL SECURITY', partition_table);\n  EXECUTE format('DROP POLICY IF EXISTS phase1_audit_child_select ON %s', partition_table);\n  EXECUTE format(\n    'CREATE POLICY phase1_audit_child_select ON %s FOR SELECT TO tc_app ' ||\n    'USING (org_id = NULLIF(current_setting(''app.current_org'', true), '''')::uuid)',\n    partition_table\n  );\n  -- Parent row-trigger clones cover UPDATE/DELETE on each new child, but\n  -- TRUNCATE is a separate privilege and a statement-level trigger.\n  EXECUTE format('DROP TRIGGER IF EXISTS trg_phase1_audit_truncate ON %s', partition_table);\n  EXECUTE format(\n    'CREATE TRIGGER trg_phase1_audit_truncate BEFORE TRUNCATE ON %s ' ||\n    'FOR EACH STATEMENT EXECUTE FUNCTION public.phase1_reject_audit_mutation()',\n    partition_table\n  );\n  RETURN partition_name;\nEND;\n$function$\n",
+      "runtime": false
+    },
+    {
+      "signature": "phase1_register_audit_position()",
+      "prosecdef": true,
+      "definition": "CREATE OR REPLACE FUNCTION public.phase1_register_audit_position()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nBEGIN\n  INSERT INTO public.audit_chain_positions\n    (chain_seq,org_id,event_id,event_created_at,prev_hash,event_hash)\n  VALUES (NEW.chain_seq,NEW.org_id,NEW.id,NEW.created_at,NEW.prev_hash,NEW.hash);\n  RETURN NULL;\nEND\n$function$\n",
+      "runtime": false
+    }
+  ]
+}
