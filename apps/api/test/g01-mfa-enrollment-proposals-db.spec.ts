@@ -29,6 +29,10 @@ describe('PH1-G01-003: MFA enrollment proposal is expiring and bound to exact se
   it('upgrades an existing database, replaces older proposals and confirms only current session once', async () => {
     await withDisposableDatabase(async ({ admin, app }) => {
       const { userId, tenants: [a] } = await seedTenants(admin);
+      await admin.query(
+        "INSERT INTO memberships(id,org_id,user_id,role,status) VALUES($1,$2,$3,'R-OWNER','ACTIVE')",
+        [randomUUID(), a.orgId, userId],
+      );
       const firstSessionId = randomUUID(), secondSessionId = randomUUID();
       const firstHash = 'a'.repeat(64), secondHash = 'b'.repeat(64);
       for (const [sessionId, tokenHash] of [
@@ -40,8 +44,8 @@ describe('PH1-G01-003: MFA enrollment proposal is expiring and bound to exact se
           [sessionId, userId, a.orgId, tokenHash, randomUUID().replace(/-/g, '').padEnd(64,'0')],
         );
       }
-      const firstCtx = { userId, sessionId: firstSessionId, sessionTokenHash: firstHash };
-      const secondCtx = { userId, sessionId: secondSessionId, sessionTokenHash: secondHash };
+      const firstCtx = { userId, activeOrgId: a.orgId, sessionId: firstSessionId, sessionTokenHash: firstHash };
+      const secondCtx = { userId, activeOrgId: a.orgId, sessionId: secondSessionId, sessionTokenHash: secondHash };
       const store = new MfaEnrollmentStore(new TenantDbService(app));
 
       const superseded = await store.begin(firstCtx);
@@ -100,13 +104,17 @@ describe('PH1-G01-003: MFA enrollment proposal is expiring and bound to exact se
   it('cancels, expires, revokes and rotates credentials without confirming any old proposal', async () => {
     await withDisposableDatabase(async ({ admin, app }) => {
       const { userId, tenants: [a] } = await seedTenants(admin);
+      await admin.query(
+        "INSERT INTO memberships(id,org_id,user_id,role,status) VALUES($1,$2,$3,'R-OWNER','ACTIVE')",
+        [randomUUID(), a.orgId, userId],
+      );
       const sessionId = randomUUID(), tokenHash = 'c'.repeat(64);
       await admin.query(
         `INSERT INTO sessions(id,user_id,active_org_id,token_hash,csrf_token_hash,expires_at)
          VALUES($1,$2,$3,$4,$5,now()+interval '1 day')`,
         [sessionId, userId, a.orgId, tokenHash, 'd'.repeat(64)],
       );
-      const ctx = { userId, sessionId, sessionTokenHash: tokenHash };
+      const ctx = { userId, activeOrgId: a.orgId, sessionId, sessionTokenHash: tokenHash };
       const store = new MfaEnrollmentStore(new TenantDbService(app));
       const cancelled = await store.begin(ctx);
       await store.cancel(ctx, cancelled.proposalId);
@@ -141,6 +149,10 @@ describe('PH1-G01-003: MFA enrollment proposal is expiring and bound to exact se
   it('serializes concurrent enrollment starts and prevents non-owner RLS reads', async () => {
     await withDisposableDatabase(async ({ admin, app }) => {
       const { userId, tenants: [a] } = await seedTenants(admin);
+      await admin.query(
+        "INSERT INTO memberships(id,org_id,user_id,role,status) VALUES($1,$2,$3,'R-OWNER','ACTIVE')",
+        [randomUUID(), a.orgId, userId],
+      );
       const sessionId = randomUUID(), tokenHash = 'f'.repeat(64);
       await admin.query(
         `INSERT INTO sessions(id,user_id,active_org_id,token_hash,csrf_token_hash,expires_at)
@@ -148,7 +160,7 @@ describe('PH1-G01-003: MFA enrollment proposal is expiring and bound to exact se
         [sessionId, userId, a.orgId, tokenHash, 'a'.repeat(64)],
       );
       const store = new MfaEnrollmentStore(new TenantDbService(app));
-      const ctx = { userId, sessionId, sessionTokenHash: tokenHash };
+      const ctx = { userId, activeOrgId: a.orgId, sessionId, sessionTokenHash: tokenHash };
       const [one, two] = await Promise.all([store.begin(ctx),store.begin(ctx)]);
       expect(one.proposalId).not.toBe(two.proposalId);
       const { rows } = await admin.query(
