@@ -13,7 +13,7 @@ const queueSource = readFileSync(resolve(process.cwd(), 'src/lib/offline-upload-
   `)
   .replace(/\bexport\s+/g, '');
 const queueScript = ts.transpileModule(
-  queueSource + '\nwindow.__queue = { enqueueFieldUpload, drainOfflineUploadQueue, setOfflineActorPartition };',
+  queueSource + '\nwindow.__queue = { enqueueFieldUpload, drainOfflineUploadQueue, setOfflineActorPartition, listOfflineUploadDrafts, discardOfflineUploadDraft, assertOfflineDraftBudget };',
   { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } },
 ).outputText;
 
@@ -111,4 +111,57 @@ test('other-actor drafts cannot upload or silently reactivate after a switch', a
   expect(puts).toHaveLength(0);
   const actions = await page.evaluate(() => (window as any).__actions as string[]);
   expect(actions).toHaveLength(0);
+});
+
+
+test('storage policy rejects oversized, too many and over-budget offline originals', async ({ page }) => {
+  await fixture(page, false);
+  const outcomes = await page.evaluate(() => {
+    const q = (window as any).__queue;
+    const results: string[] = [];
+    const check = (name: string, action: () => void) => {
+      try { action(); results.push(name + ':ACCEPTED'); }
+      catch (e) { results.push(name + ':' + (e as Error).message.split(':')[0]); }
+    };
+    const mib = 1024 * 1024;
+    check('oversized', () => q.assertOfflineDraftBudget(101 * mib, [], 'actor-original'));
+    check('ten', () => q.assertOfflineDraftBudget(1, Array(10).fill({actorPartition:'actor-original',sizeBytes:1}), 'actor-original'));
+    check('actor-quota', () => q.assertOfflineDraftBudget(90 * mib,
+      Array(3).fill({ actorPartition: 'actor-original', sizeBytes: 90 * mib }), 'actor-original'));
+    check('global-quota', () => q.assertOfflineDraftBudget(90 * mib,
+      Array(5).fill({ actorPartition: 'actor-other', sizeBytes: 95 * mib }), 'actor-original'));
+    check('normal', () => q.assertOfflineDraftBudget(90 * mib, [], 'actor-original'));
+    return results;
+  });
+  expect(outcomes).toEqual([
+    'oversized:UPLOAD_SIZE_LIMIT',
+    'ten:UPLOAD_QUEUE_ITEM_LIMIT',
+    'actor-quota:UPLOAD_QUEUE_STORAGE_LIMIT',
+    'global-quota:UPLOAD_QUEUE_STORAGE_LIMIT',
+    'normal:ACCEPTED',
+  ]);
+});
+
+test('other actor cannot list or discard a queued original; owner can discard locally', async ({ page }) => {
+  await fixture(page, false);
+  const result = await page.evaluate(async () => {
+    const q = (window as any).__queue;
+    const ownerList = await q.listOfflineUploadDrafts();
+    q.setOfflineActorPartition('actor-other');
+    const otherList = await q.listOfflineUploadDrafts();
+    let blocked = '';
+    try { await q.discardOfflineUploadDraft(ownerList[0].queueId); }
+    catch (err) { blocked = (err as Error).message; }
+    q.setOfflineActorPartition('actor-original');
+    await q.discardOfflineUploadDraft(ownerList[0].queueId);
+    const after = await q.listOfflineUploadDrafts();
+    return { ownerList, otherList, blocked, after };
+  });
+  expect(result.ownerList).toHaveLength(1);
+  expect(result.ownerList[0]).toMatchObject({
+    filename: 'site.pdf', status: 'QUEUED_OFFLINE', hasActiveIntent: false,
+  });
+  expect(result.otherList).toHaveLength(0);
+  expect(result.blocked).toBe('UPLOAD_ACTOR_CONTEXT_CHANGED');
+  expect(result.after).toHaveLength(0);
 });
