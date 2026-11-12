@@ -28,7 +28,7 @@
 | [PH4-G25-004](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G25.md#ph4-g25-004) | Complete verified conversion and paired PDF/ZIP outputs | OPEN | Not yet implemented or independently verified |
 | [PH4-G25-005](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G25.md#ph4-g25-005) | Preserve document and decision provenance in all generated content | OPEN | Not yet implemented or independently verified |
 | [PH4-G25-006](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G25.md#ph4-g25-006) | Pin archive consistency and independently retain authenticity evidence | OPEN | Not yet implemented or independently verified |
-| [PH4-G25-007](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G25.md#ph4-g25-007) | Make artifact retries, orphan cleanup and publication fail safely | OPEN | Not yet implemented or independently verified |
+| [PH4-G25-007](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G25.md#ph4-g25-007) | Make artifact retries, orphan cleanup and publication fail safely | PARTIAL / VERIFY | Version-pinned unpublished S3 object is removed after DB publication failure; crash-orphan reconciliation, retries and retention proof remain open |
 | [PH4-G25-008](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G25.md#ph4-g25-008) | Accept representative real dossiers and archives independently | BLOCKED_EXTERNAL | Requires authorized external/domain acceptance |
 | [PH4-G14-001](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G14.md#ph4-g14-001) | Implement explicit package scope, preview and cancellation | PARTIAL / VERIFY | Unsupported exclusions explicitly rejected; preview/cancel/scope still missing |
 | [PH4-G14-002](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G14.md#ph4-g14-002) | Freeze one consistently qualified manifest under shared lifecycle locks | OPEN | Not yet implemented or independently verified |
@@ -68,7 +68,7 @@
 - Tax invoices, payment settlement, GST/IRP, actual provider delivery, OEM confirmations and real engineering certification remain **disabled or pending verified integration** where applicable. Do not replace them with pretend states.
 - No independent QA, architecture, HVAC, finance, legal, customer or operations reviewer has accepted the exact candidate. No deployment, merge or production sign-off is claimed.
 
-**Count:** 52 findings; 7 external gates; 12 partial remediation areas; 33 not yet addressed areas.
+**Count:** 52 findings; 7 external gates; 13 partial remediation areas; 32 not yet addressed areas.
 
 ## Dedicated PR and CI constraint
 
@@ -81,3 +81,5 @@ This Phase 4 branch is stacked on the audited Phase 1 candidate. Its preferred r
 - Both remain **PARTIAL**, pending exact-head CI and independent acceptance evidence.
 
 - G19-002 follow-up: the second invoice TDS API path now shares invoice row locking, positive integer paise and cumulative amount bounds with the primary BillingService path. The amount limit alone does not certify actual TDS applicability or statutory section/rate configuration.
+
+- G25-007 follow-up: successful output receipt is preserved on committed READY; failed DB publication attempts delete only the unique immutable output version. Crash-between-S3-and-DB reconciliation is still missing.
