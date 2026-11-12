@@ -528,22 +528,36 @@ async function bootWorker() {
 
   console.log('✓ TradeCloseout Worker, BullMQ Queues & Leader-Locked Schedulers are ACTIVE.');
 
-  const shutdown = async () => {
-    console.log('Shutting down TradeCloseout Worker...');
-    scheduledTasks.close();
+  let shutdownPromise: Promise<void> | undefined;
+  const shutdown = (): Promise<void> => {
+    // Both signals share the same drain; never close active clients twice.
+    if (shutdownPromise) return shutdownPromise;
+    shutdownRequested = true;
     clearInterval(cycleInterval);
     clearInterval(outboxInterval);
-    await Promise.all([fileWorker.close(), pdfWorker.close(), formatWorker.close(), archiveWorker.close()]);
-    await Promise.all([fileQueue.close(), pdfQueue.close(), formatQueue.close(), archiveQueue.close()]);
-    // Do not tear down shared clients while scheduler transactions are active.
-    await scheduledTasks.drain();
-    await pool.end();
-    await redis.quit();
-    process.exit(0);
+    console.log('Shutting down TradeCloseout Worker...');
+    shutdownPromise = drainBeforeClosingDependencies(
+      [scheduledTasks, outboxTasks],
+      async () => {
+        // Queue adds and scheduler SQL must settle before worker and queue
+        // close, otherwise in-flight outbox events may be lost or ambiguous.
+        await Promise.all([fileWorker.close(), pdfWorker.close(), formatWorker.close(), archiveWorker.close()]);
+        await Promise.all([fileQueue.close(), pdfQueue.close(), formatQueue.close(), archiveQueue.close()]);
+        await pool.end();
+        await redis.quit();
+      },
+    ).then(() => {
+      process.exit(0);
+    }).catch(error => {
+      reportWorkerFailure('WORKER_SHUTDOWN_FAILED', error);
+      // Supervisor enforces the hard deadline. Do not claim a clean drain.
+      process.exitCode = 1;
+    });
+    return shutdownPromise;
   };
 
-  process.on('SIGTERM', shutdown);
-  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', () => { void shutdown(); });
+  process.on('SIGINT', () => { void shutdown(); });
 }
 
 if (require.main === module) {
