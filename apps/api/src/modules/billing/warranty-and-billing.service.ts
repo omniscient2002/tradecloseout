@@ -23,7 +23,7 @@ export class WarrantyAndBillingService {
    */
   private async supplierDefectGrant(
     client: PoolClient, ctx: TenantActorContext, projectId: string,
-  ): Promise<{partyId: string; assetIds: string[] | null; assetCategories: string[] | null}> {
+  ): Promise<{partyId: string; assetIds: string[] | null; assetCategories: string[] | null; readOnly: boolean}> {
     if (!ctx.guestGrantId) {
       throw new ForbiddenException({ code: 'DEFECT_GUEST_GRANT_REQUIRED' });
     }
@@ -65,6 +65,7 @@ export class WarrantyAndBillingService {
       partyId: grant.party_id,
       assetIds: rawAssetIds ?? null,
       assetCategories: (categories as string[] | undefined) ?? null,
+      readOnly: scope?.readOnly === true || scope?.mode === 'READ_ONLY',
     };
   }
 
@@ -381,6 +382,9 @@ export class WarrantyAndBillingService {
 
       if (ctx.actorType === 'GUEST' || ctx.guestGrantId) {
         const grant = await this.supplierDefectGrant(client, ctx, targetProjectId);
+        if (grant.readOnly) {
+          throw new ForbiddenException({ code: 'DEFECT_GUEST_SCOPE_READ_ONLY' });
+        }
         if (defect.assigned_party_id !== grant.partyId ||
             (grant.assetIds !== null &&
               (!defect.asset_id || !grant.assetIds.includes(defect.asset_id)))) {
@@ -399,9 +403,19 @@ export class WarrantyAndBillingService {
       }
       if (ctx.actorType !== 'GUEST' && !ctx.guestGrantId) {
         await this.assertMemberDefectScope(client, ctx, defect, true);
-        if (ctx.actorType === 'MEMBER' &&
-            defect.assigned_user_id && defect.assigned_user_id !== ctx.userId) {
-          throw new ForbiddenException({ code: 'DEFECT_NOT_ASSIGNED_TO_MEMBER' });
+        if (ctx.actorType === 'MEMBER') {
+          if (defect.assigned_user_id && defect.assigned_user_id !== ctx.userId) {
+            throw new ForbiddenException({ code: 'DEFECT_NOT_ASSIGNED_TO_MEMBER' });
+          }
+          // Unassigned work belongs in triage, not an arbitrary Site/QC user's
+          // mutation queue. A PM/owner can act until an explicit assignment exists.
+          if (!defect.assigned_user_id) {
+            const orgRole = (ctx as TenantActorContext & {orgRole?: string}).orgRole;
+            if (![orgRole, ctx.projectRole].some(role =>
+                ['R-PM', 'R-OWNER', 'R-ADMIN'].includes(role || ''))) {
+              throw new ForbiddenException({ code: 'DEFECT_ASSIGNMENT_REQUIRED' });
+            }
+          }
         }
       }
 
