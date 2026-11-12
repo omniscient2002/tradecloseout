@@ -206,7 +206,7 @@ describe('PH3-G11-001 authenticated HTTP: a single terminal reviewer decision wi
         // Consultant has scoped decide permission; revoke project membership
         // entirely to guarantee a denied operation without alternative grants.
         await admin.query(
-          `UPDATE project_members SET status='REVOKED'
+          `UPDATE project_members SET status='REMOVED'
              WHERE org_id=$1 AND project_id=$2 AND user_id=$3`,
           [orgId, projectId, actorB],
         );
