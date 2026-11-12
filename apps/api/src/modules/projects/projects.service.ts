@@ -844,10 +844,21 @@ export class ProjectsService {
       );
       const c = countsRes.rows[0] || {};
 
-      // A contract register supersedes the provisional project estimate.
-      // Never report unknown or partly unpriced commercial exposure as zero.
-      const commercial = await getProjectCommercialSummary(client, ctx.orgId, projectId, p);
-      const retentionPaise = commercial.informationalRetentionExposurePaise;
+      // PH2-G05-010/G20-002: dashboard project.read grants operational
+      // progress, not automatic access to contractual values. Derive the
+      // financial capability from a LIVE active tenant membership, not stale
+      // browser/session role claims or a guest's scoped project.read grant.
+      const { rows: financialActorRows } = await client.query(
+        `SELECT role FROM memberships
+          WHERE org_id=$1 AND user_id=$2 AND status='ACTIVE' FOR SHARE`,
+        [ctx.orgId, ctx.userId],
+      );
+      const mayReadCommercial = ctx.actorType !== 'GUEST' && !ctx.guestGrantId &&
+        hasPermission({orgRole:financialActorRows[0]?.role}, 'contract.manage').allowed;
+      const commercial = mayReadCommercial
+        ? await getProjectCommercialSummary(client, ctx.orgId, projectId, p)
+        : null;
+      const retentionPaise = commercial?.informationalRetentionExposurePaise ?? null;
 
       return {
         id: p.id,
@@ -858,8 +869,8 @@ export class ProjectsService {
         targetHandoverDate: p.target_handover_date,
         retentionAtRiskPaise: retentionPaise,
         informationalRetentionExposurePaise: retentionPaise,
-        contractValuePaise: commercial.contractValuePaise,
-        financialSummaryBasis: commercial.basis,
+        contractValuePaise: commercial?.contractValuePaise ?? null,
+        financialSummaryBasis: commercial?.basis ?? 'RESTRICTED',
         counts: {
           applicableTotal: Number(c.applicable_total) || 0,
           approvedCount: Number(c.approved) || 0,
