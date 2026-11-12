@@ -25,6 +25,9 @@ CREATE TABLE defect_transition_events (
   assigned_user_id UUID REFERENCES users(id),
   assigned_party_id UUID,
   due_at TIMESTAMPTZ,
+  previous_assigned_user_id UUID REFERENCES users(id),
+  previous_assigned_party_id UUID,
+  previous_due_at TIMESTAMPTZ,
   from_severity TEXT CHECK (from_severity IS NULL OR from_severity IN
     ('LOW','MEDIUM','HIGH','CRITICAL')),
   to_severity TEXT CHECK (to_severity IS NULL OR to_severity IN
@@ -36,6 +39,8 @@ CREATE TABLE defect_transition_events (
   FOREIGN KEY (org_id, project_id, defect_id)
     REFERENCES defects(org_id, project_id, id) ON DELETE RESTRICT,
   FOREIGN KEY (org_id, assigned_party_id)
+    REFERENCES parties(org_id, id),
+  FOREIGN KEY (org_id, previous_assigned_party_id)
     REFERENCES parties(org_id, id),
   FOREIGN KEY (org_id, evidence_object_id)
     REFERENCES storage_objects(org_id, id),
