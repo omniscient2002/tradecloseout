@@ -669,8 +669,9 @@ export class WarrantyAndBillingService {
         !/^[0-9A-Z_]{3,30}$/.test(input.section.trim().toUpperCase()) ||
         !Number.isInteger(input.rateBps) || input.rateBps < 1 || input.rateBps > 10000 ||
         typeof input.amountPaise !== 'bigint' || input.amountPaise <= 0n ||
-        !/^\\d{4}-\\d{2}-\\d{2}$/.test(input.deductedAt) ||
-        Number.isNaN(Date.parse(input.deductedAt))) {
+        !/^\d{4}-\d{2}-\d{2}$/.test(input.deductedAt) ||
+        Number.isNaN(Date.parse(input.deductedAt)) ||
+        new Date(input.deductedAt).toISOString().slice(0, 10) !== input.deductedAt) {
       throw new UnprocessableEntityException({
         code: 'TDS_INPUT_INVALID',
         detail: 'TDS requires a positive integer amount, bounded rate, section and valid deduction date.',
