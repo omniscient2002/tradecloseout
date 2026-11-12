@@ -56,9 +56,9 @@ async function fixture(page: import('@playwright/test').Page, expired: boolean) 
         a.push('complete');
         return {};
       }
-      if (url.includes('/documents/doc-one')) {
+      if (url.includes('/document-versions/version-one/upload-state')) {
         a.push('status');
-        return { versions: [{ id: 'version-one', file_status: 'READY' }] };
+        return { versionId: 'version-one', fileStatus: 'READY', storageStatus: 'READY' };
       }
       throw Error('Unexpected API URL: ' + url);
     };
@@ -183,8 +183,8 @@ test('lost completion response reconciles PROCESSING without a duplicate server 
         // being dropped by the network or browser.
         throw new Error('SIMULATED_LOST_COMPLETION_RESPONSE');
       }
-      if (url.includes('/documents/doc-one')) {
-        return { versions: [{ id: 'version-one', file_status: 'PROCESSING' }] };
+      if (url.includes('/document-versions/version-one/upload-state')) {
+        return { versionId: 'version-one', fileStatus: 'PROCESSING', storageStatus: 'PROCESSING' };
       }
       return baseApi(url, opts);
     };
@@ -220,8 +220,9 @@ test('same completion idempotency key is retried only after server confirms inte
         state = 'READY';
         return {};
       }
-      if (url.includes('/documents/doc-one')) {
-        return { versions: [{ id: 'version-one', file_status: state }] };
+      if (url.includes('/document-versions/version-one/upload-state')) {
+        return { versionId: 'version-one', fileStatus: state,
+          storageStatus: state === 'PENDING_UPLOAD' ? 'PENDING' : state };
       }
       return baseApi(url, opts);
     };
@@ -279,8 +280,8 @@ test('remote abort already committed can be reconciled before local discard', as
         error.status = 409;
         throw error;
       }
-      if (url.includes('/documents/doc-one')) {
-        return { versions: [{ id: 'version-one', file_status: 'FAILED' }] };
+      if (url.includes('/document-versions/version-one/upload-state')) {
+        return { versionId: 'version-one', fileStatus: 'FAILED', storageStatus: 'ABORTED' };
       }
       return oldApi(url, opts);
     };
