@@ -192,6 +192,81 @@ export class BillingController {
     );
   }
 
+  @Post('projects/:projectId/defects/:id/assign')
+  @UseGuards(SessionCsrfGuard, PermissionGuard)
+  @RequirePermission('defect.manage')
+  async assignDefect(
+    @Req() req: any,
+    @Param('projectId') projectId: string,
+    @Param('id') defectId: string,
+    @Body() dto: {
+      expectedRowVersion: number;
+      assignedUserId?: string | null;
+      assignedPartyId?: string | null;
+      dueAt?: string | null;
+      reason?: string;
+    },
+  ) {
+    return this.warrantyAndBillingService.assignDefect(
+      req.userContext, projectId, defectId, dto,
+    );
+  }
+
+  @Post('projects/:projectId/defects/:id/reject-remedy')
+  @UseGuards(SessionCsrfGuard, PermissionGuard)
+  @RequirePermission('defect.manage')
+  async rejectDefectRemedy(
+    @Req() req: any,
+    @Param('projectId') projectId: string,
+    @Param('id') defectId: string,
+    @Body() dto: { expectedRowVersion: number; reason: string },
+  ) {
+    return this.warrantyAndBillingService.rejectDefectRemedy(
+      req.userContext, projectId, defectId, dto,
+    );
+  }
+
+  @Post('projects/:projectId/defects/:id/waive')
+  @UseGuards(SessionCsrfGuard, PermissionGuard)
+  @RequirePermission('defect.manage')
+  async waiveDefect(
+    @Req() req: any,
+    @Param('projectId') projectId: string,
+    @Param('id') defectId: string,
+    @Body() dto: { expectedRowVersion: number; reason: string },
+  ) {
+    return this.warrantyAndBillingService.waiveDefect(
+      req.userContext, projectId, defectId, dto,
+    );
+  }
+
+  @Post('projects/:projectId/defects/:id/reopen')
+  @UseGuards(SessionCsrfGuard, PermissionGuard)
+  @RequirePermission('defect.manage')
+  async reopenDefect(
+    @Req() req: any,
+    @Param('projectId') projectId: string,
+    @Param('id') defectId: string,
+    @Body() dto: { expectedRowVersion: number; reason: string },
+  ) {
+    return this.warrantyAndBillingService.reopenDefect(
+      req.userContext, projectId, defectId, dto,
+    );
+  }
+
+  @Get('projects/:projectId/defects/:id/history')
+  @UseGuards(SessionCsrfGuard, PermissionGuard)
+  @RequirePermission('document.read')
+  async listDefectTransitions(
+    @Req() req: any,
+    @Param('projectId') projectId: string,
+    @Param('id') defectId: string,
+  ) {
+    return this.warrantyAndBillingService.listDefectTransitions(
+      req.userContext, projectId, defectId,
+    );
+  }
+
   @Post('billing/rule46-invoices')
   @UseGuards(SessionCsrfGuard, PermissionGuard)
   @RequirePermission('billing.manage')
