@@ -16,7 +16,10 @@ describe('document download boundaries', () => {
   };
 
   function setup(version: Record<string, unknown>, guestScopeAllowed = false, scopedDocumentIds?: string[]) {
+    let transactionOpen = false;
     const query = jest.fn(async (sql: string) => {
+      if (sql === 'BEGIN') transactionOpen = true;
+      if (sql === 'COMMIT' || sql === 'ROLLBACK') transactionOpen = false;
       if (sql.includes('SELECT dv.*') || sql.includes('SELECT dv.id')) return { rows: [version] };
       if (sql.includes('FROM guest_grants g')) return { rows: guestScopeAllowed ? [{}] : [] };
       if (sql.includes('SELECT m.role AS org_role')) {
@@ -31,7 +34,10 @@ describe('document download boundaries', () => {
     const client = { query, release: jest.fn() };
     const db = new TenantDbService({ connect: jest.fn().mockResolvedValue(client) });
     const storage = {
-      createSignedDownloadUrl: jest.fn().mockResolvedValue('signed-url'),
+      createSignedDownloadUrl: jest.fn().mockImplementation(async () => {
+        if (transactionOpen) throw new Error('SIGNING_UNDER_DATABASE_LOCK');
+        return 'signed-url';
+      }),
       finalizeUpload: jest.fn(), refreshUploadUrls: jest.fn(), abortUpload: jest.fn(),
       fetchObject: jest.fn().mockResolvedValue(Buffer.from('hello world!')),
     };
@@ -81,6 +87,17 @@ describe('document download boundaries', () => {
       .rejects.toThrow('VERSION_NOT_FOUND');
     expect(storage.createSignedDownloadUrl).not.toHaveBeenCalled();
     expect(storage.fetchObject).not.toHaveBeenCalled();
+  });
+
+  it('signs preview URLs only after releasing the authorization transaction', async () => {
+    const { service, storage } = setup(verifiedVersion);
+    await expect(service.getPreviewUrl(actor, 'version-1')).resolves.toMatchObject({
+      previewUrl: 'signed-url',
+    });
+    expect(storage.createSignedDownloadUrl).toHaveBeenCalledWith(expect.objectContaining({
+      inline: true,
+      versionId: 'provider-version',
+    }));
   });
 
   it('prevents a guest from completing another grant’s upload', async () => {
