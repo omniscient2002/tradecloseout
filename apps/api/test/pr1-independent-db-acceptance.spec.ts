@@ -179,6 +179,22 @@ describe('PR1 independent review — PostgreSQL acceptance', () => {
       } finally { await http.close(); }
       expect(await state()).toEqual(before);
       expect((await admin.query('SELECT status FROM checklist_snapshots WHERE id=$1', [first.snapshotId])).rows[0].status).toBe('ACTIVE');
+      // Phase 2: reopening reserves a real active-project entitlement. This
+      // disposable review fixture must explicitly provision a qualifying plan.
+      const reopenPlanId = uuidv7();
+      await admin.query(
+        `INSERT INTO plans(id,code,name,limits_json,price_paise,interval,status)
+         VALUES($1,'PR1_REOPEN_PLAN','Reviewed project reopen fixture',$2::jsonb,0,'MONTH','ACTIVE')`,
+        [reopenPlanId, JSON.stringify({
+          maxActiveProjects: 2, maxSeats: 5, maxStorageBytes: 1073741824,
+          maxPackageGenerationsPerMonth: 2,
+        })],
+      );
+      await admin.query(
+        `INSERT INTO subscriptions(id,org_id,plan_id,status,current_period_start,current_period_end)
+         VALUES($1,$2,$3,'TRIAL',now()-interval '1 day',now()+interval '30 days')`,
+        [uuidv7(), orgId, reopenPlanId],
+      );
       await projects.reopenProject(ctx, projectId, closed.row_version, 'Authorized additional closeout scope');
       const imported = await checklists.importL3Checklist(ctx, projectId, { requirements: [requirement('REOPENED-WORK')] });
       expect(imported.snapshotId).not.toBe(first.snapshotId);
