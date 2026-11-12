@@ -48,6 +48,7 @@ import { apiFetch, ApiProblemError } from "@/lib/api-client";
 import { downloadCsv } from "@/lib/csv-export";
 import { getMemberOfflineActorPartition, setOfflineActorPartition } from "@/lib/offline-upload-queue";
 import { parseProjectRequirementResponse, type ProjectRequirementRow, type RequirementStatus } from "@/lib/project-requirements";
+import { formatInrPaiseExact } from "@/lib/format-money";
 
 /* -------------------------------------------------------------------------- */
 /* TYPES & CONSTANTS                                                          */
@@ -165,12 +166,7 @@ const STATUS_BADGE_MAP: Record<
 };
 
 function formatInrPaise(paiseStr: string): string {
-  const rupees = Number(BigInt(paiseStr || "0")) / 100;
-  return new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 0,
-  }).format(rupees);
+  return formatInrPaiseExact(paiseStr);
 }
 
 function formatDateIst(isoDate: string | null): string {
