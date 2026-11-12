@@ -554,6 +554,42 @@ export class DocumentsService {
   }
 
   /**
+   * Recovery reauthorization for a local original that never reached a
+   * provider. The route has document.upload and project membership guards;
+   * this second database check verifies the live requirement and project
+   * lifecycle. Explicit guest rebind is unsupported (grant issuer/session
+   * identity cannot be safely inferred from browser-local records).
+   */
+  async validateDraftRecoveryAuthority(
+    ctx: ExecutionContext,
+    projectId: string,
+    requirementId: string,
+  ) {
+    if (ctx.actorType === 'GUEST' || ctx.guestGrantId) {
+      throw new ForbiddenException('GUEST_DRAFT_RECOVERY_NOT_SUPPORTED');
+    }
+    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+      const { rows } = await client.query(
+        `SELECT p.id AS project_id, r.id AS requirement_id
+           FROM projects p
+           JOIN requirements r
+             ON r.org_id = p.org_id AND r.project_id = p.id
+          WHERE p.org_id = $1 AND p.id = $2 AND r.id = $3
+            AND p.status IN ('DRAFT', 'ACTIVE', 'HANDOVER')
+            AND p.purged_at IS NULL
+            AND r.superseded_at IS NULL
+            AND r.status NOT IN ('SUPERSEDED', 'NOT_APPLICABLE', 'HANDED_OVER')
+          LIMIT 1`,
+        [ctx.orgId, projectId, requirementId],
+      );
+      if (rows.length !== 1) {
+        throw new NotFoundException('DRAFT_RECOVERY_TARGET_NO_LONGER_ELIGIBLE');
+      }
+      return { projectId: rows[0].project_id, requirementId: rows[0].requirement_id, allowed: true };
+    });
+  }
+
+  /**
    * Upload-only issuer view: return just the two authoritative processing
    * states. A guest must own the version under an active document.upload grant.
    * This prevents a document.read requirement from blocking scan convergence,
