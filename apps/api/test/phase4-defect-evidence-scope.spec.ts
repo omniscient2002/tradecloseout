@@ -142,6 +142,11 @@ describe('PH4-G17-006 defect severity contract', () => {
     const pool: any = { connect: jest.fn(async () => ({
       query: jest.fn(async (sql: string, params: any[] = []) => {
         queries.push({ sql, params });
+        if (sql.includes('SELECT id, status, closed_at, purged_at') &&
+            sql.includes('FROM projects')) {
+          return { rows: [{ id: params[1], status: 'ACTIVE',
+            closed_at: null, purged_at: null }] };
+        }
         return { rows: [], rowCount: 1 };
       }),
       release: jest.fn(),
