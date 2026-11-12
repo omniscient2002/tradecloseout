@@ -20,7 +20,7 @@ import {
   resolveConfigurationHierarchy,
   ConfigLayerInput,
 } from '../configuration/config-resolver';
-import { RequirementStatus, WaiverStatus } from '@tradecloseout/shared';
+import { RequirementStatus, WaiverStatus, hasPermission } from '@tradecloseout/shared';
 
 export interface ResolvedRequirementSpec {
   key: string;
@@ -532,234 +532,265 @@ export class ChecklistsService {
    * API-061: POST /api/v1/requirements/:id/waivers
    * Enforces Two-Approver Rule for Mandatory Requirements (FR-CHK-016)
    */
-  async waiveRequirement(
-    ctx: TenantActorContext,
-    projectId: string,
-    requirementId: string,
-    input: {
-      type: 'WAIVE' | 'NOT_APPLICABLE';
-      reason: string;
-      secondApproverUserId?: string;
-      evidenceObjectId?: string;
-    },
-  ) {
-    if (!input.reason || input.reason.trim().length < 5) {
-      throw new UnprocessableEntityException({
-        code: 'VALIDATION_FAILED',
-        detail: 'A clear reason is required to waive or mark a requirement not applicable.',
-      });
+  /**
+   * PH3-G07: enforce one current waiver decision per exact requirement revision.
+   * Tenant authority and lifecycle are loaded from the database on each command.
+   * Lock order is project -> requirement -> waiver for all waiver writers.
+   */
+  private async assertLiveWaiverAuthority(
+    client: PoolClient, ctx: TenantActorContext, projectId: string,
+    action: 'requirement.waive' | 'requirement.waive_second',
+  ): Promise<void> {
+    if (ctx.actorType === 'GUEST' || ctx.guestGrantId) {
+      throw new ForbiddenException('WAIVER_INTERNAL_AUTHORITY_REQUIRED');
     }
+    const { rows: members } = await client.query(
+      `SELECT m.role FROM memberships m
+       JOIN users u ON u.id = m.user_id AND u.status = 'ACTIVE'
+       WHERE m.org_id = $1 AND m.user_id = $2 AND m.status = 'ACTIVE'
+       FOR SHARE OF m`,
+      [ctx.orgId, ctx.userId],
+    );
+    if (!members.length) throw new ForbiddenException('WAIVER_ACTIVE_MEMBERSHIP_REQUIRED');
+    const { rows: projects } = await client.query(
+      `SELECT role FROM project_members
+       WHERE org_id = $1 AND project_id = $2 AND user_id = $3
+         AND status = 'ACTIVE' FOR SHARE`,
+      [ctx.orgId, projectId, ctx.userId],
+    );
+    const evaluated = hasPermission(
+      { orgRole: members[0].role, projectRole: projects[0]?.role },
+      action,
+    );
+    if (!evaluated.allowed || (evaluated.scope === 'S' && !projects.length)) {
+      throw new ForbiddenException('WAIVER_PERMISSION_DENIED');
+    }
+  }
 
-    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
-      const { rows } = await client.query(
-        `SELECT id, mandatory, status, row_version
-           FROM requirements
-          WHERE org_id = $1 AND project_id = $2 AND id = $3
-          FOR UPDATE`,
-        [ctx.orgId, projectId, requirementId],
-      );
-
-      if (rows.length === 0) {
-        throw new NotFoundException({ code: 'NOT_FOUND', detail: 'Requirement not found.' });
-      }
-      const req = rows[0];
-
-      // Mandatory Requirement Two-Approver Guardrail (FR-CHK-016 / 08 §8 Rule 3)
-      if (req.mandatory && input.type === 'WAIVE') {
-        if (!input.secondApproverUserId || input.secondApproverUserId === ctx.userId) {
-          // If no second approver provided yet, place in PENDING_SECOND_APPROVAL (Smoke Test / WF-20 flow)
-          const waiverId = uuidv7();
-          await client.query(
-            `INSERT INTO waivers
-              (id, org_id, project_id, requirement_id, type, reason, evidence_object_id,
-               requested_by, approved_by, status)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8, $9)`,
-            [
-              waiverId,
-              ctx.orgId,
-              projectId,
-              requirementId,
-              input.type,
-              input.reason.trim(),
-              input.evidenceObjectId ?? null,
-              ctx.userId,
-              WaiverStatus.PENDING_SECOND_APPROVAL,
-            ],
-          );
-
-          await client.query(
-            `UPDATE requirements
-                SET status = $4, row_version = row_version + 1, updated_at = now()
-              WHERE org_id = $1 AND project_id = $2 AND id = $3`,
-            [ctx.orgId, projectId, requirementId, RequirementStatus.PENDING_WAIVER],
-          );
-
-          return { waiverId, requirementId, status: WaiverStatus.PENDING_SECOND_APPROVAL, requirementStatus: RequirementStatus.PENDING_WAIVER };
-        }
-
-        const { rows: secondRows } = await client.query(
-          `SELECT role, status FROM memberships
-            WHERE org_id = $1 AND user_id = $2`,
-          [ctx.orgId, input.secondApproverUserId],
-        );
-        if (
-          secondRows.length === 0 ||
-          secondRows[0].status !== 'ACTIVE' ||
-          !['R-OWNER', 'R-ADMIN'].includes(secondRows[0].role)
-        ) {
-          throw new ForbiddenException({
-            code: 'INVALID_SECOND_APPROVER',
-            detail: 'Countersigning second approver must hold an active R-OWNER or R-ADMIN role.',
-          });
-        }
-      }
-
-      const waiverId = uuidv7();
-      await client.query(
-        `INSERT INTO waivers
-          (id, org_id, project_id, requirement_id, type, reason, evidence_object_id,
-           approved_by, second_approved_by, status)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'ACTIVE')`,
-        [
-          waiverId,
-          ctx.orgId,
-          projectId,
-          requirementId,
-          input.type,
-          input.reason.trim(),
-          input.evidenceObjectId ?? null,
-          ctx.userId,
-          input.secondApproverUserId ?? null,
-        ],
-      );
-
-      const nextStatus = input.type === 'WAIVE' ? 'WAIVED' : 'NOT_APPLICABLE';
-      await client.query(
-        `UPDATE requirements
-            SET status = $4, row_version = row_version + 1, updated_at = now()
-          WHERE org_id = $1 AND project_id = $2 AND id = $3`,
-        [ctx.orgId, projectId, requirementId, nextStatus],
-      );
-
-      emit({
-        eventType: `REQUIREMENT_${nextStatus}`,
-        projectId,
-        entityType: 'REQUIREMENT',
-        entityId: requirementId,
-        beforeJson: { status: req.status },
-        afterJson: {
-          status: nextStatus,
-          waiverId,
-          reason: input.reason,
-          secondApproverUserId: input.secondApproverUserId ?? null,
-        },
-      });
-
-      return { waiverId, requirementId, status: nextStatus };
-    });
+  private async lockCurrentWaiverRequirement(
+    client: PoolClient, ctx: TenantActorContext,
+    projectId: string, requirementId: string,
+  ): Promise<{
+    id: string; project_id: string; mandatory: boolean;
+    status: string; row_version: number;
+  }> {
+    await this.lockEditableProject(client, ctx.orgId, projectId);
+    const { rows } = await client.query(
+      `SELECT r.id, r.project_id, r.mandatory, r.status, r.row_version
+         FROM requirements r
+         JOIN checklist_snapshots cs
+           ON cs.org_id = r.org_id AND cs.project_id = r.project_id
+          AND cs.id = r.current_snapshot_id AND cs.status = 'ACTIVE'
+        WHERE r.org_id = $1 AND r.project_id = $2 AND r.id = $3
+          AND r.superseded_at IS NULL
+        FOR UPDATE OF r`,
+      [ctx.orgId, projectId, requirementId],
+    );
+    if (!rows.length) throw new ConflictException('WAIVER_OBLIGATION_NOT_CURRENT');
+    return rows[0];
   }
 
   /**
-   * Controller wrapper for requestWaiver
+   * Optional requirements may be marked waived/NA immediately by a qualified
+   * actor. Mandatory requirements always require an independent countersign
+   * irrespective of whether the intent is WAIVE or NOT_APPLICABLE.
    */
   async requestWaiver(
     ctx: TenantActorContext,
     requirementId: string,
     reason: string,
     type: 'WAIVE' | 'NOT_APPLICABLE' = 'WAIVE',
+    options: { commandId?: string; expectedRowVersion?: number } = {},
   ) {
-    if (!reason || reason.trim().length < 5) {
+    if (!['WAIVE', 'NOT_APPLICABLE'].includes(type) ||
+        typeof reason !== 'string' || reason.trim().length < 10 ||
+        reason.trim().length > 2000) {
       throw new UnprocessableEntityException({
-        code: 'VALIDATION_FAILED',
-        detail: 'A clear reason is required to waive or mark a requirement not applicable.',
+        code: 'INVALID_WAIVER_INTENT',
+        detail: 'WAIVE or NOT_APPLICABLE requires a reason of 10–2000 characters.',
       });
     }
-
-    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
-      const { rows } = await client.query(
-        `SELECT id, project_id, mandatory, status, row_version
-           FROM requirements
-          WHERE org_id = $1 AND id = $2
-          FOR UPDATE`,
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if ((options.commandId !== undefined && !uuid.test(options.commandId)) ||
+        (options.expectedRowVersion !== undefined &&
+          (!Number.isSafeInteger(options.expectedRowVersion) || options.expectedRowVersion < 1))) {
+      throw new UnprocessableEntityException('INVALID_WAIVER_PRECONDITION');
+    }
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      const target = await client.query(
+        `SELECT project_id FROM requirements WHERE org_id = $1 AND id = $2`,
         [ctx.orgId, requirementId],
       );
-
-      if (rows.length === 0) {
-        throw new NotFoundException({ code: 'NOT_FOUND', detail: 'Requirement not found.' });
+      if (!target.rows.length) throw new NotFoundException('REQUIREMENT_NOT_FOUND');
+      const projectId = target.rows[0].project_id as string;
+      const req = await this.lockCurrentWaiverRequirement(client, ctx, projectId, requirementId);
+      await this.assertLiveWaiverAuthority(client, ctx, projectId, 'requirement.waive');
+      const { rows: intents } = await client.query(
+        `SELECT * FROM waivers
+          WHERE org_id = $1 AND project_id = $2 AND requirement_id = $3
+            AND status IN ('PENDING_SECOND_APPROVAL','ACTIVE')
+          ORDER BY created_at DESC, id DESC FOR UPDATE`,
+        [ctx.orgId, projectId, requirementId],
+      );
+      if (intents.length > 1) throw new ConflictException('WAIVER_DUPLICATE_ACTIVE_INTENTS');
+      if (intents.length === 1) {
+        const prior = intents[0];
+        if (prior.type !== type || prior.reason !== reason.trim() ||
+            prior.requested_by !== ctx.userId ||
+            (options.commandId !== undefined && prior.command_id !== options.commandId)) {
+          throw new ConflictException('WAIVER_CURRENT_INTENT_CONFLICT');
+        }
+        if (prior.obligation_row_version == null) {
+          throw new ConflictException('WAIVER_LEGACY_INTENT_REQUALIFICATION_REQUIRED');
+        }
+        if (options.expectedRowVersion !== undefined &&
+            options.expectedRowVersion !== prior.obligation_row_version &&
+            options.expectedRowVersion !== req.row_version) {
+          throw new ConflictException('WAIVER_ROW_VERSION_CONFLICT');
+        }
+        return {
+          waiverId: prior.id, requirementId, status: prior.status,
+          requirementStatus: req.status, rowVersion: req.row_version,
+          idempotentReplay: true,
+        };
       }
-      const req = rows[0];
-      const projectId = req.project_id;
-
+      if (options.expectedRowVersion !== undefined &&
+          options.expectedRowVersion !== req.row_version) {
+        throw new ConflictException('WAIVER_ROW_VERSION_CONFLICT');
+      }
+      if (['WAIVED', 'NOT_APPLICABLE', 'PENDING_WAIVER', 'HANDED_OVER',
+           'SUPERSEDED', 'APPROVED'].includes(req.status)) {
+        throw new ConflictException('WAIVER_REQUIREMENT_NOT_ELIGIBLE');
+      }
+      const mandatory = req.mandatory === true;
+      const status = mandatory ? WaiverStatus.PENDING_SECOND_APPROVAL : WaiverStatus.ACTIVE;
+      const requirementStatus = mandatory
+        ? RequirementStatus.PENDING_WAIVER
+        : type === 'WAIVE' ? RequirementStatus.WAIVED : RequirementStatus.NOT_APPLICABLE;
       const waiverId = uuidv7();
       await client.query(
         `INSERT INTO waivers
-          (id, org_id, project_id, requirement_id, type, reason, requested_by, approved_by, status)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8)`,
+          (id, org_id, project_id, requirement_id, type, reason,
+           is_mandatory_item, requested_by, approved_by, status,
+           obligation_row_version, command_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8, $9, $10, $11)`,
         [
-          waiverId,
-          ctx.orgId,
-          projectId,
-          requirementId,
-          type,
-          reason.trim(),
-          ctx.userId,
-          WaiverStatus.PENDING_SECOND_APPROVAL,
+          waiverId, ctx.orgId, projectId, requirementId, type,
+          reason.trim(), mandatory, ctx.userId, status, req.row_version,
+          options.commandId ?? null,
         ],
       );
-
       await client.query(
         `UPDATE requirements
             SET status = $4, row_version = row_version + 1, updated_at = now()
-          WHERE org_id = $1 AND project_id = $2 AND id = $3`,
-        [ctx.orgId, projectId, requirementId, RequirementStatus.PENDING_WAIVER],
+          WHERE org_id = $1 AND project_id = $2 AND id = $3 AND row_version = $5`,
+        [ctx.orgId, projectId, requirementId, requirementStatus, req.row_version],
       );
-
+      emit({
+        eventType: mandatory ? 'WAIVER_REQUESTED' : 'WAIVER_APPROVED_OPTIONAL',
+        projectId, entityType: 'WAIVER', entityId: waiverId,
+        afterJson: {
+          requirementId, type, status, requirementStatus, mandatory,
+          obligationRowVersion: req.row_version, commandId: options.commandId ?? null,
+        },
+      });
       return {
-        waiverId,
-        requirementId,
-        status: WaiverStatus.PENDING_SECOND_APPROVAL,
-        requirementStatus: RequirementStatus.PENDING_WAIVER,
+        waiverId, requirementId, status, requirementStatus,
+        rowVersion: req.row_version + 1, idempotentReplay: false,
       };
     });
   }
 
+  /** Older in-process entrypoint is deliberately routed through the same
+   * canonical authority, lifecycle and independent-approval state machine. */
+  async waiveRequirement(
+    ctx: TenantActorContext, projectId: string, requirementId: string,
+    input: {
+      type: 'WAIVE' | 'NOT_APPLICABLE'; reason: string;
+      secondApproverUserId?: string; evidenceObjectId?: string;
+    },
+  ) {
+    if (input.secondApproverUserId || input.evidenceObjectId) {
+      throw new ConflictException('USE_EXPLICIT_WAIVER_COUNTERSIGN_AND_EVIDENCE_REVIEW');
+    }
+    const target = await this.requestWaiver(ctx, requirementId, input.reason, input.type);
+    // The project ID was not trusted for the canonical write. Verify it
+    // before returning any details on this compatibility entry point.
+    if (!projectId) throw new NotFoundException('PROJECT_NOT_FOUND');
+    return target;
+  }
+
   /**
-   * API-061A POST /waivers/:id/countersign (RT-023)
+   * Only an explicitly named waiver may be countersigned. No latest-by-
+   * requirement fallback and no approval of a changed or superseded baseline.
    */
   async countersignWaiver(ctx: TenantActorContext, waiverId: string) {
-    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
-      const waiverRes = await client.query(
-        `SELECT * FROM waivers WHERE org_id = $1 AND (id = $2 OR requirement_id = $2) ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      const { rows: identifiers } = await client.query(
+        `SELECT project_id, requirement_id FROM waivers WHERE org_id = $1 AND id = $2`,
         [ctx.orgId, waiverId],
       );
-      if (!waiverRes.rows.length) {
-        throw new NotFoundException('WAIVER_NOT_FOUND');
+      if (!identifiers.length) throw new NotFoundException('WAIVER_NOT_FOUND');
+      const { project_id: projectId, requirement_id: requirementId } = identifiers[0];
+      const req = await this.lockCurrentWaiverRequirement(client, ctx, projectId, requirementId);
+      await this.assertLiveWaiverAuthority(client, ctx, projectId, 'requirement.waive_second');
+      const { rows } = await client.query(
+        `SELECT * FROM waivers WHERE org_id = $1 AND project_id = $2
+           AND requirement_id = $3 AND id = $4 FOR UPDATE`,
+        [ctx.orgId, projectId, requirementId, waiverId],
+      );
+      if (!rows.length) throw new NotFoundException('WAIVER_NOT_FOUND');
+      const waiver = rows[0];
+      if (waiver.status === WaiverStatus.ACTIVE &&
+          waiver.second_approved_by === ctx.userId &&
+          req.status === (waiver.type === 'WAIVE' ? 'WAIVED' : 'NOT_APPLICABLE') &&
+          req.row_version === waiver.obligation_row_version + 2) {
+        return {
+          waiverId, status: WaiverStatus.ACTIVE, requirementStatus: req.status,
+          rowVersion: req.row_version, idempotentReplay: true,
+        };
       }
-      const waiver = waiverRes.rows[0];
-
       if (waiver.status !== WaiverStatus.PENDING_SECOND_APPROVAL) {
         throw new ConflictException('WAIVER_NOT_PENDING_SECOND_APPROVAL');
       }
-
-      if (waiver.approved_by === ctx.userId) {
-        throw new ForbiddenException('SECOND_APPROVER_MUST_BE_DISTINCT: Approver cannot countersign own waiver');
+      if (waiver.requested_by === ctx.userId || waiver.approved_by === ctx.userId) {
+        throw new ForbiddenException('SECOND_APPROVER_MUST_BE_DISTINCT');
       }
-
-      await client.query(
-        `UPDATE waivers
-         SET second_approved_by = $1, second_approved_at = now(), status = $2
-         WHERE org_id = $3 AND id = $4`,
-        [ctx.userId, WaiverStatus.ACTIVE, ctx.orgId, waiver.id],
+      if (!waiver.is_mandatory_item || !req.mandatory ||
+          waiver.obligation_row_version == null ||
+          req.status !== RequirementStatus.PENDING_WAIVER ||
+          req.row_version !== waiver.obligation_row_version + 1) {
+        throw new ConflictException('WAIVER_OBLIGATION_REVISION_CONFLICT');
+      }
+      const { rowCount } = await client.query(
+        `UPDATE waivers SET second_approved_by = $1,
+           second_approved_at = now(), status = 'ACTIVE'
+          WHERE org_id = $2 AND project_id = $3 AND id = $4
+            AND status = 'PENDING_SECOND_APPROVAL'`,
+        [ctx.userId, ctx.orgId, projectId, waiverId],
       );
-
+      if (rowCount !== 1) throw new ConflictException('WAIVER_DECISION_CONFLICT');
+      const requirementStatus = waiver.type === 'WAIVE'
+        ? RequirementStatus.WAIVED : RequirementStatus.NOT_APPLICABLE;
       await client.query(
-        `UPDATE requirements
-         SET status = $1, updated_at = now(), row_version = row_version + 1
-         WHERE org_id = $2 AND id = $3`,
-        [RequirementStatus.WAIVED, ctx.orgId, waiver.requirement_id],
+        `UPDATE requirements SET status = $4, updated_at = now(),
+           row_version = row_version + 1
+         WHERE org_id = $1 AND project_id = $2 AND id = $3 AND row_version = $5`,
+        [ctx.orgId, projectId, requirementId, requirementStatus, req.row_version],
       );
-
-      return { waiverId: waiver.id, status: WaiverStatus.ACTIVE, requirementStatus: RequirementStatus.WAIVED };
+      emit({
+        eventType: 'WAIVER_COUNTERSIGNED', projectId,
+        entityType: 'WAIVER', entityId: waiverId,
+        afterJson: {
+          requirementId, requirementStatus, type: waiver.type,
+          obligationRowVersion: waiver.obligation_row_version,
+          approvedBy: ctx.userId,
+        },
+      });
+      return {
+        waiverId, status: WaiverStatus.ACTIVE, requirementStatus,
+        rowVersion: req.row_version + 1, idempotentReplay: false,
+      };
     });
   }
 
