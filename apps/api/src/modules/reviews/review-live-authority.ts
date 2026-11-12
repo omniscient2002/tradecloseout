@@ -52,10 +52,11 @@ function validateScope(raw: unknown): ReviewMemberScope {
  * These shared row locks serialise against account, membership, project lifecycle
  * and project-member changes. A stale HTTP guard or saved assignment cannot authorize.
  */
-export async function resolveLiveReviewAuthority(
+export async function resolveLiveProjectCommandAuthority(
   client: PoolClient,
   ctx: ExecutionContext,
   projectId: string,
+  permission: 'review.decide' | 'document.delete',
 ): Promise<LiveReviewAuthority> {
   if (ctx.actorType === 'GUEST' || ctx.guestGrantId || !projectId || !ctx.userId || !ctx.orgId) return denied();
 
@@ -92,8 +93,17 @@ export async function resolveLiveReviewAuthority(
     if (scope.readOnly || scope.mode === 'READ_ONLY') return denied();
   }
 
-  if (!hasPermission({ orgRole, projectRole }, 'review.decide').allowed) return denied();
+  if (!hasPermission({ orgRole, projectRole }, permission).allowed) return denied();
   return { orgRole, projectRole, scope };
+}
+
+/** Current review decision authority; retained for the existing decision callsites. */
+export async function resolveLiveReviewAuthority(
+  client: PoolClient,
+  ctx: ExecutionContext,
+  projectId: string,
+): Promise<LiveReviewAuthority> {
+  return resolveLiveProjectCommandAuthority(client, ctx, projectId, 'review.decide');
 }
 
 /** Restrict the actual document and linked requirements, not the caller's project ID. */
