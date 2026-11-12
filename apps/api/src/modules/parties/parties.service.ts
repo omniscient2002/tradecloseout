@@ -16,7 +16,7 @@ import { PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { TenantDbService, ExecutionContext } from '../../database/tenant-db.service';
 import { DltSmsGateway, TransactionalMailGateway } from '../identity/identity.controller';
-import { IndianGstinSchema } from '@tradecloseout/shared';
+import { IndianGstinSchema, isImmutableObjectVersionId } from '@tradecloseout/shared';
 
 export interface CreatePartyDto {
   name: string;
@@ -1079,9 +1079,7 @@ export class PartiesService {
           (version.file_status !== 'READY' || version.storage_status !== 'READY' ||
            typeof version.sha256 !== 'string' ||
            !/^[0-9a-f]{64}$/i.test(version.sha256) ||
-           typeof version.provider_version_id !== 'string' ||
-           !version.provider_version_id.trim() ||
-           version.provider_version_id.trim().toLowerCase() === 'null' ||
+           !isImmutableObjectVersionId(version.provider_version_id) ||
            version.observed_size_bytes == null ||
            String(version.observed_size_bytes) !== String(version.size_bytes))) {
         throw new BadRequestException('SUPPLIER_INTAKE_EVIDENCE_NOT_VERIFIED');
