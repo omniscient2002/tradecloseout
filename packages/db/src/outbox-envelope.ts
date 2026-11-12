@@ -27,7 +27,7 @@ export type OutboxDispatchRow = {
 
 const RESERVED = new Set([
   'schemaVersion', 'eventId', 'eventType', 'orgId', 'projectId',
-  'entityType', 'entityId', 'actorUserId', 'requestId', 'packageId',
+  'entityType', 'entityId', 'actorUserId', 'requestId',
   '__proto__', 'constructor', 'prototype',
 ]);
 
@@ -50,6 +50,13 @@ export function buildTrustedOutboxPayload(
   if (source != null && !record(source)) fail('OUTBOX_DOMAIN_PAYLOAD_INVALID');
   const data: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(source ?? {})) {
+    // A submission can legitimately reference a different package. packageId
+    // is only an immutable resource alias when the event itself concerns the
+    // HANDOVER_PACKAGE entity. Do not break submission domain metadata.
+    if (key === 'packageId' && identity.entityType === 'HANDOVER_PACKAGE') {
+      if (value !== identity.entityId) fail('OUTBOX_RESERVED_FIELD');
+      continue;
+    }
     if (RESERVED.has(key)) {
       // Historical producers included matching IDs in afterJson. Accept
       // matching values but exclude them from the untrusted domain object.
@@ -59,11 +66,7 @@ export function buildTrustedOutboxPayload(
         fail('OUTBOX_RESERVED_FIELD');
       }
       const trusted = identity[key as keyof TrustedOutboxIdentity];
-      if (key === 'packageId') {
-        if (identity.entityType !== 'HANDOVER_PACKAGE' || value !== identity.entityId) {
-          fail('OUTBOX_RESERVED_FIELD');
-        }
-      } else if (value !== trusted) {
+      if (value !== trusted) {
         fail('OUTBOX_RESERVED_FIELD');
       }
       continue;
@@ -149,6 +152,10 @@ export function parseTrustedOutboxDispatch(row: OutboxDispatchRow): ParsedOutbox
   };
   if (row.event_type === 'HANDOVER_PACKAGE_QUEUED') {
     if (version === 1 && identity.entityType !== 'HANDOVER_PACKAGE') {
+      fail('OUTBOX_RESOURCE_IDENTITY_MISMATCH');
+    }
+    if (version === 1 && Object.hasOwn(data, 'packageId') &&
+        data.packageId !== identity.entityId) {
       fail('OUTBOX_RESOURCE_IDENTITY_MISMATCH');
     }
     if (Object.hasOwn(value, 'packageId') && version === 0 &&
