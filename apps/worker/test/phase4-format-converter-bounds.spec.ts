@@ -1,0 +1,70 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, writeFile, truncate, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { convertSupportingFormatToPdf } from '../src/queues/format-converter';
+
+test('PH4-G25-003: converter fails closed on unbounded image and Office input before reading bytes', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'ph4-converter-'));
+  try {
+    const png = path.join(dir, 'oversized.png');
+    const docx = path.join(dir, 'oversized.docx');
+    await writeFile(png, 'png');
+    await writeFile(docx, 'docx');
+    // Sparse files exercise metadata-based size rejection without allocating memory.
+    await truncate(png, 25 * 1024 * 1024 + 1);
+    await truncate(docx, 40 * 1024 * 1024 + 1);
+    for (const [file, mime] of [
+      [png, 'image/png'],
+      [docx, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+    ]) {
+      await assert.rejects(
+        convertSupportingFormatToPdf({
+          sourcePath: file, detectedMime: mime,
+          outputPdfPath: path.join(dir, 'out.pdf'), headerStampText: 'Inspection',
+        }),
+        /CONVERSION_SOURCE_RESOURCE_LIMIT/,
+      );
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('PH4-G25-003: generic ZIP cannot be passed to the Office converter', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'ph4-zip-'));
+  try {
+    const source = path.join(dir, 'arbitrary.zip');
+    await writeFile(source, 'not an approved Office document');
+    const outcome = await convertSupportingFormatToPdf({
+      sourcePath: source, detectedMime: 'application/zip',
+      outputPdfPath: path.join(dir, 'converted.pdf'), headerStampText: 'Test',
+    });
+    assert.deepEqual(outcome, { converted: false, pageCount: 0 });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('PH4-G25-003: reject invalid paths and empty sources', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'ph4-input-'));
+  try {
+    const file = path.join(dir, 'empty.png');
+    await writeFile(file, '');
+    await assert.rejects(convertSupportingFormatToPdf({
+      sourcePath: file, detectedMime: 'image/png',
+      outputPdfPath: path.join(dir, 'converted.pdf'), headerStampText: 'Inspection',
+    }), /CONVERSION_SOURCE_RESOURCE_LIMIT/);
+    await assert.rejects(convertSupportingFormatToPdf({
+      sourcePath: 'relative.png', detectedMime: 'image/png',
+      outputPdfPath: path.join(dir, 'converted.pdf'), headerStampText: 'Inspection',
+    }), /CONVERSION_SOURCE_PATH_INVALID/);
+    await assert.rejects(convertSupportingFormatToPdf({
+      sourcePath: file, detectedMime: 'image/png',
+      outputPdfPath: file, headerStampText: 'Inspection',
+    }), /CONVERSION_INPUT_INVALID/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
