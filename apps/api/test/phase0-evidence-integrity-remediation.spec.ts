@@ -144,9 +144,13 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
       expect(outboxQuery).toBeDefined();
       expect(outboxQuery!.sql).toContain("'FILE_UPLOAD_COMPLETED_ENQUEUE_SCAN'");
       const payload = JSON.parse(outboxQuery!.params[3]);
-      expect(payload.versionId).toBe('ver-123');
+      expect(payload.schemaVersion).toBe(1);
+      expect(payload.eventType).toBe('FILE_UPLOAD_COMPLETED_ENQUEUE_SCAN');
+      expect(payload.entityType).toBe('DOCUMENT_VERSION');
+      expect(payload.entityId).toBe('ver-123');
       expect(payload.orgId).toBe(orgId);
-      expect(payload.storageObjectId).toBe('storage-123');
+      expect(payload.data.versionId).toBe('ver-123');
+      expect(payload.data.storageObjectId).toBe('storage-123');
     });
   });
 
