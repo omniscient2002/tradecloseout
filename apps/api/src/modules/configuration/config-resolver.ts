@@ -171,6 +171,26 @@ export function resolveConfigV021(
     }
   }
 
+  // PH2-G06-002: checklist snapshots and their consumers use "requirements",
+  // while the registered keyed configuration schema uses "checklist.requirements".
+  // Keep the public snapshot contract canonical without silently allowing two
+  // contradictory lists to describe different active obligations.
+  const registeredRequirements = result['checklist.requirements'];
+  if (registeredRequirements !== undefined) {
+    if (result.requirements !== undefined &&
+        JSON.stringify(sortDeepKeys(result.requirements)) !==
+          JSON.stringify(sortDeepKeys(registeredRequirements))) {
+      conflicts.push({
+        path: 'requirements',
+        level: provenance.requirements?.level ?? 'PROJECT',
+        message: 'Conflicting legacy and registered checklist requirements.',
+      });
+    } else {
+      result.requirements = structuredClone(registeredRequirements);
+      provenance.requirements = provenance['checklist.requirements']!;
+    }
+  }
+
   const canonical = JSON.stringify(sortDeepKeys(result));
   const checksum = createHash('sha256').update(canonical).digest('hex');
 
