@@ -87,10 +87,17 @@ export function UploadEvidenceModal({
       });
 
       // Persisted locally is not provider-uploaded, scan-verified or approved.
-      onUploadSuccess();
       setQueuedLocally(true);
       setFile(null);
       setExternalComment("");
+      // Clear the native file input as well, so selecting the same file later
+      // fires onChange and the user can deliberately queue a new revision.
+      e.currentTarget?.reset();
+      try {
+        onUploadSuccess(); // Re-query authoritative server state, if available.
+      } catch {
+        // A page refresh callback failure does not undo the saved local draft.
+      }
     } catch (err: any) {
       setError(err?.message || "Failed to enqueue upload.");
     } finally {
