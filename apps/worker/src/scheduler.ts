@@ -3,7 +3,7 @@ import Redis from 'ioredis';
 import { createHash } from 'crypto';
 import { uuidv7 } from 'uuidv7';
 import { dispatchDueNotifications } from './notification-dispatch';
-import { isIndiaQuietHour, sumPaise } from '@tradecloseout/shared';
+import { isIndiaQuietHour } from '@tradecloseout/shared';
 import { AuthDeliveryLedger } from '@tradecloseout/db';
 
 export class TradeCloseoutScheduler {
