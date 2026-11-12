@@ -696,6 +696,9 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
         withTenantContext: jest.fn().mockImplementation(async (ctx, fn) => {
           const client: any = {
             query: jest.fn().mockImplementation(async (sql: string) => {
+              if (sql.includes('FROM memberships')) {
+                return { rows: [{ owner_valid: 1 }] };
+              }
               if (sql.includes('FROM projects WHERE')) {
                 return {
                   rows: [
@@ -722,7 +725,7 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
 
       const notificationsService = new NotificationsService(mockDb);
       const digest = await notificationsService.getOwnerDigest(
-        { orgId, userId: uuidv7(), actorType: 'USER', requestId: 'r1' },
+        { orgId, userId: uuidv7(), actorType: 'USER', orgRole: 'R-OWNER', requestId: 'r1' },
         projectId,
       );
 
