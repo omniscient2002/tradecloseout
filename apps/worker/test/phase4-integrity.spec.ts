@@ -150,3 +150,12 @@ test('PH4-G14-003: terminal failure compare-and-set requires the exact attempt o
   assert.equal(cas.params[2], attempt);
   assert(!cas.params.includes('PACKAGE_JOB:same-bullmq-job'));
 });
+
+test('PH4-G14-003: malformed terminal owner never mutates a handover package', async () => {
+  let acquired = 0;
+  const pool = { connect: async () => { acquired++; throw new Error('must not connect'); } };
+  await markHandoverPackageFailed(pool as any, {
+    orgId: randomUUID(), packageId: randomUUID(),
+  }, 'logical-job', new Error('stale'), 'PACKAGE_JOB:logical-job');
+  assert.equal(acquired, 0);
+});
