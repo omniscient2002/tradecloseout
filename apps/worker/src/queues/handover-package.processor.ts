@@ -1,5 +1,6 @@
 import { HeadObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { Pool } from 'pg';
+import { reportWorkerFailure } from '../safe-worker-errors';
 import { createHash } from 'crypto';
 import { createReadStream, createWriteStream } from 'fs';
 import { mkdtemp, rm, stat } from 'fs/promises';
@@ -359,7 +360,7 @@ export async function markHandoverPackageFailed(
   pool: Pool,
   job: PackageJob,
   jobId: string,
-  error: unknown,
+  _error: unknown,
 ): Promise<void> {
   const packageId = job.packageId || (job.entityId && job.entityType === 'HANDOVER_PACKAGE' ? job.entityId : undefined);
   if (!packageId || !job.orgId) return;
@@ -376,12 +377,12 @@ export async function markHandoverPackageFailed(
               error_detail = $4, row_version = row_version + 1, updated_at = now()
         WHERE org_id = $1 AND id = $2 AND status = 'GENERATING' AND error_code = $3`,
       [job.orgId, packageId, `PACKAGE_JOB:${jobId}`,
-        String((error as Error)?.message || 'Package build failed').slice(0, 1000)],
+        'Package generation failed. Review the processing status and retry after resolving the worker issue.'],
     );
     await client.query('COMMIT');
   } catch (persistError) {
     await client.query('ROLLBACK').catch(() => undefined);
-    console.error(`Could not persist package failure for ${packageId}:`, persistError);
+    reportWorkerFailure('PACKAGE_FAILURE_PERSIST_FAILED', persistError, jobId);
   } finally {
     client.release();
   }

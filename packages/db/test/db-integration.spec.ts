@@ -71,6 +71,128 @@ void test('Disposable PostgreSQL migration, isolation and audit regression tests
         assert(row.relforcerowsecurity, `${row.relname} has unforced RLS`);
       }
     });
+    await t.test('PH1-G26-001/G27-001: runtime cannot access or mutate audit child partitions', async () => {
+      const children = (await admin.query(`
+        SELECT c.relname, c.relrowsecurity AS rls, c.relforcerowsecurity AS forced,
+               has_table_privilege('tc_app', c.oid, 'SELECT') AS can_select,
+               has_table_privilege('tc_app', c.oid, 'INSERT') AS can_insert,
+               has_table_privilege('tc_app', c.oid, 'UPDATE') AS can_update,
+               has_table_privilege('tc_app', c.oid, 'DELETE') AS can_delete,
+               has_table_privilege('tc_app', c.oid, 'TRUNCATE') AS can_truncate
+          FROM pg_inherits i JOIN pg_class c ON c.oid = i.inhrelid
+         WHERE i.inhparent = 'public.audit_events'::regclass ORDER BY c.relname`)).rows;
+      assert(children.length >= 4, 'Expected dated and default partitions');
+      for (const child of children) {
+        assert(child.rls && child.forced, `child RLS missing: ${child.relname}`);
+        for (const key of ['can_select', 'can_insert', 'can_update', 'can_delete', 'can_truncate']) {
+          assert.equal(child[key], false, `unexpected runtime ${key} on ${child.relname}`);
+        }
+        const name = '"' + String(child.relname).replace(/"/g, '""') + '"';
+        for (const sql of [
+          `SELECT id FROM public.${name} LIMIT 1`,
+          `INSERT INTO public.${name} DEFAULT VALUES`,
+          `UPDATE public.${name} SET action = action`,
+          `DELETE FROM public.${name}`,
+          `TRUNCATE public.${name}`,
+        ]) {
+          await assert.rejects(app.query(sql), (error: any) => error.code === '42501');
+        }
+      }
+
+      // Normal, tenant-scoped parent writes/reads remain operational.
+      const eventId = randomUUID();
+      await scoped(app, a.orgId, async client => {
+        await client.query(`INSERT INTO audit_events
+          (id, org_id, actor_type, action, entity_type, entity_id, request_id)
+          VALUES ($1,$2,'SYSTEM','PARTITION_BOUNDARY_TEST','PROJECT',$3,'partition-test')`,
+          [eventId, a.orgId, a.projectIds[0]]);
+        assert.equal((await client.query('SELECT id FROM audit_events WHERE id=$1', [eventId])).rowCount, 1);
+      });
+      await scoped(app, b.orgId, async client => {
+        assert.equal((await client.query('SELECT id FROM audit_events WHERE id=$1', [eventId])).rowCount, 0);
+      });
+    });
+
+    await t.test('PH1-G26-002/G24-007: storage reconciliation persists typed BIGINT values', async () => {
+      const { reconcileStorageQuotaOnFileStatusChange } = await import('../src/tenant-tx');
+      await scoped(app, a.orgId, async client => {
+        await reconcileStorageQuotaOnFileStatusChange(client, a.orgId, 1234n, 'MARKED_READY');
+        const read = async () => BigInt((await client.query(
+          "SELECT value FROM usage_counters WHERE org_id=$1 AND metric='STORAGE_BYTES' AND period='ALL_TIME'",
+          [a.orgId],
+        )).rows[0].value);
+        assert.equal(await read(), 1234n);
+        await reconcileStorageQuotaOnFileStatusChange(client, a.orgId, 234n, 'DELETED_OR_PURGED');
+        assert.equal(await read(), 1000n);
+      });
+      await scoped(app, b.orgId, async client => {
+        assert.equal((await client.query(
+          "SELECT value FROM usage_counters WHERE metric='STORAGE_BYTES' AND period='ALL_TIME'",
+        )).rowCount, 0);
+      });
+    });
+
+    await t.test('PH1-G26-011: actual PostgreSQL rejects invalid package usage and persists only bounded counters', async () => {
+      const { consumePlanQuota } = await import('../src/tenant-tx');
+      const period = '2026-11-quota-regression';
+      const read = async () => scoped(app, a.orgId, async client => {
+        const result = await client.query(
+          "SELECT value FROM usage_counters WHERE org_id=$1 AND metric='PACKAGES_MONTH' AND period=$2",
+          [a.orgId, period],
+        );
+        return result.rows.length ? BigInt(result.rows[0].value) : null;
+      });
+      await scoped(app, a.orgId, client => consumePlanQuota(client, a.orgId, 'PACKAGES_MONTH', period, 1n, 2n));
+      assert.equal(await read(), 1n);
+      await scoped(app, a.orgId, client => consumePlanQuota(client, a.orgId, 'PACKAGES_MONTH', period, 1n, 2n));
+      assert.equal(await read(), 2n);
+      await assert.rejects(scoped(app, a.orgId, client =>
+        consumePlanQuota(client, a.orgId, 'PACKAGES_MONTH', period, 1n, 2n)),
+      (error: any) => error.code === 'PLAN_LIMIT_EXCEEDED');
+      assert.equal(await read(), 2n);
+      await assert.rejects(scoped(app, a.orgId, client =>
+        consumePlanQuota(client, a.orgId, 'PACKAGES_MONTH', period, -3n, 2n)),
+      /PLAN_COUNTER_OUT_OF_RANGE/);
+      assert.equal(await read(), 2n);
+      await scoped(app, a.orgId, client => consumePlanQuota(client, a.orgId, 'PACKAGES_MONTH', period, -2n, 2n));
+      assert.equal(await read(), 0n);
+    });
+
+    await t.test('PH1-G26-002: storage reconciliation rejects underflow and overflow without corrupting the counter', async () => {
+      const { reconcileStorageQuotaOnFileStatusChange } = await import('../src/tenant-tx');
+      // A previous test leaves tenant A at exactly 1000 bytes.
+      const read = async () => scoped(app, a.orgId, async client => {
+        const { rows } = await client.query(
+          "SELECT value FROM usage_counters WHERE org_id=$1 AND metric='STORAGE_BYTES' AND period='ALL_TIME'",
+          [a.orgId],
+        );
+        return BigInt(rows[0].value);
+      });
+      const before = await read();
+      assert.equal(before, 1000n);
+      await assert.rejects(
+        scoped(app, a.orgId, client => reconcileStorageQuotaOnFileStatusChange(
+          client, a.orgId, before + 1n, 'DELETED_OR_PURGED',
+        )),
+        /STORAGE_QUOTA_RECONCILIATION_REQUIRED/,
+      );
+      assert.equal(await read(), before, 'a failed refund must not change durable usage');
+      await assert.rejects(
+        scoped(app, a.orgId, client => reconcileStorageQuotaOnFileStatusChange(
+          client, a.orgId, 9223372036854775807n, 'MARKED_READY',
+        )),
+        /STORAGE_QUOTA_RECONCILIATION_REQUIRED/,
+      );
+      assert.equal(await read(), before, 'a failed overflow must not change durable usage');
+      await assert.rejects(
+        scoped(app, a.orgId, client => reconcileStorageQuotaOnFileStatusChange(
+          client, a.orgId, -1n, 'MARKED_READY',
+        )),
+        /INVALID_STORAGE_QUOTA_SIZE/,
+      );
+      assert.equal(await read(), before);
+    });
+
     await t.test('DB-08: direct cross-project procurement insert fails the intended composite FK', async () => {
       const partyId = randomUUID();
       await admin.query(`INSERT INTO parties (id, org_id, name, types) VALUES ($1, $2, 'Test supplier', ARRAY['SUPPLIER'])`, [partyId, a.orgId]);
@@ -92,7 +214,47 @@ void test('Disposable PostgreSQL migration, isolation and audit regression tests
       await assert.rejects(scoped(app, a.orgId, client => client.query(`INSERT INTO asset_categories (id,org_id,key,name)
         VALUES ($1,NULL,'FORGED','Invalid global')`, [randomUUID()])), (error: any) => error.code === '42501');
     });
+    await t.test('PH1-G26-008: caller-forged audit sequence is ignored and concurrent inserts retain chain order', async () => {
+      const original = (await admin.query(
+        'SELECT chain_seq,hash FROM audit_events WHERE org_id=$1 ORDER BY chain_seq DESC LIMIT 1',
+        [a.orgId],
+      )).rows[0];
+      const forgedSequence = '9223372036854775000';
+      const addEvent = (requestId: string, desiredSeq: string) => scoped(app, a.orgId, client => client.query(
+        `INSERT INTO audit_events (id,org_id,actor_type,action,entity_type,entity_id,request_id,chain_seq)
+         VALUES ($1,$2,'SYSTEM','ORDER_PROBE','PROJECT',$3,$4,$5)
+         RETURNING chain_seq, prev_hash, hash`,
+        [randomUUID(), a.orgId, a.projectIds[0], requestId, desiredSeq],
+      ));
+      const first = (await addEvent('forged-order-test', forgedSequence)).rows[0];
+      assert.notEqual(String(first.chain_seq), forgedSequence, 'caller must not choose the chain order');
+      if (original) {
+        assert(BigInt(first.chain_seq) > BigInt(original.chain_seq));
+        assert.equal(first.prev_hash, original.hash);
+      }
+      const results = await Promise.all([
+        addEvent('parallel-audit-one', '0'),
+        addEvent('parallel-audit-two', '1'),
+      ]);
+      const parallelHashes = new Set(results.map(result => result.rows[0].hash));
+      assert.equal(parallelHashes.size, 2);
+      const chain = (await admin.query(
+        'SELECT chain_seq,prev_hash,hash FROM audit_events WHERE org_id=$1 ORDER BY chain_seq ASC',
+        [a.orgId],
+      )).rows;
+      for (let i = 1; i < chain.length; i++) {
+        assert(BigInt(chain[i].chain_seq) > BigInt(chain[i - 1].chain_seq));
+        assert.equal(chain[i].prev_hash, chain[i - 1].hash);
+      }
+    });
+
     await t.test('AUDIT-02/03/04: nonempty chain rejects update/delete and detects privileged payload tampering', async () => {
+      // Earlier partition-boundary tests intentionally append to this same tenant.
+      // Verify this test adds three records without assuming an empty initial ledger.
+      const initialCount = Number((await admin.query(
+        'SELECT count(*)::int AS total FROM audit_events WHERE org_id = $1',
+        [a.orgId],
+      )).rows[0].total);
       for (let index = 0; index < 3; index++) await scoped(app, a.orgId, client => client.query(`INSERT INTO audit_events
         (id, org_id, actor_type, action, entity_type, entity_id, after_json, request_id)
         VALUES ($1,$2,'SYSTEM','TEST_APPEND','PROJECT',$3,$4,'db-regression')`, [randomUUID(), a.orgId, a.projectIds[0], JSON.stringify({ index })]));
@@ -103,7 +265,7 @@ void test('Disposable PostgreSQL migration, isolation and audit regression tests
           'request_id',request_id,'created_at',to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'))::text,'sha256'),'hex') AS computed
         FROM audit_events WHERE org_id = $1 ORDER BY chain_seq`, [a.orgId])).rows;
       const events = await check();
-      assert.equal(events.length, 3);
+      assert.equal(events.length, initialCount + 3, 'three audit rows must append without losing existing events');
       events.forEach((event, index) => {
         assert.equal(event.hash, event.computed);
         if (index) assert.equal(event.prev_hash, events[index - 1].hash);
@@ -111,9 +273,15 @@ void test('Disposable PostgreSQL migration, isolation and audit regression tests
       for (const mutation of ['UPDATE audit_events SET action = action', 'DELETE FROM audit_events']) {
         await assert.rejects(scoped(app, a.orgId, client => client.query(mutation)), /AUDIT_IMMUTABLE/);
       }
-      await admin.query('ALTER TABLE audit_events DISABLE TRIGGER trg_audit_events_immutable');
-      try { await admin.query(`UPDATE audit_events SET after_json = '{"tampered":true}' WHERE org_id = $1`, [a.orgId]); }
-      finally { await admin.query('ALTER TABLE audit_events ENABLE TRIGGER trg_audit_events_immutable'); }
+      // Only a privileged attacker with DDL/superuser authority can disable
+      // every append-only trigger. Exercise that boundary on this disposable
+      // test database, then restore the controls even if the probe fails.
+      await admin.query('ALTER TABLE audit_events DISABLE TRIGGER USER');
+      try {
+        await admin.query(`UPDATE audit_events SET after_json = '{"tampered":true}' WHERE org_id = $1`, [a.orgId]);
+      } finally {
+        await admin.query('ALTER TABLE audit_events ENABLE TRIGGER USER');
+      }
       assert((await check()).every(event => event.hash !== event.computed));
     });
     await t.test('N30: canonical tenant alias validation rejects conflicting tenant settings', async () => {

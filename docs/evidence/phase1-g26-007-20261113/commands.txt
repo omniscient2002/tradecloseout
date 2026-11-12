@@ -1,0 +1,30 @@
+Baseline: 1934929f7594c88c93661d07223d588e77b2ce56 (unmerged PR #27)
+Initial repair/full-workspace source: b21689a8a4ee85c3b25b373c3a6c8a58d64dbd3b
+Final source/test commit: 5d4898be154c52a0f7815e2321d89df5d4e09101
+Final extra bootstrap acceptance: pnpm --filter @tradecloseout/db test (db-final.log: 53 PASS)
+Node v22.23.5; pnpm 12.4.1; qpdf 12.3.2; local PostgreSQL 16.15; Redis 7
+Runtime role tc_app, rolsuper=false, rolbypassrls=false
+Task-owned containers: tco-g26-007-pg-20261113; tco-g26-007-redis-20261113
+Task-only loopback ports: PostgreSQL 55441; Redis 56391
+No production data, provider credentials or customer engineering evidence.
+
+pnpm install --frozen-lockfile --store-dir /tmp/tco-phase1-pnpm-store
+pnpm db:migrate  # baseline before adding 0046; baseline-migrate.log
+node --import tsx --test packages/db/test/phase1-canonical-tenant-boundary.spec.ts
+pnpm --filter @tradecloseout/shared build
+pnpm --filter @tradecloseout/db build
+pnpm --filter @tradecloseout/api exec jest --runInBand test/phase1-canonical-tenant-pool-db.spec.ts
+pnpm typecheck
+pnpm build
+pnpm db:migrate  # real forward migration 0046
+pnpm test
+pnpm test:security
+pnpm test:rbac
+
+Full validation shell uses set -e; all DB env contracts point to these disposable services:
+MIGRATOR_DATABASE_URL / APP_DATABASE_URL / TEST_DATABASE_URL
+DB_HOST=127.0.0.1 DB_PORT=55441 DB_NAME=tradecloseout
+DB_MIGRATOR_USER=tc_migrator DB_MIGRATOR_PASSWORD=(disposable local test value)
+REDIS_URL=redis://127.0.0.1:56391
+PATH includes task-local Node 22, pnpm launcher and qpdf; LD_LIBRARY_PATH includes qpdf libraries.
+Catalog captures: actual pg_policies and pg_proc definitions, SECURITY DEFINER flags and tc_app execute privileges before/after migration.

@@ -27,7 +27,7 @@ describe('expired idempotency claims', () => {
     };
     const interceptor = new IdempotencyInterceptor(
       { connect: jest.fn().mockResolvedValue(client) } as any,
-      { getAllAndOverride: jest.fn().mockReturnValue(true) } as any,
+      { getAllAndOverride: jest.fn((key: string) => key === 'REQUIRE_IDEMPOTENCY') } as any,
     );
     const next = { handle: jest.fn() };
     const context = {

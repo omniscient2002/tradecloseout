@@ -1,0 +1,8 @@
+PASS test/phase1-easy-boundaries.spec.ts (9.375 s)
+PASS test/phase1-problem-error-redaction.spec.ts
+
+Test Suites: 2 passed, 2 total
+Tests:       25 passed, 25 total
+Snapshots:   0 total
+Time:        9.832 s
+Ran all test suites matching /test\/phase1-easy-boundaries.spec.ts|test\/phase1-problem-error-redaction.spec.ts/i.

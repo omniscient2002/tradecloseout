@@ -1,7 +1,5 @@
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import Redis from 'ioredis';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
 import { Worker, Queue } from 'bullmq';
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { createWriteStream } from 'fs';
@@ -12,14 +10,17 @@ import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
 import { reconcileStorageQuotaOnFileStatusChange } from '@tradecloseout/db/tenant-tx';
 import { TradeCloseoutScheduler } from './scheduler';
+import { TrackedScheduler } from './tracked-scheduler';
+import { drainBeforeClosingDependencies } from './worker-drain';
 import { verifyAndScanUploadedFile } from './queues/file.processor';
 import { convertSupportingFormatToPdf } from './queues/format-converter';
 import { compileAndPersistHandoverPackage, markHandoverPackageFailed } from './queues/handover-package.processor';
 import { compileAndPersistPortableArchive } from './queues/portable-archive.processor';
 import { BoundedByteStream } from './queues/bounded-stream';
 import { OUTBOX_EVENT_REGISTRY } from './event-registry';
-
-const execFileAsync = promisify(execFile);
+import { authorizeOutboxDispatch } from './outbox-identity';
+import { jobFingerprint, reportWorkerFailure, protectQueueJob } from './safe-worker-errors';
+import { checkWorkerPdfDependency } from './pdf-dependency';
 
 const pool = new Pool({
   connectionString:
@@ -44,13 +45,11 @@ const s3 = new S3Client({
 });
 
 async function checkDependencies() {
-  try {
-    const { stdout } = await execFileAsync('qpdf', ['--version']);
-    console.log('✓ qpdf engine detected:', stdout.split('\n')[0]);
-    qpdfAvailable = true;
-  } catch {
+  qpdfAvailable = await checkWorkerPdfDependency();
+  if (qpdfAvailable) {
+    console.log('✓ qpdf engine detected');
+  } else {
     console.warn('! qpdf binary not found in PATH; install qpdf for out-of-process PDF linearization.');
-    qpdfAvailable = false;
   }
 }
 
@@ -62,85 +61,106 @@ async function bootWorker() {
   await checkDependencies();
 
   // 1. Scheduled Background Tasks
-  const runScheduledCycles = async () => {
+  // Each independent task is scheduled every tick. A slow or failing task
+  // cannot overlap itself in this process or starve the other task families.
+  // Redis period leases still provide cross-worker coordination.
+  type ScheduledTask =
+    | 'daily-expiry'
+    | 'weekly-owner-digest'
+    | 'audit-hash-chain'
+    | 'storage-lifecycle-cleanup'
+    | 'idempotency-reconciliation'
+    | 'notification-dispatch';
+  const scheduledTasks = new TrackedScheduler<ScheduledTask>((_task, error) => {
+    reportWorkerFailure('SCHEDULER_CYCLE_FAILED', error);
+  });
+
+  const runScheduledCycles = async (): Promise<void> => {
+    let periods: ReturnType<TradeCloseoutScheduler['getIndiaSchedulePeriods']>;
     try {
-      const periods = scheduler.getIndiaSchedulePeriods();
-      await scheduler.runWithPeriodLock(
+      periods = scheduler.getIndiaSchedulePeriods();
+    } catch (error) {
+      reportWorkerFailure('SCHEDULER_CYCLE_FAILED', error);
+      return;
+    }
+
+    const pending: Promise<void>[] = [];
+    pending.push(scheduledTasks.run('daily-expiry', () =>
+      scheduler.runWithPeriodLock(
         `daily-expiry:${periods.day}`,
         `sched:done:daily-expiry:${periods.day}`,
-        300,
-        36 * 60 * 60,
+        300, 36 * 60 * 60,
         async () => {
-        const expired = await scheduler.runDailyExpiryJob();
-        if (expired > 0) {
-          console.log(`[Scheduler] Marked ${expired} expired requirements.`);
-        }
+          const expired = await scheduler.runDailyExpiryJob();
+          if (expired > 0) console.log(`[Scheduler] Marked ${expired} expired requirements.`);
         },
-      );
+      ),
+    ));
 
-      if (periods.weekday === 'Mon') {
-        await scheduler.runWithPeriodLock(
+    if (periods.weekday === 'Mon') {
+      pending.push(scheduledTasks.run('weekly-owner-digest', () =>
+        scheduler.runWithPeriodLock(
           `weekly-owner-digest:${periods.week}`,
           `sched:done:weekly-owner-digest:${periods.week}`,
-          600,
-          9 * 24 * 60 * 60,
+          600, 9 * 24 * 60 * 60,
           async () => scheduler.runWeeklyOwnerRetentionAtRiskDigest(),
-        );
-      }
+        ),
+      ));
+    }
 
-      await scheduler.runWithPeriodLock(
+    pending.push(scheduledTasks.run('audit-hash-chain', () =>
+      scheduler.runWithPeriodLock(
         `audit-hash-chain:${periods.day}`,
         `sched:done:audit-hash-chain:${periods.day}`,
-        600,
-        36 * 60 * 60,
+        600, 36 * 60 * 60,
         async () => {
           const { orgCount, verifiedEvents } = await scheduler.verifyAuditHashChainIntegrity();
           if (verifiedEvents > 0) {
             console.log(`[Scheduler] Verified audit hash-chain integrity across ${orgCount} orgs (${verifiedEvents} events).`);
           }
         },
-      );
+      ),
+    ));
 
-      await scheduler.runWithPeriodLock(
+    pending.push(scheduledTasks.run('storage-lifecycle-cleanup', () =>
+      scheduler.runWithPeriodLock(
         `storage-lifecycle-cleanup:${periods.hourSlot}`,
         `sched:done:storage-lifecycle-cleanup:${periods.hourSlot}`,
-        300,
-        2 * 60 * 60,
+        300, 2 * 60 * 60,
         async () => {
           const { purgedPendingVersions, purgedPendingObjects } = await scheduler.runStorageLifecycleCleanup();
           if (purgedPendingVersions > 0 || purgedPendingObjects > 0) {
-            console.log(
-              `[Scheduler] Cleaned up ${purgedPendingVersions} stale pending versions and ${purgedPendingObjects} unattached pending objects.`,
-            );
+            console.log(`[Scheduler] Cleaned up ${purgedPendingVersions} stale pending versions and ${purgedPendingObjects} unattached pending objects.`);
           }
         },
-      );
+      ),
+    ));
 
-      await scheduler.runWithPeriodLock(
+    pending.push(scheduledTasks.run('idempotency-reconciliation', () =>
+      scheduler.runWithPeriodLock(
         `idempotency-reconciliation:${periods.hourSlot}`,
         `sched:done:idempotency-reconciliation:${periods.hourSlot}`,
-        300,
-        2 * 60 * 60,
+        300, 2 * 60 * 60,
         async () => {
           const count = await scheduler.reconcileIdempotencyClaims();
-          if (count > 0) {
-            console.log(`[Scheduler] Purged ${count} expired completed idempotency receipts.`);
-          }
+          if (count > 0) console.log(`[Scheduler] Purged ${count} expired completed idempotency receipts.`);
         },
-      );
+      ),
+    ));
 
-      // Notification delivery cycle honoring IST quiet hours
-      const sentNotifications = await scheduler.dispatchQueuedNotifications();
-      if (sentNotifications > 0) {
-        console.log(`[Scheduler] Dispatched ${sentNotifications} queued notifications.`);
-      }
-    } catch (err) {
-      console.error('[Scheduler Error]:', err);
-    }
+    // Notification delivery is independently retried each minute and retains
+    // its own quiet-hours logic; a Redis job error must not prevent it running.
+    pending.push(scheduledTasks.run('notification-dispatch', async () => {
+      const sent = await scheduler.dispatchQueuedNotifications();
+      if (sent > 0) console.log(`[Scheduler] Dispatched ${sent} queued notifications.`);
+    }));
+
+    await Promise.all(pending);
   };
 
-  await runScheduledCycles();
-  const cycleInterval = setInterval(runScheduledCycles, 60 * 1000);
+  // Do not delay BullMQ/outbox startup behind a slow scheduler task.
+  void runScheduledCycles();
+  const cycleInterval = setInterval(() => { void runScheduledCycles(); }, 60 * 1000);
 
   // 2. BullMQ Queues
   const fileQueue = new Queue('file-processing', { connection: redis });
@@ -151,8 +171,8 @@ async function bootWorker() {
   // 3. BullMQ Workers
   const fileWorker = new Worker(
     'file-processing',
-    async (job) => {
-      console.log(`[BullMQ] Processing file job ${job.id}`);
+    async (job) => protectQueueJob('file', async () => {
+      console.log(`[BullMQ] Processing file job ${jobFingerprint(job.id) ?? 'unknown'}`);
       const { originalFilename, expectedSha256, clamdHost, clamdPort, versionId, orgId, storageObjectId,
         bucket, objectKey, providerVersionId } = job.data;
       if (!versionId || !orgId || !storageObjectId || !bucket || !objectKey || !providerVersionId) {
@@ -293,14 +313,14 @@ async function bootWorker() {
       }
 
       return result;
-    },
+    }),
     { connection: redis, concurrency: 4 },
   );
 
   const pdfWorker = new Worker(
     'pdf-compilation',
-    async (job) => {
-      console.log(`[BullMQ] Compiling PDF package job ${job.id}`);
+    async (job) => protectQueueJob('pdf', async () => {
+      console.log(`[BullMQ] Compiling PDF package job ${jobFingerprint(job.id) ?? 'unknown'}`);
       try {
         return await compileAndPersistHandoverPackage(pool, s3, job.data, String(job.id), qpdfAvailable);
       } catch (err) {
@@ -309,30 +329,30 @@ async function bootWorker() {
         }
         throw err;
       }
-    },
+    }),
     { connection: redis, concurrency: 2 },
   );
 
   const formatWorker = new Worker(
     'format-conversion',
-    async (job) => {
-      console.log(`[BullMQ] Converting format job ${job.id}`);
+    async (job) => protectQueueJob('format', async () => {
+      console.log(`[BullMQ] Converting format job ${jobFingerprint(job.id) ?? 'unknown'}`);
       return await convertSupportingFormatToPdf(job.data);
-    },
+    }),
     { connection: redis, concurrency: 2 },
   );
 
   const archiveWorker = new Worker(
     'archive-export',
-    async (job) => {
-      console.log(`[BullMQ] Compiling portable archive job ${job.id}`);
+    async (job) => protectQueueJob('archive', async () => {
+      console.log(`[BullMQ] Compiling portable archive job ${jobFingerprint(job.id) ?? 'unknown'}`);
       return await compileAndPersistPortableArchive(pool, s3, job.data);
-    },
+    }),
     { connection: redis, concurrency: 2 },
   );
 
   fileWorker.on('failed', async (job, err) => {
-    console.error(`Job ${job?.id} failed:`, err);
+    reportWorkerFailure('FILE_JOB_FAILED', err, job?.id);
     if (!job || job.attemptsMade < Number(job.opts.attempts || 1)) return;
 
     const { orgId, versionId, storageObjectId, providerVersionId } = job.data;
@@ -341,8 +361,11 @@ async function bootWorker() {
     const failureCode = String(err?.message || '').startsWith('SCAN_UNAVAILABLE:')
       ? 'SCAN_UNAVAILABLE'
       : 'PROCESSING_RETRIES_EXHAUSTED';
-    const client = await pool.connect();
+    // EventEmitter does not await async listeners: connection acquisition must
+    // be inside the catch boundary as well as the SQL writes.
+    let client: PoolClient | undefined;
     try {
+      client = await pool.connect();
       await client.query('BEGIN');
       await client.query(
         `SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`,
@@ -378,21 +401,28 @@ async function bootWorker() {
       }
       await client.query('COMMIT');
     } catch (persistError) {
-      await client.query('ROLLBACK').catch(() => {});
-      console.error(`Could not persist terminal file failure for job ${job.id}:`, persistError);
+      if (client) await client.query('ROLLBACK').catch(() => {});
+      reportWorkerFailure('FILE_FAILURE_PERSIST_FAILED', persistError, job.id);
     } finally {
-      client.release();
+      client?.release();
     }
   });
   pdfWorker.on('failed', (job, err) => {
-    console.error(`Job ${job?.id} failed:`, err);
+    reportWorkerFailure('PDF_JOB_FAILED', err, job?.id);
     if (job && job.attemptsMade >= Number(job.opts.attempts || 1)) {
-      void markHandoverPackageFailed(pool, job.data, String(job.id), err);
+      void markHandoverPackageFailed(pool, job.data, String(job.id), err)
+        .catch(persistError => reportWorkerFailure('PACKAGE_FAILURE_PERSIST_FAILED', persistError, job.id));
     }
   });
-  formatWorker.on('failed', (job, err) => console.error(`Job ${job?.id} failed:`, err));
+  formatWorker.on('failed', (job, err) => reportWorkerFailure('FORMAT_JOB_FAILED', err, job?.id));
+  archiveWorker.on('failed', (job, err) => reportWorkerFailure('ARCHIVE_JOB_FAILED', err, job?.id));
 
   // 4. Outbox Poller (every 2s) with durable transaction locking (TC2-005)
+  // Track the full async poll: queue.close and pool.end must wait for it.
+  const outboxTasks = new TrackedScheduler<'outbox-poll'>((_task, error) => {
+    reportWorkerFailure('OUTBOX_POLLER_FAILED', error);
+  });
+  let shutdownRequested = false;
   const pollOutbox = async () => {
     try {
       // organisations is the only global discovery surface. Event rows themselves are
@@ -402,6 +432,9 @@ async function bootWorker() {
       );
 
       for (const { id: orgId } of orgRows) {
+        // Finish the current tenant transaction, without claiming a new one
+        // after the shutdown signal.
+        if (shutdownRequested) break;
         const client = await pool.connect();
         try {
           await client.query('BEGIN');
@@ -421,13 +454,10 @@ async function bootWorker() {
 
           for (const row of rows) {
             try {
-              const payload = typeof row.payload_json === 'string' ? JSON.parse(row.payload_json) : row.payload_json;
-              const fullPayload = {
-                ...payload,
-                orgId: row.org_id,
-                projectId: payload.projectId || row.project_id,
-                eventId: row.id,
-              };
+              // Parse legacy/V1 envelopes and prove durable resource identity
+              // under the current tenant transaction before queue admission.
+              // No job can derive tenant/project/actor from user domain fields.
+              const fullPayload = await authorizeOutboxDispatch(client, row);
 
               const reg = OUTBOX_EVENT_REGISTRY[row.event_type];
               if (!reg) {
@@ -454,7 +484,7 @@ async function bootWorker() {
                 });
               } else if (reg.category === 'INFORMATIONAL') {
                 // Registered informational domain events are acknowledged for downstream audit / notification
-                console.log(`[Outbox Poller] Dispatched informational event: ${row.event_type} (${row.id})`);
+                console.log('[Outbox Poller] Dispatched registered informational event');
               } else {
                 throw new Error(`UNHANDLED_EXECUTABLE_OUTBOX_EVENT: ${row.event_type} (${row.id})`);
               }
@@ -465,7 +495,7 @@ async function bootWorker() {
                 [orgId, row.id],
               );
             } catch (dispatchErr) {
-              console.error(`Failed to dispatch outbox event ${row.id}:`, dispatchErr);
+              reportWorkerFailure('OUTBOX_EVENT_DISPATCH_FAILED', dispatchErr, row.id);
               await client.query(
                 `UPDATE outbox_events SET attempts = attempts + 1 WHERE org_id = $1 AND id = $2`,
                 [orgId, row.id],
@@ -475,38 +505,57 @@ async function bootWorker() {
           await client.query('COMMIT');
         } catch (err) {
           await client.query('ROLLBACK').catch(() => {});
-          console.error(`[Outbox Poller Error] tenant ${orgId}:`, err);
+          reportWorkerFailure('OUTBOX_TENANT_POLL_FAILED', err);
         } finally {
           client.release();
         }
       }
     } catch (err) {
-      console.error('[Outbox Poller Error]:', err);
+      reportWorkerFailure('OUTBOX_POLLER_FAILED', err);
     }
   };
 
-  const outboxInterval = setInterval(pollOutbox, 2000);
+  const outboxInterval = setInterval(() => {
+    void outboxTasks.run('outbox-poll', pollOutbox);
+  }, 2000);
 
   console.log('✓ TradeCloseout Worker, BullMQ Queues & Leader-Locked Schedulers are ACTIVE.');
 
-  const shutdown = async () => {
-    console.log('Shutting down TradeCloseout Worker...');
+  let shutdownPromise: Promise<void> | undefined;
+  const shutdown = (): Promise<void> => {
+    // Both signals share the same drain; never close active clients twice.
+    if (shutdownPromise) return shutdownPromise;
+    shutdownRequested = true;
     clearInterval(cycleInterval);
     clearInterval(outboxInterval);
-    await Promise.all([fileWorker.close(), pdfWorker.close(), formatWorker.close(), archiveWorker.close()]);
-    await Promise.all([fileQueue.close(), pdfQueue.close(), formatQueue.close(), archiveQueue.close()]);
-    await pool.end();
-    await redis.quit();
-    process.exit(0);
+    console.log('Shutting down TradeCloseout Worker...');
+    shutdownPromise = drainBeforeClosingDependencies(
+      [scheduledTasks, outboxTasks],
+      async () => {
+        // Queue adds and scheduler SQL must settle before worker and queue
+        // close, otherwise in-flight outbox events may be lost or ambiguous.
+        await Promise.all([fileWorker.close(), pdfWorker.close(), formatWorker.close(), archiveWorker.close()]);
+        await Promise.all([fileQueue.close(), pdfQueue.close(), formatQueue.close(), archiveQueue.close()]);
+        await pool.end();
+        await redis.quit();
+      },
+    ).then(() => {
+      process.exit(0);
+    }).catch(error => {
+      reportWorkerFailure('WORKER_SHUTDOWN_FAILED', error);
+      // Supervisor enforces the hard deadline. Do not claim a clean drain.
+      process.exitCode = 1;
+    });
+    return shutdownPromise;
   };
 
-  process.on('SIGTERM', shutdown);
-  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', () => { void shutdown(); });
+  process.on('SIGINT', () => { void shutdown(); });
 }
 
 if (require.main === module) {
   bootWorker().catch((err) => {
-    console.error('Worker failed to boot:', err);
+    reportWorkerFailure('WORKER_BOOT_FAILED', err);
     process.exit(1);
   });
 }

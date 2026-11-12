@@ -505,6 +505,7 @@ describe('Production Review Remediation Suite (NP01..NP06, NP09, NP10)', () => {
                 {
                   id: reviewId,
                   org_id: orgId,
+                  project_id: projectId,
                   status: 'IN_REVIEW',
                   reviewer_subject_type: 'USER',
                   reviewer_subject_id: userId,
@@ -513,6 +514,8 @@ describe('Production Review Remediation Suite (NP01..NP06, NP09, NP10)', () => {
               ],
             };
           }
+          if (sql.includes('SELECT m.role AS org_role')) return { rows: [{ org_role: 'R-OWNER' }] };
+          if (sql.includes('SELECT status FROM projects')) return { rows: [{ status: 'ACTIVE' }] };
           if (sql.includes('FROM document_versions')) {
             return {
               rows: [

@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
+import { requestCorrelationId } from '../middleware/request-correlation.middleware';
 
 export interface ProblemDetails {
   type: string;
@@ -28,7 +29,7 @@ export class ProblemJsonExceptionFilter implements ExceptionFilter {
     const ctx = host.switchToHttp();
     const res = ctx.getResponse<Response>();
     const req = ctx.getRequest<Request>();
-    const requestId = (req.headers['x-request-id'] as string) || 'req_unknown';
+    const requestId = requestCorrelationId(req);
 
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let code = 'INTERNAL_ERROR';
@@ -42,7 +43,14 @@ export class ProblemJsonExceptionFilter implements ExceptionFilter {
       status = exception.getStatus();
       const body = exception.getResponse() as Record<string, any> | string;
 
-      if (typeof body === 'object' && body !== null) {
+      if (status >= 500) {
+        // Nest HTTP exceptions can wrap provider/SQL diagnostics. The status
+        // may be public, but their body, detail, title and field errors are not.
+        code = this.defaultCodeForStatus(status);
+        title = this.defaultTitleForStatus(status);
+        detail = 'The service cannot complete this request right now. Quote the requestId if contacting support.';
+        retryable = status === 503;
+      } else if (typeof body === 'object' && body !== null) {
         code = body.code || this.defaultCodeForStatus(status);
         title = body.title || this.defaultTitleForStatus(status);
         if (Array.isArray(body.message)) {
@@ -69,12 +77,21 @@ export class ProblemJsonExceptionFilter implements ExceptionFilter {
         status = HttpStatus.CONFLICT;
         code = 'PLAN_LIMIT_EXCEEDED';
         title = 'Plan limit reached';
-        detail = exception.message;
+        detail = 'The plan limit was reached for this operation.';
+      } else if (anyErr.code === 'AUTH_SESSION_CONTEXT_CHANGED') {
+        // The guard may have admitted the request before a concurrent
+        // revocation/offboarding. This is a current-authority denial, not a
+        // storage failure, credential expiry or an unhandled HTTP 500. Do not
+        // disclose which eligibility row was removed.
+        status = HttpStatus.FORBIDDEN;
+        code = 'AUTH_SESSION_CONTEXT_CHANGED';
+        title = 'Access has changed';
+        detail = 'The current session is no longer authorized for this action.';
       } else {
-        this.logger.error(
-          { requestId, err: exception.message, stack: exception.stack },
-          'Unhandled internal exception',
-        );
+        // Raw errors may include credentials, SQL parameter values, and URLs.
+        // Only emit a fixed diagnostic correlation marker; the original error
+        // is intentionally not sent to this general-purpose logger.
+        this.logger.error(`Unhandled internal exception (requestId=${requestId})`);
       }
     }
 
@@ -94,6 +111,7 @@ export class ProblemJsonExceptionFilter implements ExceptionFilter {
     if (retryAfterSeconds !== undefined) {
       res.setHeader('Retry-After', String(retryAfterSeconds));
     }
+    res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Request-Id', requestId);
     res.setHeader('Content-Type', 'application/problem+json');
     res.status(status).json(problem);

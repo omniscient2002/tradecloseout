@@ -13,12 +13,13 @@ import {
   UnprocessableEntityException,
   UseGuards,
 } from '@nestjs/common';
-import { createHash, randomBytes, randomInt } from 'crypto';
+import { createHash, createHmac, randomBytes, randomInt } from 'crypto';
 import { Response } from 'express';
 import { Pool } from 'pg';
 import Redis from 'ioredis';
 import { uuidv7 } from 'uuidv7';
 import { AuthenticatedRequest, SessionCsrfGuard } from '../../common/guards/session-csrf.guard';
+import { NoGenericIdempotencyReceipt } from '../../common/decorators/no-generic-idempotency-receipt.decorator';
 
 export abstract class DltSmsGateway {
   abstract sendOtpSms(phoneE164: string, otp: string, templateId: string): Promise<{ delivered: boolean }>;
@@ -30,6 +31,7 @@ export abstract class TransactionalMailGateway {
 }
 
 @Controller('api/v1/auth')
+@NoGenericIdempotencyReceipt()
 export class IdentityController {
   constructor(
     private readonly pool: Pool,
@@ -37,6 +39,14 @@ export class IdentityController {
     private readonly smsGateway: DltSmsGateway,
     private readonly mailGateway: TransactionalMailGateway,
   ) {}
+
+  private otpHmacKey(): string {
+    const secret = process.env.AUTH_OTP_HMAC_KEY;
+    if (typeof secret !== 'string' || secret.length < 32) {
+      throw new Error('AUTH_OTP_HMAC_KEY_NOT_CONFIGURED');
+    }
+    return secret;
+  }
 
   /**
    * API-001: POST /api/v1/auth/otp/request
@@ -48,9 +58,19 @@ export class IdentityController {
     @Body() body: { identifier?: string; phoneOrEmail?: string },
     @Req() req: AuthenticatedRequest,
   ) {
-    const rawId = (body.identifier || body.phoneOrEmail || '').trim().toLowerCase();
+    if (!body || typeof body !== 'object' || Array.isArray(body) ||
+        (body.identifier !== undefined && typeof body.identifier !== 'string') ||
+        (body.phoneOrEmail !== undefined && typeof body.phoneOrEmail !== 'string')) {
+      throw new UnprocessableEntityException({ code: 'INVALID_AUTH_IDENTIFIER' });
+    }
+    const first = body.identifier?.trim().toLowerCase() || '';
+    const second = body.phoneOrEmail?.trim().toLowerCase() || '';
+    if (first && second && first !== second) {
+      throw new UnprocessableEntityException({ code: 'IDENTIFIER_CONFLICT' });
+    }
+    const rawId = first || second;
     const isPhone = /^\+91[6-9][0-9]{9}$/.test(rawId);
-    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawId);
+    const isEmail = rawId.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawId);
 
     if (!isPhone && !isEmail) {
       throw new UnprocessableEntityException({
@@ -59,6 +79,10 @@ export class IdentityController {
         detail: 'Provide a valid business email or +91 10-digit mobile number.',
       });
     }
+
+    // Reject missing key configuration before consuming a rate-limit budget or
+    // issuing a challenge. Never mint an offline-brute-forceable fallback hash.
+    const otpKey = this.otpHmacKey();
 
     // Rate limit: max 5 OTP requests / hour / identifier (10 §10), atomic Lua increment and expiry
     const isProductionLike = process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging';
@@ -79,8 +103,9 @@ export class IdentityController {
     const challengeId = uuidv7();
     const otp = String(randomInt(100000, 999999));
     const salt = randomBytes(16).toString('hex');
-    const otpHash = createHash('sha1').update(`${salt}:${otp}`).digest('hex');
-    const challengePayload = JSON.stringify({ id: challengeId, identifier: rawId, salt, otpHash, attempts: 0 });
+    const otpMac = createHmac('sha256', otpKey)
+      .update(`tradecloseout:otp:v1:${challengeId}:${salt}:${otp}`).digest('hex');
+    const challengePayload = JSON.stringify({ id: challengeId, identifier: rawId, salt, otpMac, attempts: 0 });
 
     // Atomic issuance & supersession (V01, N02): Atomically delete old generation and register new challenge
     await this.redis.eval(
@@ -206,9 +231,30 @@ export class IdentityController {
     @Req() req: AuthenticatedRequest,
     @Res({ passthrough: true }) res: Response,
   ) {
+    if (!body || typeof body !== 'object' || Array.isArray(body) ||
+        (body.identifier !== undefined && typeof body.identifier !== 'string') ||
+        (body.challengeId !== undefined && typeof body.challengeId !== 'string') ||
+        (body.otp !== undefined && typeof body.otp !== 'string') ||
+        (body.code !== undefined && typeof body.code !== 'string') ||
+        (body.signupProfile !== undefined && (
+          !body.signupProfile || typeof body.signupProfile !== 'object' || Array.isArray(body.signupProfile) ||
+          ['fullName', 'orgName', 'state'].some(key => {
+            const value = (body.signupProfile as unknown as Record<string, unknown>)[key];
+            return value !== undefined && (typeof value !== 'string' || value.length > 200);
+          })
+        ))) {
+      throw new UnprocessableEntityException({ code: 'INVALID_OTP_INPUT' });
+    }
     let rawId = (body.identifier || '').trim().toLowerCase();
     const candidateCode = (body.otp || body.code || '').trim();
     const challengeParam = (body.challengeId || '').trim();
+    if ((body.otp && body.code && body.otp !== body.code) ||
+        !/^[0-9]{6}$/.test(candidateCode) ||
+        (rawId && !(/^\+91[6-9][0-9]{9}$/.test(rawId) ||
+                    (rawId.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawId)))) ||
+        (challengeParam && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(challengeParam))) {
+      throw new UnprocessableEntityException({ code: 'INVALID_OTP_INPUT' });
+    }
 
     const inputKey = challengeParam
       ? `otp:challenge:${challengeParam}`
@@ -224,7 +270,27 @@ export class IdentityController {
       });
     }
 
-    const candidateHash = rawId ? createHash('sha256').update(`${rawId}:${candidateCode}`).digest('hex') : '';
+    // The challenge is still consumed atomically in Lua. This preliminary
+    // read only obtains the per-generation salt for server-keyed HMAC. A
+    // superseded or replaced generation cannot pass the later Lua check.
+    const resolvedId = challengeParam || (rawId ? await this.redis.get(`otp:alias:${rawId}`) : null);
+    let candidateMac = '';
+    if (resolvedId && /^[0-9a-f-]{36}$/i.test(resolvedId)) {
+      const challengeJson = await this.redis.get(`otp:challenge:${resolvedId}`);
+      if (challengeJson) {
+        try {
+          const stored = JSON.parse(challengeJson) as Record<string, unknown>;
+          if (stored.id === resolvedId &&
+              typeof stored.salt === 'string' && /^[0-9a-f]{32}$/i.test(stored.salt) &&
+              typeof stored.otpMac === 'string' && /^[a-f0-9]{64}$/i.test(stored.otpMac)) {
+            candidateMac = createHmac('sha256', this.otpHmacKey())
+              .update(`tradecloseout:otp:v1:${resolvedId}:${stored.salt}:${candidateCode}`).digest('hex');
+          }
+        } catch {
+          // Malformed or legacy unkeyed challenges cannot authorize a session.
+        }
+      }
+    }
 
     const rawResult = await this.redis.eval(
       `local raw = redis.call('GET', KEYS[1])
@@ -281,13 +347,12 @@ export class IdentityController {
          return 'MAX'
        end
 
-       -- Hash-only validation (V01): Compute SHA-1 over salt:candidateCode
-       if not challenge.salt or not challenge.otpHash then
+       -- HMAC comparison: only the server computes candidate MAC, never
+       -- expose the six-digit code or HMAC key to Redis scripts.
+       if type(challenge.otpMac) ~= 'string' or string.len(challenge.otpMac) ~= 64 then
          return 'EXPIRED'
        end
-
-       local computedHash = redis.sha1hex(challenge.salt .. ':' .. ARGV[1])
-       if challenge.otpHash ~= computedHash then
+       if challenge.otpMac ~= ARGV[1] then
          return 'INVALID'
        end
 
@@ -303,7 +368,7 @@ export class IdentityController {
       2,
       inputKey || aliasKey,
       aliasKey || inputKey,
-      candidateCode,
+      candidateMac,
     );
 
     let verifyOutcome = 'EXPIRED';

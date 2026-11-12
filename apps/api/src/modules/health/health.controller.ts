@@ -18,23 +18,25 @@ export class HealthController {
   }
 
   private async checkHealth(res: Response) {
+    // This route is unauthenticated. Never disclose SQL/provider diagnostics,
+    // dependency names beyond the existing stable field, or exception messages.
+    res.setHeader('Cache-Control', 'no-store');
     try {
       const dbCheck = await this.db.queryGlobal('SELECT 1 as alive');
-      const isAlive = dbCheck && dbCheck.length > 0;
+      const isAlive = Boolean(dbCheck && dbCheck.length > 0);
 
-      return res.status(HttpStatus.OK).json({
+      return res.status(isAlive ? HttpStatus.OK : HttpStatus.SERVICE_UNAVAILABLE).json({
         status: isAlive ? 'ok' : 'degraded',
         timestamp: new Date().toISOString(),
         version: '0.2.1',
         database: isAlive ? 'connected' : 'disconnected',
       });
-    } catch (err: any) {
+    } catch {
       return res.status(HttpStatus.SERVICE_UNAVAILABLE).json({
-        status: 'error',
+        status: 'degraded',
         timestamp: new Date().toISOString(),
         version: '0.2.1',
-        database: 'error',
-        message: err.message,
+        database: 'disconnected',
       });
     }
   }

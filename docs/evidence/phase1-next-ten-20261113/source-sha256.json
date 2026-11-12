@@ -1,0 +1,17 @@
+{
+  "local_source_commit": "6a2c3c80024ecdf2357b50377dce689b1ce0b6fa",
+  "files": {
+    "apps/api/src/common/guards/permission.guard.ts": "5e0a86ac0497bc12ea5daaba159a5b75b89a11503598204a089d29d7075fd3dd",
+    "apps/api/src/common/guards/session-csrf.guard.ts": "450b442305a99c7f86351b779fb948442b39e86a55071acd13b0a39ab248bbe9",
+    "apps/api/src/modules/assets/asset-authority.ts": "c7df32f108edc675f11584be9583c052a993876a59ad75c36809aec5cdde6bd2",
+    "apps/api/src/modules/assets/assets.service.ts": "941aa4ae424377b9bda319dcbe9aaece1c0037211b54cb603ed4eb7b2cbe8548",
+    "apps/api/src/modules/identity/mfa.controller.ts": "b1c724065c0e2e5ebe3c5e204d727db7f952f41c3648cc6f7cca643ed7046e36",
+    "apps/api/test/discovery-lifecycle-foundations.spec.ts": "2d4419fcc770c0090e6311f46f9cac1b5d6894ecae6135dcb90e422b06982f8c",
+    "apps/api/test/helpers/asset-authority-fixture.ts": "472bef7c2e80711abc652c0d671e15ec7f49440e85d4ee9d489cf4e46a707ac1",
+    "apps/api/test/hvac-domain-excellence.spec.ts": "c3a12dbd7b2cda8f711705e361e63f9c98cc9e21cbc73c16773c0171f1460b71",
+    "apps/api/test/hvac-production-reaudit-remediation.spec.ts": "81acc481647881816ac778e8e71e909435fe7157e43ecba9fbd579a7cd72297c",
+    "apps/api/test/phase0-evidence-integrity-remediation.spec.ts": "3383ed01af1584deff36d32ea34212a0b1ac7da4419a9fe53a794be7dcadb72c",
+    "apps/api/test/phase1-next-asset-authority.spec.ts": "c7183b11b48e5740c476961395e99943d014d3b0ce405c8c96d87d3335d02ef4",
+    "apps/api/test/phase1-next-input-auth.spec.ts": "d0466a20150939ba430bc74456add9a6c28e797319ce9ced7f7b97bfeda725c7"
+  }
+}
