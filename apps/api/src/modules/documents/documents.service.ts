@@ -179,19 +179,19 @@ export class DocumentsService {
       const scope = authority.scope;
       if (scope.documentIds) {
         params.push(scope.documentIds);
-        query += ` AND d.id = ANY(${params.length}::uuid[])`;
+        query += ` AND d.id = ANY($${params.length}::uuid[])`;
       }
       if (scope.documentTypes) {
         params.push(scope.documentTypes);
-        query += ` AND (d.doc_type_key = ANY(${params.length}::text[]) OR d.category_key = ANY(${params.length}::text[]))`;
+        query += ` AND (d.doc_type_key = ANY($${params.length}::text[]) OR d.category_key = ANY($${params.length}::text[]))`;
       }
       if (scope.startDate) {
         params.push(scope.startDate);
-        query += ` AND d.created_at >= ${params.length}::date`;
+        query += ` AND d.created_at >= $${params.length}::date`;
       }
       if (scope.endDate) {
         params.push(scope.endDate);
-        query += ` AND d.created_at < (${params.length}::date + interval '1 day')`;
+        query += ` AND d.created_at < ($${params.length}::date + interval '1 day')`;
       }
       if (scope.requirementIds) {
         params.push(scope.requirementIds);
@@ -201,7 +201,7 @@ export class DocumentsService {
           AND NOT EXISTS (
             SELECT 1 FROM document_requirements dr
              WHERE dr.org_id=d.org_id AND dr.project_id=d.project_id AND dr.document_id=d.id
-               AND NOT (dr.requirement_id = ANY(${params.length}::uuid[])))`;
+               AND NOT (dr.requirement_id = ANY($${params.length}::uuid[])))`;
       }
       if (filter?.categoryKey) {
         params.push(filter.categoryKey);
