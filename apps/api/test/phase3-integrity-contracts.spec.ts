@@ -2,9 +2,27 @@ import { BadRequestException, ConflictException, ServiceUnavailableException } f
 import { normalizeInspectionWitnessAssignments } from '../src/modules/commissioning/commissioning.service';
 import { requireImmutableObjectVersionId } from '../src/modules/documents/s3-storage.service';
 import { isImmutableEvidenceVersion } from '../src/modules/documents/documents.service';
+import { countQpdfLiveObjects } from '../../worker/src/queues/file.processor';
 import { assertReviewVersionNotTerminal } from '../src/modules/reviews/reviews.service';
 
 describe('Phase 3 fail-closed evidence integrity contracts', () => {
+  it('PH3-G10-001: counts both compressed and uncompressed xref entries', () => {
+    expect(countQpdfLiveObjects([
+      '1/0: uncompressed; offset = 100',
+      '2/0: compressed; stream = 9, index = 0',
+      '3/0: compressed; stream = 9, index = 1',
+      '4/0: free; next = 0',
+    ].join('\\n'))).toBe(3);
+  });
+
+  it('PH3-G10-001: detects compressed-object limit bypass and malformed inventory', () => {
+    const xref = Array.from({ length: 25001 }, (_, i) =>
+      `${i + 1}/0: compressed; stream = 3, index = ${i}`).join('\\n');
+    expect(countQpdfLiveObjects(xref)).toBeGreaterThan(25000);
+    expect(() => countQpdfLiveObjects('')).toThrow('PDF_XREF_EMPTY');
+    expect(() => countQpdfLiveObjects('1/0: unsupported entry')).toThrow('PDF_XREF_UNRECOGNIZED_ENTRY');
+  });
+
   it('PH3-G12-001: permits plain witness assignments without inventing authority', () => {
     expect(normalizeInspectionWitnessAssignments([
       { partyName: 'Client', representativeName: 'Representative', role: 'Observer' },
