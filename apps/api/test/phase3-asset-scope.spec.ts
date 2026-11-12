@@ -1,5 +1,5 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
-import { assertAssetInScope, validateAssetProjectScope } from '../src/modules/assets/asset-scope';
+import { assertAssetInScope, assetScopeSqlPredicate, validateAssetProjectScope } from '../src/modules/assets/asset-scope';
 import { AssetsService } from '../src/modules/assets/assets.service';
 import { uuidv7 } from 'uuidv7';
 import { withDisposableDatabase } from '../../../packages/db/test/helpers/disposable-database';
@@ -37,6 +37,25 @@ describe('PH3-G08-002 — live asset visibility and mutation scope', () => {
     expect(() => validateAssetProjectScope({ endDate: '2026-02-30' })).toThrow(ForbiddenException);
   });
 
+  it('pushes scoped asset, category and UTC date limits into bound SQL predicates', () => {
+    const scoped = assetScopeSqlPredicate({
+      assetIds: [allowedId],
+      assetCategories: ['AHU'],
+      startDate: '2026-11-01',
+      endDate: '2026-11-02',
+    }, 3);
+    expect(scoped.sql).toContain('assets.id = ANY($3::uuid[])');
+    expect(scoped.sql).toContain('assets.category_key = ANY($4::text[])');
+    expect(scoped.sql).toContain('assets.created_at >= $5::timestamptz');
+    expect(scoped.sql).toContain('assets.created_at < $6::timestamptz');
+    expect(scoped.values).toEqual([
+      [allowedId], ['AHU'], '2026-11-01T00:00:00.000Z', '2026-11-03T00:00:00.000Z',
+    ]);
+    expect(assetScopeSqlPredicate({ assetIds: [] }, 3).sql).toContain('ANY($3::uuid[])');
+    expect(() => assetScopeSqlPredicate({ assetCategories: ['AHU;DROP TABLE assets'] }, 3))
+      .toThrow(ForbiddenException);
+  });
+
   it('reads current DB scope before retirement and never attempts an UPDATE for hidden assets', async () => {
     const sql: string[] = [];
     const query = jest.fn(async (statement: string) => {
@@ -69,6 +88,12 @@ describe('PH3-G08-002 — live asset visibility and mutation scope', () => {
     const pool = { connect: jest.fn(async () => ({ query, release: jest.fn() })) } as any;
     const result = await new AssetsService(pool).listAssets(ctx, projectId);
     expect(result.map((item: any) => item.id)).toEqual([allowedId]);
+    const listSql = query.mock.calls.map(([statement]) => statement)
+      .find((statement) => statement.includes('SELECT * FROM assets')) || '';
+    expect(listSql).toContain('assets.id = ANY($3::uuid[])');
+    expect(query.mock.calls.some(([statement, values]) =>
+      statement.includes('SELECT * FROM assets') && values?.[2]?.[0] === allowedId,
+    )).toBe(true);
   });
 
   it('PH3-G08-001: rolls back one shared import transaction if a later insert fails', async () => {
@@ -150,6 +175,40 @@ describe('PH3-G08-002 — live asset visibility and mutation scope', () => {
       await expect(service.deleteOrRetireAsset(current, project, allowed)).rejects.toThrow(NotFoundException);
       const narrowed = await service.listAssets(current, project);
       expect(narrowed.map((a: any) => a.id)).toEqual([hidden]);
+
+      // The session still carries the old SITE permission, but current DB
+      // roles have been downgraded. Reads stay allowed for a reviewer; asset
+      // mutations must be rejected even though the HTTP guard ran earlier.
+      await admin.query(
+        `UPDATE memberships SET role = 'R-REVIEWER'
+          WHERE org_id = $1 AND user_id = $2`,
+        [org, actor],
+      );
+      await admin.query(
+        `UPDATE project_members SET role = 'R-REVIEWER'
+          WHERE org_id = $1 AND project_id = $2 AND user_id = $3`,
+        [org, project, actor],
+      );
+      await expect(service.getAsset(current, project, hidden)).resolves.toMatchObject({ id: hidden });
+      await expect(service.deleteOrRetireAsset(current, project, hidden))
+        .rejects.toThrow(ForbiddenException);
+      await expect(service.updateAsset(current, project, hidden, { name: 'Should never save' }))
+        .rejects.toThrow(ForbiddenException);
+      await expect(service.revalidateEvidence(current, project, hidden, uuidv7(), {
+        status: 'CONFIRMED', expectedRowVersion: 1,
+      })).rejects.toThrow(ForbiddenException);
+      await expect(service.importAssets(current, project, [{
+        tag: 'AHU-NEW', name: 'Hidden creation', categoryKey: 'AHU',
+      }], true)).rejects.toThrow(ForbiddenException);
+
+      // The SQL predicate also rejects asset visibility after a category
+      // restriction is narrowed, rather than relying on post-query filtering.
+      await admin.query(
+        `UPDATE project_members SET scope_json = $4::jsonb
+          WHERE org_id = $1 AND project_id = $2 AND user_id = $3`,
+        [org, project, actor, JSON.stringify({ assetCategories: ['CHILLER'] })],
+      );
+      expect(await service.listAssets(current, project)).toEqual([]);
     });
   });
 
