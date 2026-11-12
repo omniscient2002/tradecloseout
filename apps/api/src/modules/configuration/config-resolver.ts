@@ -103,7 +103,15 @@ export function resolveConfigV021(
     const cfg = layersByLevel[level];
     if (!cfg) continue;
 
-    const registry = ConfigSchemaRegistry[cfg.schemaVersion] ?? ConfigSchemaRegistry['v1.0']!;
+    const registry = ConfigSchemaRegistry[cfg.schemaVersion];
+    if (!registry) {
+      conflicts.push({ path: '$schemaVersion', level, message: 'Unsupported configuration schema version.' });
+      continue;
+    }
+    if (cfg.level !== level) {
+      conflicts.push({ path: '$level', level, message: 'Configuration layer identity does not match its position.' });
+      continue;
+    }
 
     for (const [path, rawVal] of Object.entries(cfg.payload)) {
       if (rawVal === undefined || rawVal === null) continue;
@@ -174,7 +182,12 @@ function mergeKeyedObjects(
   }
 
   for (const patch of patchArr) {
-    const k = String(patch[keyField]);
+    if (!patch || typeof patch !== 'object' || typeof patch[keyField] !== 'string' ||
+        !patch[keyField].trim() || ['__proto__', 'constructor', 'prototype'].includes(patch[keyField])) {
+      conflicts.push({ path: keyField, level, message: 'Invalid keyed configuration item.' });
+      continue;
+    }
+    const k = patch[keyField];
     const current = map.get(k);
 
     if (patch.$remove === true) {
@@ -191,11 +204,15 @@ function mergeKeyedObjects(
     }
 
     if (current) {
-      if (current.locked === true && patch.mandatory === false && current.mandatory === true) {
+      if (current.locked === true && (
+        patch.locked === false ||
+        (patch.mandatory === false && current.mandatory === true) ||
+        patch.$clear === true
+      )) {
         conflicts.push({
-          path: `${keyField}:${k}.mandatory`,
+          path: `${keyField}:${k}`,
           level,
-          message: `Locked mandatory item '${k}' cannot be made optional at ${level}.`,
+          message: `Locked item '${k}' cannot be weakened at ${level}.`,
         });
         continue;
       }
