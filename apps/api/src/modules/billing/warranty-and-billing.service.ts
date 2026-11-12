@@ -1102,7 +1102,7 @@ export class WarrantyAndBillingService {
       const { rows: defectRows } = await client.query(
         `SELECT
             COUNT(*) FILTER (WHERE status <> 'CLOSED' AND status <> 'WAIVED') AS open_defects,
-            COUNT(*) FILTER (WHERE status <> 'CLOSED' AND status <> 'WAIVED' AND severity IN ('HIGH', 'CRITICAL')) AS critical_defects
+            COUNT(*) FILTER (WHERE mandatory = true AND status <> 'CLOSED' AND status <> 'WAIVED' AND severity IN ('HIGH', 'CRITICAL')) AS critical_defects
            FROM defects
           WHERE org_id = $1 AND project_id = $2`,
         [ctx.orgId, projectId],
