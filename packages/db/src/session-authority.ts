@@ -18,6 +18,7 @@ export interface LiveSessionFenceContext {
   userId: string;
   actorType: 'USER' | 'MEMBER' | 'GUEST' | 'SYSTEM' | 'ADMIN';
   sessionId?: string;
+  sessionTokenHash?: string;
   orgRole?: string;
   guestGrantId?: string;
 }
@@ -42,9 +43,14 @@ export async function assertLiveSessionEligibleInTransaction(
   client: PoolClient,
   ctx: LiveSessionFenceContext,
 ): Promise<void> {
-  if (!ctx.sessionId) return;
+  if (!ctx.sessionId) {
+    if (ctx.sessionTokenHash) changed();
+    return;
+  }
   if (!['USER', 'MEMBER', 'GUEST'].includes(ctx.actorType) ||
-      !ctx.userId || !ctx.orgId) changed();
+      !ctx.userId || !ctx.orgId ||
+      typeof ctx.sessionTokenHash !== 'string' ||
+      !/^[0-9a-f]{64}$/.test(ctx.sessionTokenHash)) changed();
 
   const user = await client.query(
     "SELECT id FROM users WHERE id=$1 AND status='ACTIVE' FOR SHARE",
@@ -61,9 +67,10 @@ export async function assertLiveSessionEligibleInTransaction(
   const session = await client.query(
     `SELECT guest_grant_id FROM sessions
       WHERE id=$1 AND user_id=$2 AND active_org_id=$3
+        AND token_hash=$4
         AND revoked_at IS NULL AND expires_at>now()
       FOR SHARE`,
-    [ctx.sessionId, ctx.userId, ctx.orgId],
+    [ctx.sessionId, ctx.userId, ctx.orgId, ctx.sessionTokenHash],
   );
   if (session.rows.length !== 1) changed();
 
