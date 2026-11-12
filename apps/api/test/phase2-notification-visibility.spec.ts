@@ -124,6 +124,73 @@ describe('PH2-G20-001/002/006: notification creation cannot become an arbitrary 
     expect(query).toHaveBeenCalledTimes(2);
   });
 
+  it('denies project POST after owner demotion when there is no live project membership', async () => {
+    const projectId='00000000-0000-4000-8000-000000000003';
+    const query=jest.fn(async (sql:string) => {
+      if(sql.includes('SELECT id FROM projects')) return {rows:[{id:projectId}]};
+      if(sql.includes('SELECT m.role FROM memberships')) return {rows:[{role:'R-SITE'}]};
+      if(sql.includes('SELECT 1 FROM project_members')) return {rows:[]};
+      throw new Error('unexpected INSERT after revocation');
+    });
+    const db={withTenantContext:jest.fn(async (_ctx:unknown,
+      fn:(client:{query:typeof query})=>Promise<unknown>)=>fn({query}))};
+    await expect(new NotificationsService(db as any).createNotification(
+      {...actor,orgRole:'R-OWNER'},{
+        projectId,channel:'IN_APP',eventKey:'REQUIREMENT_CHANGED',
+        dedupKey:'stale-owner-1',payload:{title:'Assignment changed'},
+      },
+    )).rejects.toThrow('PROJECT_NOT_FOUND');
+    expect(query).toHaveBeenCalledTimes(3);
+    expect(query.mock.calls.some(([sql])=>sql.includes('INSERT INTO notifications'))).toBe(false);
+  });
+
+  it('denies project POST after organisation membership suspension, even with stale owner role', async () => {
+    const projectId='00000000-0000-4000-8000-000000000003';
+    const query=jest.fn(async (sql:string) => {
+      if(sql.includes('SELECT id FROM projects')) return {rows:[{id:projectId}]};
+      if(sql.includes('SELECT m.role FROM memberships')) return {rows:[]};
+      throw new Error('unexpected query after membership removal');
+    });
+    const db={withTenantContext:jest.fn(async (_ctx:unknown,
+      fn:(client:{query:typeof query})=>Promise<unknown>)=>fn({query}))};
+    await expect(new NotificationsService(db as any).createNotification(
+      {...actor,orgRole:'R-OWNER'},{
+        projectId,channel:'IN_APP',eventKey:'REQUIREMENT_CHANGED',
+        dedupKey:'revoked-1',payload:{title:'Assignment changed'},
+      },
+    )).rejects.toThrow('PROJECT_NOT_FOUND');
+    expect(query).toHaveBeenCalledTimes(2);
+  });
+
+  it('allows active owner and trusted system producer without trusting stale HTTP roles', async () => {
+    const projectId='00000000-0000-4000-8000-000000000003';
+    const makeDb=()=>{
+      const query=jest.fn(async (sql:string) => {
+        if(sql.includes('SELECT id FROM projects')) return {rows:[{id:projectId}]};
+        if(sql.includes('SELECT m.role FROM memberships')) return {rows:[{role:'R-OWNER'}]};
+        if(sql.includes('INSERT INTO notifications')) return {rows:[{
+          id:'created-notification',status:'SENT',gateway_state:'DELIVERED',
+        }]};
+        throw new Error('unexpected SQL');
+      });
+      return {query,db:{withTenantContext:jest.fn(async (_ctx:unknown,
+        fn:(client:{query:typeof query})=>Promise<unknown>)=>fn({query}))}};
+    };
+    const owner=makeDb();
+    const input={projectId,channel:'IN_APP' as const,eventKey:'REQUIREMENT_CHANGED',
+      dedupKey:'current-owner-1',payload:{title:'Assignment changed'}};
+    const result=await new NotificationsService(owner.db as any).createNotification(
+      {...actor,orgRole:'R-SITE'},input);
+    expect(result.notification.status).toBe('SENT');
+    expect(owner.query.mock.calls.some(([sql])=>sql.includes('SELECT m.role FROM memberships'))).toBe(true);
+
+    const system=makeDb();
+    const accepted=await new NotificationsService(system.db as any).createNotification(
+      {...actor,actorType:'SYSTEM',orgRole:undefined},{...input,dedupKey:'system-1'});
+    expect(accepted.notification.status).toBe('SENT');
+    expect(system.query.mock.calls.some(([sql])=>sql.includes('SELECT m.role FROM memberships'))).toBe(false);
+  });
+
   it('denies owner-only commercial digests for a project reader', async () => {
     const db = { withTenantContext: jest.fn() };
     await expect(new NotificationsService(db as any).getOwnerDigest(actor, 'project')).rejects.toMatchObject({
