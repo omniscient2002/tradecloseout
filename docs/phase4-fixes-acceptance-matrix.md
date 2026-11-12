@@ -56,7 +56,7 @@
 | [PH4-G19-002](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G19.md#ph4-g19-002) | Constrain deductions to approved invoice/tax facts and cumulative balances | PARTIAL / VERIFY | Both billing TDS entrypoints now lock invoice rows and cap cumulative paise, with negative tests; effective-dated section/rate configuration, idempotency and independent finance acceptance remain open |
 | [PH4-G19-003](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G19.md#ph4-g19-003) | Consolidate invoice issuance under reviewed configuration | OPEN | Not yet implemented or independently verified |
 | [PH4-G19-004](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G19.md#ph4-g19-004) | Make IRP/provider side effects durable and mandatory applicability fail closed | OPEN | Not yet implemented or independently verified |
-| [PH4-G19-005](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G19.md#ph4-g19-005) | Do not label informational retention as authoritative payment eligibility | OPEN | Not yet implemented or independently verified |
+| [PH4-G19-005](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G19.md#ph4-g19-005) | Do not label informational retention as authoritative payment eligibility | PARTIAL / VERIFY | Endpoint now uses canonical technical readiness, current full-handover package/required-recipient qualification, truthful null amounts and INFORMATIONAL_ONLY finance state; contract reconciliation, consent/delivery and finance workflow acceptance remain open |
 | [PH4-G19-006](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G19.md#ph4-g19-006) | Complete finance history, documents and annual exports | OPEN | Not yet implemented or independently verified |
 | [PH4-G19-007](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G19.md#ph4-g19-007) | Integrate payment settlement with entitlement and notification ledgers | OPEN | Not yet implemented or independently verified |
 | [PH4-G19-008](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G19.md#ph4-g19-008) | Obtain accountable finance, tax and provider release acceptance | BLOCKED_EXTERNAL | Requires authorized external/domain acceptance |
@@ -68,7 +68,7 @@
 - Tax invoices, payment settlement, GST/IRP, actual provider delivery, OEM confirmations and real engineering certification remain **disabled or pending verified integration** where applicable. Do not replace them with pretend states.
 - No independent QA, architecture, HVAC, finance, legal, customer or operations reviewer has accepted the exact candidate. No deployment, merge or production sign-off is claimed.
 
-**Count:** 52 findings; 7 external gates; 22 partial remediation areas; 23 not yet addressed areas.
+**Count:** 52 findings; 7 external gates; 23 partial remediation areas; 22 not yet addressed areas.
 
 ## Dedicated PR and CI constraint
 
@@ -111,3 +111,9 @@ This Phase 4 branch is stacked on the audited Phase 1 candidate. Its preferred r
 - G16-001: contractor-reported WARRANTY_EVENT rows are never automatically OEM-confirmed from the match of a user-provided basis/reference. Recording stays `RECORDED` or `DISPUTED`. No asset warranty dates are automatically extended or filled by this untrusted API.
 - G16-002: compare start/end against current recorded asset coverage, surface a disputed same-basis mismatch, validate exact calendar dates and reject malformed events. Unverified `EXTENSION` cannot update effective coverage.
 - **Still open:** independent OEM/contract evidence qualification with reviewer identity/role, legacy auto-confirmed row reconciliation, authoritative trigger anchoring, versioned effective-date correction and browser acceptance. A valid-looking evidenceObjectId does not create an approved confirmation.
+
+## G19-005 informational financial release guard
+
+- The commercial readiness endpoint uses canonical technical readiness plus a qualifying *latest* full-handover package, requiring all required recipient decisions, instead of any historical ACCEPTED status.
+- Missing baseline/contract facts remain null/unknown, not automatically 100%, zero value or a fabricated 5% rate. Project-value retention is explicitly informational; releaseStatus is INFORMATIONAL_ONLY, isRetentionEligible is always false, and no payment/retention approval is inferred.
+- Remaining: independently approved contract aggregation, legal retention rules, provider/recipient delivery verification, formal finance authorization, multi-contract and full browser acceptance. This is a **partial code safeguard**, not a complete billing system.
