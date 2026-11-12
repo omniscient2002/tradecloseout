@@ -102,8 +102,12 @@ export class ChecklistsController {
     @Param('id') id: string,
     @Body('reason') reason: string,
     @Body('type') type?: 'WAIVE' | 'NOT_APPLICABLE',
+    @Body('commandId') commandId?: string,
+    @Body('expectedRowVersion') expectedRowVersion?: number,
   ) {
-    return this.checklistsService.requestWaiver(req.userContext, id, reason, type);
+    return this.checklistsService.requestWaiver(req.userContext, id, reason, type, {
+      commandId, expectedRowVersion,
+    });
   }
 
   @Post([
