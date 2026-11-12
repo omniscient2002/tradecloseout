@@ -223,7 +223,9 @@ export class IdempotencyInterceptor implements NestInterceptor {
           // Never scan one shape and then persist a different, unchecked one.
           let receiptJson: string;
           try {
-            receiptJson = JSON.stringify(responseBody ?? {});
+            const encoded = JSON.stringify(responseBody ?? {});
+            if (typeof encoded !== 'string') throw new Error('NON_JSON_RESPONSE');
+            receiptJson = encoded;
           } catch {
             throw new ConflictException({
               code: 'IDEMPOTENCY_RECEIPT_NOT_SERIALIZABLE',
