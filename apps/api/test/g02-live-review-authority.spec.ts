@@ -185,4 +185,67 @@ describe('G02 live review decision authority — restricted PostgreSQL 16', () =
     });
   });
 
+  it('enforces live upload-intent scope and project lifecycle against restricted PostgreSQL', async () => {
+    await withDisposableDatabase(async ({ admin, app }) => {
+      const { userId, tenants: [a] } = await seedTenants(admin);
+      const projectId = a.projectIds[0];
+      await admin.query(
+        "INSERT INTO memberships (id,org_id,user_id,role,status) VALUES ($1,$2,$3,'R-SITE','ACTIVE')",
+        [randomUUID(), a.orgId, userId],
+      );
+      await admin.query(
+        "INSERT INTO project_members (id,org_id,project_id,user_id,role,status,added_by,scope_json) VALUES ($1,$2,$3,$4,'R-SITE','ACTIVE',$4,'{}'::jsonb)",
+        [randomUUID(), a.orgId, projectId, userId],
+      );
+      const ctx = { orgId: a.orgId, userId, actorType: 'USER' as const, requestId: 'live-upload-db' };
+      const storage = {
+        createUploadUrls: jest.fn().mockResolvedValue({
+          uploadId: null, partSizeBytes: 1024, parts: [],
+        }),
+      };
+      const service = new DocumentsService(new TenantDbService(app), storage as any);
+      const create = (opts: { documentId?: string; revisionCode?: string } = {}) =>
+        service.createUploadIntent(ctx, projectId, {
+          mimeType: 'application/pdf', fileName: 'commissioning.pdf',
+          sizeBytes: 1024, ...opts,
+        });
+      const count = async () => Number((await admin.query(
+        "SELECT count(*)::int AS n FROM storage_objects WHERE org_id=$1",
+        [a.orgId],
+      )).rows[0].n);
+
+      const initial = await create();
+      expect(initial.documentId).toBeDefined();
+      expect(await count()).toBe(1);
+
+      const setScope = (scope: Record<string, unknown>) => admin.query(
+        "UPDATE project_members SET scope_json=$1::jsonb WHERE org_id=$2 AND project_id=$3 AND user_id=$4",
+        [JSON.stringify(scope), a.orgId, projectId, userId],
+      );
+      await setScope({ mode: 'READ_ONLY' });
+      await expect(create()).rejects.toThrow('REVIEW_AUTHORITY_CHANGED');
+      expect(await count()).toBe(1);
+
+      await setScope({ documentIds: [initial.documentId] });
+      // A document-id scope permits modifying that existing document, but not
+      // minting an unrelated document with a new id.
+      const revision = await create({ documentId: initial.documentId, revisionCode: 'R2' });
+      expect(revision.documentId).toBe(initial.documentId);
+      expect(await count()).toBe(2);
+      await expect(create()).rejects.toThrow('DOCUMENT_UPLOAD_OUTSIDE_SCOPE');
+      expect(await count()).toBe(2);
+
+      await setScope({ documentIds: [randomUUID()] });
+      await expect(create({ documentId: initial.documentId, revisionCode: 'R3' }))
+        .rejects.toThrow('REVIEW_AUTHORITY_CHANGED');
+      expect(await count()).toBe(2);
+
+      await setScope({});
+      await admin.query("UPDATE projects SET status='CLOSED' WHERE org_id=$1 AND id=$2", [a.orgId, projectId]);
+      await expect(create()).rejects.toThrow('REVIEW_AUTHORITY_CHANGED');
+      expect(await count()).toBe(2);
+      expect(storage.createUploadUrls).toHaveBeenCalledTimes(2);
+    });
+  });
+
 });
