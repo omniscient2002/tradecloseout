@@ -227,9 +227,20 @@ export async function discardOfflineUploadDraft(queueId: string): Promise<void> 
         throw new Error('UPLOAD_PROCESSING_CANNOT_DISCARD: Verify the server outcome first.');
       }
       if (item.uploadIntent) {
-        await apiFetch(`/api/v1/document-versions/${encodeURIComponent(item.uploadIntent.versionId)}/abort-upload`, {
-          method: 'POST',
-        });
+        try {
+          await apiFetch(`/api/v1/document-versions/${encodeURIComponent(item.uploadIntent.versionId)}/abort-upload`, {
+            method: 'POST',
+          });
+        } catch (error) {
+          // The server may have committed abort before a response was lost, or
+          // a local IndexedDB delete may have failed after an earlier abort.
+          // A 409 permits local discard ONLY if the authoritative version is
+          // terminally rejected. Never interpret 401/403/404 as proof of abort.
+          if (!(error instanceof ApiProblemError) || error.status !== 409 ||
+              await checkDocumentProcessingState(item) !== 'REJECTED') {
+            throw error;
+          }
+        }
         assertSameActor(item);
       }
       await deleteQueueItem(db, queueId);
