@@ -4,6 +4,21 @@
 
 **Integration warning:** [G01 PR #5](https://github.com/omniscient2002/tradecloseout/pull/5) (163-file MFA/recovery candidate) and stacked [G02 PR #12](https://github.com/omniscient2002/tradecloseout/pull/12) remain **unmerged**. The dedicated Phase 1 PR #19 is based on `main` and lacks the G01 MFA controller and cryptography files cited by the audit; CI on PR #19 does **not** execute the missing implementation. Do not merge #5 or #12 blindly, or mark G01's key rotation/enrollment fixed because separate-branch source exists.
 
+## G01 integration conflict register — must resolve before G01 acceptance
+
+Comparing G01 PR #5 head `863e6e0c` with the Phase 1 branch showed divergent history. The Phase 1 branch currently has the auth identity controller but not `apps/api/src/modules/identity/mfa.controller.ts`, `mfa-crypto.ts`, or `auth-security.ts` implemented in PR #5. G01 tests on Phase 1 alone cannot prove MFA behavior.
+
+**Numbered migration collision (not cosmetic):**
+
+| Path in Phase 1 | Same version in G01 PR #5 | Integration requirement |
+|---|---|---|
+| `0021_phase1_audit_partition_boundary.sql` | `0021_razorpay_verified_webhook_inbox.sql` | Assign unique, ordered version numbers and verify deployed checksum ledger |
+| `0022_phase1_audit_sequence_trusted_order.sql` | `0022_handover_package_purpose.sql` | Renumber with verified dependencies; never skip or silently overwrite applied SQL |
+
+G01 PR #5 also adds authentication migrations `0023`–`0040`, while the G02 PR #12 is stacked on G01 and brings further changes. Do **not** directly copy migrations or mark G01 fixed until migration graph, RLS/ownership, API imports, tests and database compatibility are reconciled. The branch comparison is not a merge authorization.
+
+**Integration acceptance:** one agreed canonical migration order, full fresh install plus upgrade-from-existing schema, current/retired MFA key handling, secure idempotency receipts, session fencing, and real integration tests on **the final Phase 1 branch**, not only PR #5 or #12. Keep the old PRs untouched until the proper merge strategy has passed those checks.
+
 ## State and proof required
 
 An issue can advance **OPEN → IMPLEMENTED → VERIFIED → ACCEPTED** only with:
