@@ -57,9 +57,13 @@ describe('review authority and expiry', () => {
   it('does not approve a READY label without a verified storage object', async () => {
     const query = jest.fn(async (sql: string) => {
       if (sql.includes('SELECT * FROM reviews')) {
-        return { rows: [{ id: 'review-1', status: 'IN_REVIEW', reviewer_subject_type: 'USER',
+        return { rows: [{ id: 'review-1', project_id: 'project-1', status: 'IN_REVIEW', reviewer_subject_type: 'USER',
           reviewer_subject_id: actor.userId, document_version_id: 'version-1' }] };
       }
+      // Explicitly represent an ACTIVE current account/org/owner and an ACTIVE
+      // project in this focused evidence-object fixture.
+      if (sql.includes('SELECT m.role AS org_role')) return { rows: [{ org_role: 'R-OWNER' }] };
+      if (sql.includes('SELECT status FROM projects')) return { rows: [{ status: 'ACTIVE' }] };
       if (sql.includes('SELECT * FROM document_versions')) {
         return { rows: [{ id: 'version-1', file_status: 'READY', object_id: 'object-1' }] };
       }
