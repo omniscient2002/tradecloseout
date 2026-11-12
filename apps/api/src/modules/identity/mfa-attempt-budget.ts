@@ -30,7 +30,7 @@ export class MfaAttemptBudget {
            VALUES($1,$2,1,now()+interval '15 minutes')
            ON CONFLICT (user_id,action) DO UPDATE
               SET attempts=CASE WHEN mfa_attempt_budgets.reset_at<=now() THEN 1
-                                ELSE mfa_attempt_budgets.attempts+1 END,
+                                ELSE LEAST(mfa_attempt_budgets.attempts,20)+1 END,
                   reset_at=CASE WHEN mfa_attempt_budgets.reset_at<=now()
                                 THEN now()+interval '15 minutes'
                                 ELSE mfa_attempt_budgets.reset_at END
