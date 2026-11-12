@@ -6,7 +6,7 @@ import {
   UnprocessableEntityException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { withTenantTransaction, TenantActorContext } from '@tradecloseout/db/tenant-tx';
 import { isImmutableStorageVersion } from '@tradecloseout/shared';
@@ -14,6 +14,44 @@ import { isImmutableStorageVersion } from '@tradecloseout/shared';
 @Injectable()
 export class WarrantyAndBillingService {
   constructor(private readonly pool: Pool) {}
+
+  /**
+   * Resolve and lock one exact current, approved, asset-qualified document
+   * version for this remedy. Two different documents sharing the same storage
+   * object are ambiguous and require explicit manual evidence selection.
+   */
+  private async resolveRemedyVersion(
+    client: PoolClient, orgId: string, projectId: string,
+    objectId: string, assetId: string | null,
+  ): Promise<string> {
+    const { rows } = await client.query(
+      `SELECT dv.id
+         FROM document_versions dv
+         JOIN documents d
+           ON d.org_id = dv.org_id AND d.project_id = dv.project_id
+          AND d.id = dv.document_id
+        WHERE dv.org_id = $1 AND dv.project_id = $2 AND dv.object_id = $3
+          AND dv.deleted_at IS NULL AND dv.superseded_at IS NULL
+          AND dv.file_status = 'READY' AND dv.review_status = 'APPROVED'
+          AND (dv.expiry_date IS NULL OR dv.expiry_date >= CURRENT_DATE)
+          AND d.deleted_at IS NULL AND d.status = 'ACTIVE'
+          AND d.current_approved_version_id = dv.id
+          AND ($4::uuid IS NULL OR EXISTS (
+            SELECT 1 FROM document_assets da
+             WHERE da.org_id = dv.org_id AND da.project_id = dv.project_id
+               AND da.document_id = dv.document_id AND da.asset_id = $4
+          ))
+        ORDER BY dv.id LIMIT 2 FOR SHARE OF dv, d`,
+      [orgId, projectId, objectId, assetId],
+    );
+    if (rows.length !== 1) {
+      throw new ConflictException({
+        code: 'DEFECT_REMEDY_VERSION_AMBIGUOUS_OR_INELIGIBLE',
+        detail: 'Evidence requires one current approved, correctly asset-linked document version.',
+      });
+    }
+    return rows[0].id;
+  }
 
   /**
    * WF-24 / API-180: Record OEM Warranty Event & Detect Basis Conflicts (AUD-D-03)
@@ -269,15 +307,19 @@ export class WarrantyAndBillingService {
         });
       }
 
+      const remedyVersionId = await this.resolveRemedyVersion(
+        client, ctx.orgId, targetProjectId, remedyEvidenceObjectId, defect.asset_id || null,
+      );
       const updateRes = await client.query(
         `UPDATE defects
             SET status = 'RECTIFIED',
                 closure_evidence_object_id = $4,
+                remedy_document_version_id = $7,
                 remedied_by = $5,
                 remedied_at = now(),
                 row_version = row_version + 1
           WHERE org_id = $1 AND project_id = $2 AND id = $3 AND row_version = $6`,
-        [ctx.orgId, targetProjectId, defectId, remedyEvidenceObjectId, ctx.userId, defect.row_version],
+        [ctx.orgId, targetProjectId, defectId, remedyEvidenceObjectId, ctx.userId, defect.row_version, remedyVersionId],
       );
 
       if (updateRes.rowCount === 0) {
@@ -292,7 +334,7 @@ export class WarrantyAndBillingService {
         projectId: targetProjectId,
         entityType: 'DEFECT',
         entityId: defectId,
-        afterJson: { status: 'RECTIFIED', remedyEvidenceObjectId, remediedBy: ctx.userId },
+        afterJson: { status: 'RECTIFIED', remedyEvidenceObjectId, remedyVersionId, remediedBy: ctx.userId },
       });
 
       return { defectId, status: 'RECTIFIED', rowVersion: defect.row_version + 1 };
@@ -465,6 +507,21 @@ export class WarrantyAndBillingService {
         });
       }
 
+      if (!defect.remedy_document_version_id) {
+        throw new ConflictException({
+          code: 'DEFECT_LEGACY_REMEDY_VERSION_UNPINNED',
+          detail: 'Legacy remedy must be independently requalified before closure.',
+        });
+      }
+      const currentRemedyVersionId = await this.resolveRemedyVersion(
+        client, ctx.orgId, targetProjectId, closureEvidenceObjectId, defect.asset_id || null,
+      );
+      if (currentRemedyVersionId !== defect.remedy_document_version_id) {
+        throw new ConflictException({
+          code: 'DEFECT_REMEDY_VERSION_CHANGED',
+          detail: 'The document version originally reviewed for the remedy is no longer current.',
+        });
+      }
       const updateRes = await client.query(
         `UPDATE defects
             SET status = 'CLOSED',
