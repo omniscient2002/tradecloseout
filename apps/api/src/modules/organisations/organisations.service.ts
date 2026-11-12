@@ -18,6 +18,7 @@ import { withTenantTransaction, TenantActorContext, DomainOutboxEvent } from '@t
 import { hasPermission, isValidIndianGstin, IndianPanSchema, canonicalAuthenticationEmail } from '@tradecloseout/shared';
 import { TransactionalMailGateway } from '../identity/identity.controller';
 import { isProductionEnvironment } from '../identity/auth-security';
+import { OrgProfilePatch } from './organisation-validation';
 
 export interface OffboardingGapReport {
   targetUserId: string;
@@ -114,7 +115,7 @@ export class OrganisationsService {
             p.id, p.code, p.name, p.status, p.target_handover_date,
             p.site_json->>'city' as city,
             COALESCE(cs.total_contract_value_paise, p.contract_value_paise, 0)::text as contract_value_paise,
-            COALESCE(cs.total_retention_at_risk_paise, p.retention_at_risk_paise, 0)::text as retention_at_risk_paise,
+            COALESCE(cs.total_retention_at_risk_paise, 0)::text as retention_at_risk_paise,
             p_client.name as client_name,
             p_mc.name as mc_name,
             p_pmc.name as pmc_name,
@@ -260,7 +261,7 @@ export class OrganisationsService {
       }
 
       const { rows: profileRows } = await client.query(
-        `SELECT gstin, pan, brand_color, signatory_name, signatory_designation, logo_url, accent_color, watermark_enabled, allow_self_approval, default_retention_months
+        `SELECT gstin, pan, brand_color, signatory_name, signatory_designation, logo_object_id, accent_color, watermark_enabled, allow_self_approval, default_retention_months, address_json, contact_email, contact_phone, footer_text, row_version
            FROM org_profiles WHERE org_id = $1 LIMIT 1`,
         [orgId],
       );
@@ -279,117 +280,78 @@ export class OrganisationsService {
   async updateOrgProfile(
     ctx: TenantActorContext,
     expectedRowVersion: number,
-    input: {
-      legalName?: string;
-      displayName?: string;
-      entityType?: string;
-      state?: string;
-      gstin?: string | null;
-      pan?: string | null;
-      brandColor?: string;
-      signatoryName?: string;
-      signatoryDesignation?: string;
-      logoUrl?: string;
-      accentColor?: string;
-      watermarkEnabled?: boolean;
-      allowSelfApproval?: boolean;
-      defaultRetentionMonths?: number;
-    },
+    input: OrgProfilePatch,
   ) {
-    if (input.gstin && !isValidIndianGstin(input.gstin)) {
-      throw new UnprocessableEntityException({
-        code: 'INVALID_GSTIN',
-        title: 'Invalid GSTIN checksum or structure',
-        detail: 'Enter a valid 15-character Indian GSTIN (FR-ORG-005).',
-        fieldErrors: [{ field: 'gstin', message: 'Checksum or state code invalid' }],
-      });
-    }
-
-    if (input.pan) {
-      const panCheck = IndianPanSchema.safeParse(input.pan);
-      if (!panCheck.success) {
-        throw new UnprocessableEntityException({
-          code: 'INVALID_PAN',
-          title: 'Invalid PAN structure',
-          detail: 'Enter a valid 10-character Indian PAN (FR-ORG-006).',
-          fieldErrors: [{ field: 'pan', message: 'Expected format AAAAA9999A' }],
-        });
-      }
-    }
-
+    const orgColumns: Record<string, string> = {
+      legalName:'legal_name', displayName:'display_name', entityType:'entity_type',
+      state:'state', timeZone:'timezone',
+    };
+    const profileColumns: Record<string, string> = {
+      gstin:'gstin', pan:'pan', brandColor:'brand_color',
+      signatoryName:'signatory_name', signatoryDesignation:'signatory_designation',
+      logoObjectId:'logo_object_id', accentColor:'accent_color',
+      watermarkEnabled:'watermark_enabled', allowSelfApproval:'allow_self_approval',
+      defaultRetentionMonths:'default_retention_months', addressJson:'address_json',
+      contactEmail:'contact_email', contactPhone:'contact_phone', footerText:'footer_text',
+    };
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
-      const { rows: orgRows } = await client.query(
-        `SELECT id, legal_name, display_name, entity_type, state, row_version
-           FROM organisations
-          WHERE id = $1
-          FOR UPDATE`,
-        [ctx.orgId],
+      const {rows:orgRows}=await client.query(
+        `SELECT id,legal_name,display_name,entity_type,state,row_version FROM organisations
+          WHERE id=$1 FOR UPDATE`,[ctx.orgId],
       );
-
-      if (orgRows.length === 0) {
-        throw new NotFoundException({ code: 'NOT_FOUND', detail: 'Organisation not found.' });
-      }
-      const org = orgRows[0];
-
-      if (expectedRowVersion !== undefined && expectedRowVersion !== null && org.row_version !== expectedRowVersion) {
-        throw new ConflictException({
-          code: 'PRECONDITION_FAILED',
-          detail: 'Organisation profile was updated by another user. Reload and retry.',
-        });
+      if (!orgRows.length) throw new NotFoundException({code:'NOT_FOUND'});
+      const org=orgRows[0];
+      if (org.row_version !== expectedRowVersion) {
+        throw new ConflictException({code:'PRECONDITION_FAILED',detail:'Reload the organisation profile before retrying.'});
       }
 
-      await client.query(
-        `UPDATE organisations
-            SET legal_name = COALESCE($2, legal_name),
-                display_name = COALESCE($3, display_name),
-                entity_type = COALESCE($4, entity_type),
-                state = COALESCE($5, state),
-                row_version = row_version + 1,
-                updated_at = now()
-          WHERE id = $1`,
-        [ctx.orgId, input.legalName, input.displayName, input.entityType, input.state],
-      );
+      // The object must already be READY, virus-scanned and owned by the same
+      // tenant. This endpoint never accepts arbitrary URL/SVG branding.
+      if (input.logoObjectId) {
+        const {rows:logo}=await client.query(
+          `SELECT id FROM storage_objects
+             WHERE org_id=$1 AND id=$2 AND status='READY'
+               AND av_scanned_at IS NOT NULL
+               AND mime IN ('image/png','image/jpeg','image/webp')
+               AND sha256 IS NOT NULL AND size_bytes>0
+             FOR SHARE`,[ctx.orgId,input.logoObjectId],
+        );
+        if (!logo.length) throw new UnprocessableEntityException({code:'INVALID_BRANDING_OBJECT'});
+      }
 
-      await client.query(
-        `INSERT INTO org_profiles (org_id, gstin, pan, brand_color, signatory_name, signatory_designation, logo_url, accent_color, watermark_enabled, allow_self_approval, default_retention_months)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-         ON CONFLICT (org_id) DO UPDATE SET
-            gstin = COALESCE($2, org_profiles.gstin),
-            pan = COALESCE($3, org_profiles.pan),
-            brand_color = COALESCE($4, org_profiles.brand_color),
-            signatory_name = COALESCE($5, org_profiles.signatory_name),
-            signatory_designation = COALESCE($6, org_profiles.signatory_designation),
-            logo_url = COALESCE($7, org_profiles.logo_url),
-            accent_color = COALESCE($8, org_profiles.accent_color),
-            watermark_enabled = COALESCE($9, org_profiles.watermark_enabled),
-            allow_self_approval = COALESCE($10, org_profiles.allow_self_approval),
-            default_retention_months = COALESCE($11, org_profiles.default_retention_months),
-            row_version = org_profiles.row_version + 1,
-            updated_at = now()`,
-        [
-          ctx.orgId,
-          input.gstin?.toUpperCase() ?? null,
-          input.pan?.toUpperCase() ?? null,
-          input.brandColor ?? null,
-          input.signatoryName ?? null,
-          input.signatoryDesignation ?? null,
-          input.logoUrl ?? null,
-          input.accentColor ?? null,
-          input.watermarkEnabled ?? null,
-          input.allowSelfApproval ?? null,
-          input.defaultRetentionMonths ?? null,
-        ],
-      );
+      const orgFields=Object.entries(input).filter(([key])=>key in orgColumns);
+      if (orgFields.length) {
+        const args=[ctx.orgId,...orgFields.map(([,value])=>value)];
+        const setters=orgFields.map(([key],index)=>`${orgColumns[key]}=$${index+2}`);
+        await client.query(
+          `UPDATE organisations SET ${setters.join(',')},row_version=row_version+1,updated_at=now()
+            WHERE id=$1`,args,
+        );
+      } else {
+        await client.query(`UPDATE organisations SET row_version=row_version+1,updated_at=now()
+          WHERE id=$1`,[ctx.orgId]);
+      }
 
+      const profileFields=Object.entries(input).filter(([key])=>key in profileColumns);
+      if (profileFields.length) {
+        // Explicitly inserting only org_id ensures database defaults are used;
+        // UPDATE only supplied columns permits nullable fields to be cleared.
+        await client.query(
+          `INSERT INTO org_profiles(org_id) VALUES($1)
+            ON CONFLICT(org_id) DO NOTHING`,[ctx.orgId],
+        );
+        const args=[ctx.orgId,...profileFields.map(([,value])=>value)];
+        const setters=profileFields.map(([key],index)=>`${profileColumns[key]}=$${index+2}`);
+        await client.query(
+          `UPDATE org_profiles SET ${setters.join(',')},
+             row_version=row_version+1,updated_at=now() WHERE org_id=$1`,args,
+        );
+      }
       emit({
-        eventType: 'ORG_PROFILE_UPDATED',
-        entityType: 'ORGANISATION',
-        entityId: ctx.orgId,
-        beforeJson: org,
-        afterJson: input,
+        eventType:'ORG_PROFILE_UPDATED',entityType:'ORGANISATION',entityId:ctx.orgId,
+        beforeJson:{rowVersion:org.row_version},afterJson:{changedFields:Object.keys(input),rowVersion:org.row_version+1},
       });
-
-      return { orgId: ctx.orgId, rowVersion: org.row_version + 1 };
+      return {orgId:ctx.orgId,rowVersion:org.row_version+1};
     });
   }
 
@@ -397,8 +359,9 @@ export class OrganisationsService {
    * API-011: Backward-compatible wrapper for controller
    */
   async updateOrganisation(ctx: TenantActorContext, orgId: string, dto: any) {
-    const rowVersion = dto.rowVersion ?? 1;
-    return this.updateOrgProfile(ctx, rowVersion, dto);
+    const {parseOrgProfilePatch} = await import('./organisation-validation');
+    const patch = parseOrgProfilePatch(dto);
+    return this.updateOrgProfile(ctx, patch.rowVersion, patch.input);
   }
 
   /**
@@ -459,7 +422,8 @@ export class OrganisationsService {
       });
     }
 
-    const issued = await withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+    const issued = await withTenantTransaction(this.pool, ctx,
+      async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
       const { rows: issuer } = await client.query(
         `SELECT role FROM memberships
          WHERE org_id=$1 AND user_id=$2 AND status='ACTIVE' FOR SHARE`,
@@ -513,6 +477,10 @@ export class OrganisationsService {
         [invId, orgId, email, dto.role, tokenHash, initialStatus, ctx.userId],
       );
 
+      emit({
+        eventType:'ORG_INVITATION_ISSUED',entityType:'INVITATION',entityId:invId,
+        afterJson:{invitedBy:ctx.userId,role:dto.role,deliveryStatus:initialStatus},
+      });
       return {
         ...inv[0],
         invitationToken: rawToken,
@@ -595,7 +563,7 @@ export class OrganisationsService {
   async revokeInvitation(ctx: TenantActorContext, orgId: string, invitationId: string) {
     if (orgId !== ctx.orgId) throw new NotFoundException('ORGANISATION_NOT_FOUND');
 
-    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
       const { rows } = await client.query(
         `UPDATE invitations
             SET status = 'REVOKED'
@@ -607,7 +575,8 @@ export class OrganisationsService {
       if (rows.length === 0) {
         throw new NotFoundException('INVITATION_NOT_FOUND');
       }
-
+      emit({eventType:'ORG_INVITATION_REVOKED',entityType:'INVITATION',
+        entityId:invitationId,afterJson:{revokedBy:ctx.userId,status:'REVOKED'}});
       return rows[0];
     });
   }
@@ -646,6 +615,14 @@ export class OrganisationsService {
           (dto.role === 'R-ADMIN' && activeActorRole !== 'R-OWNER')) {
         throw new ForbiddenException({code:'MEMBER_ROLE_CHANGE_NOT_AUTHORIZED'});
       }
+      // G03-023: Session row locks precede target membership row locks in
+      // both role-change and offboarding. Otherwise one transaction can hold
+      // session SHARE while the other holds membership FOR UPDATE.
+      await client.query(
+        `SELECT id FROM sessions WHERE user_id=$1 AND active_org_id=$2
+          AND revoked_at IS NULL ORDER BY id FOR UPDATE`,
+        [targetUserId,orgId],
+      );
       const { rows: targetRoles } = await client.query(
         `SELECT role FROM memberships WHERE org_id=$1 AND user_id=$2
           AND status='ACTIVE' FOR UPDATE`,
@@ -956,6 +933,16 @@ export class OrganisationsService {
   /**
    * API-017: DELETE /orgs/:orgId/members/:userId wrapper
    */
+  async suspendMember(ctx: TenantActorContext, orgId: string, targetUserId: string) {
+    if (orgId !== ctx.orgId) throw new NotFoundException('ORGANISATION_NOT_FOUND');
+    return this.offboardOrReassignMember(ctx,{
+      targetUserId,action:'SUSPEND',
+    });
+  }
+
+  /**
+   * API-017: DELETE /orgs/:orgId/members/:userId wrapper
+   */
   async removeMember(
     ctx: TenantActorContext,
     orgId: string,
@@ -982,77 +969,13 @@ export class OrganisationsService {
     if (newOwnerUserId === ctx.userId) {
       throw new UnprocessableEntityException({code:'OWNER_TRANSFER_REQUIRES_DIFFERENT_MEMBER'});
     }
-    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
-      const { rows: currentOwnerRows } = await client.query(
-        `SELECT id, role, status FROM memberships WHERE org_id = $1 AND user_id = $2 FOR UPDATE`,
-        [ctx.orgId, ctx.userId],
-      );
-      if (currentOwnerRows[0]?.role !== 'R-OWNER' ||
-          currentOwnerRows[0]?.status !== 'ACTIVE') {
-        throw new ForbiddenException({
-          code: 'FORBIDDEN',
-          detail: 'Only the current Organisation Owner can transfer ownership.',
-        });
-      }
-
-      const { rows: targetRows } = await client.query(
-        `SELECT id, status FROM memberships WHERE org_id = $1 AND user_id = $2 FOR UPDATE`,
-        [ctx.orgId, newOwnerUserId],
-      );
-      if (targetRows.length === 0 || targetRows[0].status !== 'ACTIVE') {
-        throw new UnprocessableEntityException({
-          code: 'INVALID_TARGET_OWNER',
-          detail: 'Target user must be an active member of this organisation.',
-        });
-      }
-
-      await client.query(
-        `UPDATE memberships SET role = 'R-ADMIN', row_version = row_version + 1, updated_at = now()
-          WHERE org_id = $1 AND user_id = $2`,
-        [ctx.orgId, ctx.userId],
-      );
-      await client.query(
-        `UPDATE memberships SET role = 'R-OWNER', row_version = row_version + 1, updated_at = now()
-          WHERE org_id = $1 AND user_id = $2`,
-        [ctx.orgId, newOwnerUserId],
-      );
-
-      // The former owner is now an administrator. Any outstanding R-ADMIN
-      // invitations that relied on owner-only issuance authority are void.
-      await client.query(
-        `UPDATE invitations SET status='REVOKED'
-          WHERE org_id=$1 AND invited_by=$2 AND status IN ('PENDING','DELIVERY_PENDING')
-            AND role='R-ADMIN'`,
-        [ctx.orgId,ctx.userId],
-      );
-
-      // A privilege transfer changes assurance requirements for BOTH parties.
-      // The old and new owners must reauthenticate; stale MFA and CSRF cannot
-      // authorise any action after ownership has changed.
-      await client.query(
-        `WITH revoked AS (
-           UPDATE sessions SET revoked_at=now(),mfa_verified=false,
-                 mfa_verified_at=NULL
-            WHERE active_org_id=$1 AND user_id=ANY($2::uuid[])
-              AND revoked_at IS NULL
-            RETURNING id,user_id,active_org_id
-         )
-         INSERT INTO auth_security_events
-           (id,actor_user_id,org_id,session_id,event_type,outcome)
-         SELECT gen_random_uuid(),user_id,active_org_id,id,
-           'OWNERSHIP_TRANSFER_SESSION_REVOKED','SUCCESS' FROM revoked`,
-        [ctx.orgId,[ctx.userId,newOwnerUserId]],
-      );
-
-      emit({
-        eventType: 'ORG_OWNERSHIP_TRANSFERRED',
-        entityType: 'ORGANISATION',
-        entityId: ctx.orgId,
-        beforeJson: { ownerUserId: ctx.userId },
-        afterJson: { ownerUserId: newOwnerUserId },
-      });
-
-      return { previousOwnerUserId: ctx.userId, newOwnerUserId };
+    // FR-ORG-014 requires an expiring, two-party identity-bound intent with
+    // recipient confirmation and fresh MFA. A one-sided POST must never
+    // transfer sole control. This remains disabled until that contract is
+    // implemented and independently accepted.
+    throw new ConflictException({
+      code:'OWNERSHIP_TWO_PARTY_CONFIRMATION_REQUIRED',
+      detail:'One-sided ownership transfer is disabled until two-party confirmation is available.',
     });
   }
 
@@ -1100,11 +1023,12 @@ export class OrganisationsService {
 
     const { rows: revRows } = await client.query(
       `SELECT p.id AS project_id, p.code AS project_code,
-              COUNT(rv.id)::int AS pending_reviews,
+              COUNT(DISTINCT rv.id)::int AS pending_reviews,
               ARRAY_AGG(DISTINCT r.reviewer_role) FILTER (WHERE r.reviewer_role IS NOT NULL) AS needed_roles
          FROM reviews rv
          JOIN projects p ON p.org_id = rv.org_id AND p.id = rv.project_id
-         LEFT JOIN document_requirements dr ON dr.org_id = rv.org_id AND dr.project_id = rv.project_id
+         LEFT JOIN document_versions dv ON dv.org_id = rv.org_id AND dv.project_id = rv.project_id AND dv.id = rv.document_version_id
+         LEFT JOIN document_requirements dr ON dr.org_id = rv.org_id AND dr.project_id = rv.project_id AND dr.document_id = dv.document_id
          LEFT JOIN requirements r ON r.org_id = dr.org_id AND r.project_id = dr.project_id AND r.id = dr.requirement_id
         WHERE rv.org_id = $1 AND rv.reviewer_user_id = $2
           AND rv.status IN ('PENDING','IN_REVIEW')
