@@ -3,6 +3,7 @@ import Redis from 'ioredis';
 import { DatabaseModule } from '../../database/database.module';
 import { IdentityController, DltSmsGateway, TransactionalMailGateway } from './identity.controller';
 import { SessionCsrfGuard } from '../../common/guards/session-csrf.guard';
+import { MfaController } from './mfa.controller';
 
 export class InMemoryRedis {
   private store = new Map<string, { value: string; expiresAt?: number }>();
@@ -327,7 +328,7 @@ export class TransactionalMailService implements TransactionalMailGateway {
 
 @Module({
   imports: [DatabaseModule],
-  controllers: [IdentityController],
+  controllers: [IdentityController, MfaController],
   providers: [
     SessionCsrfGuard,
     {
