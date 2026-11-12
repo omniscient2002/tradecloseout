@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { Pool, PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
-import { withTenantTransaction, TenantActorContext } from '@tradecloseout/db/tenant-tx';
+import { withTenantTransaction, TenantActorContext, assertMemberResourceScope, assertValidMemberProjectScope } from '@tradecloseout/db/tenant-tx';
 import { isImmutableStorageVersion } from '@tradecloseout/shared';
 import { evaluateReadinessInTransaction } from '../handover/closeout-readiness';
 
@@ -28,12 +28,15 @@ export class WarrantyAndBillingService {
       throw new ForbiddenException({ code: 'DEFECT_GUEST_GRANT_REQUIRED' });
     }
     const { rows } = await client.query(
-      `SELECT party_id, grant_type, scope_json
-         FROM guest_grants
-        WHERE org_id = $1 AND project_id = $2 AND id = $3
-          AND principal_user_id = $4 AND status = 'ACTIVE'
-          AND expires_at > now()
-        FOR SHARE`,
+      `SELECT g.party_id, g.grant_type, g.scope_json
+         FROM guest_grants g
+         JOIN parties p ON p.org_id = g.org_id AND p.id = g.party_id
+        WHERE g.org_id = $1 AND g.project_id = $2 AND g.id = $3
+          AND g.principal_user_id = $4 AND g.status = 'ACTIVE'
+          AND g.expires_at > now()
+          AND 'defect.manage' = ANY(g.capabilities)
+          AND p.status = 'ACTIVE' AND p.deleted_at IS NULL
+        FOR SHARE OF g, p`,
       [ctx.orgId, projectId, ctx.guestGrantId, ctx.userId],
     );
     const grant = rows[0];
@@ -50,6 +53,47 @@ export class WarrantyAndBillingService {
       throw new ForbiddenException({ code: 'DEFECT_SUPPLIER_ASSET_SCOPE_INVALID' });
     }
     return { partyId: grant.party_id, assetIds: rawAssetIds ?? null };
+  }
+
+  /** Apply narrow asset scope to defect reads/writes, without granting
+   * unassigned Site contributors unrestricted mutation rights. */
+  private async assertMemberDefectScope(
+    client: PoolClient, ctx: TenantActorContext,
+    defect: Record<string, any>, write: boolean,
+  ): Promise<void> {
+    if (ctx.actorType === 'SYSTEM' || ctx.actorType === 'ADMIN' ||
+        ctx.actorType === 'GUEST' || ctx.guestGrantId) return;
+    const orgRole = (ctx as TenantActorContext & {orgRole?: string}).orgRole;
+    if (orgRole === 'R-OWNER' || orgRole === 'R-ADMIN') return;
+    try {
+      assertValidMemberProjectScope(ctx.projectScope);
+    } catch {
+      throw new ForbiddenException({ code: 'DEFECT_MEMBER_SCOPE_INVALID' });
+    }
+    const scope = ctx.projectScope ?? {};
+    const date = defect.raised_at instanceof Date
+      ? defect.raised_at.toISOString().slice(0, 10)
+      : typeof defect.raised_at === 'string' ? defect.raised_at.slice(0, 10) : undefined;
+    if ((scope.startDate !== undefined || scope.endDate !== undefined) && !date) {
+      throw new ForbiddenException({ code: 'DEFECT_MEMBER_DATE_SCOPE_UNKNOWN' });
+    }
+    let categoryKey: string | undefined;
+    if (defect.asset_id && scope.assetCategories !== undefined) {
+      const { rows } = await client.query(
+        `SELECT category_key FROM assets
+          WHERE org_id = $1 AND project_id = $2 AND id = $3 FOR SHARE`,
+        [ctx.orgId, defect.project_id, defect.asset_id],
+      );
+      categoryKey = rows[0]?.category_key;
+    }
+    try {
+      assertMemberResourceScope(
+        {...ctx, orgRole}, 'asset',
+        {id: defect.asset_id || '', categoryKey, createdAt: date}, write,
+      );
+    } catch {
+      throw new ForbiddenException({ code: 'DEFECT_ASSET_SCOPE_DENIED' });
+    }
   }
 
   /**
@@ -330,6 +374,13 @@ export class WarrantyAndBillingService {
           throw new ForbiddenException({ code: 'DEFECT_NOT_ASSIGNED_TO_SUPPLIER' });
         }
       }
+      if (ctx.actorType !== 'GUEST' && !ctx.guestGrantId) {
+        await this.assertMemberDefectScope(client, ctx, defect, true);
+        if (ctx.actorType === 'MEMBER' &&
+            defect.assigned_user_id && defect.assigned_user_id !== ctx.userId) {
+          throw new ForbiddenException({ code: 'DEFECT_NOT_ASSIGNED_TO_MEMBER' });
+        }
+      }
 
       if (!['OPEN', 'IN_PROGRESS'].includes(defect.status)) {
         throw new ConflictException({
@@ -483,6 +534,14 @@ export class WarrantyAndBillingService {
       const { defect, targetProjectId } = await this.lockDefectForMutation(
         client, ctx, projectId, defectId,
       );
+      await this.assertMemberDefectScope(client, ctx, defect, true);
+      if (ctx.actorType === 'MEMBER') {
+        const orgRole = (ctx as TenantActorContext & {orgRole?:string}).orgRole;
+        if (!['R-OWNER', 'R-ADMIN'].includes(orgRole || '') &&
+            !['R-QC', 'R-PM'].includes(ctx.projectRole || '')) {
+          throw new ForbiddenException({ code: 'DEFECT_VERIFIER_ROLE_REQUIRED' });
+        }
+      }
 
       if (defect.status === 'CLOSED') {
         throw new ConflictException({
