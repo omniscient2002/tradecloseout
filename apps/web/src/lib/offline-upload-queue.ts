@@ -51,7 +51,7 @@ function normalizeParts(parts: PresignedPart[]): Array<{ partNumber: number; url
   return parts.map((part) => {
     const url = part.url || part.uploadUrl;
     if (!Number.isInteger(part.partNumber) || part.partNumber < 1 ||
-        typeof url !== 'string' || !/^https?:\\/\\//.test(url) ||
+        typeof url !== 'string' || !/^https?:\/\//.test(url) ||
         seen.has(part.partNumber)) {
       throw new Error('UPLOAD_PARTS_INVALID');
     }
