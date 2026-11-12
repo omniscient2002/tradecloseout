@@ -129,6 +129,32 @@ describe('PH4-G17-003/G17-004 Pass 1 project lifecycle and current defect author
     expect(calls.some(q => q.sql.includes("status = 'RECTIFIED'"))).toBe(true);
   });
 
+  it('allows independent QC verification of a recorded postclose remedy without altering the accepted dossier', async () => {
+    const {service, calls} = fixture({
+      projectStatus: 'CLOSED', defectContext: 'AFTERCARE', defectStatus: 'RECTIFIED',
+    });
+    const independent = {...base(reviewerId), orgRole: 'R-QC', projectRole: 'R-QC'};
+    const result = await service.closeDefect(
+      independent, projectId, defectId, objectId, 1,
+    );
+    expect(result.status).toBe('CLOSED');
+    expect(calls.some(q => q.sql.includes('UPDATE defects') &&
+      q.sql.includes("status = 'CLOSED'"))).toBe(true);
+    expect(calls.some(q => q.sql.includes('UPDATE projects') ||
+      q.sql.includes('UPDATE handover_packages'))).toBe(false);
+  });
+
+  it('prohibits a postclose remedy author from independently closing the same aftercare case', async () => {
+    const {service, calls} = fixture({
+      projectStatus: 'CLOSED', defectContext: 'AFTERCARE', defectStatus: 'RECTIFIED',
+    });
+    await expect(service.closeDefect(
+      {...base(assigneeId), orgRole: 'R-QC', projectRole: 'R-QC'},
+      projectId, defectId, objectId, 1,
+    )).rejects.toMatchObject({response: {code: 'INDEPENDENT_VERIFICATION_REQUIRED'}});
+    expect(calls.some(q => q.sql.includes('UPDATE defects'))).toBe(false);
+  });
+
   it('denies a different internal assignee who merely has project-wide defect.manage', async () => {
     const {service, calls} = fixture({assignee: assigneeId});
     await expect(service.submitDefectRemedy(
