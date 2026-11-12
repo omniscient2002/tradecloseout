@@ -254,8 +254,13 @@ describe('Perfect 10 Remediation & Hardening Test Suite', () => {
               return Promise.resolve({ rows: [{ total_bytes: '52428800' }] }); // 50 MB
             }
             if (sql.includes('UPDATE usage_counters') && sql.includes('STORAGE_BYTES')) {
+              // The successful fixture must model the hardened conditional
+              // UPDATE affecting exactly one row. A missing row is a denial,
+              // independently covered by phase1-document-storage-quota.
+              expect(sql).toContain('value >= $2::bigint');
+              expect(params[1]).toBe('52428800');
               quotaDeducted = true;
-              return Promise.resolve({ rows: [] });
+              return Promise.resolve({ rows: [], rowCount: 1 });
             }
             return Promise.resolve({ rows: [] });
           }),
