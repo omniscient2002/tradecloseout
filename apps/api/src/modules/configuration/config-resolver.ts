@@ -242,7 +242,10 @@ export function resolveConfigV021(
         continue;
       }
 
-      // 3. Apply merge semantics
+      // 3. Apply merge semantics. Restatements and rejected item mutations
+      // cannot take credit for provenance they did not actually change.
+      const previousCanonical = Object.hasOwn(result, path)
+        ? JSON.stringify(sortDeepKeys(result[path])) : undefined;
       if (schema.overridePolicy === 'APPEND' && Array.isArray(rawVal)) {
         const existingArr = Array.isArray(result[path]) ? result[path] : [];
         // PH2-G06-004: recipient identity is case-insensitive and whitespace
@@ -262,7 +265,9 @@ export function resolveConfigV021(
         }
       }
 
-      provenance[path] = { level, versionId: cfg.versionId };
+      if (previousCanonical !== JSON.stringify(sortDeepKeys(result[path]))) {
+        provenance[path] = { level, versionId: cfg.versionId };
+      }
     }
   }
 
@@ -338,15 +343,19 @@ function mergeKeyedObjects(
       // A locked record protects its *whole* obligation, including reviewer,
       // document type, scope and mandatory status. A child may only restate
       // identical values; it cannot replace semantics while retaining locked.
-      if (current.locked === true && Object.entries(patch).some(
-        ([field, value]) => field !== 'provenanceLevel' &&
-          JSON.stringify(sortDeepKeys(value)) !== JSON.stringify(sortDeepKeys(current[field])),
-      )) {
-        conflicts.push({
-          path: `${keyField}:${k}`,
-          level,
-          message: `Locked item '${k}' cannot be weakened at ${level}.`,
-        });
+      if (current.locked === true) {
+        if (Object.entries(patch).some(
+          ([field, value]) => field !== 'provenanceLevel' &&
+            JSON.stringify(sortDeepKeys(value)) !== JSON.stringify(sortDeepKeys(current[field])),
+        )) {
+          conflicts.push({
+            path: `${keyField}:${k}`,
+            level,
+            message: `Locked item '${k}' cannot be weakened at ${level}.`,
+          });
+        }
+        // Identical children inherit the original locked version; they do
+        // not move provenance to an untrusted lower layer.
         continue;
       }
       map.set(k, { ...current, ...patch, provenanceLevel: level });
