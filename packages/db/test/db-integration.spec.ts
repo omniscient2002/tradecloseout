@@ -132,6 +132,41 @@ void test('Disposable PostgreSQL migration, isolation and audit regression tests
       });
     });
 
+    await t.test('PH1-G26-002: storage reconciliation rejects underflow and overflow without corrupting the counter', async () => {
+      const { reconcileStorageQuotaOnFileStatusChange } = await import('../src/tenant-tx');
+      // A previous test leaves tenant A at exactly 1000 bytes.
+      const read = async () => scoped(app, a.orgId, async client => {
+        const { rows } = await client.query(
+          "SELECT value FROM usage_counters WHERE org_id=$1 AND metric='STORAGE_BYTES' AND period='ALL_TIME'",
+          [a.orgId],
+        );
+        return BigInt(rows[0].value);
+      });
+      const before = await read();
+      assert.equal(before, 1000n);
+      await assert.rejects(
+        scoped(app, a.orgId, client => reconcileStorageQuotaOnFileStatusChange(
+          client, a.orgId, before + 1n, 'DELETED_OR_PURGED',
+        )),
+        /STORAGE_QUOTA_RECONCILIATION_REQUIRED/,
+      );
+      assert.equal(await read(), before, 'a failed refund must not change durable usage');
+      await assert.rejects(
+        scoped(app, a.orgId, client => reconcileStorageQuotaOnFileStatusChange(
+          client, a.orgId, 9223372036854775807n, 'MARKED_READY',
+        )),
+        /STORAGE_QUOTA_RECONCILIATION_REQUIRED/,
+      );
+      assert.equal(await read(), before, 'a failed overflow must not change durable usage');
+      await assert.rejects(
+        scoped(app, a.orgId, client => reconcileStorageQuotaOnFileStatusChange(
+          client, a.orgId, -1n, 'MARKED_READY',
+        )),
+        /INVALID_STORAGE_QUOTA_SIZE/,
+      );
+      assert.equal(await read(), before);
+    });
+
     await t.test('DB-08: direct cross-project procurement insert fails the intended composite FK', async () => {
       const partyId = randomUUID();
       await admin.query(`INSERT INTO parties (id, org_id, name, types) VALUES ($1, $2, 'Test supplier', ARRAY['SUPPLIER'])`, [partyId, a.orgId]);
