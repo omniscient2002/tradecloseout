@@ -9,6 +9,7 @@ import { ReviewsService } from '../src/modules/reviews/reviews.service';
 import { TenantDbService } from '../src/database/tenant-db.service';
 import { PermissionGuard } from '../src/common/guards/permission.guard';
 import { SessionCsrfGuard } from '../src/common/guards/session-csrf.guard';
+import { IdempotencyInterceptor } from '../src/common/interceptors/idempotency.interceptor';
 import { withDisposableDatabase } from '../../../packages/db/test/helpers/disposable-database';
 import { seedTenants } from '../../../packages/db/test/helpers/fixtures';
 
@@ -122,11 +123,13 @@ describe('PH3-G11-001 authenticated HTTP: a single terminal reviewer decision wi
         ],
       }).compile();
       const http = module.createNestApplication();
+      http.useGlobalInterceptors(new IdempotencyInterceptor(app, new Reflector()));
       try {
         await http.listen(0, '127.0.0.1');
         const { port } = http.getHttpServer().address() as AddressInfo;
         const base = `http://127.0.0.1:${port}/api/v1`;
-        const request = (user: 0 | 1, route: string, decision: string, comment?: string, csrf = csrfTokens[user]) =>
+        const request = (user: 0 | 1, route: string, decision: string, comment?: string,
+          csrf = csrfTokens[user], key = uuidv7()) =>
           fetch(base + route, {
             method: 'POST',
             headers: {
@@ -134,6 +137,7 @@ describe('PH3-G11-001 authenticated HTTP: a single terminal reviewer decision wi
               'x-csrf-token': csrf,
               'content-type': 'application/json',
               'if-match': '"1"',
+              'idempotency-key': key,
             },
             body: JSON.stringify({
               method: 'IN_APP', decision, comment,
@@ -150,13 +154,26 @@ describe('PH3-G11-001 authenticated HTTP: a single terminal reviewer decision wi
 
         // Parallel requests use distinct, authenticated reviewers and route
         // aliases, but must serialize on the SAME document version row.
+        const firstKey = uuidv7();
+        const secondKey = uuidv7();
         const [a, b] = await Promise.all([
-          request(0, `/reviews/${reviewA}/decisions`, 'APPROVE'),
+          request(0, `/reviews/${reviewA}/decisions`, 'APPROVE', undefined,
+            csrfTokens[0], firstKey),
           request(1, `/projects/${projectId}/document-versions/${versionId}/decision`,
-            'REJECT', 'Insufficient commissioning evidence'),
+            'REJECT', 'Insufficient commissioning evidence', csrfTokens[1], secondKey),
         ]);
         expect([a.status, b.status].filter(x => x < 300)).toHaveLength(1);
         expect([a.status, b.status].filter(x => x >= 400)).toHaveLength(1);
+
+        // Idempotency interceptor is active just as in AppModule. The exact
+        // winning command may be retried after its response was lost; replay
+        // must produce the stored receipt, not another DB terminal event.
+        const winningReplay = a.status < 300
+          ? await request(0, `/reviews/${reviewA}/decisions`, 'APPROVE', undefined,
+              csrfTokens[0], firstKey)
+          : await request(1, `/projects/${projectId}/document-versions/${versionId}/decision`,
+              'REJECT', 'Insufficient commissioning evidence', csrfTokens[1], secondKey);
+        expect(winningReplay.status).toBe(a.status < 300 ? a.status : b.status);
 
         const [version, doc, reviews, audit] = await Promise.all([
           admin.query('SELECT review_status,row_version FROM document_versions WHERE id=$1', [versionId]),
