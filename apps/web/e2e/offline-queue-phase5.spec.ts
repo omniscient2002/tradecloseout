@@ -583,10 +583,16 @@ test('foreground session-epoch fence preserves unsent draft eligibility for expl
     };
     await q.recoverOfflineUploadDraft(blocked.queueId);
     const recovered = (await q.listOfflineUploadDrafts()).find((d: any) => d.filename === 'local-only.pdf');
-    return { before: blocked.status, after: recovered.status };
+    return {
+      before: blocked.status, beforeRecoverable: blocked.canRecoverLocalOnly,
+      after: recovered.status, afterRecoverable: recovered.canRecoverLocalOnly,
+    };
   });
   expect(puts).toHaveLength(0);
-  expect(result).toEqual({ before: 'BLOCKED_SCOPE', after: 'QUEUED_OFFLINE' });
+  expect(result).toEqual({
+    before: 'BLOCKED_SCOPE', beforeRecoverable: true,
+    after: 'QUEUED_OFFLINE', afterRecoverable: false,
+  });
 });
 
 test('changed member identity cannot recover a previous actor original', async ({ page }) => {
@@ -687,12 +693,14 @@ test('lost upload-intent response cannot masquerade as an untouched offline draf
     return {
       issuedIntent, recoveryChecks, blocked,
       retained: (await q.listOfflineUploadDrafts()).length,
+      recoverable: stale.canRecoverLocalOnly,
     };
   });
   expect(result.issuedIntent).toBe(1);
   expect(result.recoveryChecks).toBe(0);
   expect(result.blocked).toContain('UPLOAD_REMOTE_INTENT_RECOVERY_UNSUPPORTED');
   expect(result.retained).toBe(1);
+  expect(result.recoverable).toBe(false);
 });
 
 
