@@ -669,6 +669,9 @@ export class WarrantyAndBillingService {
       occurredAt?: string;
       occurredAtPrecision?: 'INSTANT' | 'DATE' | 'UNKNOWN';
       backdatingReason?: string;
+      caseType?: 'CLOSEOUT' | 'AFTERCARE';
+      postHandoverReason?: string;
+      aftercareReference?: string;
     },
   ) {
     if (ctx.actorType === 'GUEST' || ctx.guestGrantId) {
@@ -701,7 +704,76 @@ export class WarrantyAndBillingService {
         (typeof input.occurredAt !== 'string' || !Number.isFinite(Date.parse(input.occurredAt)))) {
       throw new UnprocessableEntityException({ code: 'DEFECT_OCCURRENCE_DATE_INVALID' });
     }
+    if (input.caseType !== undefined &&
+        !['CLOSEOUT', 'AFTERCARE'].includes(input.caseType)) {
+      throw new UnprocessableEntityException({ code: 'DEFECT_CONTEXT_INVALID' });
+    }
+    const caseType = input.caseType ?? 'CLOSEOUT';
+    const aftercareReason = typeof input.postHandoverReason === 'string'
+      ? input.postHandoverReason.trim() : null;
+    const aftercareReference = typeof input.aftercareReference === 'string'
+      ? input.aftercareReference.trim() : null;
+    if (caseType === 'AFTERCARE' &&
+        (!input.assetId || !aftercareReason ||
+          aftercareReason.length < 10 || aftercareReason.length > 1200 ||
+          !aftercareReference || aftercareReference.length > 180)) {
+      throw new UnprocessableEntityException({
+        code: 'AFTERCARE_CONTEXT_REQUIRED',
+        detail: 'Post-close aftercare requires an asset, incident reason and traceable case reference.',
+      });
+    }
+    if (caseType === 'CLOSEOUT' &&
+        (input.postHandoverReason !== undefined || input.aftercareReference !== undefined)) {
+      throw new UnprocessableEntityException({ code: 'AFTERCARE_CONTEXT_MISMATCH' });
+    }
     return withTenantTransaction(this.pool, ctx, async (client, emit) => {
+      // The same project row lock is held by project closure. It makes defect
+      // creation and acceptance transitions deterministic, even across workers.
+      const { rows: projects } = await client.query(
+        `SELECT id, status, closed_at, purged_at
+           FROM projects WHERE org_id = $1 AND id = $2 FOR UPDATE`,
+        [ctx.orgId, projectId],
+      );
+      if (!projects.length || projects[0].purged_at) {
+        throw new NotFoundException({ code: 'PROJECT_NOT_FOUND' });
+      }
+      const status = String(projects[0].status);
+      const isAftercare = caseType === 'AFTERCARE';
+      if (isAftercare ? status !== 'CLOSED' : !['ACTIVE', 'HANDOVER'].includes(status)) {
+        throw new ConflictException({
+          code: 'DEFECT_PROJECT_LIFECYCLE_BLOCKED',
+          detail: isAftercare
+            ? 'Aftercare reports require an accepted, CLOSED project.'
+            : 'Closeout defects require an ACTIVE or HANDOVER project; use explicit aftercare for closed work.',
+        });
+      }
+      let acceptedPackageId: string | null = null;
+      if (isAftercare) {
+        if (!projects[0].closed_at) {
+          throw new ConflictException({ code: 'AFTERCARE_MISSING_CLOSURE_ANCHOR' });
+        }
+        const { rows: assets } = await client.query(
+          `SELECT id FROM assets
+            WHERE org_id = $1 AND project_id = $2 AND id = $3 FOR SHARE`,
+          [ctx.orgId, projectId, input.assetId],
+        );
+        if (!assets.length) {
+          throw new UnprocessableEntityException({ code: 'AFTERCARE_ASSET_NOT_FOUND' });
+        }
+        // Require the newest full dossier itself to be ACCEPTED. Selecting any
+        // older accepted package could attach a new case to stale acceptance.
+        const { rows: dossiers } = await client.query(
+          `SELECT id, status FROM handover_packages
+            WHERE org_id = $1 AND project_id = $2
+              AND package_purpose = 'FULL_HANDOVER'
+            ORDER BY version_no DESC, id DESC LIMIT 1 FOR SHARE`,
+          [ctx.orgId, projectId],
+        );
+        if (dossiers.length !== 1 || dossiers[0].status !== 'ACCEPTED') {
+          throw new ConflictException({ code: 'AFTERCARE_CURRENT_DOSSIER_NOT_ACCEPTED' });
+        }
+        acceptedPackageId = dossiers[0].id;
+      }
       const defectId = uuidv7();
       const severityMap: Record<string, 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'> = {
         LOW: 'LOW',
@@ -719,8 +791,10 @@ export class WarrantyAndBillingService {
       await client.query(
         `INSERT INTO defects
            (id, org_id, project_id, asset_id, title, description, severity, status, raised_by, raised_at,
-            occurred_at, occurred_at_precision, recorded_at, backdating_reason)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 'OPEN', $8, now(), $9, $10, now(), $11)`,
+            occurred_at, occurred_at_precision, recorded_at, backdating_reason,
+            defect_context, accepted_package_id, aftercare_reason, aftercare_reference, mandatory)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'OPEN', $8, now(), $9, $10, now(), $11,
+                 $12, $13, $14, $15, $16)`,
         [
           defectId,
           ctx.orgId,
@@ -733,18 +807,27 @@ export class WarrantyAndBillingService {
           input.occurredAt ? new Date(input.occurredAt) : new Date(),
           input.occurredAtPrecision || 'INSTANT',
           input.backdatingReason || null,
+          caseType,
+          acceptedPackageId,
+          aftercareReason,
+          aftercareReference,
+          !isAftercare,
         ],
       );
 
       emit({
-        eventType: 'DEFECT_RAISED',
+        eventType: isAftercare ? 'AFTERCARE_DEFECT_REPORTED' : 'DEFECT_RAISED',
         projectId,
         entityType: 'DEFECT',
         entityId: defectId,
-        afterJson: { title: input.title, severity },
+        afterJson: {
+          title: input.title.trim(), severity,
+          caseType, mandatory: !isAftercare, acceptedPackageId,
+        },
       });
 
-      return { defectId, status: 'OPEN', severity };
+      return { defectId, status: 'OPEN', severity,
+        caseType, mandatory: !isAftercare, acceptedPackageId };
     });
   }
 
