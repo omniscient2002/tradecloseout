@@ -1,20 +1,31 @@
+import { randomUUID } from 'crypto';
 import { PassThrough, Readable } from 'node:stream';
 import { DocumentsService } from '../src/modules/documents/documents.service';
 import { TenantDbService } from '../src/database/tenant-db.service';
 
 describe('document download boundaries', () => {
-  const actor = { orgId: 'org-1', userId: 'user-1', actorType: 'USER' as const, requestId: 'request-1' };
+  const projectId = randomUUID();
+  const documentId = randomUUID();
+  const actor = { orgId: randomUUID(), userId: randomUUID(), actorType: 'USER' as const, requestId: 'request-1' };
   const verifiedVersion = {
     id: 'version-1', file_status: 'READY', storage_status: 'READY', object_key: 'private/object',
     mime: 'application/pdf', size_bytes: '12', observed_size_bytes: '12',
     sha256: 'a'.repeat(64), provider_version_id: 'provider-version', revision_code: 'R1',
-    title: 'Test-Doc',
+    title: 'Test-Doc', project_id: projectId, document_id: documentId,
+    doc_type_key: 'DT-001', category_key: 'DOCUMENT', document_created_at: new Date('2026-01-01T00:00:00Z'),
   };
 
-  function setup(version: Record<string, unknown>, guestScopeAllowed = false) {
+  function setup(version: Record<string, unknown>, guestScopeAllowed = false, scopedDocumentIds?: string[]) {
     const query = jest.fn(async (sql: string) => {
       if (sql.includes('SELECT dv.*') || sql.includes('SELECT dv.id')) return { rows: [version] };
       if (sql.includes('FROM guest_grants g')) return { rows: guestScopeAllowed ? [{}] : [] };
+      if (sql.includes('SELECT m.role AS org_role')) {
+        return { rows: [{ org_role: scopedDocumentIds ? 'R-SITE' : 'R-OWNER' }] };
+      }
+      if (sql.includes('SELECT status FROM projects')) return { rows: [{ status: 'ACTIVE' }] };
+      if (sql.includes('SELECT role, scope_json FROM project_members')) {
+        return { rows: [{ role: 'R-SITE', scope_json: { documentIds: scopedDocumentIds, mode: 'READ_ONLY' } }] };
+      }
       return { rows: [] };
     });
     const client = { query, release: jest.fn() };
@@ -58,6 +69,18 @@ describe('document download boundaries', () => {
     const { service, storage } = setup(verifiedVersion);
     await service.getDownloadUrl(actor, 'version-1');
     expect(storage.createSignedDownloadUrl).toHaveBeenCalledWith(expect.objectContaining({ versionId: 'provider-version' }));
+  });
+
+  it('refuses out-of-scope member URLs, previews and streams before storage access', async () => {
+    const { service, storage } = setup(verifiedVersion, false, [randomUUID()]);
+    await expect(service.getDownloadUrl(actor, 'version-1')).rejects.toThrow('VERSION_NOT_FOUND');
+    await expect(service.getPreviewUrl(actor, 'version-1')).rejects.toThrow('VERSION_NOT_FOUND');
+    const req = { headers: {} };
+    const res = createMockResponse();
+    await expect(service.streamDocumentVersion(actor, undefined, 'version-1', req, res))
+      .rejects.toThrow('VERSION_NOT_FOUND');
+    expect(storage.createSignedDownloadUrl).not.toHaveBeenCalled();
+    expect(storage.fetchObject).not.toHaveBeenCalled();
   });
 
   it('prevents a guest from completing another grant’s upload', async () => {
