@@ -10,7 +10,6 @@ import { AssetsModule } from './modules/assets/assets.module';
 import { DocumentsModule } from './modules/documents/documents.module';
 import { ReviewsModule } from './modules/reviews/reviews.module';
 import { HandoverModule } from './modules/handover/handover.module';
-import { WorkflowsModule } from './modules/workflows/workflows.module';
 import { PartiesModule } from './modules/parties/parties.module';
 import { ConfigurationModule } from './modules/configuration/configuration.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
@@ -33,7 +32,6 @@ import { VisibilityProjectionInterceptor } from './common/interceptors/visibilit
     DocumentsModule,
     ReviewsModule,
     HandoverModule,
-    WorkflowsModule,
     PartiesModule,
     ConfigurationModule,
     NotificationsModule,
