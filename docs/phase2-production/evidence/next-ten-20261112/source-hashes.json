@@ -1,0 +1,9 @@
+{
+  "apps/api/src/modules/parties/parties.service.ts": "2698538042b8befc089ab860360fb1a5062126eddb1220318748771f7e696db9",
+  "apps/api/src/modules/parties/procurement-validation.ts": "40f5817c6b406b7d85f6aa125ef4de214618d403beccf946a75ee40bbe9dd79c",
+  "apps/api/test/discovery-lifecycle-foundations.spec.ts": "d47b3e34b4a1ab187e68d0cff11cf9c3dbe25c2efb7d713a429ba4f533b18e37",
+  "apps/api/test/phase2-procurement-boundaries.spec.ts": "dc3a46422e0da83d1906598730ed0e4d7110f22044d27fec29c14328a76a4100",
+  "apps/api/test/phase2-procurement-db.spec.ts": "60ebc8c8940d4c92218a10d1aae5c98ec41865c379319937b9bc436fe8d501ad",
+  "apps/worker/src/event-registry.ts": "4a8ce6ae0ce2743d1a39e5efd604a52f695eebf89205b1dd096f952a2d2fe863",
+  "apps/worker/test/outbox-claim.spec.ts": "2727fec257b26889e1368243a6cc071edc917f1d4a146b04b1f379b25d0b8f64"
+}

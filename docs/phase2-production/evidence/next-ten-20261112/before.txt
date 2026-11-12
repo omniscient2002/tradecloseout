@@ -1,0 +1,552 @@
+FAIL test/phase2-procurement-boundaries.spec.ts
+  Phase2 procurement command input boundaries C01-C04/C07/C09
+    ✕ C01 rejects invalid or empty orders before a transaction (3 ms)
+    ✕ C01 rejects invalid or empty orders before a transaction (1 ms)
+    ✕ C01 rejects invalid or empty orders before a transaction (1 ms)
+    ✕ C01 rejects invalid or empty orders before a transaction (1 ms)
+    ✕ C01 rejects invalid or empty orders before a transaction (1 ms)
+    ✕ C02 rejects invalid quantities 0 (1 ms)
+    ✕ C02 rejects invalid quantities -1 (1 ms)
+    ✕ C02 rejects invalid quantities 1.5
+    ✕ C02 rejects invalid quantities Infinity (1 ms)
+    ✕ C02 rejects invalid quantities 1 (1 ms)
+    ✕ C02 rejects invalid quantities 2147483648
+    ✕ C02 rejects duplicate line numbers (9 ms)
+    ✕ C03 rejects imprecise or out-of-range amounts -1 (2 ms)
+    ✕ C03 rejects imprecise or out-of-range amounts 0.1 (2 ms)
+    ✕ C03 rejects imprecise or out-of-range amounts 9007199254740992 (1 ms)
+    ✕ C03 rejects imprecise or out-of-range amounts 1e3 (1 ms)
+    ✕ C03 rejects imprecise or out-of-range amounts 9223372036854775808 (1 ms)
+    ✕ C04 rejects invalid calendar dates/chronology (1 ms)
+    ✕ C04 rejects invalid calendar dates/chronology (1 ms)
+    ✕ C04 rejects invalid calendar dates/chronology (2 ms)
+    ✕ C07 does not silently classify obligations as FAT:  (1 ms)
+    ✕ C07 does not silently classify obligations as FAT: undefined (1 ms)
+    ✕ C07 does not silently classify obligations as FAT: MADE_UP (1 ms)
+    ✕ C07 rejects invalid obligation dates and unbounded schedules (1 ms)
+    ✕ C09 suppliers cannot issue purchase orders through the command service (1 ms)
+
+  ● Phase2 procurement command input boundaries C01-C04/C07/C09 › C01 rejects invalid or empty orders before a transaction
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: undefined
+
+       6 |   it.each([null,{}, {...valid(),lines:[]},{...valid(),poNumber:' '},{...valid(),supplierPartyId:'invalid'}])('C01 rejects invalid or empty orders before a transaction',async input=>{
+       7 |     const db={withTenantContext:jest.fn(),getPool:jest.fn()};
+    >  8 |     await expect(new PartiesService(db as any).createProcurementOrder(ctx,project,input as any)).rejects.toMatchObject({status:422});
+         |           ^
+       9 |     expect(db.withTenantContext).not.toHaveBeenCalled();expect(db.getPool).not.toHaveBeenCalled();
+      10 |   });
+      11 |   it.each([0,-1,1.5,Infinity,'1',2147483648])('C02 rejects invalid quantities %s',async quantity=>{
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at test/phase2-procurement-boundaries.spec.ts:8:11
+
+  ● Phase2 procurement command input boundaries C01-C04/C07/C09 › C01 rejects invalid or empty orders before a transaction
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: undefined
+
+       6 |   it.each([null,{}, {...valid(),lines:[]},{...valid(),poNumber:' '},{...valid(),supplierPartyId:'invalid'}])('C01 rejects invalid or empty orders before a transaction',async input=>{
+       7 |     const db={withTenantContext:jest.fn(),getPool:jest.fn()};
+    >  8 |     await expect(new PartiesService(db as any).createProcurementOrder(ctx,project,input as any)).rejects.toMatchObject({status:422});
+         |           ^
+       9 |     expect(db.withTenantContext).not.toHaveBeenCalled();expect(db.getPool).not.toHaveBeenCalled();
+      10 |   });
+      11 |   it.each([0,-1,1.5,Infinity,'1',2147483648])('C02 rejects invalid quantities %s',async quantity=>{
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at test/phase2-procurement-boundaries.spec.ts:8:11
+
+  ● Phase2 procurement command input boundaries C01-C04/C07/C09 › C01 rejects invalid or empty orders before a transaction
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: undefined
+
+       6 |   it.each([null,{}, {...valid(),lines:[]},{...valid(),poNumber:' '},{...valid(),supplierPartyId:'invalid'}])('C01 rejects invalid or empty orders before a transaction',async input=>{
+       7 |     const db={withTenantContext:jest.fn(),getPool:jest.fn()};
+    >  8 |     await expect(new PartiesService(db as any).createProcurementOrder(ctx,project,input as any)).rejects.toMatchObject({status:422});
+         |           ^
+       9 |     expect(db.withTenantContext).not.toHaveBeenCalled();expect(db.getPool).not.toHaveBeenCalled();
+      10 |   });
+      11 |   it.each([0,-1,1.5,Infinity,'1',2147483648])('C02 rejects invalid quantities %s',async quantity=>{
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at test/phase2-procurement-boundaries.spec.ts:8:11
+
+  ● Phase2 procurement command input boundaries C01-C04/C07/C09 › C01 rejects invalid or empty orders before a transaction
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: undefined
+
+       6 |   it.each([null,{}, {...valid(),lines:[]},{...valid(),poNumber:' '},{...valid(),supplierPartyId:'invalid'}])('C01 rejects invalid or empty orders before a transaction',async input=>{
+       7 |     const db={withTenantContext:jest.fn(),getPool:jest.fn()};
+    >  8 |     await expect(new PartiesService(db as any).createProcurementOrder(ctx,project,input as any)).rejects.toMatchObject({status:422});
+         |           ^
+       9 |     expect(db.withTenantContext).not.toHaveBeenCalled();expect(db.getPool).not.toHaveBeenCalled();
+      10 |   });
+      11 |   it.each([0,-1,1.5,Infinity,'1',2147483648])('C02 rejects invalid quantities %s',async quantity=>{
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at test/phase2-procurement-boundaries.spec.ts:8:11
+
+  ● Phase2 procurement command input boundaries C01-C04/C07/C09 › C01 rejects invalid or empty orders before a transaction
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: undefined
+
+       6 |   it.each([null,{}, {...valid(),lines:[]},{...valid(),poNumber:' '},{...valid(),supplierPartyId:'invalid'}])('C01 rejects invalid or empty orders before a transaction',async input=>{
+       7 |     const db={withTenantContext:jest.fn(),getPool:jest.fn()};
+    >  8 |     await expect(new PartiesService(db as any).createProcurementOrder(ctx,project,input as any)).rejects.toMatchObject({status:422});
+         |           ^
+       9 |     expect(db.withTenantContext).not.toHaveBeenCalled();expect(db.getPool).not.toHaveBeenCalled();
+      10 |   });
+      11 |   it.each([0,-1,1.5,Infinity,'1',2147483648])('C02 rejects invalid quantities %s',async quantity=>{
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at test/phase2-procurement-boundaries.spec.ts:8:11
+
+  ● Phase2 procurement command input boundaries C01-C04/C07/C09 › C02 rejects invalid quantities 0
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: undefined
+
+      12 |     const input:any=valid();input.lines[0].quantity=quantity;
+      13 |     const db={withTenantContext:jest.fn(),getPool:jest.fn()};
+    > 14 |     await expect(new PartiesService(db as any).createProcurementOrder(ctx,project,input)).rejects.toMatchObject({status:422});
+         |           ^
+      15 |     expect(db.withTenantContext).not.toHaveBeenCalled();expect(db.getPool).not.toHaveBeenCalled();
+      16 |   });
+      17 |   it('C02 rejects duplicate line numbers',async()=>{
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at test/phase2-procurement-boundaries.spec.ts:14:11
+
+  ● Phase2 procurement command input boundaries C01-C04/C07/C09 › C02 rejects invalid quantities -1
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: undefined
+
+      12 |     const input:any=valid();input.lines[0].quantity=quantity;
+      13 |     const db={withTenantContext:jest.fn(),getPool:jest.fn()};
+    > 14 |     await expect(new PartiesService(db as any).createProcurementOrder(ctx,project,input)).rejects.toMatchObject({status:422});
+         |           ^
+      15 |     expect(db.withTenantContext).not.toHaveBeenCalled();expect(db.getPool).not.toHaveBeenCalled();
+      16 |   });
+      17 |   it('C02 rejects duplicate line numbers',async()=>{
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at test/phase2-procurement-boundaries.spec.ts:14:11
+
+  ● Phase2 procurement command input boundaries C01-C04/C07/C09 › C02 rejects invalid quantities 1.5
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: undefined
+
+      12 |     const input:any=valid();input.lines[0].quantity=quantity;
+      13 |     const db={withTenantContext:jest.fn(),getPool:jest.fn()};
+    > 14 |     await expect(new PartiesService(db as any).createProcurementOrder(ctx,project,input)).rejects.toMatchObject({status:422});
+         |           ^
+      15 |     expect(db.withTenantContext).not.toHaveBeenCalled();expect(db.getPool).not.toHaveBeenCalled();
+      16 |   });
+      17 |   it('C02 rejects duplicate line numbers',async()=>{
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at test/phase2-procurement-boundaries.spec.ts:14:11
+
+  ● Phase2 procurement command input boundaries C01-C04/C07/C09 › C02 rejects invalid quantities Infinity
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: undefined
+
+      12 |     const input:any=valid();input.lines[0].quantity=quantity;
+      13 |     const db={withTenantContext:jest.fn(),getPool:jest.fn()};
+    > 14 |     await expect(new PartiesService(db as any).createProcurementOrder(ctx,project,input)).rejects.toMatchObject({status:422});
+         |           ^
+      15 |     expect(db.withTenantContext).not.toHaveBeenCalled();expect(db.getPool).not.toHaveBeenCalled();
+      16 |   });
+      17 |   it('C02 rejects duplicate line numbers',async()=>{
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at test/phase2-procurement-boundaries.spec.ts:14:11
+
+  ● Phase2 procurement command input boundaries C01-C04/C07/C09 › C02 rejects invalid quantities 1
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: undefined
+
+      12 |     const input:any=valid();input.lines[0].quantity=quantity;
+      13 |     const db={withTenantContext:jest.fn(),getPool:jest.fn()};
+    > 14 |     await expect(new PartiesService(db as any).createProcurementOrder(ctx,project,input)).rejects.toMatchObject({status:422});
+         |           ^
+      15 |     expect(db.withTenantContext).not.toHaveBeenCalled();expect(db.getPool).not.toHaveBeenCalled();
+      16 |   });
+      17 |   it('C02 rejects duplicate line numbers',async()=>{
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at test/phase2-procurement-boundaries.spec.ts:14:11
+
+  ● Phase2 procurement command input boundaries C01-C04/C07/C09 › C02 rejects invalid quantities 2147483648
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: undefined
+
+      12 |     const input:any=valid();input.lines[0].quantity=quantity;
+      13 |     const db={withTenantContext:jest.fn(),getPool:jest.fn()};
+    > 14 |     await expect(new PartiesService(db as any).createProcurementOrder(ctx,project,input)).rejects.toMatchObject({status:422});
+         |           ^
+      15 |     expect(db.withTenantContext).not.toHaveBeenCalled();expect(db.getPool).not.toHaveBeenCalled();
+      16 |   });
+      17 |   it('C02 rejects duplicate line numbers',async()=>{
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at test/phase2-procurement-boundaries.spec.ts:14:11
+
+  ● Phase2 procurement command input boundaries C01-C04/C07/C09 › C02 rejects duplicate line numbers
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [TypeError: this.db.withTenantContext is not a function]
+
+      17 |   it('C02 rejects duplicate line numbers',async()=>{
+      18 |     const input=valid();input.lines.push({...input.lines[0]});
+    > 19 |     await expect(new PartiesService({} as any).createProcurementOrder(ctx,project,input)).rejects.toMatchObject({status:422});
+         |                                                                                                   ^
+      20 |   });
+      21 |   it.each([-1,0.1,Number.MAX_SAFE_INTEGER+1,'1e3','9223372036854775808'])('C03 rejects imprecise or out-of-range amounts %s',async amount=>{
+      22 |     await expect(new PartiesService({} as any).createProcurementOrder(ctx,project,{...valid(),totalAmountPaise:amount} as any)).rejects.toMatchObject({status:422});
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at Object.<anonymous> (test/phase2-procurement-boundaries.spec.ts:19:99)
+
+  ● Phase2 procurement command input boundaries C01-C04/C07/C09 › C03 rejects imprecise or out-of-range amounts -1
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [TypeError: this.db.withTenantContext is not a function]
+
+      20 |   });
+      21 |   it.each([-1,0.1,Number.MAX_SAFE_INTEGER+1,'1e3','9223372036854775808'])('C03 rejects imprecise or out-of-range amounts %s',async amount=>{
+    > 22 |     await expect(new PartiesService({} as any).createProcurementOrder(ctx,project,{...valid(),totalAmountPaise:amount} as any)).rejects.toMatchObject({status:422});
+         |                                                                                                                                         ^
+      23 |   });
+      24 |   it.each([{orderedAt:'2027-02-30'},{orderedAt:'2027-02-01',promisedDeliveryAt:'2027-01-01'},{promisedDeliveryAt:'tomorrow'}])('C04 rejects invalid calendar dates/chronology',async patch=>{
+      25 |     await expect(new PartiesService({} as any).createProcurementOrder(ctx,project,{...valid(),...patch})).rejects.toMatchObject({status:422});
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-procurement-boundaries.spec.ts:22:137
+
+  ● Phase2 procurement command input boundaries C01-C04/C07/C09 › C03 rejects imprecise or out-of-range amounts 0.1
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [TypeError: this.db.withTenantContext is not a function]
+
+      20 |   });
+      21 |   it.each([-1,0.1,Number.MAX_SAFE_INTEGER+1,'1e3','9223372036854775808'])('C03 rejects imprecise or out-of-range amounts %s',async amount=>{
+    > 22 |     await expect(new PartiesService({} as any).createProcurementOrder(ctx,project,{...valid(),totalAmountPaise:amount} as any)).rejects.toMatchObject({status:422});
+         |                                                                                                                                         ^
+      23 |   });
+      24 |   it.each([{orderedAt:'2027-02-30'},{orderedAt:'2027-02-01',promisedDeliveryAt:'2027-01-01'},{promisedDeliveryAt:'tomorrow'}])('C04 rejects invalid calendar dates/chronology',async patch=>{
+      25 |     await expect(new PartiesService({} as any).createProcurementOrder(ctx,project,{...valid(),...patch})).rejects.toMatchObject({status:422});
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-procurement-boundaries.spec.ts:22:137
+
+  ● Phase2 procurement command input boundaries C01-C04/C07/C09 › C03 rejects imprecise or out-of-range amounts 9007199254740992
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [TypeError: this.db.withTenantContext is not a function]
+
+      20 |   });
+      21 |   it.each([-1,0.1,Number.MAX_SAFE_INTEGER+1,'1e3','9223372036854775808'])('C03 rejects imprecise or out-of-range amounts %s',async amount=>{
+    > 22 |     await expect(new PartiesService({} as any).createProcurementOrder(ctx,project,{...valid(),totalAmountPaise:amount} as any)).rejects.toMatchObject({status:422});
+         |                                                                                                                                         ^
+      23 |   });
+      24 |   it.each([{orderedAt:'2027-02-30'},{orderedAt:'2027-02-01',promisedDeliveryAt:'2027-01-01'},{promisedDeliveryAt:'tomorrow'}])('C04 rejects invalid calendar dates/chronology',async patch=>{
+      25 |     await expect(new PartiesService({} as any).createProcurementOrder(ctx,project,{...valid(),...patch})).rejects.toMatchObject({status:422});
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-procurement-boundaries.spec.ts:22:137
+
+  ● Phase2 procurement command input boundaries C01-C04/C07/C09 › C03 rejects imprecise or out-of-range amounts 1e3
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [TypeError: this.db.withTenantContext is not a function]
+
+      20 |   });
+      21 |   it.each([-1,0.1,Number.MAX_SAFE_INTEGER+1,'1e3','9223372036854775808'])('C03 rejects imprecise or out-of-range amounts %s',async amount=>{
+    > 22 |     await expect(new PartiesService({} as any).createProcurementOrder(ctx,project,{...valid(),totalAmountPaise:amount} as any)).rejects.toMatchObject({status:422});
+         |                                                                                                                                         ^
+      23 |   });
+      24 |   it.each([{orderedAt:'2027-02-30'},{orderedAt:'2027-02-01',promisedDeliveryAt:'2027-01-01'},{promisedDeliveryAt:'tomorrow'}])('C04 rejects invalid calendar dates/chronology',async patch=>{
+      25 |     await expect(new PartiesService({} as any).createProcurementOrder(ctx,project,{...valid(),...patch})).rejects.toMatchObject({status:422});
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-procurement-boundaries.spec.ts:22:137
+
+  ● Phase2 procurement command input boundaries C01-C04/C07/C09 › C03 rejects imprecise or out-of-range amounts 9223372036854775808
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [TypeError: this.db.withTenantContext is not a function]
+
+      20 |   });
+      21 |   it.each([-1,0.1,Number.MAX_SAFE_INTEGER+1,'1e3','9223372036854775808'])('C03 rejects imprecise or out-of-range amounts %s',async amount=>{
+    > 22 |     await expect(new PartiesService({} as any).createProcurementOrder(ctx,project,{...valid(),totalAmountPaise:amount} as any)).rejects.toMatchObject({status:422});
+         |                                                                                                                                         ^
+      23 |   });
+      24 |   it.each([{orderedAt:'2027-02-30'},{orderedAt:'2027-02-01',promisedDeliveryAt:'2027-01-01'},{promisedDeliveryAt:'tomorrow'}])('C04 rejects invalid calendar dates/chronology',async patch=>{
+      25 |     await expect(new PartiesService({} as any).createProcurementOrder(ctx,project,{...valid(),...patch})).rejects.toMatchObject({status:422});
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-procurement-boundaries.spec.ts:22:137
+
+  ● Phase2 procurement command input boundaries C01-C04/C07/C09 › C04 rejects invalid calendar dates/chronology
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [TypeError: this.db.withTenantContext is not a function]
+
+      23 |   });
+      24 |   it.each([{orderedAt:'2027-02-30'},{orderedAt:'2027-02-01',promisedDeliveryAt:'2027-01-01'},{promisedDeliveryAt:'tomorrow'}])('C04 rejects invalid calendar dates/chronology',async patch=>{
+    > 25 |     await expect(new PartiesService({} as any).createProcurementOrder(ctx,project,{...valid(),...patch})).rejects.toMatchObject({status:422});
+         |                                                                                                                   ^
+      26 |   });
+      27 |   it.each(['',undefined,'MADE_UP'])('C07 does not silently classify obligations as FAT: %s',async stage=>{
+      28 |     const input:any=valid();input.lines[0].obligations[0].stageKey=stage;
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-procurement-boundaries.spec.ts:25:115
+
+  ● Phase2 procurement command input boundaries C01-C04/C07/C09 › C04 rejects invalid calendar dates/chronology
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [TypeError: this.db.withTenantContext is not a function]
+
+      23 |   });
+      24 |   it.each([{orderedAt:'2027-02-30'},{orderedAt:'2027-02-01',promisedDeliveryAt:'2027-01-01'},{promisedDeliveryAt:'tomorrow'}])('C04 rejects invalid calendar dates/chronology',async patch=>{
+    > 25 |     await expect(new PartiesService({} as any).createProcurementOrder(ctx,project,{...valid(),...patch})).rejects.toMatchObject({status:422});
+         |                                                                                                                   ^
+      26 |   });
+      27 |   it.each(['',undefined,'MADE_UP'])('C07 does not silently classify obligations as FAT: %s',async stage=>{
+      28 |     const input:any=valid();input.lines[0].obligations[0].stageKey=stage;
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-procurement-boundaries.spec.ts:25:115
+
+  ● Phase2 procurement command input boundaries C01-C04/C07/C09 › C04 rejects invalid calendar dates/chronology
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [TypeError: this.db.withTenantContext is not a function]
+
+      23 |   });
+      24 |   it.each([{orderedAt:'2027-02-30'},{orderedAt:'2027-02-01',promisedDeliveryAt:'2027-01-01'},{promisedDeliveryAt:'tomorrow'}])('C04 rejects invalid calendar dates/chronology',async patch=>{
+    > 25 |     await expect(new PartiesService({} as any).createProcurementOrder(ctx,project,{...valid(),...patch})).rejects.toMatchObject({status:422});
+         |                                                                                                                   ^
+      26 |   });
+      27 |   it.each(['',undefined,'MADE_UP'])('C07 does not silently classify obligations as FAT: %s',async stage=>{
+      28 |     const input:any=valid();input.lines[0].obligations[0].stageKey=stage;
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-procurement-boundaries.spec.ts:25:115
+
+  ● Phase2 procurement command input boundaries C01-C04/C07/C09 › C07 does not silently classify obligations as FAT: 
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [TypeError: this.db.withTenantContext is not a function]
+
+      27 |   it.each(['',undefined,'MADE_UP'])('C07 does not silently classify obligations as FAT: %s',async stage=>{
+      28 |     const input:any=valid();input.lines[0].obligations[0].stageKey=stage;
+    > 29 |     await expect(new PartiesService({} as any).createProcurementOrder(ctx,project,input)).rejects.toMatchObject({status:422});
+         |                                                                                                   ^
+      30 |   });
+      31 |   it('C07 rejects invalid obligation dates and unbounded schedules',async()=>{
+      32 |     const input:any=valid();input.lines[0].obligations[0].dueDate='2027-02-30';
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-procurement-boundaries.spec.ts:29:99
+
+  ● Phase2 procurement command input boundaries C01-C04/C07/C09 › C07 does not silently classify obligations as FAT: undefined
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [TypeError: this.db.withTenantContext is not a function]
+
+      27 |   it.each(['',undefined,'MADE_UP'])('C07 does not silently classify obligations as FAT: %s',async stage=>{
+      28 |     const input:any=valid();input.lines[0].obligations[0].stageKey=stage;
+    > 29 |     await expect(new PartiesService({} as any).createProcurementOrder(ctx,project,input)).rejects.toMatchObject({status:422});
+         |                                                                                                   ^
+      30 |   });
+      31 |   it('C07 rejects invalid obligation dates and unbounded schedules',async()=>{
+      32 |     const input:any=valid();input.lines[0].obligations[0].dueDate='2027-02-30';
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-procurement-boundaries.spec.ts:29:99
+
+  ● Phase2 procurement command input boundaries C01-C04/C07/C09 › C07 does not silently classify obligations as FAT: MADE_UP
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [TypeError: this.db.withTenantContext is not a function]
+
+      27 |   it.each(['',undefined,'MADE_UP'])('C07 does not silently classify obligations as FAT: %s',async stage=>{
+      28 |     const input:any=valid();input.lines[0].obligations[0].stageKey=stage;
+    > 29 |     await expect(new PartiesService({} as any).createProcurementOrder(ctx,project,input)).rejects.toMatchObject({status:422});
+         |                                                                                                   ^
+      30 |   });
+      31 |   it('C07 rejects invalid obligation dates and unbounded schedules',async()=>{
+      32 |     const input:any=valid();input.lines[0].obligations[0].dueDate='2027-02-30';
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-procurement-boundaries.spec.ts:29:99
+
+  ● Phase2 procurement command input boundaries C01-C04/C07/C09 › C07 rejects invalid obligation dates and unbounded schedules
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [TypeError: this.db.withTenantContext is not a function]
+
+      31 |   it('C07 rejects invalid obligation dates and unbounded schedules',async()=>{
+      32 |     const input:any=valid();input.lines[0].obligations[0].dueDate='2027-02-30';
+    > 33 |     await expect(new PartiesService({} as any).createProcurementOrder(ctx,project,input)).rejects.toMatchObject({status:422});
+         |                                                                                                   ^
+      34 |     input.lines[0].obligations=Array.from({length:101},()=>({...valid().lines[0].obligations[0]}));
+      35 |     await expect(new PartiesService({} as any).createProcurementOrder(ctx,project,input)).rejects.toMatchObject({status:422});
+      36 |   });
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at Object.<anonymous> (test/phase2-procurement-boundaries.spec.ts:33:99)
+
+  ● Phase2 procurement command input boundaries C01-C04/C07/C09 › C09 suppliers cannot issue purchase orders through the command service
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: undefined
+
+      37 |   it('C09 suppliers cannot issue purchase orders through the command service',async()=>{
+      38 |     const db={withTenantContext:jest.fn(),getPool:jest.fn()};
+    > 39 |     await expect(new PartiesService(db as any).createProcurementOrder({...ctx,actorType:'GUEST',guestGrantId:ctx.userId},project,valid()))
+         |           ^
+      40 |       .rejects.toMatchObject({status:403});
+      41 |     expect(db.withTenantContext).not.toHaveBeenCalled();expect(db.getPool).not.toHaveBeenCalled();
+      42 |   });
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at Object.<anonymous> (test/phase2-procurement-boundaries.spec.ts:39:11)
+
+Test Suites: 1 failed, 1 total
+Tests:       25 failed, 25 total
+Snapshots:   0 total
+Time:        3.189 s
+Ran all test suites matching /test\/phase2-procurement-boundaries.spec.ts/i.
+Error: ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL
+
+  × "pnpm recursive exec" failed in /tmp/tco-phase2-reaudit/apps/api
+

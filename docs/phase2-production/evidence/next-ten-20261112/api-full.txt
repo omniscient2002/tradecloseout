@@ -1,0 +1,205 @@
+$ jest --runInBand
+PASS test/g01-two-api-http.spec.ts (30.113 s)
+PASS test/pr1-independent-db-acceptance.spec.ts (14.928 s)
+PASS test/g01-auth-denial-budget-db.spec.ts (12.103 s)
+  ● Console
+
+    console.error
+      AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE
+
+      340 |   lastAuthDenialDiagnosticAt = now;
+      341 |   // No exception string, HTTP request data, raw source or credentials.
+    > 342 |   console.error('AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE');
+          |           ^
+      343 | }
+      344 |
+      345 | /**
+
+      at reportAuthDenialPersistenceFailure (src/modules/identity/auth-security.ts:342:11)
+      at recordDeniedAuthenticationEvent (src/modules/identity/auth-security.ts:483:5)
+      at async /tmp/tco-phase2-reaudit/apps/api/test/g01-auth-denial-budget-db.spec.ts:146:9
+      at async withDisposableDatabase (../../packages/db/test/helpers/disposable-database.ts:107:5)
+      at async Object.<anonymous> (test/g01-auth-denial-budget-db.spec.ts:135:5)
+
+PASS test/g01-mfa-db.spec.ts (12.847 s)
+PASS test/phase2-quota-recovery-db.spec.ts (11.678 s)
+PASS test/hvac-domain-excellence.spec.ts
+PASS test/remaining-production-gaps.spec.ts (14.609 s)
+PASS test/g01-delivery-reconciliation-db.spec.ts (12.651 s)
+PASS test/phase2-policy-upgrade-and-org-lock-db.spec.ts (6.324 s)
+PASS test/g01-invitation-db.spec.ts (12.286 s)
+PASS test/g01-distributed-rate-budgets.spec.ts (6.92 s)
+PASS test/g02-authorization-db.spec.ts (12.413 s)
+PASS test/g01-guest-principal-db.spec.ts (6.698 s)
+PASS test/pr4-authorization-evidence-gates.spec.ts (9.01 s)
+  ● Console
+
+    console.error
+      AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE
+
+      340 |   lastAuthDenialDiagnosticAt = now;
+      341 |   // No exception string, HTTP request data, raw source or credentials.
+    > 342 |   console.error('AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE');
+          |           ^
+      343 | }
+      344 |
+      345 | /**
+
+      at reportAuthDenialPersistenceFailure (src/modules/identity/auth-security.ts:342:11)
+      at recordDeniedAuthenticationEvent (src/modules/identity/auth-security.ts:483:5)
+      at async PermissionGuard.canActivate (src/common/guards/permission.guard.ts:236:9)
+      at async Object.<anonymous> (test/pr4-authorization-evidence-gates.spec.ts:82:7)
+
+PASS test/phase2-project-money-variations-db.spec.ts (6.077 s)
+PASS test/phase2-procurement-db.spec.ts
+PASS test/production-reaudit-remediation.spec.ts
+  ● Console
+
+    console.error
+      AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE
+
+      340 |   lastAuthDenialDiagnosticAt = now;
+      341 |   // No exception string, HTTP request data, raw source or credentials.
+    > 342 |   console.error('AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE');
+          |           ^
+      343 | }
+      344 |
+      345 | /**
+
+      at reportAuthDenialPersistenceFailure (src/modules/identity/auth-security.ts:342:11)
+      at recordDeniedAuthenticationEvent (src/modules/identity/auth-security.ts:483:5)
+      at async PermissionGuard.canActivate (src/common/guards/permission.guard.ts:236:9)
+      at async Object.<anonymous> (test/production-reaudit-remediation.spec.ts:578:7)
+
+PASS test/g01-member-invitation-authority-db.spec.ts (6.275 s)
+PASS test/phase1-live-session-eligibility-db.spec.ts
+PASS test/contractor-user-journey.spec.ts
+PASS test/phase2-package-artifact-publication-db.spec.ts
+PASS test/phase2-checklist-change-decision-db.spec.ts
+PASS test/g01-device-session-revocation-db.spec.ts
+PASS test/phase2-org-dashboard-visibility-db.spec.ts
+PASS test/g01-auth-session-transaction-fence-db.spec.ts
+PASS test/phase2-organisation-offboarding-db.spec.ts
+PASS test/g01-guest-project-party-db.spec.ts
+PASS test/idempotency-cleanup-replay.spec.ts
+PASS test/g01-session-guard-db.spec.ts
+PASS test/phase2-org-audit-authority-db.spec.ts
+PASS test/phase2-owner-digest-commercial-db.spec.ts
+PASS test/phase2-storage-reservation-db.spec.ts
+PASS test/phase2-hvac-governance-db.spec.ts
+PASS test/g01-legacy-external-migration-upgrade-db.spec.ts
+PASS test/phase2-two-party-ownership-db.spec.ts
+PASS test/g01-auth-route-audit-db.spec.ts
+PASS test/phase2-subscription-price-precision-db.spec.ts
+PASS test/phase2-entitlements.spec.ts
+PASS test/g01-org-switch-review-regressions.spec.ts
+PASS test/phase2-easy-ten-db.spec.ts
+PASS test/g01-external-authority-db.spec.ts
+PASS test/concurrency.spec.ts
+PASS test/rls-isolation.spec.ts
+PASS test/g01-identity-recovery-db.spec.ts
+PASS test/phase1-notification-producer-db.spec.ts
+PASS test/g01-independent-party-approval-db.spec.ts
+PASS test/phase2-notification-project-authority-db.spec.ts
+PASS test/rls-and-integrity.spec.ts
+PASS test/phase2-project-members-db.spec.ts
+PASS test/g01-external-document-attestation-db.spec.ts
+PASS test/hvac-production-reaudit-remediation.spec.ts
+PASS test/g01-privileged-route-inventory.spec.ts
+  ● Console
+
+    console.error
+      AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE
+
+      340 |   lastAuthDenialDiagnosticAt = now;
+      341 |   // No exception string, HTTP request data, raw source or credentials.
+    > 342 |   console.error('AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE');
+          |           ^
+      343 | }
+      344 |
+      345 | /**
+
+      at reportAuthDenialPersistenceFailure (src/modules/identity/auth-security.ts:342:11)
+      at recordDeniedAuthenticationEvent (src/modules/identity/auth-security.ts:483:5)
+      at SessionCsrfGuard.canActivate (src/common/guards/session-csrf.guard.ts:91:46)
+      at async /tmp/tco-phase2-reaudit/apps/api/test/g01-privileged-route-inventory.spec.ts:53:14
+
+PASS test/g02-authorization-contract.spec.ts
+  ● Console
+
+    console.error
+      AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE
+
+      340 |   lastAuthDenialDiagnosticAt = now;
+      341 |   // No exception string, HTTP request data, raw source or credentials.
+    > 342 |   console.error('AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE');
+          |           ^
+      343 | }
+      344 |
+      345 | /**
+
+      at reportAuthDenialPersistenceFailure (src/modules/identity/auth-security.ts:342:11)
+      at recordDeniedAuthenticationEvent (src/modules/identity/auth-security.ts:483:5)
+      at async PermissionGuard.canActivate (src/common/guards/permission.guard.ts:236:9)
+      at async Object.<anonymous> (test/g02-authorization-contract.spec.ts:149:7)
+
+PASS test/phase0-evidence-integrity-remediation.spec.ts
+PASS test/perfect-10-remediation.spec.ts
+PASS test/production-review-remediation.spec.ts
+PASS test/g01-authentication-security.spec.ts
+  ● Console
+
+    console.error
+      AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE
+
+      340 |   lastAuthDenialDiagnosticAt = now;
+      341 |   // No exception string, HTTP request data, raw source or credentials.
+    > 342 |   console.error('AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE');
+          |           ^
+      343 | }
+      344 |
+      345 | /**
+
+      at reportAuthDenialPersistenceFailure (src/modules/identity/auth-security.ts:342:11)
+      at recordDeniedAuthenticationEvent (src/modules/identity/auth-security.ts:483:5)
+      at SessionCsrfGuard.canActivate (src/common/guards/session-csrf.guard.ts:91:46)
+      at async Object.<anonymous> (test/g01-authentication-security.spec.ts:284:7)
+
+PASS test/modules/documents-reviews.spec.ts
+PASS test/discovery-lifecycle-foundations.spec.ts
+PASS test/g01-reviewer-operations.spec.ts
+PASS test/phase2-notification-visibility.spec.ts
+PASS test/phase2-configuration-boundaries.spec.ts
+PASS test/hvac-checklist-readiness-branch.spec.ts
+PASS test/v021-edge-cases.e2e-spec.ts
+PASS test/sol-integrity-verification.spec.ts
+PASS test/document-download-boundaries.spec.ts
+PASS test/g01-delivery-redirect-boundaries.spec.ts
+PASS test/review-authority-boundaries.spec.ts
+PASS test/phase2-easy-ten.spec.ts
+PASS test/phase2-project-route-capabilities.spec.ts
+PASS test/guest-session-boundaries.spec.ts
+PASS test/phase2-procurement-boundaries.spec.ts
+PASS test/phase1-mfa-idempotency-boundary.spec.ts
+PASS test/phase2-project-lifecycle-lock.spec.ts
+PASS test/phase2-public-plan-policy.spec.ts
+PASS test/idempotency-expired-claim.spec.ts
+PASS test/remaining-dossier-delivery.spec.ts
+PASS test/g01-request-id-privacy.spec.ts
+PASS test/security-invariants.e2e-spec.ts
+PASS test/phase1-tenantdb-rollback.spec.ts
+PASS test/g03-organisation-validation.spec.ts
+PASS test/phase1-error-leakage.spec.ts
+PASS test/modules/parties-projects.spec.ts
+PASS test/modules/nfr-quality-attributes.spec.ts
+PASS test/modules/handover-billing-system.spec.ts
+PASS test/phase1-tenant-event-boundaries.spec.ts
+PASS test/modules/config-checklists-assets.spec.ts
+PASS test/modules/auth-iam.spec.ts
+PASS test/rbac-matrix.spec.ts
+
+Test Suites: 89 passed, 89 total
+Tests:       557 passed, 557 total
+Snapshots:   0 total
+Time:        295.811 s, estimated 325 s
+Ran all test suites.

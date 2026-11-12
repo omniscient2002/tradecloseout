@@ -1,0 +1,53 @@
+TAP version 13
+# Subtest: PH1-G24-003/004: Postgres outbox claims release locks before network I/O, fence ack and dead-letter
+    # Subtest: parallel dispatchers never claim the same event; row identities override forgery
+    ok 1 - parallel dispatchers never claim the same event; row identities override forgery
+      ---
+      duration_ms: 77.535726
+      type: 'test'
+      ...
+    # Subtest: short failure leaves a durable backoff and later outcome is acknowledged
+    ok 2 - short failure leaves a durable backoff and later outcome is acknowledged
+      ---
+      duration_ms: 21.74343
+      type: 'test'
+      ...
+    # Subtest: a late owner cannot acknowledge after the lease is reclaimed
+    ok 3 - a late owner cannot acknowledge after the lease is reclaimed
+      ---
+      duration_ms: 24.12907
+      type: 'test'
+      ...
+    # Subtest: PH1-G24-009: malformed or future executable event is never admitted to Redis
+    ok 4 - PH1-G24-009: malformed or future executable event is never admitted to Redis
+      ---
+      duration_ms: 19.758844
+      type: 'test'
+      ...
+    # Subtest: procurement audit events are acknowledged without claiming provider execution
+    ok 5 - procurement audit events are acknowledged without claiming provider execution
+      ---
+      duration_ms: 9.820978
+      type: 'test'
+      ...
+    # Subtest: unknown events dead-letter after bounded attempts; crashed last attempt is recovered
+    ok 6 - unknown events dead-letter after bounded attempts; crashed last attempt is recovered
+      ---
+      duration_ms: 59.990732
+      type: 'test'
+      ...
+    1..6
+ok 1 - PH1-G24-003/004: Postgres outbox claims release locks before network I/O, fence ack and dead-letter
+  ---
+  duration_ms: 1744.232509
+  type: 'test'
+  ...
+1..1
+# tests 7
+# suites 0
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2090.461952

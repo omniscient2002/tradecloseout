@@ -15,7 +15,9 @@ import {
 import * as crypto from 'node:crypto';
 import { PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
-import { canonicalAuthenticationEmail, canonicalAuthenticationPhone } from '@tradecloseout/shared';
+import { canonicalAuthenticationEmail, canonicalAuthenticationPhone, hasPermission } from '@tradecloseout/shared';
+import { withTenantTransaction } from '@tradecloseout/db';
+import { parseProcurementInput, ProcurementInput } from './procurement-validation';
 import { TenantDbService, ExecutionContext } from '../../database/tenant-db.service';
 import { DltSmsGateway, TransactionalMailGateway } from '../identity/identity.controller';
 import { consumeAuthenticationBudget, deriveSessionCsrf, isProductionEnvironment } from '../identity/auth-security';
@@ -839,31 +841,55 @@ export class PartiesService {
   async createProcurementOrder(
     ctx: ExecutionContext,
     projectId: string,
-    input: {
-      poNumber: string;
-      supplierPartyId: string;
-      orderedAt?: string;
-      promisedDeliveryAt?: string;
-      totalAmountPaise?: number;
-      notes?: string;
-      lines: Array<{
-        lineNo: number;
-        assetCategoryKey: string;
-        description: string;
-        quantity?: number;
-        assetId?: string;
-        make?: string;
-        model?: string;
-        obligations?: Array<{
-          docTypeKey: string;
-          stageKey: string;
-          title: string;
-          dueDate?: string;
-        }>;
-      }>;
-    },
+    rawInput: ProcurementInput,
   ) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+    if(ctx.actorType==='GUEST'||ctx.guestGrantId||!['USER','ADMIN'].includes(ctx.actorType)) {
+      throw new ForbiddenException({code:'PROCUREMENT_ISSUER_REQUIRED'});
+    }
+    const input=parseProcurementInput(rawInput,projectId);
+    return withTenantTransaction(this.db.getPool(),{
+      ...ctx,actorType:ctx.actorType==='USER'?'MEMBER':ctx.actorType,
+      projectId,projectWrite:true,ip:(ctx as any).ip||'',userAgent:(ctx as any).userAgent||'',
+    }, async (client,emit) => {
+      const {rows:projects}=await client.query(
+        `SELECT status,purged_at,CURRENT_DATE::text AS today FROM projects
+          WHERE org_id=$1 AND id=$2 FOR UPDATE`,[ctx.orgId,projectId]);
+      if(!projects[0]||projects[0].purged_at||!['DRAFT','ACTIVE'].includes(projects[0].status)) {
+        throw new ConflictException({code:'PROJECT_PROCUREMENT_LOCKED'});
+      }
+      const {rows:issuers}=await client.query(
+        `SELECT m.role FROM memberships m JOIN users u ON u.id=m.user_id AND u.status='ACTIVE'
+          WHERE m.org_id=$1 AND m.user_id=$2 AND m.status='ACTIVE' FOR SHARE OF m,u`,[ctx.orgId,ctx.userId]);
+      const {rows:projectMembers}=await client.query(
+        `SELECT role,scope_json FROM project_members WHERE org_id=$1 AND project_id=$2 AND user_id=$3 AND status='ACTIVE'
+          FOR SHARE`,[ctx.orgId,projectId,ctx.userId]);
+      const role=issuers[0]?.role;
+      const permission=hasPermission({orgRole:role,projectRole:projectMembers[0]?.role},'party.manage');
+      if(!role||!permission.allowed||(!['R-OWNER','R-ADMIN'].includes(role)&&!projectMembers.length)) {
+        throw new ForbiddenException({code:'PROCUREMENT_ISSUER_REQUIRED'});
+      }
+      const memberScope=projectMembers[0]?.scope_json;
+      if(!['R-OWNER','R-ADMIN'].includes(role)&&memberScope!==null&&memberScope!==undefined&&
+         (typeof memberScope!=='object'||Array.isArray(memberScope)||Object.keys(memberScope).length>0)) {
+        // PO schedules have no reviewed resource-scoped issuance model yet.
+        // Do not turn a narrow member grant into project-wide procurement authority.
+        throw new ForbiddenException({code:'PROCUREMENT_MEMBER_SCOPE_UNSUPPORTED'});
+      }
+      const {rows:suppliers}=await client.query(
+        `SELECT id FROM parties WHERE org_id=$1 AND id=$2 AND status='ACTIVE' AND deleted_at IS NULL
+          AND types && ARRAY['SUPPLIER','SUPPLIER_OEM']::text[] FOR SHARE`,[ctx.orgId,input.supplierPartyId]);
+      if(!suppliers.length)throw new NotFoundException('PROCUREMENT_SUPPLIER_NOT_FOUND');
+      const orderedAt=input.orderedAt??projects[0].today;
+      if(input.promisedDeliveryAt&&input.promisedDeliveryAt<orderedAt) {
+        throw new UnprocessableEntityException({code:'INVALID_PROCUREMENT_DATE_ORDER'});
+      }
+      for(const line of input.lines) {
+        if(!line.assetId)continue;
+        const {rows:assets}=await client.query(
+          `SELECT id FROM assets WHERE org_id=$1 AND project_id=$2 AND id=$3 AND category_key=$4
+            AND status='ACTIVE' AND deleted_at IS NULL FOR SHARE`,[ctx.orgId,projectId,line.assetId,line.assetCategoryKey]);
+        if(!assets.length)throw new NotFoundException('PROCUREMENT_ASSET_NOT_FOUND');
+      }
       const poId = uuidv7();
       await client.query(
         `INSERT INTO procurement_orders (
@@ -876,9 +902,9 @@ export class PartiesService {
           projectId,
           input.poNumber.trim(),
           input.supplierPartyId,
-          input.orderedAt || null,
+          orderedAt,
           input.promisedDeliveryAt || null,
-          input.totalAmountPaise || null,
+          input.totalAmountPaise ?? null,
           input.notes || null,
           ctx.userId,
         ],
@@ -920,7 +946,7 @@ export class PartiesService {
               projectId,
               lineId,
               obl.docTypeKey,
-              obl.stageKey || 'FAT',
+              obl.stageKey,
               obl.title,
               obl.dueDate || null,
               input.supplierPartyId,
@@ -930,6 +956,9 @@ export class PartiesService {
         }
       }
 
+      emit({eventType:'PROCUREMENT_ORDER_ISSUED',projectId,entityType:'PROCUREMENT_ORDER',entityId:poId,
+        afterJson:{poNumber:input.poNumber,supplierPartyId:input.supplierPartyId,lineCount:input.lines.length,
+          obligationCount:totalObligations,status:'ISSUED'}});
       return {
         poId,
         poNumber: input.poNumber,

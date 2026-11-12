@@ -1,0 +1,9 @@
+PASS test/phase2-procurement-db.spec.ts
+PASS test/discovery-lifecycle-foundations.spec.ts
+PASS test/phase2-procurement-boundaries.spec.ts
+
+Test Suites: 3 passed, 3 total
+Tests:       37 passed, 37 total
+Snapshots:   0 total
+Time:        5.476 s, estimated 6 s
+Ran all test suites matching /test\/phase2-procurement-db.spec.ts|test\/phase2-procurement-boundaries.spec.ts|test\/discovery-lifecycle-foundations.spec.ts/i.

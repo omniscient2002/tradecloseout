@@ -635,6 +635,13 @@
       "state": "CANDIDATE_FIX_TESTED",
       "evidenceLevel": "TARGETED_POSTGRESQL",
       "notes": "Cross-reference historical PA19 resource budgets. Actual compiler now uses bounded Node source streams and transfer deadlines for GET/body/PUT/HEAD, destroys output streams on settlement, and preserves failed-build/evidence semantics. Oversized/stalled-source regressions pass; real provider/queue fleet capacity acceptance remains pending."
+    },
+    {
+      "id": "PH2-NEW-009",
+      "title": "Purchase-order command lacks bounded contracts, exact money, current relationship/authority/lifecycle and atomic history controls",
+      "state": "CANDIDATE_FIX_TESTED",
+      "evidenceLevel": "TARGETED_POSTGRESQL",
+      "notes": "C01\u2013C10 in NEXT-TEN-PROCUREMENT-2026-11-12.md; ten mechanism fixes, not ten original audit closures. Narrow member issuance remains fail closed; no engineering classification or provider acceptance inferred."
     }
   ],
   "candidateWork": [
@@ -805,6 +812,99 @@
             "PH2-G03-002"
           ],
           "title": "Enforce profile-update organisation target",
+          "state": "CANDIDATE_FIX_TESTED"
+        }
+      ]
+    },
+    {
+      "id": "PH2-NEXT-TEN-20261112",
+      "baselineSha": "89d0e869836b8e1b1dc04cadcd1dd95e40519125",
+      "fixCount": 10,
+      "state": "CANDIDATE_FIX_TESTED",
+      "scope": "C01\u2013C10 under PH2-NEW-009, purchase-order collection workflow",
+      "canonicalStatusUnchanged": true,
+      "providerIntegrationsEnabled": false,
+      "completedDate": "2026-11-13",
+      "verification": "557 API tests across89 suites in one full invocation; worker33; typecheck/build; security15/RBAC8. Counts overlap. Exact-head CI, independent and external acceptance pending.",
+      "fixes": [
+        {
+          "id": "C01",
+          "parentFindingIds": [
+            "PH2-NEW-009"
+          ],
+          "title": "Bound PO envelope and require nonempty order lines",
+          "state": "CANDIDATE_FIX_TESTED"
+        },
+        {
+          "id": "C02",
+          "parentFindingIds": [
+            "PH2-NEW-009"
+          ],
+          "title": "Validate unique line identity and positive integer quantity",
+          "state": "CANDIDATE_FIX_TESTED"
+        },
+        {
+          "id": "C03",
+          "parentFindingIds": [
+            "PH2-NEW-009"
+          ],
+          "title": "Preserve exact zero/unknown/large paise",
+          "state": "CANDIDATE_FIX_TESTED"
+        },
+        {
+          "id": "C04",
+          "parentFindingIds": [
+            "PH2-NEW-009"
+          ],
+          "title": "Validate procurement calendar dates and chronology",
+          "state": "CANDIDATE_FIX_TESTED"
+        },
+        {
+          "id": "C05",
+          "parentFindingIds": [
+            "PH2-NEW-009"
+          ],
+          "title": "Require an active same-tenant supplier",
+          "state": "CANDIDATE_FIX_TESTED"
+        },
+        {
+          "id": "C06",
+          "parentFindingIds": [
+            "PH2-NEW-009"
+          ],
+          "title": "Bind current asset to exact tenant/project/category",
+          "state": "CANDIDATE_FIX_TESTED"
+        },
+        {
+          "id": "C07",
+          "parentFindingIds": [
+            "PH2-NEW-009"
+          ],
+          "title": "Require explicit bounded obligation type/stage identity",
+          "state": "CANDIDATE_FIX_TESTED"
+        },
+        {
+          "id": "C08",
+          "parentFindingIds": [
+            "PH2-NEW-009"
+          ],
+          "title": "Fence issuance under the shared project lifecycle lock",
+          "state": "CANDIDATE_FIX_TESTED"
+        },
+        {
+          "id": "C09",
+          "parentFindingIds": [
+            "PH2-NEW-009"
+          ],
+          "title": "Recheck live internal issuer capability and reject unsupported narrow scopes",
+          "state": "CANDIDATE_FIX_TESTED"
+        },
+        {
+          "id": "C10",
+          "parentFindingIds": [
+            "PH2-NEW-009"
+          ],
+          "title": "Commit order and attributable audit/outbox history atomically",
           "state": "CANDIDATE_FIX_TESTED"
         }
       ]

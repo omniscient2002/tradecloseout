@@ -790,34 +790,27 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
       let lineInsertCount = 0;
       let obligationInsertCount = 0;
 
-      const mockDb = {
-        withTenantContext: jest.fn().mockImplementation(async (ctx, fn) => {
-          const client = {
-            query: jest.fn().mockImplementation(async (sql: string, params?: any[]) => {
-              if (sql.includes('INSERT INTO procurement_orders')) {
-                poInsertParams = params || [];
-                return { rows: [] };
-              }
-              if (sql.includes('INSERT INTO procurement_order_lines')) {
-                lineInsertCount++;
-                return { rows: [] };
-              }
-              if (sql.includes('INSERT INTO supplier_document_obligations')) {
-                obligationInsertCount++;
-                return { rows: [] };
-              }
-              return { rows: [] };
-            }),
-          };
-          return fn(client);
+      // SQL-shape fixture only; actual permissions, locks and rollback are
+      // exercised by phase2-procurement-db.spec.ts using restricted PostgreSQL.
+      const client = {
+        release: jest.fn(),
+        query: jest.fn(async (sql: string, params?: any[]) => {
+          if (sql.includes('CURRENT_DATE::text AS today')) return {rows:[{status:'ACTIVE',purged_at:null,today:'2026-10-01'}]};
+          if (sql.includes('FROM memberships m')) return {rows:[{role:'R-OWNER'}]};
+          if (sql.includes('FROM parties')) return {rows:[{id:'0192e3a0-6000-7000-8000-000000000007'}]};
+          if (sql.includes('INSERT INTO procurement_orders')) poInsertParams=params||[];
+          if (sql.includes('INSERT INTO procurement_order_lines')) lineInsertCount++;
+          if (sql.includes('INSERT INTO supplier_document_obligations')) obligationInsertCount++;
+          return {rows:[]};
         }),
-      } as any;
+      };
+      const mockDb = {getPool:()=>({connect:async()=>client})} as any;
 
       const partiesService = new PartiesService(mockDb);
 
-      const res = await partiesService.createProcurementOrder(mockCtx, projectId, {
+      const res = await partiesService.createProcurementOrder({...mockCtx,orgRole:'R-OWNER'}, projectId, {
         poNumber: 'PO-MEP-2026-088',
-        supplierPartyId: 'party-daikin-001',
+        supplierPartyId: '0192e3a0-6000-7000-8000-000000000007',
         orderedAt: '2026-10-01',
         promisedDeliveryAt: '2026-11-15',
         totalAmountPaise: 450000000,

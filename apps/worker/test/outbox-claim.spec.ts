@@ -97,6 +97,15 @@ test('PH1-G24-003/004: Postgres outbox claims release locks before network I/O, 
       })).acknowledged,1);
       assert.equal(enqueued,1);
     });
+    await t.test('procurement audit events are acknowledged without claiming provider execution',async()=>{
+      const id=await event(a.orgId,a.projectIds[0],'PROCUREMENT_ORDER_ISSUED');
+      let queued=0;
+      const result=await dispatchDueOutbox(app,async()=>{queued++;});
+      assert.equal(queued,0);
+      assert.equal(result.acknowledged,1);
+      const row=(await admin.query('SELECT dispatched_at FROM outbox_events WHERE id=$1',[id])).rows[0];
+      assert(row.dispatched_at instanceof Date);
+    });
     await t.test('unknown events dead-letter after bounded attempts; crashed last attempt is recovered',async()=>{
       const id=await event(a.orgId,a.projectIds[0],'UNKNOWN_EXECUTABLE_EVENT');
       for(let attempt=1;attempt<=5;attempt++){
