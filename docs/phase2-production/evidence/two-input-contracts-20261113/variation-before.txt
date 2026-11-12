@@ -1,0 +1,283 @@
+FAIL test/phase2-variation-admission.spec.ts
+  PH2-NEW-012: explicit variation proposals before SQL
+    ✓ rejects malformed, ambiguous or unsupported proposal null (4 ms)
+    ✓ rejects malformed, ambiguous or unsupported proposal []
+    ✓ rejects malformed, ambiguous or unsupported proposal "proposal" (1 ms)
+    ✕ rejects malformed, ambiguous or unsupported proposal {"variationRef":"VAR-1","title":"Synthetic proposal"} (8 ms)
+    ✕ rejects malformed, ambiguous or unsupported proposal {"variationRef":"VAR-1","title":"Synthetic proposal","costDeltaPaise":null} (2 ms)
+    ✕ rejects malformed, ambiguous or unsupported proposal {"variationRef":"VAR-1","title":"Synthetic proposal","costDeltaPaise":0,"status":"APPROVED"} (1 ms)
+    ✕ rejects malformed, ambiguous or unsupported proposal {"variationRef":"VAR-1","title":"Synthetic proposal","costDeltaPaise":0,"approvedBy":"00000000-0000-4000-8000-000000000002"} (1 ms)
+    ✕ rejects malformed, ambiguous or unsupported proposal {"variationRef":"VAR-1","title":"Synthetic proposal","costDeltaPaise":0,"unexpected":true} (1 ms)
+    ✕ rejects malformed, ambiguous or unsupported proposal {"variationRef":"VAR\n1","title":"Synthetic proposal","costDeltaPaise":0} (1 ms)
+    ✕ rejects malformed, ambiguous or unsupported proposal {"variationRef":"VAR-1","title":"Proposal\u0000title","costDeltaPaise":0} (1 ms)
+    ✓ rejects malformed, ambiguous or unsupported proposal {"variationRef":"VAR-1","title":"Synthetic proposal","costDeltaPaise":1.1} (1 ms)
+    ✓ rejects malformed, ambiguous or unsupported proposal {"variationRef":"VAR-1","title":"Synthetic proposal","costDeltaPaise":"1e3"}
+    ✓ rejects malformed, ambiguous or unsupported proposal {"variationRef":"VAR-1","title":"Synthetic proposal","costDeltaPaise":9007199254740992}
+    ✓ rejects malformed, ambiguous or unsupported proposal {"variationRef":"VAR-1","title":"Synthetic proposal","costDeltaPaise":"9223372036854775808"} (1 ms)
+    ✓ rejects malformed, ambiguous or unsupported proposal {"variationRef":"VAR-1","title":"Synthetic proposal","costDeltaPaise":"-9223372036854775809"}
+    ✕ rejects invalid target IDs null "00000000-0000-4000-8000-000000000002" (1 ms)
+    ✕ rejects invalid target IDs "00000000-0000-4000-8000-000000000001" "not-a-uuid" (1 ms)
+    ✕ rejects invalid target IDs "" "00000000-0000-4000-8000-000000000002"
+    ✕ never invokes accessor fields during admission
+
+  ● PH2-NEW-012: explicit variation proposals before SQL › rejects malformed, ambiguous or unsupported proposal {"variationRef":"VAR-1","title":"Synthetic proposal"}
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [Error: DATABASE_REACHED]
+
+      19 |     const pool={connect:jest.fn().mockRejectedValue(new Error('DATABASE_REACHED'))};
+      20 |     await expect(new ProjectsService(pool as any).createVariation(ctx,project,contract,input as any))
+    > 21 |       .rejects.toMatchObject({status:422});
+         |                ^
+      22 |     expect(pool.connect).not.toHaveBeenCalled();
+      23 |   });
+      24 |   it.each([[null,contract],[project,'not-a-uuid'],['',contract]])('rejects invalid target IDs %j %j',async(p,c)=>{
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-variation-admission.spec.ts:21:16
+
+  ● PH2-NEW-012: explicit variation proposals before SQL › rejects malformed, ambiguous or unsupported proposal {"variationRef":"VAR-1","title":"Synthetic proposal","costDeltaPaise":null}
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [Error: DATABASE_REACHED]
+
+      19 |     const pool={connect:jest.fn().mockRejectedValue(new Error('DATABASE_REACHED'))};
+      20 |     await expect(new ProjectsService(pool as any).createVariation(ctx,project,contract,input as any))
+    > 21 |       .rejects.toMatchObject({status:422});
+         |                ^
+      22 |     expect(pool.connect).not.toHaveBeenCalled();
+      23 |   });
+      24 |   it.each([[null,contract],[project,'not-a-uuid'],['',contract]])('rejects invalid target IDs %j %j',async(p,c)=>{
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-variation-admission.spec.ts:21:16
+
+  ● PH2-NEW-012: explicit variation proposals before SQL › rejects malformed, ambiguous or unsupported proposal {"variationRef":"VAR-1","title":"Synthetic proposal","costDeltaPaise":0,"status":"APPROVED"}
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [Error: DATABASE_REACHED]
+
+      19 |     const pool={connect:jest.fn().mockRejectedValue(new Error('DATABASE_REACHED'))};
+      20 |     await expect(new ProjectsService(pool as any).createVariation(ctx,project,contract,input as any))
+    > 21 |       .rejects.toMatchObject({status:422});
+         |                ^
+      22 |     expect(pool.connect).not.toHaveBeenCalled();
+      23 |   });
+      24 |   it.each([[null,contract],[project,'not-a-uuid'],['',contract]])('rejects invalid target IDs %j %j',async(p,c)=>{
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-variation-admission.spec.ts:21:16
+
+  ● PH2-NEW-012: explicit variation proposals before SQL › rejects malformed, ambiguous or unsupported proposal {"variationRef":"VAR-1","title":"Synthetic proposal","costDeltaPaise":0,"approvedBy":"00000000-0000-4000-8000-000000000002"}
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [Error: DATABASE_REACHED]
+
+      19 |     const pool={connect:jest.fn().mockRejectedValue(new Error('DATABASE_REACHED'))};
+      20 |     await expect(new ProjectsService(pool as any).createVariation(ctx,project,contract,input as any))
+    > 21 |       .rejects.toMatchObject({status:422});
+         |                ^
+      22 |     expect(pool.connect).not.toHaveBeenCalled();
+      23 |   });
+      24 |   it.each([[null,contract],[project,'not-a-uuid'],['',contract]])('rejects invalid target IDs %j %j',async(p,c)=>{
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-variation-admission.spec.ts:21:16
+
+  ● PH2-NEW-012: explicit variation proposals before SQL › rejects malformed, ambiguous or unsupported proposal {"variationRef":"VAR-1","title":"Synthetic proposal","costDeltaPaise":0,"unexpected":true}
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [Error: DATABASE_REACHED]
+
+      19 |     const pool={connect:jest.fn().mockRejectedValue(new Error('DATABASE_REACHED'))};
+      20 |     await expect(new ProjectsService(pool as any).createVariation(ctx,project,contract,input as any))
+    > 21 |       .rejects.toMatchObject({status:422});
+         |                ^
+      22 |     expect(pool.connect).not.toHaveBeenCalled();
+      23 |   });
+      24 |   it.each([[null,contract],[project,'not-a-uuid'],['',contract]])('rejects invalid target IDs %j %j',async(p,c)=>{
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-variation-admission.spec.ts:21:16
+
+  ● PH2-NEW-012: explicit variation proposals before SQL › rejects malformed, ambiguous or unsupported proposal {"variationRef":"VAR\n1","title":"Synthetic proposal","costDeltaPaise":0}
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [Error: DATABASE_REACHED]
+
+      19 |     const pool={connect:jest.fn().mockRejectedValue(new Error('DATABASE_REACHED'))};
+      20 |     await expect(new ProjectsService(pool as any).createVariation(ctx,project,contract,input as any))
+    > 21 |       .rejects.toMatchObject({status:422});
+         |                ^
+      22 |     expect(pool.connect).not.toHaveBeenCalled();
+      23 |   });
+      24 |   it.each([[null,contract],[project,'not-a-uuid'],['',contract]])('rejects invalid target IDs %j %j',async(p,c)=>{
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-variation-admission.spec.ts:21:16
+
+  ● PH2-NEW-012: explicit variation proposals before SQL › rejects malformed, ambiguous or unsupported proposal {"variationRef":"VAR-1","title":"Proposal\u0000title","costDeltaPaise":0}
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [Error: DATABASE_REACHED]
+
+      19 |     const pool={connect:jest.fn().mockRejectedValue(new Error('DATABASE_REACHED'))};
+      20 |     await expect(new ProjectsService(pool as any).createVariation(ctx,project,contract,input as any))
+    > 21 |       .rejects.toMatchObject({status:422});
+         |                ^
+      22 |     expect(pool.connect).not.toHaveBeenCalled();
+      23 |   });
+      24 |   it.each([[null,contract],[project,'not-a-uuid'],['',contract]])('rejects invalid target IDs %j %j',async(p,c)=>{
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-variation-admission.spec.ts:21:16
+
+  ● PH2-NEW-012: explicit variation proposals before SQL › rejects invalid target IDs null "00000000-0000-4000-8000-000000000002"
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [Error: DATABASE_REACHED]
+
+      25 |     const pool={connect:jest.fn().mockRejectedValue(new Error('DATABASE_REACHED'))};
+      26 |     await expect(new ProjectsService(pool as any).createVariation(ctx,p as any,c as any,valid))
+    > 27 |       .rejects.toMatchObject({status:422});
+         |                ^
+      28 |     expect(pool.connect).not.toHaveBeenCalled();
+      29 |   });
+      30 |   it('never invokes accessor fields during admission',async()=>{
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-variation-admission.spec.ts:27:16
+
+  ● PH2-NEW-012: explicit variation proposals before SQL › rejects invalid target IDs "00000000-0000-4000-8000-000000000001" "not-a-uuid"
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [Error: DATABASE_REACHED]
+
+      25 |     const pool={connect:jest.fn().mockRejectedValue(new Error('DATABASE_REACHED'))};
+      26 |     await expect(new ProjectsService(pool as any).createVariation(ctx,p as any,c as any,valid))
+    > 27 |       .rejects.toMatchObject({status:422});
+         |                ^
+      28 |     expect(pool.connect).not.toHaveBeenCalled();
+      29 |   });
+      30 |   it('never invokes accessor fields during admission',async()=>{
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-variation-admission.spec.ts:27:16
+
+  ● PH2-NEW-012: explicit variation proposals before SQL › rejects invalid target IDs "" "00000000-0000-4000-8000-000000000002"
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [Error: DATABASE_REACHED]
+
+      25 |     const pool={connect:jest.fn().mockRejectedValue(new Error('DATABASE_REACHED'))};
+      26 |     await expect(new ProjectsService(pool as any).createVariation(ctx,p as any,c as any,valid))
+    > 27 |       .rejects.toMatchObject({status:422});
+         |                ^
+      28 |     expect(pool.connect).not.toHaveBeenCalled();
+      29 |   });
+      30 |   it('never invokes accessor fields during admission',async()=>{
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-variation-admission.spec.ts:27:16
+
+  ● PH2-NEW-012: explicit variation proposals before SQL › never invokes accessor fields during admission
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [Error: DATABASE_REACHED]
+
+      33 |     const pool={connect:jest.fn().mockRejectedValue(new Error('DATABASE_REACHED'))};
+      34 |     await expect(new ProjectsService(pool as any).createVariation(ctx,project,contract,input))
+    > 35 |       .rejects.toMatchObject({status:422});
+         |                ^
+      36 |     expect(getter).not.toHaveBeenCalled();expect(pool.connect).not.toHaveBeenCalled();
+      37 |   });
+      38 | });
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at Object.<anonymous> (test/phase2-variation-admission.spec.ts:35:16)
+
+Test Suites: 1 failed, 1 total
+Tests:       11 failed, 8 passed, 19 total
+Snapshots:   0 total
+Time:        4.319 s
+Ran all test suites matching /test\/phase2-variation-admission.spec.ts/i.
+Error: ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL
+
+  × "pnpm recursive exec" failed in /tmp/tco-phase2-reaudit/apps/api

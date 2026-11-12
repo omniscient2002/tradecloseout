@@ -19,6 +19,7 @@ import { hasPermission, ProjectCodeSchema } from '@tradecloseout/shared';
 import { evaluateReadinessInTransaction } from '../handover/closeout-readiness';
 import { boundedJsonObject } from '../../common/validation/bounded-json';
 import { getProjectCommercialSummary } from './project-commercial-summary';
+import { projectCommandRecord, requireProjectCommandId } from './project-command-input';
 
 const POSTGRES_BIGINT_MAX = 9223372036854775807n;
 const POSTGRES_BIGINT_MIN = -9223372036854775808n;
@@ -1101,16 +1102,23 @@ export class ProjectsService {
     ctx: TenantActorContext,
     projectId: string,
     contractId: string,
-    dto: { variationRef: string; title: string; costDeltaPaise: number | bigint; scopeDeltaJson?: any },
+    dto: { variationRef: string; title: string; costDeltaPaise: string | number | bigint; scopeDeltaJson?: any },
   ) {
+    requireProjectCommandId(projectId, 'INVALID_PROJECT_ID');
+    requireProjectCommandId(contractId, 'INVALID_CONTRACT_ID');
+    dto=projectCommandRecord(dto, ['variationRef','title','costDeltaPaise','scopeDeltaJson'],
+      'INVALID_VARIATION_INPUT') as typeof dto;
     // PH2-G05-002/005: a commercial variation is a proposal, never an
     // approval made by the creator. Validate its amount and scope before SQL.
     if (typeof dto?.variationRef !== 'string' || !dto.variationRef.trim() ||
-        dto.variationRef.trim().length > 120 || typeof dto.title !== 'string' ||
-        !dto.title.trim() || dto.title.trim().length > 200) {
+        dto.variationRef.trim().length > 120 || /[\u0000-\u001f\u007f]/.test(dto.variationRef) ||
+        typeof dto.title !== 'string' || !dto.title.trim() || dto.title.trim().length > 200 ||
+        /[\u0000-\u001f\u007f]/.test(dto.title)) {
       throw new UnprocessableEntityException({ code: 'INVALID_VARIATION_INPUT' });
     }
-    const deltaPaise = exactPaise(dto.costDeltaPaise ?? 0n, true)!;
+    // Missing or null is unknown, not an authorized zero-cost proposal.
+    const deltaPaise = exactPaise(dto.costDeltaPaise, true);
+    if (deltaPaise === undefined) throw new UnprocessableEntityException({code:'INVALID_MONEY_PAISE'});
     let scopeDeltaJson: Record<string, unknown>;
     try { scopeDeltaJson = boundedJsonObject(dto.scopeDeltaJson === undefined ? {} : dto.scopeDeltaJson, 32768); }
     catch { throw new UnprocessableEntityException({ code: 'INVALID_VARIATION_SCOPE' }); }

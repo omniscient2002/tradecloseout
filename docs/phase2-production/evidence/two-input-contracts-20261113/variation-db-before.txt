@@ -1,0 +1,31 @@
+FAIL test/phase2-variation-admission-db.spec.ts (7.25 s)
+  ✕ PH2-NEW-012: explicit exact amounts, draft history and a detached proposal across a real project lock (3416 ms)
+
+  ● PH2-NEW-012: explicit exact amounts, draft history and a detached proposal across a real project lock
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"approved_at": null, "approved_by": null, "change_request_id": null, "contract_id": "01a1d22b-0c3a-7460-8e7d-8dad95c7137b", "cost_delta_paise": "0", "created_at": 2026-11-12T23:49:59.109Z, "created_by": "01a1d22b-0c3a-7460-8e7d-8dab74a8bb68", "description": "", "id": "01a1d22b-0cc9-710c-8d80-1526263c255a", "org_id": "01a1d22b-0c3a-7460-8e7d-8daac6b6eca0", "project_id": "01a1d22b-0c3a-7460-8e7d-8dacb6a68f28", "reference": "", "requested_by": null, "row_version": 1, "scope_delta_json": {}, "status": "DRAFT", "time_days_delta": 0, "title": "Missing amount", "value_paise_delta": "0", "variation_ref": "MISSING"}
+
+      32 |     };
+      33 |     expect(await counts()).toEqual([7,7,7]);
+    > 34 |     for(const amount of [undefined,null])await expect(service.createVariation(ctx,project,contract,
+         |                                                ^
+      35 |       {variationRef:'MISSING',title:'Missing amount',costDeltaPaise:amount} as any)).rejects.toMatchObject({status:422});
+      36 |     expect(await counts()).toEqual([7,7,7]);
+      37 |
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at test/phase2-variation-admission-db.spec.ts:34:48
+      at async withDisposableDatabase (../../packages/db/test/helpers/disposable-database.ts:107:5)
+      at async Object.<anonymous> (test/phase2-variation-admission-db.spec.ts:8:3)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 1 total
+Snapshots:   0 total
+Time:        7.311 s
+Ran all test suites matching /test\/phase2-variation-admission-db.spec.ts/i.
+Error: ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL
+
+  × "pnpm recursive exec" failed in /tmp/tco-phase2-reaudit/apps/api

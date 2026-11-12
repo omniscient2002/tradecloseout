@@ -1,0 +1,27 @@
+PASS test/phase2-variation-admission.spec.ts (5.157 s)
+  PH2-NEW-012: explicit variation proposals before SQL
+    ✓ rejects malformed, ambiguous or unsupported proposal null (5 ms)
+    ✓ rejects malformed, ambiguous or unsupported proposal []
+    ✓ rejects malformed, ambiguous or unsupported proposal "proposal" (1 ms)
+    ✓ rejects malformed, ambiguous or unsupported proposal {"variationRef":"VAR-1","title":"Synthetic proposal"} (1 ms)
+    ✓ rejects malformed, ambiguous or unsupported proposal {"variationRef":"VAR-1","title":"Synthetic proposal","costDeltaPaise":null} (1 ms)
+    ✓ rejects malformed, ambiguous or unsupported proposal {"variationRef":"VAR-1","title":"Synthetic proposal","costDeltaPaise":0,"status":"APPROVED"}
+    ✓ rejects malformed, ambiguous or unsupported proposal {"variationRef":"VAR-1","title":"Synthetic proposal","costDeltaPaise":0,"approvedBy":"00000000-0000-4000-8000-000000000002"} (1 ms)
+    ✓ rejects malformed, ambiguous or unsupported proposal {"variationRef":"VAR-1","title":"Synthetic proposal","costDeltaPaise":0,"unexpected":true}
+    ✓ rejects malformed, ambiguous or unsupported proposal {"variationRef":"VAR\n1","title":"Synthetic proposal","costDeltaPaise":0}
+    ✓ rejects malformed, ambiguous or unsupported proposal {"variationRef":"VAR-1","title":"Proposal\u0000title","costDeltaPaise":0}
+    ✓ rejects malformed, ambiguous or unsupported proposal {"variationRef":"VAR-1","title":"Synthetic proposal","costDeltaPaise":1.1} (1 ms)
+    ✓ rejects malformed, ambiguous or unsupported proposal {"variationRef":"VAR-1","title":"Synthetic proposal","costDeltaPaise":"1e3"}
+    ✓ rejects malformed, ambiguous or unsupported proposal {"variationRef":"VAR-1","title":"Synthetic proposal","costDeltaPaise":9007199254740992}
+    ✓ rejects malformed, ambiguous or unsupported proposal {"variationRef":"VAR-1","title":"Synthetic proposal","costDeltaPaise":"9223372036854775808"} (4 ms)
+    ✓ rejects malformed, ambiguous or unsupported proposal {"variationRef":"VAR-1","title":"Synthetic proposal","costDeltaPaise":"-9223372036854775809"}
+    ✓ rejects invalid target IDs null "00000000-0000-4000-8000-000000000002" (1 ms)
+    ✓ rejects invalid target IDs "00000000-0000-4000-8000-000000000001" "not-a-uuid" (1 ms)
+    ✓ rejects invalid target IDs "" "00000000-0000-4000-8000-000000000002"
+    ✓ never invokes accessor fields during admission
+
+Test Suites: 1 passed, 1 total
+Tests:       19 passed, 19 total
+Snapshots:   0 total
+Time:        5.229 s
+Ran all test suites matching /test\/phase2-variation-admission.spec.ts/i.

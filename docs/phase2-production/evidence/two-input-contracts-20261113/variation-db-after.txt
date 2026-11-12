@@ -1,0 +1,10 @@
+PASS test/phase2-variation-admission-db.spec.ts (7.258 s)
+PASS test/phase2-project-money-variations-db.spec.ts (8.462 s)
+PASS test/phase2-easy-ten-db.spec.ts
+PASS test/phase2-easy-ten.spec.ts
+
+Test Suites: 4 passed, 4 total
+Tests:       20 passed, 20 total
+Snapshots:   0 total
+Time:        20.199 s
+Ran all test suites matching /test\/phase2-variation-admission-db.spec.ts|test\/phase2-project-money-variations-db.spec.ts|test\/phase2-easy-ten-db.spec.ts|test\/phase2-easy-ten.spec.ts/i.

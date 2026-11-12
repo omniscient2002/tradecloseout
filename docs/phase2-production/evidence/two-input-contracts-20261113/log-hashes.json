@@ -1,0 +1,25 @@
+{
+  "normalization": "Carriage returns, trailing whitespace and final blank lines only; messages/results preserved.",
+  "logs": {
+    "variation-before.txt": {
+      "rawSha256": "43580c32ca63d777e228c52c090f1506708fb5b007ef2195cd6d65ed86cd1822",
+      "storedSha256": "68719e4b4c7b0dd4622e56e2dcc64908ad53b5dfc8b90f550ff6fd379f939609"
+    },
+    "variation-db-before.txt": {
+      "rawSha256": "c62941a5cf6770b80240ce4bcdc19ce5f8776c89a0a68a198f587f81f6bf9c58",
+      "storedSha256": "e7ae80766f9a6552481ec791ff00686275898014529a20d3e8b2b5187c49f54d"
+    },
+    "variation-after.txt": {
+      "rawSha256": "5d25794c7aa1c9d83a2d161ca0e9d2db4d75d8cd2567779513024420814db581",
+      "storedSha256": "5d25794c7aa1c9d83a2d161ca0e9d2db4d75d8cd2567779513024420814db581"
+    },
+    "variation-db-after.txt": {
+      "rawSha256": "bfbf3339a64c50fe0c048c3dcd4087c6bc8e6b99b6990ecf429f5bc35f9c03dd",
+      "storedSha256": "bfbf3339a64c50fe0c048c3dcd4087c6bc8e6b99b6990ecf429f5bc35f9c03dd"
+    },
+    "first-typecheck.txt": {
+      "rawSha256": "8935e75360eaccba7ec1fee2d68b076e23856327a92e0b3f4f7ff0f2147b6b54",
+      "storedSha256": "8935e75360eaccba7ec1fee2d68b076e23856327a92e0b3f4f7ff0f2147b6b54"
+    }
+  }
+}

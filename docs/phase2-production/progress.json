@@ -656,6 +656,13 @@
       "state": "CANDIDATE_FIX_TESTED",
       "evidenceLevel": "TARGETED_POSTGRESQL",
       "notes": "Cross-reference PH2-G20-002; actual baseline reproduction and concurrent PostgreSQL demotion regression. Recheck live account/organisation/member capability on creation and retries; preserve explicit SYSTEM workflow and deny unresolvable member scopes. See NOTIFICATION-AUTHORITY-2026-11-13.md. Original finding status and independent acceptance remain unchanged."
+    },
+    {
+      "id": "PH2-NEW-012",
+      "title": "Variation admission silently changes an omitted amount to zero and retains mutable request text",
+      "state": "CANDIDATE_FIX_TESTED",
+      "evidenceLevel": "TARGETED_POSTGRESQL",
+      "notes": "Explicit exact signed paise, declared data-only fields and detached text/scope before project locks. Actual baseline DB reproduction stored missing amount as zero. Real lock-wait regression preserves admitted proposal and attributable draft history. Parent PH2-G05-002/005 remains independently unaccepted; see VARIATION-ADMISSION-2026-11-13.md."
     }
   ],
   "candidateWork": [
