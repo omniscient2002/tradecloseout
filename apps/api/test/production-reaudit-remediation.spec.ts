@@ -280,7 +280,7 @@ describe('Production Re-Audit Remediation Suite (PROD-001..PROD-018)', () => {
                   project_id: projectId,
                   document_project_id: projectId,
                   file_status: 'READY',
-                  review_status: 'DRAFT',
+                  review_status: 'NOT_SUBMITTED',
                 },
               ],
             };
@@ -318,69 +318,54 @@ describe('Production Re-Audit Remediation Suite (PROD-001..PROD-018)', () => {
   // PROD-006 (PA06): WorkItemsService Pending Waivers and Revalidation Version
   // --------------------------------------------------------------------------
   describe('PROD-006 (PA06): Work items query includes PENDING_SECOND_APPROVAL waivers and er.row_version', () => {
-    it('queries waivers with status IN (PENDING, PENDING_SECOND_APPROVAL) and returns er.row_version', async () => {
+    it('exposes only eligible second-approval waivers without inventing a row version', async () => {
       const orgId = uuidv7();
       const projectId = uuidv7();
+      const waiverId = uuidv7();
       let capturedSql = '';
-
-      const mockClient: any = {
-        query: jest.fn().mockImplementation(async (sql: string) => {
-          if (sql.includes('WITH all_items AS')) {
-            capturedSql = sql;
-            if (sql.includes('COUNT(*) AS total')) {
-              return {
-                rows: [
-                  {
-                    total: '1',
-                    reviews: '0',
-                    waivers: '1',
-                    defects: '0',
-                    revalidations: '0',
-                    supplier_obligations: '0',
-                  },
-                ],
-              };
-            }
-            return {
-              rows: [
-                {
-                  entity_id: uuidv7(),
-                  entity_version: 3,
+      const mockPool: any = {
+        connect: jest.fn().mockResolvedValue({
+          query: jest.fn().mockImplementation(async (sql: string) => {
+            if (sql.includes('FROM memberships')) return { rows: [{ role: 'R-OWNER' }] };
+            if (sql.includes('FROM project_members')) return { rows: [] };
+            if (sql.includes('SELECT id FROM projects')) return { rows: [{ id: projectId }] };
+            if (sql.includes('WITH access AS')) {
+              capturedSql = sql;
+              return { rows: [{
+                total: '1', reviews: '0', waivers: '1', defects: '0',
+                revalidations: '0', supplier_obligations: '0',
+                items: [{
+                  entity_id: waiverId, entity_version: null,
                   title: 'Waiver for Chiller O&M manual',
-                  project_id: projectId,
-                  project_code: 'PRJ-CHILLER',
+                  project_id: projectId, project_code: 'PRJ-CHILLER',
                   project_name: 'Metro Chiller Plant',
                   created_at: new Date().toISOString(),
-                  type: 'WAIVER_PENDING_COUNTERSIGN',
-                  priority: 'CRITICAL',
+                  type: 'WAIVER_PENDING_COUNTERSIGN', priority: 'CRITICAL',
                   waiting_on: 'Awaiting PMC second approval / countersign',
                   entity_type: 'WAIVER',
-                  next_path: `/projects/${projectId}/checklists/waivers/w-1/countersign`,
-                  next_method: 'POST',
-                  next_action: 'COUNTERSIGN_WAIVER',
-                },
-              ],
-            };
-          }
-          return { rows: [] };
+                  next_path: '/api/v1/projects/' + projectId +
+                    '/checklists/waivers/' + waiverId + '/countersign',
+                  next_method: 'POST', next_action: 'COUNTERSIGN_WAIVER',
+                }],
+              }] };
+            }
+            return { rows: [] };
+          }),
+          release: jest.fn(),
         }),
-        release: jest.fn(),
       };
-
-      const mockPool: any = {
-        connect: jest.fn().mockResolvedValue(mockClient),
-      };
-
       const { WorkItemsService } = await import('../src/modules/work-items/work-items.service');
       const workItemsService = new WorkItemsService(mockPool);
-
-      const ctx: any = { orgId, userId: uuidv7(), orgRole: 'R-PM' };
+      const ctx: any = { orgId, userId: uuidv7(), orgRole: 'R-OWNER' };
       const result = await workItemsService.listWorkItems(ctx, { projectId });
-
       expect(result.items).toHaveLength(1);
-      expect(capturedSql).toContain("w.status IN ('PENDING', 'PENDING_SECOND_APPROVAL')");
+      expect(capturedSql).toContain("w.status = 'PENDING_SECOND_APPROVAL'");
       expect(capturedSql).toContain('er.row_version AS entity_version');
-      expect(result.items[0].nextCommand.path).toBe(`/projects/${projectId}/checklists/waivers/w-1/countersign`);
+      expect(result.items[0].entityVersion).toBeUndefined();
+      expect(result.items[0].nextCommand.precondition).toBeNull();
+      expect(result.items[0].nextCommand.path).toBe(
+        '/api/v1/projects/' + projectId + '/checklists/waivers/' + waiverId + '/countersign',
+      );
     });
   });
 

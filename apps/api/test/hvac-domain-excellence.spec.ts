@@ -38,6 +38,8 @@ describe('HVAC Domain Excellence Suite (XP11..XP18)', () => {
       const mockPool: any = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string) => {
+            // The preview must establish the caller's *live* owner membership.
+            if (sql.includes('FROM memberships')) return { rows: [{ role: 'R-OWNER' }] };
             if (sql.includes('FROM assets WHERE')) {
               // Existing tag in database
               return { rows: [{ tag: 'CH-01' }] };
@@ -69,6 +71,8 @@ describe('HVAC Domain Excellence Suite (XP11..XP18)', () => {
       const mockPool: any = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string) => {
+            // The preview must establish the caller's *live* owner membership.
+            if (sql.includes('FROM memberships')) return { rows: [{ role: 'R-OWNER' }] };
             if (sql.includes('FROM assets WHERE')) {
               return { rows: [{ tag: 'CH-01' }] };
             }
@@ -96,6 +100,8 @@ describe('HVAC Domain Excellence Suite (XP11..XP18)', () => {
             if (sql.includes('FROM assets WHERE')) {
               return { rows: [] }; // No existing tags
             }
+            if (sql.includes('FROM projects')) return { rows: [{ status: 'ACTIVE' }] };
+            if (sql.includes('FROM memberships')) return { rows: [{ role: 'R-OWNER' }] };
             if (sql.includes('INSERT INTO assets')) {
               executedInserts.push(params);
               return { rowCount: 1, rows: [{ id: params[0], tag: params[3] }] };
@@ -133,83 +139,66 @@ describe('HVAC Domain Excellence Suite (XP11..XP18)', () => {
   // XP12: Daily Actionable Inbox & Work Items
   // ==========================================================================
   describe('XP12: Actionable Inbox & Work Item Projections', () => {
-    it('aggregates source-derived work items across reviews, waivers, defects, revalidations and obligations', async () => {
+    it('projects eligible work actions using live authority and one scoped response', async () => {
+      const reviewId = uuidv7();
+      const waiverId = uuidv7();
       const mockPool: any = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string) => {
-            if (sql.includes('COUNT(*) AS total')) {
-              return {
-                rows: [
+            if (sql.includes('FROM memberships')) return { rows: [{ role: 'R-OWNER' }] };
+            if (sql.includes('FROM project_members')) return { rows: [] };
+            if (sql.includes('SELECT id FROM projects')) return { rows: [{ id: projectId }] };
+            if (sql.includes('WITH access AS')) {
+              return { rows: [{
+                total: '2', reviews: '1', waivers: '1', defects: '0',
+                revalidations: '0', supplier_obligations: '0',
+                items: [
                   {
-                    total: '5',
-                    reviews: '1',
-                    waivers: '1',
-                    defects: '1',
-                    revalidations: '1',
-                    supplier_obligations: '1',
-                  },
-                ],
-              };
-            }
-            if (sql.includes('WITH all_items AS')) {
-              return {
-                rows: [
-                  {
-                    entity_id: uuidv7(),
-                    entity_version: 1,
+                    entity_id: reviewId, entity_version: 3,
                     title: 'Chiller O&M Manual Rev 0',
-                    project_id: projectId,
-                    project_code: 'PRJ-CHILLER',
+                    project_id: projectId, project_code: 'PRJ-CHILLER',
                     project_name: 'Metro HVAC Central Plant',
-                    created_at: new Date(),
-                    type: 'REVIEW_PENDING',
-                    priority: 'HIGH',
-                    waiting_on: 'Awaiting submittal review decision',
-                    entity_type: 'DOCUMENT_VERSION',
-                    next_path: `/projects/${projectId}/reviews/rev-1`,
-                    next_method: 'POST',
-                    next_action: 'DECIDE_REVIEW',
+                    created_at: new Date().toISOString(),
+                    type: 'REVIEW_PENDING', priority: 'HIGH',
+                    waiting_on: 'Awaiting review decision', entity_type: 'DOCUMENT_VERSION',
+                    next_path: '/api/v1/projects/' + projectId +
+                      '/document-versions/' + reviewId + '/decision',
+                    next_method: 'POST', next_action: 'DECIDE_REVIEW',
                   },
                   {
-                    entity_id: uuidv7(),
-                    entity_version: 1,
-                    title: 'Ductwork leakage test mandatory waiver',
-                    project_id: projectId,
-                    project_code: 'PRJ-CHILLER',
+                    entity_id: waiverId, entity_version: null,
+                    title: 'Mandatory waiver',
+                    project_id: projectId, project_code: 'PRJ-CHILLER',
                     project_name: 'Metro HVAC Central Plant',
-                    created_at: new Date(),
-                    type: 'WAIVER_PENDING_COUNTERSIGN',
-                    priority: 'CRITICAL',
-                    waiting_on: 'Awaiting PMC second approval / countersign',
-                    entity_type: 'WAIVER',
-                    next_path: `/projects/${projectId}/checklists/waivers/w-1/countersign`,
-                    next_method: 'POST',
-                    next_action: 'COUNTERSIGN_WAIVER',
+                    created_at: new Date().toISOString(),
+                    type: 'WAIVER_PENDING_COUNTERSIGN', priority: 'CRITICAL',
+                    waiting_on: 'Awaiting second approval', entity_type: 'WAIVER',
+                    next_path: '/api/v1/projects/' + projectId +
+                      '/checklists/waivers/' + waiverId + '/countersign',
+                    next_method: 'POST', next_action: 'COUNTERSIGN_WAIVER',
                   },
                 ],
-              };
+              }] };
             }
             return { rows: [] };
           }),
           release: jest.fn(),
         }),
       };
-
-      const workItemsService = new WorkItemsService(mockPool);
-      const result = await workItemsService.listWorkItems(mockCtx, { projectId });
-
-      expect(result.counts.total).toBe(5);
-      expect(result.counts.reviews).toBe(1);
-      expect(result.counts.waivers).toBe(1);
-      expect(result.counts.defects).toBe(1);
-      expect(result.counts.revalidations).toBe(1);
-      expect(result.counts.supplierObligations).toBe(1);
-
+      const result = await new WorkItemsService(mockPool).listWorkItems(mockCtx, { projectId });
+      expect(result.counts).toMatchObject({
+        total: 2, reviews: 1, waivers: 1,
+        defects: 0, revalidations: 0, supplierObligations: 0,
+      });
       expect(result.items).toHaveLength(2);
-      expect(result.items[0].type).toBe('REVIEW_PENDING');
-      expect(result.items[0].nextCommand.actionName).toBe('DECIDE_REVIEW');
-      expect(result.items[1].type).toBe('WAIVER_PENDING_COUNTERSIGN');
-      expect(result.items[1].priority).toBe('CRITICAL');
+      expect(result.items[0].nextCommand).toMatchObject({
+        actionName: 'DECIDE_REVIEW',
+        precondition: { field: 'expectedRowVersion', value: 3 },
+        idempotency: 'HEADER_KEY',
+      });
+      expect(result.items[1].nextCommand).toMatchObject({
+        actionName: 'COUNTERSIGN_WAIVER', precondition: null,
+      });
     });
   });
 
@@ -223,6 +212,7 @@ describe('HVAC Domain Excellence Suite (XP11..XP18)', () => {
       const mockPool: any = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string) => {
+            if (sql.includes('FROM memberships')) return { rows: [{ role: 'R-OWNER' }] };
             if (sql.includes('FROM assets')) {
               return {
                 rows: [
@@ -484,10 +474,26 @@ describe('HVAC Domain Excellence Suite (XP11..XP18)', () => {
         const orgIdB = tB.orgId;
         const projectB0 = tB.projectIds[0];
 
+        // seedTenants creates organisations/projects without membership rows.
+        // Explicitly seed the live owner used by the asset authorization path.
+        await admin.query(
+          `INSERT INTO memberships (id, org_id, user_id, role, status)
+            VALUES ($1, $2, $3, 'R-OWNER', 'ACTIVE')`,
+          [uuidv7(), orgIdA, seededUserId],
+        );
+
         // Seed an independent user for independent verification / approval
         const independentUserId = uuidv7();
         await admin.query(`INSERT INTO users (id, name, status) VALUES ($1, 'Independent Verifier', 'ACTIVE')`, [independentUserId]);
         await admin.query(`INSERT INTO memberships (id, org_id, user_id, role, status) VALUES ($1, $2, $3, 'R-PM', 'ACTIVE')`, [uuidv7(), orgIdA, independentUserId]);
+
+        // Independent reviewer is a current project member, not just an
+        // organisation member. This preserves the live asset scope check.
+        await admin.query(
+          `INSERT INTO project_members (id, org_id, project_id, user_id, role, scope_json, status, added_by)
+            VALUES ($1, $2, $3, $4, 'R-PM', '{}'::jsonb, 'ACTIVE', $5)`,
+          [uuidv7(), orgIdA, projectA0, independentUserId, seededUserId],
+        );
 
         const ctxA: TenantActorContext = {
           orgId: orgIdA,

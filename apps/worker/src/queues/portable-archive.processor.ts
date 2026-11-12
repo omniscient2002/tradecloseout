@@ -1,4 +1,4 @@
-import { GetObjectCommand, PutObjectCommand, HeadObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { GetObjectCommand, PutObjectCommand, HeadObjectCommand, GetBucketVersioningCommand, S3Client } from '@aws-sdk/client-s3';
 import { Pool, PoolClient } from 'pg';
 import { createHash } from 'crypto';
 import { createReadStream, createWriteStream } from 'fs';
@@ -9,7 +9,7 @@ import { pipeline } from 'stream/promises';
 import { Readable, Transform } from 'stream';
 import { uuidv7 } from 'uuidv7';
 import { ZipArchive } from 'archiver';
-import { canonicalJson } from '@tradecloseout/shared';
+import { canonicalJson, isImmutableObjectVersionId } from '@tradecloseout/shared';
 import { archiveVerifierHtml } from './archive-verifier';
 
 export type ArchiveExportJob = { exportId: string; orgId: string; projectId: string };
@@ -59,7 +59,7 @@ export async function compileAndPersistPortableArchive(pool: Pool, s3: S3Client,
     if (!row) throw new Error('ARCHIVE_EXPORT_NOT_FOUND');
     const artifact = row.verification_receipt_json?.artifact;
     if (row.status === 'COMPLETED') {
-      if (!artifact?.providerVersionId || !artifact?.objectKey || artifact.bucket !== bucket || !row.archive_sha256)
+      if (!isImmutableObjectVersionId(artifact?.providerVersionId) || !artifact?.objectKey || artifact.bucket !== bucket || !row.archive_sha256)
         throw new Error('ARCHIVE_COMPLETION_RECEIPT_INVALID');
       const stored = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: artifact.objectKey, VersionId: artifact.providerVersionId }));
       if (stored.VersionId !== artifact.providerVersionId) throw new Error('ARCHIVE_OBJECT_VERSION_MISMATCH');
@@ -79,7 +79,7 @@ export async function compileAndPersistPortableArchive(pool: Pool, s3: S3Client,
     const paths = new Set<string>();
     let sourceBytes = 0;
     for (const object of manifest.objects) {
-      if (!object.bucket || !object.object_key || !object.provider_version_id || !/^[a-f0-9]{64}$/.test(object.sha256) ||
+      if (!object.bucket || !object.object_key || !isImmutableObjectVersionId(object.provider_version_id) || !/^[a-f0-9]{64}$/.test(object.sha256) ||
           !/^[a-f0-9-]{36}$/i.test(object.version_id) || object.archive_path !== `evidence/${object.version_id}` || paths.has(object.archive_path))
         throw new Error('ARCHIVE_SOURCE_IDENTITY_INVALID');
       const size = Number(object.size_bytes);
@@ -122,9 +122,11 @@ export async function compileAndPersistPortableArchive(pool: Pool, s3: S3Client,
     for await (const chunk of createReadStream(zipPath)) hash.update(chunk);
     const archiveSha256 = hash.digest('hex');
     const objectKey = `archives/${orgId}/${projectId}/${exportId}/${uuidv7()}.zip`;
+    const versioning = await s3.send(new GetBucketVersioningCommand({ Bucket: bucket }));
+    if (versioning.Status !== 'Enabled') throw new Error('ARCHIVE_VERSIONING_REQUIRED');
     const put = await s3.send(new PutObjectCommand({ Bucket: bucket, Key: objectKey, ContentType: 'application/zip',
       ContentLength: outputBytes, ChecksumSHA256: Buffer.from(archiveSha256, 'hex').toString('base64'), Body: createReadStream(zipPath) }));
-    if (!put.VersionId || put.VersionId === 'null') throw new Error('ARCHIVE_VERSIONING_REQUIRED');
+    if (!isImmutableObjectVersionId(put.VersionId)) throw new Error('ARCHIVE_VERSIONING_REQUIRED');
     const head = await s3.send(new HeadObjectCommand({ Bucket: bucket, Key: objectKey, VersionId: put.VersionId }));
     if (head.ContentLength !== outputBytes || head.VersionId !== put.VersionId) throw new Error('ARCHIVE_OUTPUT_RECEIPT_MISMATCH');
     const readback = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: objectKey, VersionId: put.VersionId }));

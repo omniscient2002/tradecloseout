@@ -8,6 +8,26 @@ import { PDFDocument } from 'pdf-lib';
 
 const execFileAsync = promisify(execFile);
 
+/**
+ * qpdf --show-xref includes compressed entries in object streams.
+ * Counting only "offset =" misses these entries and permits an object bomb.
+ * Unknown occupied entries fail closed rather than being silently omitted.
+ */
+export function countQpdfLiveObjects(output: string): number {
+  let count = 0;
+  for (const line of output.split('\n')) {
+    if (/^\s*\d+\/\d+:\s+(?:uncompressed|compressed)\b/.test(line)) {
+      count += 1;
+    } else if (/^\s*\d+\/\d+:/.test(line) && !/\bfree\b/i.test(line)) {
+      throw new Error('PDF_XREF_UNRECOGNIZED_ENTRY');
+    }
+  }
+  if (count === 0) throw new Error('PDF_XREF_EMPTY');
+  return count;
+}
+
+
+
 export interface FileVerificationResult {
   finalStatus: 'READY' | 'QUARANTINED' | 'FAILED';
   detectedMime: string;
@@ -183,7 +203,7 @@ export async function verifyAndScanUploadedFile(
           timeout: 20_000,
           maxBuffer: 16 * 1024 * 1024,
         });
-        const objectCount = xrefOut.split('\n').filter((line) => line.includes('offset =')).length;
+        const objectCount = countQpdfLiveObjects(xrefOut);
         if (objectCount > 25000) {
           return {
             finalStatus: 'FAILED',

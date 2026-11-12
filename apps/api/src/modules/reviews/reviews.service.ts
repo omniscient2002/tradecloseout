@@ -26,6 +26,17 @@ export function isExpiredOnIndiaDate(expiryDate: string | Date, now = new Date()
   return expiry < `${parts.year}-${parts.month}-${parts.day}`;
 }
 
+/**
+ * The version (not an individual review assignment) owns the terminal
+ * decision. Call only after locking document_versions FOR UPDATE.
+ */
+export function assertReviewVersionNotTerminal(status: unknown): void {
+  if (status === 'APPROVED' || status === 'REJECTED' ||
+      status === 'CHANGES_REQUESTED' || status === 'SUPERSEDED' || status === 'WITHDRAWN') {
+    throw new ConflictException('DOCUMENT_VERSION_ALREADY_DECIDED');
+  }
+}
+
 export interface DecisionDto {
   decision: 'APPROVE' | 'REQUEST_CHANGES' | 'REJECT';
   comment?: string;
@@ -47,6 +58,27 @@ export interface ReviewCommentDto {
 @Injectable()
 export class ReviewsService {
   constructor(private readonly db: TenantDbService) {}
+
+  /**
+   * Invoked only while holding the canonical document_versions FOR UPDATE row.
+   * Cancelling across stage keys models the currently supported single terminal
+   * outcome; advanced multi-stage approvals require a separately reviewed
+   * stage policy and may not silently revive these assignments.
+   */
+  private async cancelPendingSiblingReviews(
+    client: PoolClient, orgId: string, versionId: string, winnerReviewId?: string,
+  ): Promise<void> {
+    await client.query(
+      `UPDATE reviews
+          SET status = 'CANCELLED', row_version = row_version + 1,
+              recorded_at = now(),
+              comment = COALESCE(comment, 'Cancelled following terminal document decision')
+        WHERE org_id = $1 AND document_version_id = $2
+          AND ($3::uuid IS NULL OR id <> $3::uuid)
+          AND status IN ('PENDING', 'IN_REVIEW')`,
+      [orgId, versionId, winnerReviewId ?? null],
+    );
+  }
 
   private async assertVerifiedReviewEvidence(client: PoolClient, orgId: string, version: any): Promise<void> {
     const { rows } = await client.query(
@@ -91,7 +123,7 @@ export class ReviewsService {
                 d.latest_version_id AS document_latest_version_id
            FROM document_versions dv
            JOIN documents d ON d.id = dv.document_id
-          WHERE dv.org_id = $1 AND dv.id = $2`,
+          WHERE dv.org_id = $1 AND dv.id = $2 FOR UPDATE OF dv`,
         [ctx.orgId, dto.documentVersionId],
       );
       if (!verRes.rows.length) {
@@ -100,6 +132,13 @@ export class ReviewsService {
       const version = verRes.rows[0];
       if (version.project_id !== req.project_id || version.document_project_id !== req.project_id) {
         throw new NotFoundException('VERSION_NOT_IN_REQUIREMENT_PROJECT');
+      }
+      // Submission cannot resurrect a previously terminal version or create
+      // another actionable assignment after a decision. The version is locked
+      // before mutating review/requirement state.
+      assertReviewVersionNotTerminal(version.review_status);
+      if (version.review_status !== 'NOT_SUBMITTED') {
+        throw new ConflictException('DOCUMENT_VERSION_ALREADY_SUBMITTED');
       }
       if (version.file_status !== 'READY') {
         throw new ConflictException('FILE_NOT_READY_FOR_REVIEW');
@@ -414,7 +453,7 @@ export class ReviewsService {
            AND dv.id = d.current_approved_version_id AND dv.deleted_at IS NULL AND dv.superseded_at IS NULL
            AND dv.review_status = 'APPROVED' AND dv.file_status = 'READY'
            AND (dv.expiry_date IS NULL OR dv.expiry_date >= (now() AT TIME ZONE 'Asia/Kolkata')::date)
-           AND so.status = 'READY' AND so.sha256 IS NOT NULL AND so.provider_version_id IS NOT NULL
+           AND so.status = 'READY' AND so.sha256 IS NOT NULL AND so.provider_version_id IS NOT NULL AND btrim(so.provider_version_id) <> '' AND lower(btrim(so.provider_version_id)) <> 'null'
            AND so.observed_size_bytes IS NOT NULL AND so.observed_size_bytes = so.size_bytes
            AND (d.doc_type_key = $3 OR d.category_key = $3 OR d.metadata_json->>'doc_type_key' = $3)
            AND $4::uuid IS NOT NULL
@@ -565,33 +604,53 @@ export class ReviewsService {
     }
 
     const run = async (client: PoolClient) => {
-      // 1. Fetch review record
+      // Read the intended assignment without a row lock solely to discover its
+      // shared version. This must not become authorization or decision state:
+      // all fields are rechecked after taking the canonical version lock.
+      const preliminaryRes = await client.query(
+        `SELECT * FROM reviews WHERE org_id = $1 AND id = $2`,
+        [ctx.orgId, reviewId],
+      );
+      if (!preliminaryRes.rows.length) throw new NotFoundException('REVIEW_NOT_FOUND');
+      const preliminary = preliminaryRes.rows[0];
+      if (ctx.actorType === 'GUEST' || ctx.guestGrantId || preliminary.reviewer_subject_type !== 'USER' ||
+          preliminary.reviewer_subject_id !== ctx.userId ||
+          (preliminary.reviewer_user_id && preliminary.reviewer_user_id !== ctx.userId)) {
+        throw new ForbiddenException('REVIEW_ASSIGNMENT_REQUIRED');
+      }
+
+      // Every decision pathway must acquire the same document-version lock
+      // FIRST, before locking any individual assignment. Otherwise cancelling
+      // sibling reviews deadlocks with another reviewer holding their own row.
+      const verRes = await client.query(
+        `SELECT * FROM document_versions WHERE org_id = $1 AND id = $2 FOR UPDATE`,
+        [ctx.orgId, preliminary.document_version_id],
+      );
+      if (!verRes.rows.length) throw new NotFoundException('DOCUMENT_VERSION_NOT_FOUND');
+      const version = verRes.rows[0];
       const reviewRes = await client.query(
         `SELECT * FROM reviews WHERE org_id = $1 AND id = $2 FOR UPDATE`,
         [ctx.orgId, reviewId],
       );
-      if (!reviewRes.rows.length) {
-        throw new NotFoundException('REVIEW_NOT_FOUND');
-      }
+      if (!reviewRes.rows.length) throw new NotFoundException('REVIEW_NOT_FOUND');
       const review = reviewRes.rows[0];
+      if (review.document_version_id !== version.id) {
+        throw new ConflictException('REVIEW_VERSION_CHANGED');
+      }
       if (review.status !== 'IN_REVIEW' && review.status !== 'PENDING') {
         throw new ConflictException(`INVALID_STATE_TRANSITION: Review is already in status ${review.status}`);
       }
-      if (ctx.actorType === 'GUEST' || review.reviewer_subject_type !== 'USER' ||
+      if (ctx.guestGrantId || review.reviewer_subject_type !== 'USER' ||
           review.reviewer_subject_id !== ctx.userId ||
           (review.reviewer_user_id && review.reviewer_user_id !== ctx.userId)) {
         throw new ForbiddenException('REVIEW_ASSIGNMENT_REQUIRED');
       }
-
-      // 2. Lock document_version FOR UPDATE via document_version_id (CB-005, AUD-007)
-      const verRes = await client.query(
-        `SELECT * FROM document_versions WHERE org_id = $1 AND id = $2 FOR UPDATE`,
-        [ctx.orgId, review.document_version_id],
-      );
-      if (!verRes.rows.length) {
-        throw new NotFoundException('DOCUMENT_VERSION_NOT_FOUND');
+      // All sibling reviewers must serialize on this same row. The first
+      // committed terminal result wins even if another review remains queued.
+      assertReviewVersionNotTerminal(version.review_status);
+      if (version.review_status !== 'IN_REVIEW') {
+        throw new ConflictException('DOCUMENT_VERSION_NOT_IN_REVIEW');
       }
-      const version = verRes.rows[0];
 
       // Optimistic concurrency check (10 §1 If-Match, NP10)
       if (dto.expectedRowVersion !== undefined && version.row_version !== dto.expectedRowVersion) {
@@ -618,7 +677,11 @@ export class ReviewsService {
         `SELECT * FROM documents WHERE org_id = $1 AND id = $2 FOR UPDATE`,
         [ctx.orgId, version.document_id],
       );
+      if (!docRes.rows.length) throw new NotFoundException('DOCUMENT_NOT_FOUND');
       const doc = docRes.rows[0];
+      if (doc.current_approved_version_id === version.id) {
+        throw new ConflictException('DOCUMENT_VERSION_ALREADY_APPROVED_POINTER');
+      }
 
       // 4. Verify version is latest
       if (doc.latest_version_id && doc.latest_version_id !== version.id) {
@@ -761,7 +824,24 @@ export class ReviewsService {
             false,
           ],
         );
+        // Do not leave these linked obligations showing IN_REVIEW after a
+        // terminal rejection/change request. Preserve existing APPROVED
+        // obligations which may have been qualified by other evidence.
+        await client.query(
+          `UPDATE requirements
+              SET status = $1, row_version = row_version + 1, updated_at = now()
+            WHERE org_id = $2 AND project_id = $3
+              AND id IN (SELECT requirement_id FROM document_requirements
+                           WHERE org_id = $2 AND project_id = $3 AND document_id = $4)
+              AND status IN ('IN_REVIEW', 'UNDER_REVIEW', 'UPLOADED', 'REQUESTED')`,
+          [nextStatus, ctx.orgId, version.project_id, doc.id],
+        );
       }
+
+      // The winning terminal outcome settles every other in-flight assignment
+      // for this exact version, across all stage keys. A different reviewer
+      // cannot later action an orphaned sibling even if they never refresh UI.
+      await this.cancelPendingSiblingReviews(client, ctx.orgId, version.id, review.id);
 
       // Record cryptographic audit event for review decision
       const auditEventId = uuidv7();
@@ -826,7 +906,7 @@ export class ReviewsService {
            JOIN storage_objects so ON so.org_id = dv.org_id AND so.id = dv.object_id
           WHERE dv.org_id = $1 AND dv.project_id = $2 AND dv.file_status = 'READY'
             AND dv.deleted_at IS NULL AND d.deleted_at IS NULL
-            AND so.status = 'READY' AND so.sha256 IS NOT NULL AND so.provider_version_id IS NOT NULL
+            AND so.status = 'READY' AND so.sha256 IS NOT NULL AND so.provider_version_id IS NOT NULL AND btrim(so.provider_version_id) <> '' AND lower(btrim(so.provider_version_id)) <> 'null'
             AND so.observed_size_bytes IS NOT NULL AND so.observed_size_bytes = so.size_bytes
           ORDER BY d.title, dv.version_no DESC, dv.id LIMIT 100`,
         [ctx.orgId, projectId],
@@ -872,6 +952,13 @@ export class ReviewsService {
         throw new NotFoundException('VERSION_NOT_FOUND');
       }
       const version = verRes.rows[0];
+      assertReviewVersionNotTerminal(version.review_status);
+      // An external response records a decision against a submitted review;
+      // it must not manufacture acceptance from an unsubmitted or withdrawn
+      // document version, even with otherwise valid supporting proof.
+      if (version.review_status !== 'IN_REVIEW') {
+        throw new ConflictException('DOCUMENT_VERSION_NOT_IN_REVIEW');
+      }
       if (version.row_version !== expectedRowVersion) {
         throw new HttpException({ code: 'VERSION_CHANGED', detail: 'Refresh the document version before recording a response.' }, 412);
       }
@@ -895,6 +982,9 @@ export class ReviewsService {
       );
       if (!documentRes.rows.length) throw new NotFoundException('DOCUMENT_NOT_FOUND');
       const doc = documentRes.rows[0];
+      if (doc.current_approved_version_id === version.id) {
+        throw new ConflictException('DOCUMENT_VERSION_ALREADY_APPROVED_POINTER');
+      }
       if (doc.latest_version_id && doc.latest_version_id !== version.id) {
         throw new ConflictException('EXTERNAL_APPROVAL_VERSION_NOT_LATEST');
       }
@@ -912,7 +1002,7 @@ export class ReviewsService {
             AND (($3::uuid IS NOT NULL AND proof.id = $3) OR ($4::uuid IS NOT NULL AND so.id = $4))
             AND so.status = 'READY' AND proof.file_status = 'READY' AND proof.deleted_at IS NULL
             AND proof_document.deleted_at IS NULL
-            AND so.sha256 IS NOT NULL AND so.provider_version_id IS NOT NULL
+            AND so.sha256 IS NOT NULL AND so.provider_version_id IS NOT NULL AND btrim(so.provider_version_id) <> '' AND lower(btrim(so.provider_version_id)) <> 'null'
             AND so.observed_size_bytes IS NOT NULL AND so.observed_size_bytes = so.size_bytes
           LIMIT 2`,
         [ctx.orgId, version.project_id, dto.proofVersionId || null, dto.evidenceObjectId || null],
@@ -984,6 +1074,20 @@ export class ReviewsService {
         [version.id, ctx.orgId, doc.id],
       );
 
+      // The accepted external response is a terminal decision too: align
+      // linked requirement state and preserve one atomic, audit-linked result.
+      await client.query(
+        `UPDATE requirements
+            SET status = 'APPROVED', row_version = row_version + 1, updated_at = now()
+          WHERE org_id = $1 AND project_id = $2 AND superseded_at IS NULL
+            AND id IN (SELECT requirement_id FROM document_requirements
+                         WHERE org_id = $1 AND project_id = $2 AND document_id = $3)`,
+        [ctx.orgId, version.project_id, version.document_id],
+      );
+      // Recording a terminal external response must also cancel actionable
+      // in-app assignments against this version, under the same version lock.
+      await this.cancelPendingSiblingReviews(client, ctx.orgId, version.id);
+
       // Insert reviews record strictly matching SQL schema (CB-005) with dual event time (Top 25 Item 4)
       const reviewId = uuidv7();
       await client.query(
@@ -1018,6 +1122,27 @@ export class ReviewsService {
           dto.occurredAtPrecision || 'INSTANT',
           dto.backdatingReason || null,
           proofRes.rows[0].proof_version_id,
+        ],
+      );
+
+      // The completed external proof is not an override of prior decisions.
+      // Its audit event and sibling cancellation commit with the pointer.
+      await client.query(
+        `INSERT INTO audit_events
+           (id, org_id, project_id, actor_type, actor_user_id, action,
+            entity_type, entity_id, before_json, after_json, request_id, created_at)
+         VALUES ($1,$2,$3,$4,$5,'REVIEW_APPROVED_EXTERNAL',
+                 'DOCUMENT_VERSION',$6,$7::jsonb,$8::jsonb,$9,now())`,
+        [
+          uuidv7(), ctx.orgId, version.project_id, ctx.actorType, ctx.userId,
+          version.id,
+          JSON.stringify({ reviewStatus: version.review_status }),
+          JSON.stringify({
+            reviewStatus: 'APPROVED', reviewId,
+            externalPartyId: dto.externalPartyId,
+            proofVersionId: proofRes.rows[0].proof_version_id,
+          }),
+          ctx.requestId,
         ],
       );
 

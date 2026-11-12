@@ -12,6 +12,7 @@ export async function storageServer() {
   let rejectUploads = false;
   let rejectDownloads = false;
   let wrongVersion = false;
+  let versioningStatus: 'Enabled' | 'Suspended' = 'Enabled';
 
   const server = createServer(async (req, res) => {
     try {
@@ -19,6 +20,14 @@ export async function storageServer() {
       const key = decodeURIComponent(url.pathname).replace(/^\/[^/]+\//, '');
       const version = url.searchParams.get('versionId');
       requests.push({ method: req.method!, key, version });
+      if (req.method === 'GET' && url.searchParams.has('versioning')) {
+        res.writeHead(200, { 'content-type': 'application/xml' });
+        res.end(`<?xml version="1.0" encoding="UTF-8"?>
+<VersioningConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Status>${versioningStatus}</Status>
+</VersioningConfiguration>`);
+        return;
+      }
 
       if (req.method === 'PUT') {
         if (rejectUploads) {
@@ -112,6 +121,9 @@ export async function storageServer() {
     },
     wrongVersion: (wrong: boolean) => {
       wrongVersion = wrong;
+    },
+    versioningStatus: (status: 'Enabled' | 'Suspended') => {
+      versioningStatus = status;
     },
     close: async () => {
       s3.destroy();

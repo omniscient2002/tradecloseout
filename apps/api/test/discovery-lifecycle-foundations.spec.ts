@@ -48,6 +48,7 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
 
       const mockClient = {
         query: jest.fn().mockImplementation(async (sql: string, params?: any[]) => {
+          if (sql.includes('FROM memberships')) return { rows: [{ role: 'R-OWNER' }] };
           executedQueries.push({ sql, params: params || [] });
 
           if (sql.includes('SELECT * FROM assets WHERE')) {
@@ -151,6 +152,7 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
 
       const mockClient = {
         query: jest.fn().mockImplementation(async (sql: string, params?: any[]) => {
+          if (sql.includes('FROM memberships')) return { rows: [{ role: 'R-OWNER' }] };
           executedQueries.push({ sql, params: params || [] });
 
           if (sql.includes('SELECT * FROM assets WHERE')) {
@@ -196,11 +198,12 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
 
       const assetsService = new AssetsService(mockPool);
 
-      const result = await assetsService.updateAsset(mockTenantActorCtx, projectId, assetId, {
+      // Status transitions must use the dedicated audited lifecycle command;
+      // a generic identity PATCH must not mutate the state machine.
+      await expect(assetsService.updateAsset(mockTenantActorCtx, projectId, assetId, {
         status: 'MAINTENANCE',
-      });
-
-      expect(result.identityRevision).toBeNull();
+      })).rejects.toThrow(UnprocessableEntityException);
+      expect(executedQueries.some((q) => q.sql.includes('UPDATE assets'))).toBe(false);
       const identityRevInsert = executedQueries.find((q) =>
         q.sql.includes('INSERT INTO asset_identity_revisions'),
       );
@@ -647,6 +650,7 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
     it('ranks candidate equipment from filename tokens without auto-linking', async () => {
       const mockClient = {
         query: jest.fn().mockImplementation(async (sql: string) => {
+          if (sql.includes('FROM memberships')) return { rows: [{ role: 'R-OWNER' }] };
           if (sql.includes('FROM assets') && sql.includes('SELECT id, tag, name')) {
             return {
               rows: [
@@ -757,6 +761,7 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
   // ==========================================================================
   describe('PO & Vendor-Document Obligation Schedule', () => {
     it('creates procurement order with lines and stage-based vendor obligations', async () => {
+      const supplierPartyId = uuidv7();
       let poInsertParams: any[] = [];
       let lineInsertCount = 0;
       let obligationInsertCount = 0;
@@ -765,6 +770,12 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
         withTenantContext: jest.fn().mockImplementation(async (ctx, fn) => {
           const client = {
             query: jest.fn().mockImplementation(async (sql: string, params?: any[]) => {
+              if (sql.includes('SELECT status FROM projects')) {
+                return { rows: [{ status: 'ACTIVE' }] };
+              }
+              if (sql.includes('SELECT id FROM parties')) {
+                return { rows: [{ id: supplierPartyId }] };
+              }
               if (sql.includes('INSERT INTO procurement_orders')) {
                 poInsertParams = params || [];
                 return { rows: [] };
@@ -788,7 +799,7 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
 
       const res = await partiesService.createProcurementOrder(mockCtx, projectId, {
         poNumber: 'PO-MEP-2026-088',
-        supplierPartyId: 'party-daikin-001',
+        supplierPartyId,
         orderedAt: '2026-10-01',
         promisedDeliveryAt: '2026-11-15',
         totalAmountPaise: 450000000,

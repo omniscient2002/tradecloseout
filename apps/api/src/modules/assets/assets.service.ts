@@ -12,7 +12,8 @@ import { createHash } from 'node:crypto';
 import { Pool, PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { withTenantTransaction, TenantActorContext, DomainOutboxEvent } from '@tradecloseout/db';
-import { AssetTagSchema } from '@tradecloseout/shared';
+import { AssetTagSchema, hasPermission } from '@tradecloseout/shared';
+import { assertAssetInScope, assetScopeSqlPredicate, validateAssetProjectScope, AssetScopeTarget } from './asset-scope';
 import { ResolvedRequirementSpec } from '../checklists/checklists.service';
 
 export interface CreateAssetInput {
@@ -36,15 +37,110 @@ export class AssetsService {
   constructor(private readonly pool: Pool) {}
 
   /**
+   * PH3-G08-002: a route guard's earlier project membership is not sufficient
+   * for resource authorization. Lock the currently ACTIVE membership and scope
+   * in the same transaction as a read/mutation; do not trust a client-side
+   * or stale session snapshot. Owners/admins are checked against the current
+   * organisation membership, not the stale HTTP role.
+   */
+  private async getCurrentAssetScope(
+    client: PoolClient, ctx: TenantActorContext, projectId: string,
+    write = false,
+  ): Promise<Record<string, unknown>> {
+    if (ctx.actorType === 'SYSTEM') return {};
+    if (ctx.actorType === 'GUEST' || ctx.guestGrantId) {
+      throw new NotFoundException('PROJECT_NOT_FOUND');
+    }
+    const membership = await client.query(
+      `SELECT role FROM memberships
+        WHERE org_id = $1 AND user_id = $2 AND status = 'ACTIVE' FOR SHARE`,
+      [ctx.orgId, ctx.userId],
+    );
+    if (!membership.rows.length) throw new NotFoundException('PROJECT_NOT_FOUND');
+    if (membership.rows[0].role === 'R-OWNER' || membership.rows[0].role === 'R-ADMIN') return {};
+    const { rows } = await client.query(
+      `SELECT role, scope_json FROM project_members
+        WHERE org_id = $1 AND project_id = $2 AND user_id = $3
+          AND status = 'ACTIVE' FOR SHARE`,
+      [ctx.orgId, projectId, ctx.userId],
+    );
+    if (!rows.length) throw new NotFoundException('PROJECT_NOT_FOUND');
+    // HTTP permissions were evaluated before the transaction. Re-evaluate the
+    // live org AND project roles under share locks: role revocation/demotion
+    // must not leave an in-flight request with a stale asset.manage grant.
+    const permission = write ? 'asset.manage' : 'asset.read';
+    if (!hasPermission({
+      orgRole: membership.rows[0].role,
+      projectRole: rows[0].role,
+    }, permission).allowed) {
+      throw new ForbiddenException('ASSET_PERMISSION_REVOKED');
+    }
+    return validateAssetProjectScope(rows[0].scope_json);
+  }
+
+  private async assertCurrentAssetAccess(
+    client: PoolClient, ctx: TenantActorContext, projectId: string,
+    assetId: string, write: boolean,
+  ): Promise<AssetScopeTarget> {
+    const scope = await this.getCurrentAssetScope(client, ctx, projectId, write);
+    const { rows } = await client.query(
+      `SELECT id, category_key, created_at FROM assets
+        WHERE org_id = $1 AND project_id = $2 AND id = $3
+          AND deleted_at IS NULL ${write ? 'FOR UPDATE' : 'FOR SHARE'}`,
+      [ctx.orgId, projectId, assetId],
+    );
+    if (!rows.length) throw new NotFoundException('ASSET_NOT_FOUND');
+    const asset: AssetScopeTarget = {
+      id: rows[0].id, categoryKey: rows[0].category_key, createdAt: rows[0].created_at,
+    };
+    assertAssetInScope(scope, asset, write);
+    return asset;
+  }
+
+  /**
+   * A visible predecessor can point at a replacement that became hidden
+   * after a scope narrowing. Preserve truthful lineage without disclosing
+   * the protected successor ID to the caller.
+   */
+  private async redactHiddenSuccessor(
+    client: PoolClient, ctx: TenantActorContext, projectId: string,
+    asset: any,
+  ) {
+    if (!asset.replaced_by_asset_id) return asset;
+    try {
+      await this.assertCurrentAssetAccess(client, ctx, projectId, asset.replaced_by_asset_id, false);
+      return asset;
+    } catch (err) {
+      if (!(err instanceof NotFoundException)) throw err;
+      return { ...asset, replaced_by_asset_id: null, replacementRestricted: true };
+    }
+  }
+
+  /**
    * API-071: POST /api/v1/projects/:id/assets
    * Registers an equipment unit and automatically instantiates asset-scoped requirements
    * from the active project checklist snapshot (WF-07, AUD-002).
    */
-  async createAsset(
-    ctx: TenantActorContext,
-    projectId: string,
-    input: CreateAssetInput,
+  async createAsset(ctx: TenantActorContext, projectId: string, input: CreateAssetInput) {
+    return withTenantTransaction(this.pool, ctx, (client, emit) =>
+      this.createAssetInTransaction(client, ctx, projectId, input, emit));
+  }
+
+  /**
+   * Shared insert command for single-asset and atomic batch imports.
+   * Do not open a nested pool transaction: import rollback must also roll
+   * back the asset, its instantiated requirements, and staged audit/outbox.
+   */
+  private async createAssetInTransaction(
+    client: PoolClient, ctx: TenantActorContext, projectId: string,
+    input: CreateAssetInput, emit: (event: DomainOutboxEvent) => void,
   ) {
+    if (!input || typeof input.name !== 'string' ||
+        input.name.trim().length < 1 || input.name.trim().length > 200 ||
+        typeof input.categoryKey !== 'string' ||
+        !/^[A-Za-z0-9_.:-]{1,80}$/.test(input.categoryKey)) {
+      throw new UnprocessableEntityException('INVALID_ASSET_IDENTITY');
+    }
     const tagParse = AssetTagSchema.safeParse(input.tag);
     if (!tagParse.success) {
       throw new UnprocessableEntityException({
@@ -52,8 +148,18 @@ export class AssetsService {
         detail: tagParse.error.issues[0]?.message ?? 'Invalid asset tag.',
       });
     }
+    const project = await client.query(
+      `SELECT status FROM projects
+        WHERE org_id = $1 AND id = $2 AND purged_at IS NULL FOR UPDATE`,
+      [ctx.orgId, projectId],
+    );
+    if (!project.rows.length) throw new NotFoundException('PROJECT_NOT_FOUND');
+    if (['CLOSED', 'ARCHIVED', 'CANCELLED'].includes(project.rows[0].status)) {
+      throw new ConflictException('PROJECT_NOT_EDITABLE');
+    }
 
-    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      const scope = await this.getCurrentAssetScope(client, ctx, projectId, true);
+      assertAssetInScope(scope, null, true, input.categoryKey);
       const normalizedTag = tagParse.data;
 
       // Check case-insensitive tag uniqueness per project (FR-AST-004)
@@ -102,15 +208,21 @@ export class AssetsService {
 
       // If this asset replaces an older unit, link replacement lineage (FR-AST-006 / FR-AST-011)
       if (input.replacesAssetId) {
-        await client.query(
+        await this.assertCurrentAssetAccess(client, ctx, projectId, input.replacesAssetId, true);
+        const prior = await client.query(
           `UPDATE assets
               SET status = 'REPLACED',
                   replaced_by_asset_id = $4,
                   row_version = row_version + 1,
                   updated_at = now()
-            WHERE org_id = $1 AND project_id = $2 AND id = $3`,
+            WHERE org_id = $1 AND project_id = $2 AND id = $3
+              AND status = 'ACTIVE' AND replaced_by_asset_id IS NULL AND deleted_at IS NULL
+            RETURNING id`,
           [ctx.orgId, projectId, input.replacesAssetId, assetId],
         );
+        if (prior.rows.length !== 1) {
+          throw new ConflictException('REPLACED_ASSET_NOT_ACTIVE');
+        }
       }
 
       // Instantiate asset-scoped requirements from active snapshot (AUD-002 / FR-AST-005)
@@ -140,7 +252,6 @@ export class AssetsService {
         tag: normalizedTag,
         instantiatedRequirements: instantiatedCount,
       };
-    });
   }
 
   /**
@@ -149,6 +260,7 @@ export class AssetsService {
    */
   async deleteOrRetireAsset(ctx: TenantActorContext, projectId: string, assetId: string) {
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      await this.assertCurrentAssetAccess(client, ctx, projectId, assetId, true);
       const { rows: approvedDocs } = await client.query(
         `SELECT da.document_id
            FROM document_assets da
@@ -169,12 +281,15 @@ export class AssetsService {
         });
       }
 
-      await client.query(
+      const retired = await client.query(
         `UPDATE assets
             SET status = 'RETIRED', deleted_at = now(), row_version = row_version + 1
-          WHERE org_id = $1 AND project_id = $2 AND id = $3`,
+          WHERE org_id = $1 AND project_id = $2 AND id = $3
+            AND deleted_at IS NULL AND status NOT IN ('RETIRED', 'REPLACED')
+          RETURNING id`,
         [ctx.orgId, projectId, assetId],
       );
+      if (retired.rows.length !== 1) throw new ConflictException('ASSET_NOT_ACTIVE');
 
       emit({
         eventType: 'ASSET_DELETED',
@@ -199,13 +314,33 @@ export class AssetsService {
    */
   async listAssets(ctx: TenantActorContext, projectId: string) {
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+      const scope = await this.getCurrentAssetScope(client, ctx, projectId);
+      const filtered = assetScopeSqlPredicate(scope, 3);
       const res = await client.query(
         `SELECT * FROM assets
          WHERE org_id = $1 AND project_id = $2 AND deleted_at IS NULL
+           ${filtered.sql}
          ORDER BY tag ASC`,
-        [ctx.orgId, projectId],
+        [ctx.orgId, projectId, ...filtered.values],
       );
-      return res.rows;
+      const visible = res.rows.filter((asset: any) => {
+        try {
+          assertAssetInScope(scope, {
+            id: asset.id, categoryKey: asset.category_key, createdAt: asset.created_at,
+          }, false);
+          return true;
+        } catch (err) {
+          if (err instanceof NotFoundException) return false;
+          throw err;
+        }
+      });
+      // Avoid an N+1 lookup: this full list already contains every accessible
+      // nondeleted successor in the project.
+      const visibleIds = new Set(visible.map((asset: any) => asset.id));
+      return visible.map((asset: any) =>
+        asset.replaced_by_asset_id && !visibleIds.has(asset.replaced_by_asset_id)
+          ? { ...asset, replaced_by_asset_id: null, replacementRestricted: true }
+          : asset);
     });
   }
 
@@ -220,7 +355,8 @@ export class AssetsService {
         [ctx.orgId, projectId, assetId],
       );
       if (!res.rows.length) throw new NotFoundException('ASSET_NOT_FOUND');
-      return res.rows[0];
+      await this.assertCurrentAssetAccess(client, ctx, projectId, assetId, false);
+      return this.redactHiddenSuccessor(client, ctx, projectId, res.rows[0]);
     });
   }
 
@@ -246,7 +382,16 @@ export class AssetsService {
       reason?: string;
     },
   ) {
+    const tagUpdate = dto.tag === undefined ? undefined : AssetTagSchema.safeParse(dto.tag);
+    if (tagUpdate && !tagUpdate.success) {
+      throw new UnprocessableEntityException({
+        code: 'INVALID_ASSET_TAG',
+        detail: tagUpdate.error.issues[0]?.message ?? 'Invalid asset tag.',
+      });
+    }
+    const normalizedUpdateTag = tagUpdate?.data;
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      const currentScope = await this.getCurrentAssetScope(client, ctx, projectId, true);
       // 1. Fetch current asset
       const curRes = await client.query(
         `SELECT * FROM assets WHERE org_id = $1 AND project_id = $2 AND id = $3 AND deleted_at IS NULL FOR UPDATE`,
@@ -254,21 +399,36 @@ export class AssetsService {
       );
       if (!curRes.rows.length) throw new NotFoundException('ASSET_NOT_FOUND');
       const current = curRes.rows[0];
+      assertAssetInScope(currentScope, {
+        id: current.id, categoryKey: current.category_key, createdAt: current.created_at,
+      }, true);
 
       // 2. Detect identity attribute modifications
-      const tagChanged = dto.tag !== undefined && dto.tag.trim().toUpperCase() !== current.tag;
+      const tagChanged = normalizedUpdateTag !== undefined && normalizedUpdateTag !== current.tag;
       const nameChanged = dto.name !== undefined && dto.name.trim() !== current.name;
       const makeChanged = dto.make !== undefined && dto.make.trim() !== (current.make || '');
       const modelChanged = dto.model !== undefined && dto.model.trim() !== (current.model || '');
       const serialChanged = dto.serialNo !== undefined && dto.serialNo.trim() !== (current.serial_no || '');
       const locationChanged = dto.location !== undefined && dto.location.trim() !== (current.location || '');
 
+      if (dto.status !== undefined) {
+        throw new UnprocessableEntityException('ASSET_STATUS_REQUIRES_DEDICATED_TRANSITION');
+      }
+      if (tagChanged) {
+        const { rows: collision } = await client.query(
+          `SELECT id FROM assets WHERE org_id = $1 AND project_id = $2
+            AND upper(tag) = upper($3) AND id <> $4 AND deleted_at IS NULL LIMIT 1`,
+          [ctx.orgId, projectId, normalizedUpdateTag, assetId],
+        );
+        if (collision.length) throw new ConflictException('DUPLICATE_ASSET_TAG');
+      }
+
       const identityChanged = tagChanged || nameChanged || makeChanged || modelChanged || serialChanged || locationChanged;
 
       let identityRevisionMeta: any = null;
 
       if (identityChanged) {
-        const newTag = dto.tag ? dto.tag.trim().toUpperCase() : current.tag;
+        const newTag = normalizedUpdateTag ?? current.tag;
         const newName = dto.name ? dto.name.trim() : current.name;
         const newMake = dto.make !== undefined ? dto.make.trim() : current.make;
         const newModel = dto.model !== undefined ? dto.model.trim() : current.model;
@@ -413,7 +573,7 @@ export class AssetsService {
           WHERE org_id = $8 AND project_id = $9 AND id = $10 AND deleted_at IS NULL
           RETURNING *`,
         [
-          dto.tag ? dto.tag.trim().toUpperCase() : null,
+          normalizedUpdateTag ?? null,
           dto.name?.trim() || null,
           dto.make !== undefined ? dto.make.trim() : null,
           dto.model !== undefined ? dto.model.trim() : null,
@@ -427,7 +587,7 @@ export class AssetsService {
       );
 
       return {
-        ...res.rows[0],
+        ...await this.redactHiddenSuccessor(client, ctx, projectId, res.rows[0]),
         identityRevision: identityRevisionMeta,
       };
     });
@@ -439,6 +599,7 @@ export class AssetsService {
    */
   async getAssetIdentityHistory(ctx: TenantActorContext, projectId: string, assetId: string) {
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+      await this.assertCurrentAssetAccess(client, ctx, projectId, assetId, false);
       const revsRes = await client.query(
         `SELECT air.*, u.name as created_by_name
          FROM asset_identity_revisions air
@@ -479,6 +640,7 @@ export class AssetsService {
     dto: { status: 'CONFIRMED' | 'MISMATCH' | 'EXEMPT'; notes?: string; expectedRowVersion?: number },
   ) {
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit) => {
+      await this.assertCurrentAssetAccess(client, ctx, projectId, assetId, true);
       // 1. Fetch current revalidation and ensure qualified verifier cannot self-approve (F01, V04)
       const current = await client.query(
         `SELECT er.*, dv.uploaded_by AS uploader_user_id
@@ -569,13 +731,38 @@ export class AssetsService {
     options: { conflictStrategy?: 'SKIP' | 'FAIL' | 'UPDATE'; atomic?: boolean } = {},
   ) {
     const conflictStrategy = options.conflictStrategy || 'SKIP';
+    if (!Array.isArray(items) || items.length < 1 || items.length > 500) {
+      throw new UnprocessableEntityException('IMPORT_ROW_COUNT_INVALID');
+    }
+    if (options.atomic !== undefined && typeof options.atomic !== 'boolean') {
+      throw new UnprocessableEntityException('IMPORT_ATOMIC_FLAG_INVALID');
+    }
+    if (conflictStrategy === 'UPDATE') {
+      throw new UnprocessableEntityException('IMPORT_UPDATE_NOT_SUPPORTED');
+    }
+    if (conflictStrategy !== 'FAIL' && conflictStrategy !== 'SKIP') {
+      throw new UnprocessableEntityException('IMPORT_CONFLICT_STRATEGY_INVALID');
+    }
     const isAtomic = options.atomic !== false;
 
-    // 1. Fetch existing tags in project to detect collisions
+    // 1. Validate live write access before even previewing existing tags.
+    // A dry-run must not reveal the identities of out-of-scope equipment.
     const existingTags = await withTenantTransaction(this.pool, ctx, async (client) => {
+      const scope = await this.getCurrentAssetScope(client, ctx, projectId, true);
+      if (scope.assetIds !== undefined) {
+        // Creating any new asset cannot satisfy an existing-ID allowlist.
+        throw new NotFoundException('ASSET_NOT_FOUND');
+      }
+      for (const item of items) {
+        if (typeof item?.categoryKey === 'string') {
+          assertAssetInScope(scope, null, true, item.categoryKey);
+        }
+      }
+      const filtered = assetScopeSqlPredicate(scope, 3);
       const { rows } = await client.query(
-        `SELECT upper(tag) AS tag FROM assets WHERE org_id = $1 AND project_id = $2 AND deleted_at IS NULL`,
-        [ctx.orgId, projectId],
+        `SELECT upper(tag) AS tag FROM assets WHERE org_id = $1 AND project_id = $2 AND deleted_at IS NULL
+           ${filtered.sql}`,
+        [ctx.orgId, projectId, ...filtered.values],
       );
       return new Set(rows.map((r) => r.tag));
     });
@@ -594,17 +781,33 @@ export class AssetsService {
       const item = items[i];
       const rowNumber = i + 1;
 
-      if (!item.tag || !item.name || !item.categoryKey) {
+      if (!item || typeof item !== 'object' ||
+          typeof item.tag !== 'string' ||
+          typeof item.name !== 'string' || !item.name.trim() ||
+          item.name.trim().length > 200 ||
+          typeof item.categoryKey !== 'string' ||
+          !/^[A-Za-z0-9_.:-]{1,80}$/.test(item.categoryKey)) {
         results.push({
           rowNumber,
-          tag: item.tag || 'UNKNOWN',
+          tag: typeof item?.tag === 'string' ? item.tag : 'UNKNOWN',
           status: 'ERROR',
           error: 'Missing required fields tag, name, or categoryKey',
         });
         continue;
       }
 
-      const normalizedTag = item.tag.trim().toUpperCase();
+      const tagValidation = AssetTagSchema.safeParse(item.tag);
+      if (!tagValidation.success) {
+        results.push({
+          rowNumber,
+          tag: typeof item.tag === 'string' ? item.tag : 'UNKNOWN',
+          status: 'ERROR',
+          conflictType: 'INVALID_TAG_FORMAT',
+          error: tagValidation.error.issues[0]?.message ?? 'Invalid asset tag.',
+        });
+        continue;
+      }
+      const normalizedTag = tagValidation.data;
 
       if (seenInFile.has(normalizedTag)) {
         results.push({
@@ -646,6 +849,14 @@ export class AssetsService {
       };
     }
 
+    if (isAtomic && hasErrors) {
+      throw new ConflictException({
+        code: 'ATOMIC_IMPORT_HAS_INVALID_ROWS',
+        detail: 'Atomic import cannot commit any rows when preview contains validation errors.',
+        results,
+      });
+    }
+
     if (conflictStrategy === 'FAIL' && (hasErrors || hasConflicts)) {
       throw new ConflictException({
         code: 'IMPORT_PREVALIDATION_FAILED',
@@ -678,7 +889,7 @@ export class AssetsService {
             }
           }
 
-          const asset = await this.createAsset(ctx, projectId, item);
+          const asset = await this.createAssetInTransaction(client, ctx, projectId, item, emit);
           created.push(asset);
         }
 
@@ -839,7 +1050,8 @@ export class AssetsService {
       if (!assetRes.rows.length) {
         throw new NotFoundException({ code: 'ASSET_NOT_FOUND', detail: 'Equipment not found.' });
       }
-      const asset = assetRes.rows[0];
+      await this.assertCurrentAssetAccess(client, ctx, projectId, assetId, false);
+      const asset = await this.redactHiddenSuccessor(client, ctx, projectId, assetRes.rows[0]);
 
       // 1. Linked Documents & Versions
       const { rows: docs } = await client.query(
@@ -886,7 +1098,7 @@ export class AssetsService {
                      ON so.org_id = dv.org_id AND so.id = dv.object_id
                     AND so.status = 'READY' AND so.sha256 IS NOT NULL
                     AND so.observed_size_bytes = so.size_bytes
-                    AND so.provider_version_id IS NOT NULL
+                    AND so.provider_version_id IS NOT NULL AND btrim(so.provider_version_id) <> '' AND lower(btrim(so.provider_version_id)) <> 'null'
                   WHERE dr.org_id = r.org_id AND dr.project_id = r.project_id
                     AND dr.requirement_id = r.id
                     AND NOT EXISTS (
@@ -907,11 +1119,21 @@ export class AssetsService {
                     ))
                ) AS has_valid_waiver
            ) qualification ON true
-          WHERE r.org_id = $1 AND r.project_id = $2 AND (r.asset_id = $3 OR r.id IN (
-            SELECT dr.requirement_id FROM document_requirements dr
-            JOIN document_assets da ON da.document_id = dr.document_id
-            WHERE da.asset_id = $3 AND da.org_id = $1
-          ))
+          WHERE r.org_id = $1 AND r.project_id = $2 AND (
+            r.asset_id = $3 OR (
+              -- A shared document may link this asset to a requirement owned
+              -- by a different, hidden asset. Only project-level requirements
+              -- are eligible through the indirect document relationship.
+              r.asset_id IS NULL AND r.id IN (
+                SELECT dr.requirement_id FROM document_requirements dr
+                JOIN document_assets da
+                  ON da.org_id = dr.org_id AND da.project_id = dr.project_id
+                 AND da.document_id = dr.document_id
+                WHERE dr.org_id = $1 AND dr.project_id = $2
+                  AND da.asset_id = $3
+              )
+            )
+          )
             AND r.superseded_at IS NULL
           ORDER BY r.requirement_key ASC`,
         [ctx.orgId, projectId, assetId],
@@ -1051,11 +1273,14 @@ export class AssetsService {
     query: { filename?: string; text?: string; tagCandidate?: string },
   ) {
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+      const scope = await this.getCurrentAssetScope(client, ctx, projectId);
+      const filtered = assetScopeSqlPredicate(scope, 3);
       const { rows: assetList } = await client.query(
-        `SELECT id, tag, name, category_key, make, model, serial_no, location
+        `SELECT id, tag, name, category_key, created_at, make, model, serial_no, location
          FROM assets
-         WHERE org_id = $1 AND project_id = $2 AND deleted_at IS NULL`,
-        [ctx.orgId, projectId],
+         WHERE org_id = $1 AND project_id = $2 AND deleted_at IS NULL
+           ${filtered.sql}`,
+        [ctx.orgId, projectId, ...filtered.values],
       );
 
       const targetText = [query.filename, query.text, query.tagCandidate]
@@ -1076,12 +1301,22 @@ export class AssetsService {
       }> = [];
 
       for (const a of assetList) {
+        try {
+          assertAssetInScope(scope, {
+            id: a.id, categoryKey: a.category_key, createdAt: a.created_at,
+          }, false);
+        } catch (err) {
+          if (err instanceof NotFoundException) continue;
+          throw err;
+        }
         const upperTag = a.tag.toUpperCase();
         const upperSerial = a.serial_no ? a.serial_no.toUpperCase() : null;
         const upperModel = a.model ? a.model.toUpperCase() : null;
 
         // 1. Exact Tag Boundary Match (e.g. "CH-01")
-        const tagRegex = new RegExp(`(^|[^A-Z0-9])${upperTag}([^A-Z0-9]|$)`, 'i');
+        // AssetTagSchema permits only letters, digits, underscore, hyphen and dot.
+        const escapedTag = upperTag.replace(/[^A-Z0-9_-]/g, (char: string) => String.fromCharCode(92) + char);
+        const tagRegex = new RegExp(`(^|[^A-Z0-9])${escapedTag}([^A-Z0-9]|$)`, 'i');
         if (tagRegex.test(targetText)) {
           candidates.push({
             assetId: a.id,

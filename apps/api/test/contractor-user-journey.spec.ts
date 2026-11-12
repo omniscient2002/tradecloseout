@@ -340,6 +340,14 @@ describe('Complete Application User Journey & Real Storage/Scanner Integration (
               reviewerReviewId, reviewerUserId,
             ],
           );
+          // Review assignments must reflect an actually submitted version.
+          // Creating a review row alone cannot authorize a version that is
+          // still NOT_SUBMITTED in the live schema.
+          await client.query(
+            `UPDATE document_versions SET review_status='IN_REVIEW'
+               WHERE org_id=$1 AND id=$2`,
+            [orgId, versionId],
+          );
         });
 
         // 4A. Uploader Self-Approval Prevention (TC-REV-01 & FR-REV-009):

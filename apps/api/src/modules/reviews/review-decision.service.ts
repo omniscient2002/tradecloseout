@@ -79,7 +79,9 @@ export async function executeReviewDecision(
         detail: 'Cannot review a file that has not passed ClamAV and PDF verification.',
       });
     }
-    if (input.method === 'IN_APP' && row.review_status !== 'IN_REVIEW') {
+    // Legacy/internal execution helper must not offer an EXTERNAL escape
+    // hatch around the version's shared one-terminal-outcome invariant.
+    if (row.review_status !== 'IN_REVIEW') {
       throw new ConflictException({
         code: 'INVALID_STATE_TRANSITION',
         detail: `Version is ${row.review_status}, expected IN_REVIEW.`,
@@ -96,6 +98,13 @@ export async function executeReviewDecision(
       throw new ConflictException({
         code: 'INVALID_STATE_TRANSITION',
         detail: 'Version has been superseded by a newer submission (AUD-007).',
+      });
+    }
+
+    if (row.current_approved_version_id === input.documentVersionId) {
+      throw new ConflictException({
+        code: 'DOCUMENT_VERSION_ALREADY_APPROVED_POINTER',
+        detail: 'A version referenced by the approval pointer cannot be re-decided.',
       });
     }
 
@@ -177,6 +186,17 @@ export async function executeReviewDecision(
       );
     }
 
+    // Keep the legacy helper consistent with the canonical version-level
+    // terminal outcome: no pending assignment may remain actionable.
+    await client.query(
+      `UPDATE reviews
+          SET status = 'CANCELLED', row_version = row_version + 1,
+              recorded_at = now(),
+              comment = COALESCE(comment, 'Cancelled following terminal document decision')
+        WHERE org_id = $1 AND project_id = $2 AND document_version_id = $3
+          AND status IN ('PENDING', 'IN_REVIEW')`,
+      [ctx.activeOrgId, input.projectId, input.documentVersionId],
+    );
     await client.query('COMMIT');
     return {
       documentVersionId: input.documentVersionId,

@@ -374,10 +374,15 @@ describe('Production Review Remediation Suite (NP01..NP06, NP09, NP10)', () => {
       const mockPool: any = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string) => {
-            if (sql.includes('FROM document_versions') || sql.includes('WITH all_items')) {
+            if (sql.includes('FROM memberships')) return { rows: [{ role: 'R-OWNER' }] };
+            if (sql.includes('FROM project_members')) return { rows: [] };
+            if (sql.includes('SELECT id FROM projects')) return { rows: [{ id: projectId }] };
+            if (sql.includes('WITH access AS')) {
               return {
-                rows: [
-                  {
+                rows: [{
+                  total: '1', reviews: '1', waivers: '0', defects: '0',
+                  revalidations: '0', supplier_obligations: '0',
+                  items: [{
                     entity_id: uuidv7(),
                     entity_version: 3,
                     title: 'Approved Submittal',
@@ -392,8 +397,8 @@ describe('Production Review Remediation Suite (NP01..NP06, NP09, NP10)', () => {
                     next_path: `/api/v1/projects/${projectId}/document-versions/dv-1/decision`,
                     next_method: 'POST',
                     next_action: 'DECIDE_REVIEW',
-                  },
-                ],
+                  }],
+                }],
               };
             }
             return { rows: [] };
@@ -409,44 +414,31 @@ describe('Production Review Remediation Suite (NP01..NP06, NP09, NP10)', () => {
       expect(res.items[0].entityVersion).toBe(3);
     });
 
-    it('processes supplier obligation intake and updates status', async () => {
+    it('does not accept supplier intake based only on stale HTTP owner role', async () => {
       const obligationId = uuidv7();
-      let updatedStatus = '';
+      let wroteObligation = false;
       const mockClient: any = {
-        query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
-          if (sql.includes('FROM supplier_document_obligations')) {
-            return {
-              rows: [
-                {
-                  id: obligationId,
-                  org_id: orgId,
-                  project_id: projectId,
-                  status: 'UPLOADED',
-                  document_version_id: null,
-                },
-              ],
-            };
-          }
-          if (sql.includes('UPDATE supplier_document_obligations')) {
-            updatedStatus = params[3];
-            return { rows: [] };
-          }
+        query: jest.fn().mockImplementation(async (sql: string) => {
+          if (sql.includes('UPDATE supplier_document_obligations')) wroteObligation = true;
+          // A stale context claims owner, but the real org membership has gone
+          // away. No obligation, audit or outbox write is permitted.
           return { rows: [] };
         }),
       };
-
       const mockDb: any = {
         withTenantContext: jest.fn().mockImplementation((_, cb) => cb(mockClient)),
       };
-
       const partiesService = new PartiesService(mockDb, null as any, null as any);
-      const res = await partiesService.intakeSupplierObligation(ctx, projectId, obligationId, {
-        decision: 'ACCEPT',
-      });
-
-      expect(res.status).toBe('ACCEPTED');
-      expect(updatedStatus).toBe('ACCEPTED');
-    });
+      await expect(partiesService.intakeSupplierObligation(ctx, projectId, obligationId, {
+        decision: 'ACCEPT', documentVersionId: uuidv7(),
+      })).rejects.toThrow('ACTIVE_ORG_MEMBERSHIP_REQUIRED');
+      expect(wroteObligation).toBe(false);
+      expect(mockClient.query.mock.calls.some(([sql]: [string]) =>
+        sql.includes('INSERT INTO supplier_intake_decisions') ||
+        sql.includes('INSERT INTO audit_events') ||
+        sql.includes('INSERT INTO outbox_events'),
+      )).toBe(false);
+    });;
   });
 
   // --------------------------------------------------------------------------

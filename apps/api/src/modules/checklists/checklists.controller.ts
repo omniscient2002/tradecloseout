@@ -102,8 +102,12 @@ export class ChecklistsController {
     @Param('id') id: string,
     @Body('reason') reason: string,
     @Body('type') type?: 'WAIVE' | 'NOT_APPLICABLE',
+    @Body('commandId') commandId?: string,
+    @Body('expectedRowVersion') expectedRowVersion?: number,
   ) {
-    return this.checklistsService.requestWaiver(req.userContext, id, reason, type);
+    return this.checklistsService.requestWaiver(req.userContext, id, reason, type, {
+      commandId, expectedRowVersion,
+    });
   }
 
   @Post([
@@ -116,5 +120,25 @@ export class ChecklistsController {
   @RequirePermission('requirement.waive_second')
   async countersignWaiver(@Req() req: any, @Param('id') id: string) {
     return this.checklistsService.countersignWaiver(req.userContext, id);
+  }
+
+  @Post(['waivers/:id/reject', 'projects/:projectId/waivers/:id/reject'])
+  @RequirePermission('requirement.waive_second')
+  async rejectWaiver(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body('reason') reason: string,
+  ) {
+    return this.checklistsService.rejectWaiver(req.userContext, id, reason);
+  }
+
+  @Post(['waivers/:id/withdraw', 'projects/:projectId/waivers/:id/withdraw'])
+  @RequirePermission('requirement.waive')
+  async withdrawWaiver(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body('reason') reason: string,
+  ) {
+    return this.checklistsService.withdrawWaiver(req.userContext, id, reason);
   }
 }

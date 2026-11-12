@@ -2,8 +2,8 @@ import {
   AbortMultipartUploadCommand,
   CompleteMultipartUploadCommand,
   CreateMultipartUploadCommand,
-  DeleteObjectCommand,
   GetObjectCommand,
+  GetBucketVersioningCommand,
   HeadObjectCommand,
   ListPartsCommand,
   PutObjectCommand,
@@ -13,6 +13,18 @@ import {
 import { Injectable, ServiceUnavailableException, UnprocessableEntityException } from '@nestjs/common';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { ObjectStoragePresigner } from './documents.service';
+import { isImmutableObjectVersionId } from '@tradecloseout/shared';
+
+/** S3's literal "null" sentinel is a mutable key, not an immutable version. */
+export function requireImmutableObjectVersionId(value: unknown): string {
+  if (!isImmutableObjectVersionId(value)) {
+    throw new ServiceUnavailableException({
+      code: 'OBJECT_VERSIONING_REQUIRED',
+      detail: 'Object storage must return a non-null immutable version identifier.',
+    });
+  }
+  return value;
+}
 
 const MULTIPART_THRESHOLD_BYTES = 10 * 1024 * 1024;
 const MULTIPART_PART_BYTES = 5 * 1024 * 1024;
@@ -46,6 +58,7 @@ export class S3StorageService implements ObjectStoragePresigner {
     parts: Array<{ partNumber: number; uploadUrl: string; requiredHeaders: Record<string, string> }>;
   }> {
     this.assertConfigured();
+    await this.assertVersioningEnabled();
     if (!Number.isSafeInteger(params.sizeBytes) || params.sizeBytes < 1) {
       throw new UnprocessableEntityException('INVALID_UPLOAD_SIZE');
     }
@@ -102,7 +115,8 @@ export class S3StorageService implements ObjectStoragePresigner {
     parts?: Array<{ partNumber: number; etag?: string }>;
   }): Promise<{ observedSizeBytes: number; versionId: string }> {
     this.assertConfigured();
-    let completionError: unknown;
+    await this.assertVersioningEnabled();
+    let completedVersionId: string | undefined;
     if (params.uploadId) {
       const parts = [...(params.parts || [])]
         .filter((part) => Number.isInteger(part.partNumber) && part.partNumber > 0 && part.etag)
@@ -120,13 +134,11 @@ export class S3StorageService implements ObjectStoragePresigner {
           Key: params.objectKey,
           UploadId: params.uploadId,
         }));
-      } catch (err) {
-        // Continue only if an earlier request already completed this exact-size object.
-        const prior = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: params.objectKey })).catch(() => null);
-        if (prior?.ContentLength === params.expectedSizeBytes && prior.VersionId) {
-          return { observedSizeBytes: prior.ContentLength, versionId: prior.VersionId };
-        }
-        throw err;
+      } catch {
+        // NoSuchUpload may mean a previous attempt completed, but an unpinned
+        // HEAD cannot prove which multipart session wrote those bytes. Never
+        // accept a same-size overwrite as a receipt after a lost response.
+        throw new ServiceUnavailableException('MULTIPART_COMPLETION_RECEIPT_UNKNOWN');
       }
       const providerParts = new Map((listed.Parts || []).map((part) => [part.PartNumber, part]));
       let providerSize = 0;
@@ -141,24 +153,31 @@ export class S3StorageService implements ObjectStoragePresigner {
         throw new UnprocessableEntityException('MULTIPART_PROVIDER_SIZE_MISMATCH');
       }
       try {
-        await this.client.send(new CompleteMultipartUploadCommand({
+        const receipt = await this.client.send(new CompleteMultipartUploadCommand({
           Bucket: this.bucket,
           Key: params.objectKey,
           UploadId: params.uploadId,
           MultipartUpload: { Parts: parts.map((part) => ({ PartNumber: part.partNumber, ETag: providerParts.get(part.partNumber)!.ETag })) },
         }));
+        completedVersionId = requireImmutableObjectVersionId(receipt.VersionId);
       } catch (err) {
-        // A retry after provider completion but before DB commit sees NoSuchUpload. The pinned
-        // HEAD below decides whether the prior attempt actually completed this exact object.
-        completionError = err;
+        // If completion succeeded but the response was lost, refuse to trust a
+        // current-key HEAD; a separate recovery workflow must prove the receipt.
+        throw err;
       }
     }
 
-    let head;
-    try {
-      head = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: params.objectKey }));
-    } catch (err) {
-      throw completionError || err;
+    // Multipart receipts must be read back by the exact Complete response ID.
+    // Single-part presigned PUT has no server response here; use the current
+    // HEAD only to discover an immutable ID, then confirm that pinned version.
+    const current = completedVersionId ? null :
+      await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: params.objectKey }));
+    const versionId = requireImmutableObjectVersionId(completedVersionId ?? current?.VersionId);
+    const head = await this.client.send(new HeadObjectCommand({
+      Bucket: this.bucket, Key: params.objectKey, VersionId: versionId,
+    }));
+    if (head.VersionId !== versionId) {
+      throw new ServiceUnavailableException('OBJECT_STORAGE_VERSION_RECEIPT_MISMATCH');
     }
     if (head.ContentLength !== params.expectedSizeBytes) {
       throw new UnprocessableEntityException({
@@ -166,17 +185,12 @@ export class S3StorageService implements ObjectStoragePresigner {
         detail: `Provider object size ${head.ContentLength ?? 'unknown'} does not match declared size ${params.expectedSizeBytes}.`,
       });
     }
-    if (!head.VersionId) {
-      throw new ServiceUnavailableException({
-        code: 'OBJECT_VERSIONING_REQUIRED',
-        detail: 'The storage bucket did not return an immutable object version. Enable provider versioning before accepting uploads.',
-      });
-    }
-    return { observedSizeBytes: head.ContentLength, versionId: head.VersionId };
+    return { observedSizeBytes: head.ContentLength, versionId };
   }
 
   async refreshUploadUrls(params: { objectKey: string; uploadId: string; sizeBytes: number }) {
     this.assertConfigured();
+    await this.assertVersioningEnabled();
     const listed = await this.client.send(new ListPartsCommand({
       Bucket: this.bucket,
       Key: params.objectKey,
@@ -204,30 +218,26 @@ export class S3StorageService implements ObjectStoragePresigner {
 
   async abortUpload(params: { objectKey: string; uploadId: string | null }): Promise<void> {
     this.assertConfigured();
-    if (params.uploadId) {
-      try {
-        await this.client.send(new AbortMultipartUploadCommand({
-          Bucket: this.bucket,
-          Key: params.objectKey,
-          UploadId: params.uploadId,
-        }));
-        return;
-      } catch {
-        // Completion may have succeeded before the DB receipt was committed; inspect and remove
-        // that exact version below rather than leaving a reusable pending object behind.
-      }
+    if (!params.uploadId) {
+      // A signed single-part PUT may have been retried, overwritten or used
+      // by a concurrent caller. HEAD(latest) cannot establish ownership of
+      // any version; never delete an object merely because it is versioned.
+      // Durable orphan reconciliation belongs to PH3-G10-006.
+      return;
     }
     try {
-      const current = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: params.objectKey }));
-      if (current.VersionId) {
-        await this.client.send(new DeleteObjectCommand({
-          Bucket: this.bucket,
-          Key: params.objectKey,
-          VersionId: current.VersionId,
-        }));
-      }
+      await this.client.send(new AbortMultipartUploadCommand({
+        Bucket: this.bucket,
+        Key: params.objectKey,
+        UploadId: params.uploadId,
+      }));
     } catch (err: any) {
-      if (err?.$metadata?.httpStatusCode !== 404 && err?.name !== 'NotFound' && err?.name !== 'NoSuchKey') throw err;
+      // A completed/expired multipart upload no longer has an abortable
+      // upload ID. Do not adopt and delete whatever currently occupies the
+      // key. An object with independently pinned ownership must be cleaned
+      // through a separate authenticated reconciliation workflow.
+      if (err?.name === 'NoSuchUpload' || err?.$metadata?.httpStatusCode === 404) return;
+      throw err;
     }
   }
 
@@ -239,6 +249,7 @@ export class S3StorageService implements ObjectStoragePresigner {
     bucket?: string;
   }): Promise<string> {
     this.assertConfigured();
+    const versionId = requireImmutableObjectVersionId(params.versionId);
     const targetBucket = params.bucket || this.bucket;
     const dispositionType = params.inline ? 'inline' : 'attachment';
     const disposition = params.filename
@@ -249,7 +260,7 @@ export class S3StorageService implements ObjectStoragePresigner {
       new GetObjectCommand({
         Bucket: targetBucket,
         Key: params.objectKey,
-        VersionId: params.versionId,
+        VersionId: versionId,
         ResponseContentDisposition: disposition,
       }),
       { expiresIn: 900 },
@@ -262,17 +273,35 @@ export class S3StorageService implements ObjectStoragePresigner {
     range?: string;
   }): Promise<AsyncIterable<Uint8Array>> {
     this.assertConfigured();
+    const versionId = requireImmutableObjectVersionId(params.versionId);
     const commandInput: any = {
       Bucket: this.bucket,
       Key: params.objectKey,
-      VersionId: params.versionId,
+      VersionId: versionId,
     };
     if (params.range) {
       commandInput.Range = params.range;
     }
     const result = await this.client.send(new GetObjectCommand(commandInput));
+    if (result.VersionId !== versionId) throw new ServiceUnavailableException('OBJECT_STORAGE_VERSION_RECEIPT_MISMATCH');
     if (!result.Body) throw new ServiceUnavailableException('OBJECT_STORAGE_EMPTY_RESPONSE');
     return result.Body as AsyncIterable<Uint8Array>;
+  }
+
+  private async assertVersioningEnabled(): Promise<void> {
+    // Revalidate at every upload-intent and settle boundary. In particular a
+    // suspended bucket must never accept an allegedly immutable new upload.
+    let status: string | undefined;
+    try {
+      status = (await this.client.send(new GetBucketVersioningCommand({
+        Bucket: this.bucket,
+      }))).Status;
+    } catch {
+      throw new ServiceUnavailableException('OBJECT_STORAGE_VERSIONING_UNVERIFIED');
+    }
+    if (status !== 'Enabled') {
+      throw new ServiceUnavailableException('OBJECT_STORAGE_VERSIONING_NOT_ENABLED');
+    }
   }
 
   private assertConfigured(): void {
