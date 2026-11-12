@@ -1265,6 +1265,50 @@ export class HandoverService {
       const record = rows[0];
       let downloadUrl: string | null = null;
       if (record.status === 'COMPLETED' && this.storage) {
+        // An archive contains its own immutable snapshot, but incident
+        // containment must revoke FUTURE app-issued URLs whenever any pinned
+        // source is no longer safe. Never equate a prior archive receipt with
+        // ongoing authority to redistribute quarantined evidence.
+        const sources = record.manifest_json?.objects;
+        if (!Array.isArray(sources) || sources.length !== Number(record.total_objects)) {
+          throw new ConflictException({
+            code: 'ARCHIVE_SOURCE_MANIFEST_INVALID',
+            detail: 'Archive source manifest is missing or inconsistent; download is blocked.',
+          });
+        }
+        const ids = sources.map((entry: any) => entry?.version_id);
+        const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (ids.some((id: unknown) => typeof id !== 'string' || !uuid.test(id)) ||
+            new Set(ids).size !== ids.length) {
+          throw new ConflictException({
+            code: 'ARCHIVE_SOURCE_MANIFEST_INVALID',
+            detail: 'Archive references malformed or repeated source version identifiers.',
+          });
+        }
+        const { rows: liveEvidence } = await client.query(
+          `SELECT dv.id AS version_id, dv.file_status, so.id AS object_id,
+                  so.status AS storage_status, so.provider_version_id, so.sha256
+             FROM document_versions dv
+             JOIN storage_objects so ON so.org_id = dv.org_id AND so.id = dv.object_id
+            WHERE dv.org_id = $1 AND dv.project_id = $2 AND dv.id = ANY($3::uuid[])
+            FOR SHARE OF dv, so`,
+          [ctx.orgId, projectId, ids],
+        );
+        const liveByVersion = new Map(liveEvidence.map((row) => [String(row.version_id), row]));
+        const isInvalidated = liveEvidence.length !== sources.length || sources.some((expected: any) => {
+          const current = liveByVersion.get(String(expected.version_id));
+          return !current || current.file_status !== 'READY' ||
+            current.storage_status !== 'READY' ||
+            String(current.object_id) !== String(expected.object_id) ||
+            String(current.provider_version_id) !== String(expected.provider_version_id) ||
+            String(current.sha256) !== String(expected.sha256);
+        });
+        if (isInvalidated) {
+          throw new ConflictException({
+            code: 'ARCHIVE_SOURCE_INVALIDATED',
+            detail: 'An archived evidence version is no longer verified or distributable.',
+          });
+        }
         const artifact = record.verification_receipt_json?.artifact;
         // Security Invariant (V06 / F06): Require verified immutable artifact identity; forbid unversioned fallback
         if (!artifact?.objectId || !artifact?.objectKey || !artifact?.providerVersionId) {
