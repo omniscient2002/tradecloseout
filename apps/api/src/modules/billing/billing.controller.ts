@@ -146,7 +146,7 @@ export class BillingController {
       title: string;
       description?: string;
       assetId?: string;
-      severity?: 'MINOR' | 'MAJOR' | 'CRITICAL';
+      severity?: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' | 'MINOR' | 'MAJOR';
       location?: string;
       caseType?: 'CLOSEOUT' | 'AFTERCARE';
       postHandoverReason?: string;
