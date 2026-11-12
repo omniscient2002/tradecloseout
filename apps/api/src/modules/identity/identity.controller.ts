@@ -50,9 +50,19 @@ export class IdentityController {
     @Body() body: { identifier?: string; phoneOrEmail?: string },
     @Req() req: AuthenticatedRequest,
   ) {
-    const rawId = (body.identifier || body.phoneOrEmail || '').trim().toLowerCase();
+    if (!body || typeof body !== 'object' || Array.isArray(body) ||
+        (body.identifier !== undefined && typeof body.identifier !== 'string') ||
+        (body.phoneOrEmail !== undefined && typeof body.phoneOrEmail !== 'string')) {
+      throw new UnprocessableEntityException({ code: 'INVALID_AUTH_IDENTIFIER' });
+    }
+    const first = body.identifier?.trim().toLowerCase() || '';
+    const second = body.phoneOrEmail?.trim().toLowerCase() || '';
+    if (first && second && first !== second) {
+      throw new UnprocessableEntityException({ code: 'IDENTIFIER_CONFLICT' });
+    }
+    const rawId = first || second;
     const isPhone = /^\+91[6-9][0-9]{9}$/.test(rawId);
-    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawId);
+    const isEmail = rawId.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawId);
 
     if (!isPhone && !isEmail) {
       throw new UnprocessableEntityException({
@@ -208,9 +218,30 @@ export class IdentityController {
     @Req() req: AuthenticatedRequest,
     @Res({ passthrough: true }) res: Response,
   ) {
+    if (!body || typeof body !== 'object' || Array.isArray(body) ||
+        (body.identifier !== undefined && typeof body.identifier !== 'string') ||
+        (body.challengeId !== undefined && typeof body.challengeId !== 'string') ||
+        (body.otp !== undefined && typeof body.otp !== 'string') ||
+        (body.code !== undefined && typeof body.code !== 'string') ||
+        (body.signupProfile !== undefined && (
+          !body.signupProfile || typeof body.signupProfile !== 'object' || Array.isArray(body.signupProfile) ||
+          ['fullName', 'orgName', 'state'].some(key => {
+            const value = (body.signupProfile as unknown as Record<string, unknown>)[key];
+            return value !== undefined && (typeof value !== 'string' || value.length > 200);
+          })
+        ))) {
+      throw new UnprocessableEntityException({ code: 'INVALID_OTP_INPUT' });
+    }
     let rawId = (body.identifier || '').trim().toLowerCase();
     const candidateCode = (body.otp || body.code || '').trim();
     const challengeParam = (body.challengeId || '').trim();
+    if ((body.otp && body.code && body.otp !== body.code) ||
+        !/^[0-9]{6}$/.test(candidateCode) ||
+        (rawId && !(/^\+91[6-9][0-9]{9}$/.test(rawId) ||
+                    (rawId.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawId)))) ||
+        (challengeParam && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(challengeParam))) {
+      throw new UnprocessableEntityException({ code: 'INVALID_OTP_INPUT' });
+    }
 
     const inputKey = challengeParam
       ? `otp:challenge:${challengeParam}`
