@@ -760,11 +760,13 @@ export class ProjectsService {
     };
   }
 
-  private async liveOrgCommercialRead(client: PoolClient, ctx: TenantActorContext): Promise<{
-    role: string;
-    canReadCommercial: boolean;
-  }> {
+  private async liveOrgCommercialRead(
+    client: PoolClient, ctx: TenantActorContext, scopedGuestRead = false,
+  ): Promise<{ role: string | undefined; canReadCommercial: boolean }> {
     if (ctx.actorType === 'GUEST' || ctx.guestGrantId) {
+      // A live scoped guest grant may read the project's operational summary,
+      // but not commercial data or an organisation-wide directory.
+      if (scopedGuestRead) return { role: undefined, canReadCommercial: false };
       throw new NotFoundException('PROJECT_NOT_FOUND');
     }
     const { rows } = await client.query(
@@ -867,7 +869,7 @@ export class ProjectsService {
       throw new NotFoundException('PROJECT_NOT_FOUND');
     }
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
-      const visibility = await this.liveOrgCommercialRead(client, ctx);
+      const visibility = await this.liveOrgCommercialRead(client, ctx, true);
       const res = await client.query(
         `SELECT * FROM projects WHERE org_id = $1 AND id = $2 AND purged_at IS NULL`,
         [ctx.orgId, projectId],
