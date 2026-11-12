@@ -720,8 +720,19 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
 
       const mockClient = {
         query: jest.fn().mockImplementation(async (sql: string, params?: any[]) => {
-          if (sql.includes('SELECT') && sql.includes('FROM memberships')) {
-            return { rows: [{ id: 'mem-001', role: 'R-PM', status: 'ACTIVE' }] };
+          // Offboarding requires a currently authorised owner, a distinct
+          // active target and an independently eligible replacement.
+          if (sql.includes('SELECT role FROM memberships') && sql.includes('FOR SHARE')) {
+            return { rows: [{ role: 'R-OWNER' }] };
+          }
+          if (sql.includes('SELECT id, role, status FROM memberships')) {
+            return { rows: [{ id: 'mem-001', role: 'R-SITE', status: 'ACTIVE' }] };
+          }
+          if (sql.includes('SELECT m.role FROM memberships m')) {
+            return { rows: [{ role: 'R-OWNER' }] };
+          }
+          if (sql.includes('SELECT p.id,p.status FROM projects p')) {
+            return { rows: [{ id: projectId, status: 'ACTIVE' }] };
           }
           if (sql.includes('COUNT(r.id)::int AS open_reqs')) {
             return { rows: [{ project_id: projectId, project_code: 'PRJ-01', open_reqs: 3 }] };
