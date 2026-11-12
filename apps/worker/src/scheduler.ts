@@ -304,20 +304,18 @@ export class TradeCloseoutScheduler {
           `SELECT p.id AS project_id,
                   p.code AS project_code,
                   p.name AS project_name,
-                  COALESCE(c.retention_at_risk_paise, 0)::bigint AS retention_at_risk_paise,
                   COALESCE(r.missing_or_expired_count, 0)::int AS missing_or_expired_count
              FROM projects p
-             LEFT JOIN LATERAL (
-               SELECT SUM(value_paise * retention_bps / 10000) AS retention_at_risk_paise
-                 FROM contracts
-                WHERE org_id = p.org_id AND project_id = p.id AND status = 'ACTIVE'
-             ) c ON true
+             -- External weekly digest is intentionally nonfinancial; do not
+             -- materialize commercial totals in its scheduler projection.
              LEFT JOIN LATERAL (
                SELECT COUNT(*) AS missing_or_expired_count
                  FROM requirements
-                WHERE org_id = p.org_id AND project_id = p.id AND superseded_at IS NULL
+                WHERE org_id = p.org_id AND project_id = p.id
+                  AND mandatory = true AND superseded_at IS NULL
+                  AND status <> 'NOT_APPLICABLE'
                   AND (status = 'EXPIRED' OR (due_at IS NOT NULL AND due_at < now()
-                       AND status NOT IN ('APPROVED','WAIVED','NOT_APPLICABLE','HANDED_OVER')))
+                       AND status NOT IN ('APPROVED','APPROVED_EXTERNAL','WAIVED','NOT_APPLICABLE','HANDED_OVER')))
              ) r ON true
             WHERE p.org_id = $1 AND p.status IN ('ACTIVE', 'HANDOVER')
             `,
