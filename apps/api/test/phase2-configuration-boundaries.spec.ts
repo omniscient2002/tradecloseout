@@ -43,6 +43,33 @@ describe('Phase 2 configuration fail-closed boundaries', () => {
     ]));
   });
 
+  it('does not permit an organisation to establish platform-owned security settings when the platform layer is missing', () => {
+    const result = resolveConfigV021({
+      ORG: layer('ORG', { 'security.retention_days': 0 }),
+    });
+    expect(result.payload['security.retention_days']).toBeUndefined();
+    expect(result.conflicts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: 'security.retention_days', level: 'ORG' }),
+    ]));
+  });
+
+  it('protects locked reviewer, scope and document type even when mandatory stays true', () => {
+    const result = resolveConfigV021({
+      PLATFORM: layer('PLATFORM', { 'checklist.requirements': [
+        { key: 'air-test', locked: true, mandatory: true, reviewerRole: 'R-QA', docTypeKey: 'DT-001' },
+      ] }),
+      PROJECT: layer('PROJECT', { 'checklist.requirements': [
+        { key: 'air-test', locked: true, mandatory: true, reviewerRole: 'R-PM', docTypeKey: 'DT-002' },
+      ] }),
+    });
+    expect(result.payload['checklist.requirements'][0]).toMatchObject({
+      reviewerRole: 'R-QA', docTypeKey: 'DT-001',
+    });
+    expect(result.conflicts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: 'key:air-test', level: 'PROJECT' }),
+    ]));
+  });
+
   it('refuses prototype keys and missing merge keys', () => {
     const result = resolveConfigV021({
       PROJECT: layer('PROJECT', { 'checklist.groups': [
