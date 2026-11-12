@@ -1,8 +1,12 @@
 import { NotificationsService } from '../src/modules/notifications/notifications.service';
+import { NotificationsController } from '../src/modules/notifications/notifications.controller';
+import { REQUIRE_PERMISSION_KEY } from '../src/common/guards/permission.guard';
+import { hasPermission } from '@tradecloseout/shared';
 
 describe('PH2-G20-002: notification recipient and project visibility', () => {
   it('never returns nullable-recipient broadcasts and gates project rows by live membership', async () => {
-    const query = jest.fn(async (_sql: string, _params?: unknown[]) => ({ rows: [] }));
+    const query = jest.fn(async (sql: string, _params?: unknown[]) =>
+      ({ rows: sql.includes('FROM memberships') ? [{ role: 'R-PM' }] : [] }));
     const db = { withTenantContext: jest.fn(async (_ctx: unknown, handler: (client: { query: typeof query }) => Promise<unknown>) => handler({ query })) };
     const service = new NotificationsService(db as any);
     await service.listNotifications({
@@ -12,7 +16,7 @@ describe('PH2-G20-002: notification recipient and project visibility', () => {
       requestId: 'phase2-notification-list',
       orgRole: 'R-PM',
     });
-    const [sql, params] = query.mock.calls[0];
+    const [sql, params] = query.mock.calls[1];
     expect(sql).toContain('recipient_user_id = $2');
     expect(sql).not.toContain('recipient_user_id IS NULL');
     expect(sql).toContain("pm.status = 'ACTIVE'");
@@ -21,7 +25,8 @@ describe('PH2-G20-002: notification recipient and project visibility', () => {
   });
 
   it('permits organisation administrators to see only addressed project notifications', async () => {
-    const query = jest.fn(async (_sql: string, _params?: unknown[]) => ({ rows: [] }));
+    const query = jest.fn(async (sql: string, _params?: unknown[]) =>
+      ({ rows: sql.includes('FROM memberships') ? [{ role: 'R-ADMIN' }] : [] }));
     const db = { withTenantContext: jest.fn(async (_ctx: unknown, handler: (client: { query: typeof query }) => Promise<unknown>) => handler({ query })) };
     await new NotificationsService(db as any).listNotifications({
       orgId: '00000000-0000-4000-8000-000000000001',
@@ -30,7 +35,39 @@ describe('PH2-G20-002: notification recipient and project visibility', () => {
       requestId: 'phase2-notification-admin',
       orgRole: 'R-ADMIN',
     });
-    expect(query.mock.calls[0]?.[1]?.[2]).toBe(true);
+    expect(query.mock.calls[1]?.[1]?.[2]).toBe(true);
+  });
+  it('revokes stale owner inbox bypass immediately after a role demotion', async () => {
+    const query = jest.fn(async (sql: string, _params?: unknown[]) =>
+      ({ rows: sql.includes('FROM memberships') ? [{ role: 'R-SITE' }] : [] }));
+    const db = { withTenantContext: jest.fn(async (_ctx: unknown,
+      fn: (client: {query: typeof query}) => Promise<unknown>) => fn({query})) };
+    await new NotificationsService(db as any).listNotifications({
+      orgId:'00000000-0000-4000-8000-000000000001',
+      userId:'00000000-0000-4000-8000-000000000002',
+      actorType:'USER',requestId:'phase2-demoted-owner',orgRole:'R-OWNER',
+    });
+    expect(query.mock.calls[1]?.[1]?.[2]).toBe(false);
+  });
+
+  it('permits a billing user to access their private inbox without document.read', () => {
+    const handler = NotificationsController.prototype.listNotifications;
+    expect(Reflect.getMetadata(REQUIRE_PERMISSION_KEY, handler)).toBe('notification.read');
+    expect(hasPermission({ orgRole: 'R-BILLING' }, 'notification.read').allowed).toBe(true);
+    expect(hasPermission({ orgRole: 'R-BILLING' }, 'document.read').allowed).toBe(false);
+    expect(hasPermission({ guestCapabilities: [] }, 'notification.read').allowed).toBe(false);
+  });
+
+  it('denies a guest without querying notification rows', async () => {
+    const db = { withTenantContext: jest.fn() };
+    await expect(new NotificationsService(db as any).listNotifications({
+      orgId:'00000000-0000-4000-8000-000000000001',
+      userId:'00000000-0000-4000-8000-000000000002',
+      actorType:'GUEST',requestId:'phase2-guest-inbox',
+    })).rejects.toMatchObject({
+      response:expect.objectContaining({code:'NOTIFICATION_INBOX_RESTRICTED'}),
+    });
+    expect(db.withTenantContext).not.toHaveBeenCalled();
   });
 });
 
