@@ -113,7 +113,7 @@ export class ProjectsController {
   }
 
   @Get(':id/contracts')
-  @RequirePermission('project.read')
+  @RequirePermission('contract.manage')
   async listContracts(@Req() req: any, @Param('id') id: string) {
     return this.projectsService.listContracts(req.userContext, id);
   }
