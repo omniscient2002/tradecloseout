@@ -343,8 +343,14 @@ describe('Perfect 10 Remediation & Hardening Test Suite', () => {
         }),
       ).rejects.toThrow('Simulated SQL error');
 
-      expect(mockClient.query).toHaveBeenCalledWith('SAVEPOINT sp_test');
-      expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK TO SAVEPOINT sp_test');
+      const calls = (mockClient.query as jest.Mock).mock.calls.map((call: [string]) => call[0]);
+      const savepoint = calls.find((sql: string) => sql.startsWith('SAVEPOINT '));
+      expect(savepoint).toMatch(/^SAVEPOINT sp_[A-Za-z0-9_]+$/);
+      expect(savepoint!.length).toBeLessThanOrEqual(73);
+      const name = savepoint!.slice('SAVEPOINT '.length);
+      expect(name.length).toBeLessThanOrEqual(63);
+      expect(calls).toContain(`ROLLBACK TO SAVEPOINT ${name}`);
+      expect(calls).toContain(`RELEASE SAVEPOINT ${name}`);
     });
   });
 
