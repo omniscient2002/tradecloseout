@@ -128,7 +128,7 @@ export class HandoverService {
       }
 
       const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
-      await consumePlanQuota(client, ctx.orgId, 'PACKAGE_GENERATIONS', currentMonth, 1n, 50n);
+      await consumePlanQuota(client, ctx.orgId, 'PACKAGES_MONTH', currentMonth, 1n, 50n);
 
       const { rows: snapRows } = await client.query(
         `SELECT id, checksum FROM checklist_snapshots
