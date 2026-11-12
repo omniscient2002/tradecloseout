@@ -161,6 +161,55 @@ describe('PH3-G07-001/002/003 — canonical waiver lifecycle and retries', () =>
     });
   });
 
+  it('rejects or withdraws pending waiver with full obligation recovery and immutable decision attribution', async () => {
+    await withDisposableDatabase(async ({admin,app})=>{
+      const f=await setup(admin,app);
+      const id=f.byKey['MANDATORY-WAIVE'].id;
+      const one=await f.service.requestWaiver(f.primary,id,'Documented exception for design scope','WAIVE');
+      await expect(f.service.rejectWaiver(f.primary,one.waiverId,'Not enough technical evidence'))
+        .rejects.toThrow(ForbiddenException);
+      const rejected=await f.service.rejectWaiver(f.second,one.waiverId,
+        'Insufficient technical evidence attached');
+      expect(rejected).toMatchObject({
+        status:'REJECTED',requirementStatus:'NOT_STARTED',idempotentReplay:false,
+      });
+      const replay=await f.service.rejectWaiver(f.second,one.waiverId,
+        'Insufficient technical evidence attached');
+      expect(replay.idempotentReplay).toBe(true);
+      await expect(f.service.countersignWaiver(f.second,one.waiverId))
+        .rejects.toThrow(ConflictException);
+      const two=await f.service.requestWaiver(f.primary,id,
+        'Revised technical waiver request after rejected evidence','WAIVE');
+      expect(two.waiverId).not.toBe(one.waiverId);
+      await expect(f.service.withdrawWaiver(f.second,two.waiverId,
+        'Requester must withdraw their own pending waiver')).rejects.toThrow(ForbiddenException);
+      const withdrawn=await f.service.withdrawWaiver(f.primary,two.waiverId,
+        'Scope changed and waiver is no longer required');
+      expect(withdrawn).toMatchObject({
+        status:'REVOKED',requirementStatus:'NOT_STARTED',idempotentReplay:false,
+      });
+      expect((await f.service.withdrawWaiver(f.primary,two.waiverId,
+        'Scope changed and waiver is no longer required')).idempotentReplay).toBe(true);
+      const history=await admin.query(
+        `SELECT status,decision_reason,decided_by,decided_at,previous_requirement_status
+          FROM waivers WHERE org_id=$1 AND requirement_id=$2 ORDER BY created_at,id`,
+        [f.orgId,id],
+      );
+      expect(history.rows.map((w: any)=>w.status).sort()).toEqual(['REJECTED','REVOKED']);
+      expect(history.rows.every((w: any)=>w.decided_by && w.decided_at &&
+        w.previous_requirement_status==='NOT_STARTED')).toBe(true);
+      const current=await admin.query('SELECT status,row_version FROM requirements WHERE id=$1',[id]);
+      expect(current.rows[0]).toMatchObject({status:'NOT_STARTED',row_version:5});
+      const events=await admin.query(
+        `SELECT event_type FROM outbox_events WHERE org_id=$1 AND project_id=$2
+          AND event_type LIKE 'WAIVER_%'`,[f.orgId,f.projectId],
+      );
+      expect(events.rows.map((e: any)=>e.event_type).sort()).toEqual([
+        'WAIVER_REJECTED','WAIVER_REQUESTED','WAIVER_REQUESTED','WAIVER_WITHDRAWN',
+      ]);
+    });
+  });
+
   it('rolls back waiver, requirement and decision history on a durable event failure', async () => {
     await withDisposableDatabase(async ({admin,app})=>{
       const f=await setup(admin,app);
