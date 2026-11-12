@@ -664,7 +664,45 @@ export class WarrantyAndBillingService {
       deductedAt: string;
     },
   ) {
+    if (!input || typeof input.invoiceId !== 'string' ||
+        typeof input.section !== 'string' ||
+        !/^[0-9A-Z_]{3,30}$/.test(input.section.trim().toUpperCase()) ||
+        !Number.isInteger(input.rateBps) || input.rateBps < 1 || input.rateBps > 10000 ||
+        typeof input.amountPaise !== 'bigint' || input.amountPaise <= 0n ||
+        !/^\\d{4}-\\d{2}-\\d{2}$/.test(input.deductedAt) ||
+        Number.isNaN(Date.parse(input.deductedAt))) {
+      throw new UnprocessableEntityException({
+        code: 'TDS_INPUT_INVALID',
+        detail: 'TDS requires a positive integer amount, bounded rate, section and valid deduction date.',
+      });
+    }
     return withTenantTransaction(this.pool, ctx, async (client, emit) => {
+      // The invoice lock serializes cumulative deductions from both billing
+      // service entrypoints so no concurrent request can over-deduct it.
+      const { rows: invoices } = await client.query(
+        `SELECT total_paise, status FROM invoices
+          WHERE org_id = $1 AND id = $2 FOR UPDATE`,
+        [ctx.orgId, input.invoiceId],
+      );
+      if (!invoices.length) {
+        throw new NotFoundException({ code: 'INVOICE_NOT_FOUND' });
+      }
+      if (['VOID', 'CANCELLED', 'REFUNDED'].includes(invoices[0].status)) {
+        throw new ConflictException({ code: 'INVOICE_TDS_INVALID_STATE' });
+      }
+      const invoiceTotal = BigInt(invoices[0].total_paise);
+      const { rows: deductionRows } = await client.query(
+        `SELECT COALESCE(SUM(amount_paise), 0)::text AS deducted_paise
+           FROM invoice_tds WHERE org_id = $1 AND invoice_id = $2`,
+        [ctx.orgId, input.invoiceId],
+      );
+      const consumed = BigInt(deductionRows[0]?.deducted_paise ?? 0);
+      if (invoiceTotal <= 0n || consumed + input.amountPaise > invoiceTotal) {
+        throw new UnprocessableEntityException({
+          code: 'TDS_EXCEEDS_INVOICE_BALANCE',
+          detail: 'Cumulative deductions cannot exceed the issued invoice total.',
+        });
+      }
       const tdsId = uuidv7();
       await client.query(
         `INSERT INTO invoice_tds
