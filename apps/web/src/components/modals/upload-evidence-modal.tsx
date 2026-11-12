@@ -254,9 +254,14 @@ export function UploadEvidenceModal({
                       {" · "}Requirement: {draft.requirementId === requirement.id ? "Current requirement" : draft.requirementId}
                     </span>
                     {draft.lastError && <span className="block text-red-700">{draft.lastError}</span>}
+                    {draft.status === "BLOCKED_SCOPE" && !draft.canRecoverLocalOnly && (
+                      <span className="block text-amber-700">
+                        Automatic recovery unavailable; this draft may have remote state. Keep the original and resolve the server outcome.
+                      </span>
+                    )}
                   </div>
                   <div className="flex shrink-0 gap-2">
-                    {draft.status === "BLOCKED_SCOPE" && !draft.hasActiveIntent && (
+                    {draft.status === "BLOCKED_SCOPE" && draft.canRecoverLocalOnly && (
                       <button type="button"
                         disabled={recoveringId !== null || discardingId !== null}
                         onClick={() => void recoverDraft(draft)}
