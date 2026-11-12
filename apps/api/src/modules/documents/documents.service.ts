@@ -559,10 +559,12 @@ export class DocumentsService {
   async refreshUploadUrls(ctx: ExecutionContext, versionId: string) {
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
       const verRes = await client.query(
-        `SELECT dv.*, so.object_key, so.s3_upload_id, so.size_bytes
+        `SELECT dv.*, so.object_key, so.s3_upload_id, so.size_bytes,
+                so.status AS storage_status
          FROM document_versions dv
-         JOIN storage_objects so ON so.id = dv.object_id
-         WHERE dv.org_id = $1 AND dv.id = $2`,
+         JOIN storage_objects so ON so.org_id = dv.org_id AND so.id = dv.object_id
+         WHERE dv.org_id = $1 AND dv.id = $2
+         FOR UPDATE OF dv, so`,
         [ctx.orgId, versionId],
       );
 
@@ -573,6 +575,12 @@ export class DocumentsService {
       await this.assertGuestVersionScope(client, ctx, versionId, 'document.upload');
 
       const ver = verRes.rows[0];
+      // A revoked, quarantined or already-finalized intent must never mint
+      // additional provider write URLs. Lock both records against incident
+      // quarantine while checking this invariant.
+      if (ver.file_status !== 'PENDING_UPLOAD' || ver.storage_status !== 'PENDING') {
+        throw new GoneException('UPLOAD_INTENT_NOT_ACTIVE');
+      }
       if (!ver.s3_upload_id) {
         throw new BadRequestException('NOT_A_MULTIPART_UPLOAD');
       }
