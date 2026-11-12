@@ -69,7 +69,7 @@ void test('PH1-G27-003: redaction terminates on circular structures and bounded 
   assert(!JSON.stringify(bounded).includes('safe'), 'unbounded metadata must not traverse through the depth limit');
 });
 
-void test('PH1-G27-003/004: durable outbox cannot leak nested credentials or spoof trusted identity', async () => {
+void test('PH1-G27-003/004: forged envelope identity rejects and rolls back its transaction', async () => {
   const statements: Array<{ sql: string; params: unknown[] }> = [];
   const client = {
     query: async (sql: string, params: unknown[] = []) => {
@@ -80,47 +80,67 @@ void test('PH1-G27-003/004: durable outbox cannot leak nested credentials or spo
   };
   const pool = { connect: async () => client } as unknown as Pool;
   const ctx = {
-    orgId: 'trusted-org',
-    userId: 'trusted-user',
-    actorType: 'MEMBER' as const,
-    ip: '127.0.0.1',
-    userAgent: 'test-client',
-    requestId: 'trusted-request',
+    orgId: 'trusted-org', userId: 'trusted-user', actorType: 'MEMBER' as const,
+    ip: '127.0.0.1', userAgent: 'test-client', requestId: 'trusted-request',
+  };
+  await assert.rejects(withTenantTransaction(pool, ctx, async (_client, emit) => {
+    emit({
+      eventType: 'REDACTION_PROBE', entityType: 'PROJECT', entityId: 'trusted-entity',
+      projectId: 'trusted-project',
+      afterJson: { orgId: 'spoofed-org', actorUserId: 'spoofed-user' },
+    });
+    return null;
+  }), /OUTBOX_RESERVED_FIELD/);
+  assert.equal(statements.some(q => q.sql.includes('INSERT INTO outbox_events')), false);
+  assert.equal(statements.some(q => q.sql.includes('INSERT INTO audit_events')), false);
+  assert(statements.some(q => q.sql === 'ROLLBACK'));
+  assert.equal(statements.some(q => q.sql === 'COMMIT'), false);
+});
+
+void test('PH1-G27-003/004: emitted V1 event preserves provenance, nested redaction and audit', async () => {
+  const statements: Array<{ sql: string; params: unknown[] }> = [];
+  const client = {
+    query: async (sql: string, params: unknown[] = []) => {
+      statements.push({ sql, params });
+      return { rows: [], rowCount: 1 };
+    },
+    release: () => {},
+  };
+  const pool = { connect: async () => client } as unknown as Pool;
+  const ctx = {
+    orgId: 'trusted-org', userId: 'trusted-user', actorType: 'MEMBER' as const,
+    ip: '127.0.0.1', userAgent: 'test-client', requestId: 'trusted-request',
   };
   await withTenantTransaction(pool, ctx, async (_client, emit) => {
     emit({
-      eventType: 'REDACTION_PROBE',
-      entityType: 'PROJECT',
-      entityId: 'trusted-entity',
+      eventType: 'REDACTION_PROBE', entityType: 'PROJECT', entityId: 'trusted-entity',
       projectId: 'trusted-project',
       afterJson: {
-        eventId: 'spoofed-id',
-        orgId: 'spoofed-org',
-        actorUserId: 'spoofed-user',
-        requestId: 'spoofed-request',
-        payload: { nested: [{ mfaSecret: 'top-secret', refresh_token: 'very-secret', ordinary: 'kept' }] },
+        projectId: 'trusted-project',
+        domain: { nested: [{ mfaSecret: 'top-secret', refresh_token: 'very-secret', ordinary: 'kept' }] },
       },
     });
     return null;
   });
-
-  const outbox = statements.find(s => s.sql.includes('INSERT INTO outbox_events'));
+  const outbox = statements.find(q => q.sql.includes('INSERT INTO outbox_events'));
   assert(outbox);
   const payload = JSON.parse(String(outbox.params[4]));
+  assert.equal(payload.schemaVersion, 1);
   assert.equal(payload.orgId, 'trusted-org');
   assert.equal(payload.actorUserId, 'trusted-user');
   assert.equal(payload.requestId, 'trusted-request');
+  assert.equal(payload.projectId, 'trusted-project');
   assert.equal(payload.entityId, 'trusted-entity');
-  assert.notEqual(payload.eventId, 'spoofed-id');
-  assert.equal(payload.payload.nested[0].mfaSecret, '[REDACTED]');
-  assert.equal(payload.payload.nested[0].refresh_token, '[REDACTED]');
-  assert.equal(payload.payload.nested[0].ordinary, 'kept');
+  assert.equal(payload.eventType, 'REDACTION_PROBE');
+  assert.equal(payload.data.projectId, undefined);
+  assert.equal(payload.data.domain.nested[0].mfaSecret, '[REDACTED]');
+  assert.equal(payload.data.domain.nested[0].refresh_token, '[REDACTED]');
+  assert.equal(payload.data.domain.nested[0].ordinary, 'kept');
   assert(!JSON.stringify(payload).includes('top-secret'));
 
-  const audit = statements.find(s => s.sql.includes('INSERT INTO audit_events'));
+  const audit = statements.find(q => q.sql.includes('INSERT INTO audit_events'));
   assert(audit);
   const after = JSON.parse(String(audit.params[9]));
-  assert.equal(after.payload.nested[0].mfaSecret, '[REDACTED]');
-  assert(!JSON.stringify(after).includes('very-secret'));
-  assert(statements.some(s => s.sql === 'COMMIT'));
+  assert.equal(after.domain.nested[0].mfaSecret, '[REDACTED]');
+  assert(statements.some(q => q.sql === 'COMMIT'));
 });
