@@ -30,9 +30,10 @@ describe('PH4-G17-003 PostgreSQL aftercare lifecycle and immutable accepted cont
       );
       await admin.query(
         `INSERT INTO handover_packages
-           (id, org_id, project_id, version_no, status, package_purpose, requested_by)
-         VALUES ($1, $2, $3, 1, 'ACCEPTED', 'FULL_HANDOVER', $4)`,
-        [packageId, orgId, projectId, userId],
+           (id, org_id, project_id, version_no, status, package_purpose,
+            snapshot_checksum, requested_by)
+         VALUES ($1, $2, $3, 1, 'ACCEPTED', 'FULL_HANDOVER', $4, $5)`,
+        [packageId, orgId, projectId, 'a'.repeat(64), userId],
       );
       const ctx: any = {
         orgId, userId, actorType: 'SYSTEM',
