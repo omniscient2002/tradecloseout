@@ -16,7 +16,7 @@ describe('PH5-G28-001 handover package quarantine and signing fence', () => {
     requestId: 'containment-package-url', ip: '127.0.0.1', userAgent: 'jest',
   } as TenantActorContext;
 
-  function setup(overrides: { status?: string; sourceDeleted?: boolean; missingSource?: boolean } = {}) {
+  function setup(overrides: { status?: string; reviewStatus?: string; sourceDeleted?: boolean; missingSource?: boolean } = {}) {
     const lifecycle: string[] = [];
     const signer = jest.fn(async () => {
       lifecycle.push('SIGN');
@@ -43,7 +43,7 @@ describe('PH5-G28-001 handover package quarantine and signing fence', () => {
         if (sql.includes('FROM package_items pi') && sql.includes('FOR SHARE OF dv, evidence')) {
           return { rows: overrides.missingSource ? [] : [{
             item_id: itemId, version_id: versionId, storage_id: objectId,
-            file_status: 'READY', review_status: 'APPROVED',
+            file_status: 'READY', review_status: overrides.reviewStatus ?? 'APPROVED',
             version_deleted_at: overrides.sourceDeleted ? new Date() : null,
             storage_status: overrides.status ?? 'READY',
           }] };
@@ -71,6 +71,7 @@ describe('PH5-G28-001 handover package quarantine and signing fence', () => {
   it.each([
     ['quarantined', { status: 'QUARANTINED' }],
     ['deleted version', { sourceDeleted: true }],
+    ['revoked reviewer approval', { reviewStatus: 'REJECTED' }],
     ['missing source', { missingSource: true }],
   ])('rejects %s before generating a new URL', async (_label, overrides) => {
     const { service, signer } = setup(overrides);
