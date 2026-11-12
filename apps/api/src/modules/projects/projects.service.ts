@@ -1079,7 +1079,7 @@ export class ProjectsService {
           AND s.current_period_start <= now() AND s.current_period_end > now()
           AND (s.cancel_at IS NULL OR s.cancel_at > now())
           AND p.status = 'ACTIVE'
-        LIMIT 1`,
+        FOR SHARE OF s, p`,
       [orgId],
     );
     // PH2-G18-001: no subscription is no capacity, not an implicit starter plan.
