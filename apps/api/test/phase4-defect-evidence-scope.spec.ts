@@ -3,7 +3,7 @@ import { WarrantyAndBillingService } from '../src/modules/billing/warranty-and-b
 
 describe('PH4-G17-002 exact remedy scope qualification', () => {
   const orgId = randomUUID(), projectId = randomUUID(), assetId = randomUUID();
-  const defectId = randomUUID(), objectId = randomUUID();
+  const defectId = randomUUID(), objectId = randomUUID(), versionId = randomUUID();
   const ctx: any = {
     orgId, userId: randomUUID(), actorType: 'SYSTEM',
     requestId: randomUUID(), ip: '127.0.0.1', userAgent: 'phase4-test',
@@ -31,6 +31,7 @@ describe('PH4-G17-002 exact remedy scope qualification', () => {
             ...binding,
           }] };
         }
+        if (sql.includes('FROM document_versions dv')) return { rows: [{ id: versionId }] };
         if (sql.includes("UPDATE defects")) return { rowCount: 1 };
         return { rows: [] };
       }),
