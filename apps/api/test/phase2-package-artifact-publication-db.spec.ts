@@ -1,7 +1,8 @@
 import {createHash} from 'crypto';
 import {uuidv7} from 'uuidv7';
+import {Readable} from 'stream';
 import {PDFDocument} from 'pdf-lib';
-import {PutObjectCommand,S3Client} from '@aws-sdk/client-s3';
+import {GetObjectCommand,PutObjectCommand,S3Client} from '@aws-sdk/client-s3';
 import {withDisposableDatabase} from '../../../packages/db/test/helpers/disposable-database';
 import {attachSyntheticEntitlementPolicy} from '../../../packages/db/test/helpers/synthetic-entitlement-policy';
 import {storageServer} from '../../worker/test/helpers/storage-server';
@@ -102,6 +103,38 @@ describe('Phase2 generated artifact admission through the actual compiler',()=>{
       await expect(compileAndPersistHandoverPackage(app,failing,failed,'terminal-attempt',true)).rejects.toThrow('SYNTHETIC_SOURCE_UNAVAILABLE');
       expect((await admin.query('SELECT status,error_code FROM handover_packages WHERE id=$1',[failed.packageId])).rows[0])
         .toEqual({status:'FAILED',error_code:'PACKAGE_BUILD_FAILED'});
+      const oversized=await makePackage(4);
+      let consumed=0;
+      const putsBefore=storage.uploads.length;
+      const oversizedSource={send:async(command:any)=>{
+        if(command instanceof GetObjectCommand)return {Body:Readable.from((async function*(){
+          for(let i=0;i<100;i++){consumed++;yield bytes;}
+        })())};
+        return storage.s3.send(command);
+      }} as unknown as S3Client;
+      await expect(compileAndPersistHandoverPackage(app,oversizedSource,oversized,'oversized-source',false))
+        .rejects.toThrow('STREAM_SIZE_LIMIT_EXCEEDED');
+      expect(consumed).toBeLessThan(100);
+      expect(storage.uploads).toHaveLength(putsBefore);
+      expect((await admin.query('SELECT status,pdf_object_id FROM handover_packages WHERE id=$1',[oversized.packageId])).rows[0])
+        .toEqual({status:'FAILED',pdf_object_id:null});
+
+      const interrupted=await makePackage(5);
+      const previousTimeout=process.env.PACKAGE_TRANSFER_TIMEOUT_MS;
+      const stalledBody=new Readable({read(){}});
+      try {
+        process.env.PACKAGE_TRANSFER_TIMEOUT_MS='25';
+        const unavailable={send:async()=>({Body:stalledBody})} as unknown as S3Client;
+        await expect(compileAndPersistHandoverPackage(app,unavailable,interrupted,'interrupted-source',false))
+          .rejects.toThrow('The operation was aborted');
+        expect(stalledBody.destroyed).toBe(true);
+        expect(storage.uploads).toHaveLength(putsBefore);
+      } finally {
+        stalledBody.destroy();
+        if(previousTimeout===undefined)delete process.env.PACKAGE_TRANSFER_TIMEOUT_MS;
+        else process.env.PACKAGE_TRANSFER_TIMEOUT_MS=previousTimeout;
+      }
+
     });} finally {
       await storage.close();if(previousBucket===undefined)delete process.env.S3_BUCKET;else process.env.S3_BUCKET=previousBucket;
     }

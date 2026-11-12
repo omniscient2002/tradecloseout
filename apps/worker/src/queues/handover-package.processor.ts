@@ -2,6 +2,7 @@ import { HeadObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from 
 import { Pool } from 'pg';
 import {lockStorageCapacity,reconcileStorageCapacity,resolveEffectiveEntitlements} from '@tradecloseout/db';
 import {reservePackageArtifact} from './package-artifact-capacity';
+import { BoundedByteStream } from './bounded-stream';
 import { createHash } from 'crypto';
 import { createReadStream, createWriteStream } from 'fs';
 import { mkdtemp, rm, stat } from 'fs/promises';
@@ -177,6 +178,7 @@ async function compilePackageAttempt(
     client.release(destroyInitial);
   }
 
+  const transferTimeoutMs = configuredLimit('PACKAGE_TRANSFER_TIMEOUT_MS', 120_000);
   const maxSourceBytes = configuredLimit('PACKAGE_MAX_SOURCE_BYTES', DEFAULT_MAX_SOURCE_BYTES);
   let totalSourceBytes = 0;
   for (const source of sourceRows) {
@@ -209,15 +211,21 @@ async function compilePackageAttempt(
     for (let index = 0; index < sourceRows.length; index++) {
       const source = sourceRows[index];
       const localPath = path.join(tempDir, `source-${index + 1}.pdf`);
+      const transferSignal = AbortSignal.timeout(transferTimeoutMs);
       const stored = await s3.send(new GetObjectCommand({
         Bucket: source.bucket,
         Key: source.object_key,
         VersionId: source.provider_version_id,
-      }));
+      }), { abortSignal: transferSignal });
       if (!stored.Body) throw new Error(`PACKAGE_SOURCE_EMPTY:${source.document_version_id}`);
+      // Use the SDK's Node stream directly: wrapping a stalled async iterator
+      // can leave its pending next() alive after pipeline cancellation.
+      if (!(stored.Body instanceof Readable)) throw new Error('PACKAGE_SOURCE_STREAM_UNSUPPORTED');
       await pipeline(
-        Readable.from(stored.Body as AsyncIterable<Uint8Array>),
+        stored.Body,
+        new BoundedByteStream(Number(source.size_bytes)),
         createWriteStream(localPath, { flags: 'wx', mode: 0o600 }),
+        { signal: transferSignal },
       );
       const fileStats = await stat(localPath);
       if (fileStats.size !== Number(source.size_bytes)) {
@@ -277,10 +285,11 @@ async function compilePackageAttempt(
     const reservation=await reservePackageArtifact(pool,{orgId,projectId:packageMeta.project_id,packageId,owner,bucket,
       filename:`handover-${packageMeta.project_code}-v${packageMeta.version_no}.pdf`,sizeBytes:outputStats.size,sha256:actualOutputSha});
     const artifactId=reservation.id,objectKey=reservation.objectKey;
+    const artifactStream = createReadStream(outputPath);
     const putResult = await s3.send(new PutObjectCommand({
       Bucket: bucket,
       Key: objectKey,
-      Body: createReadStream(outputPath),
+      Body: artifactStream,
       ContentLength: outputStats.size,
       ContentType: 'application/pdf',
       ChecksumAlgorithm: 'SHA256',
@@ -288,9 +297,11 @@ async function compilePackageAttempt(
       Metadata: { sha256: actualOutputSha, packageid: packageId },
       ServerSideEncryption: process.env.S3_KMS_KEY_ID ? 'aws:kms' : undefined,
       SSEKMSKeyId: process.env.S3_KMS_KEY_ID || undefined,
-    }));
+    }), { abortSignal: AbortSignal.timeout(transferTimeoutMs) })
+      .finally(() => artifactStream.destroy());
     if (!putResult.VersionId) throw new Error('PACKAGE_STORAGE_VERSION_ID_MISSING');
-    const head = await s3.send(new HeadObjectCommand({ Bucket: bucket, Key: objectKey, VersionId: putResult.VersionId }));
+    const head = await s3.send(new HeadObjectCommand({ Bucket: bucket, Key: objectKey, VersionId: putResult.VersionId }),
+      { abortSignal: AbortSignal.timeout(transferTimeoutMs) });
     if (head.ContentLength !== outputStats.size || head.VersionId !== putResult.VersionId ||
         head.Metadata?.sha256 !== actualOutputSha) {
       throw new Error('PACKAGE_STORAGE_VERIFICATION_FAILED');

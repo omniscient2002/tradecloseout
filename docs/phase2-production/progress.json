@@ -628,6 +628,13 @@
       "state": "CANDIDATE_FIX_TESTED",
       "evidenceLevel": "TARGETED_POSTGRESQL",
       "notes": "Unique per-invocation ownership fences reservation/publication/terminal failure; retryable failures release to QUEUED. Busy BullMQ jobs delay until completion or DB-clock lease expiry. Recovered attempts allocate distinct object keys and preserve cleanup tombstones. Actual compiler/PG fixture and old-behavior mutation verified; real provider cleanup, Redis delivery acceptance, exact-head CI and independent review remain pending."
+    },
+    {
+      "id": "PH2-NEW-008",
+      "title": "Package compiler writes unbounded provider source bytes before checking size; stalled iterator wrapping prevents transfer cancellation",
+      "state": "CANDIDATE_FIX_TESTED",
+      "evidenceLevel": "TARGETED_POSTGRESQL",
+      "notes": "Cross-reference historical PA19 resource budgets. Actual compiler now uses bounded Node source streams and transfer deadlines for GET/body/PUT/HEAD, destroys output streams on settlement, and preserves failed-build/evidence semantics. Oversized/stalled-source regressions pass; real provider/queue fleet capacity acceptance remains pending."
     }
   ],
   "candidateWork": [
