@@ -84,9 +84,25 @@ export class NotificationsService {
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
       const res = await client.query(
         `SELECT * FROM notifications
-         WHERE org_id = $1 AND (recipient_user_id = $2 OR (channel = 'IN_APP' AND recipient_user_id IS NULL))
+         WHERE org_id = $1 AND recipient_user_id = $2
+           AND (
+             project_id IS NULL OR
+             EXISTS (
+               SELECT 1 FROM projects p
+                WHERE p.org_id = notifications.org_id
+                  AND p.id = notifications.project_id
+                  AND p.purged_at IS NULL
+                  AND (
+                    $3::boolean OR EXISTS (
+                      SELECT 1 FROM project_members pm
+                       WHERE pm.org_id = p.org_id AND pm.project_id = p.id
+                         AND pm.user_id = $2 AND pm.status = 'ACTIVE'
+                    )
+                  )
+             )
+           )
          ORDER BY created_at DESC LIMIT 50`,
-        [ctx.orgId, ctx.userId],
+        [ctx.orgId, ctx.userId, ctx.orgRole === 'R-OWNER' || ctx.orgRole === 'R-ADMIN'],
       );
       return res.rows;
     });
