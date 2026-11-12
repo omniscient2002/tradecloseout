@@ -270,12 +270,17 @@ export async function reconcileStorageQuotaOnFileStatusChange(
 export function redactSensitiveFields(obj: Record<string, unknown>): Record<string, unknown> {
   const sensitiveKey = (key: string): boolean => {
     const normalised = key.replace(/[^a-z0-9]/gi, '').toLowerCase();
-    return /^(?:token|tokenhash|otp|password|secret|qrpayload|authorization|cookie|setcookie|apikey|clientsecret|accesstoken|refreshtoken|idtoken|recoverycode|recoverycodes|totpsecret|mfasecret|signedurl|presignedurl)$/.test(normalised)
-      || /(?:token|password|secret|recoverycode|signedurl|presignedurl)$/.test(normalised);
+    return /(?:password|secret|token|credential|privatekey|apikey|authorization|cookie|recoverycode|signedurl|presignedurl|connectionstring|databaseurl|manualsetupkey|qrpayload|qrcode|otp|clientassertion)/.test(normalised);
   };
+
+  const sensitiveString = (value: string): boolean =>
+    /(?:[?&](?:x-amz-signature|x-goog-signature|signature|access_token|token|x-amz-credential)=|otpauth:\/\/|bearer\s+[a-z0-9._~-]{12,}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----)/i.test(value);
 
   const seen = new WeakSet<object>();
   const scrub = (value: unknown, depth: number): unknown => {
+    // Signed URLs and credential payloads may sit under innocent field names
+    // such as 'url' or 'value'. Do not write them into durable event metadata.
+    if (typeof value === 'string') return sensitiveString(value) ? '[REDACTED]' : value;
     if (value === null || typeof value !== 'object') return value;
     if (depth >= 32) return '[REDACTED:DEPTH_LIMIT]';
     if (seen.has(value)) return '[REDACTED:CIRCULAR_REFERENCE]';
