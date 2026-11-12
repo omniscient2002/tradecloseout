@@ -117,7 +117,7 @@ export async function verifyAndScanUploadedFile(
   const avVerdict = await scanFileWithClamd(localFilePath, clamdHost, clamdPort);
   if (avVerdict.scanUnavailable) {
     if (process.env.NODE_ENV === 'test' && process.env.ALLOW_UNENFORCED_SCANNER_IN_TEST === 'true') {
-      console.warn(`[ClamAV Warning] Scanner unavailable (${avVerdict.error}), but ALLOW_UNENFORCED_SCANNER_IN_TEST=true is set.`);
+      console.warn('[ClamAV Warning] Scanner unavailable; ALLOW_UNENFORCED_SCANNER_IN_TEST=true is set.');
     } else {
       // Infrastructure unavailability is retryable. The worker's bounded retry policy
       // persists the final FAILED state only after the last attempt is exhausted.
