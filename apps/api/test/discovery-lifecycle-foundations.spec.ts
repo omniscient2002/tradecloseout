@@ -48,6 +48,7 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
 
       const mockClient = {
         query: jest.fn().mockImplementation(async (sql: string, params?: any[]) => {
+          if (sql.includes('FROM memberships')) return { rows: [{ role: 'R-OWNER' }] };
           executedQueries.push({ sql, params: params || [] });
 
           if (sql.includes('SELECT * FROM assets WHERE')) {
@@ -151,6 +152,7 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
 
       const mockClient = {
         query: jest.fn().mockImplementation(async (sql: string, params?: any[]) => {
+          if (sql.includes('FROM memberships')) return { rows: [{ role: 'R-OWNER' }] };
           executedQueries.push({ sql, params: params || [] });
 
           if (sql.includes('SELECT * FROM assets WHERE')) {
@@ -196,11 +198,12 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
 
       const assetsService = new AssetsService(mockPool);
 
-      const result = await assetsService.updateAsset(mockTenantActorCtx, projectId, assetId, {
+      // Status transitions must use the dedicated audited lifecycle command;
+      // a generic identity PATCH must not mutate the state machine.
+      await expect(assetsService.updateAsset(mockTenantActorCtx, projectId, assetId, {
         status: 'MAINTENANCE',
-      });
-
-      expect(result.identityRevision).toBeNull();
+      })).rejects.toThrow(UnprocessableEntityException);
+      expect(executedQueries.some((q) => q.sql.includes('UPDATE assets'))).toBe(false);
       const identityRevInsert = executedQueries.find((q) =>
         q.sql.includes('INSERT INTO asset_identity_revisions'),
       );
@@ -647,6 +650,7 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
     it('ranks candidate equipment from filename tokens without auto-linking', async () => {
       const mockClient = {
         query: jest.fn().mockImplementation(async (sql: string) => {
+          if (sql.includes('FROM memberships')) return { rows: [{ role: 'R-OWNER' }] };
           if (sql.includes('FROM assets') && sql.includes('SELECT id, tag, name')) {
             return {
               rows: [
