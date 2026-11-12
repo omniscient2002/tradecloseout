@@ -281,12 +281,20 @@ export class WarrantyAndBillingService {
    * version for this remedy. Two different documents sharing the same storage
    * object are ambiguous and require explicit manual evidence selection.
    */
+  /**
+   * Qualify an exact, current reviewed document under the project/defect lock.
+   * An approved document may support multiple active assets, provided its
+   * complete association set is locked, project-consistent and includes the
+   * exact defect asset. A project-only defect needs a positive requirement
+   * binding or a document-version defect ID declaration.
+   */
   private async resolveRemedyVersion(
     client: PoolClient, orgId: string, projectId: string,
     objectId: string, assetId: string | null,
-  ): Promise<string> {
+    requirementId: string | null = null, defectId: string | null = null,
+  ): Promise<{versionId: string; assetIds: string[]}> {
     const { rows } = await client.query(
-      `SELECT dv.id, dv.document_id
+      `SELECT dv.id, dv.document_id, dv.metadata_json
          FROM document_versions dv
          JOIN documents d
            ON d.org_id = dv.org_id AND d.project_id = dv.project_id
@@ -302,31 +310,63 @@ export class WarrantyAndBillingService {
              WHERE da.org_id = dv.org_id AND da.project_id = dv.project_id
                AND da.document_id = dv.document_id AND da.asset_id = $4
           ))
-        ORDER BY dv.id LIMIT 2 FOR SHARE OF dv, d`,
+        ORDER BY dv.id LIMIT 2
+        FOR SHARE OF dv FOR UPDATE OF d`,
       [orgId, projectId, objectId, assetId],
     );
     if (rows.length !== 1) {
       throw new ConflictException({
         code: 'DEFECT_REMEDY_VERSION_AMBIGUOUS_OR_INELIGIBLE',
-        detail: 'Evidence requires one current approved, correctly asset-linked document version.',
+        detail: 'Remedy requires one current approved document version in the exact project.',
       });
     }
-    if (assetId) {
-      // The EXISTS qualification above takes no row lock. Hold a shared lock
-      // on the exact asset association until the defect write commits, so a
-      // concurrent unlink cannot invalidate the evidence during submission.
-      const binding = await client.query(
-        `SELECT id FROM document_assets
-          WHERE org_id = $1 AND project_id = $2
-            AND document_id = $3 AND asset_id = $4
-          FOR SHARE`,
-        [orgId, projectId, rows[0].document_id, assetId],
-      );
-      if (!binding.rows.length) {
-        throw new ConflictException({ code: 'DEFECT_REMEDY_ASSET_LINK_REVOKED' });
+    // Lock every association, not LIMIT 1: this prevents concurrent removals.
+    // The document's FOR UPDATE lock above blocks FK-dependent new links.
+    const targetSet = await client.query(
+      `SELECT da.asset_id, a.status, a.deleted_at
+         FROM document_assets da
+         JOIN assets a ON a.org_id = da.org_id
+          AND a.project_id = da.project_id AND a.id = da.asset_id
+        WHERE da.org_id = $1 AND da.project_id = $2
+          AND da.document_id = $3
+        ORDER BY da.asset_id
+        FOR SHARE OF da, a`,
+      [orgId, projectId, rows[0].document_id],
+    );
+    const assets = targetSet.rows;
+    if (assets.some((a: any) =>
+      a.status !== 'ACTIVE' || a.deleted_at != null)) {
+      throw new ConflictException({
+        code: 'DEFECT_REMEDY_INACTIVE_SHARED_ASSET',
+        detail: 'Every asset in a reused remedy document must remain active and correctly scoped.',
+      });
+    }
+    const assetIds = assets.map((a: any) => String(a.asset_id)).sort();
+    if (new Set(assetIds).size !== assetIds.length ||
+        (assetId && !assetIds.includes(assetId))) {
+      throw new ConflictException({ code: 'DEFECT_REMEDY_ASSET_LINK_REVOKED' });
+    }
+    if (!assetId) {
+      const declaredDefectId = rows[0].metadata_json?.remedyDefectId;
+      if (declaredDefectId !== defectId) {
+        if (!requirementId) {
+          throw new ConflictException({
+            code: 'DEFECT_REMEDY_EXPLICIT_SCOPE_REQUIRED',
+            detail: 'Unassigned assets need an exact requirement or defect binding.',
+          });
+        }
+        const { rows: requirements } = await client.query(
+          `SELECT id FROM document_requirements
+            WHERE org_id = $1 AND project_id = $2
+              AND document_id = $3 AND requirement_id = $4 FOR SHARE`,
+          [orgId, projectId, rows[0].document_id, requirementId],
+        );
+        if (requirements.length !== 1) {
+          throw new ConflictException({ code: 'DEFECT_REMEDY_REQUIREMENT_SCOPE_INVALID' });
+        }
       }
     }
-    return rows[0].id;
+    return { versionId: rows[0].id, assetIds };
   }
 
   /**
