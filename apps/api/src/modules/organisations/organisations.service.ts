@@ -806,6 +806,24 @@ export class OrganisationsService {
         });
       }
 
+      // PH2-G03-004: acquire replacement membership and current identity
+      // locks before project locks, matching live project-member admission.
+      // Org membership alone does not grant every project responsibility.
+      let replacementOrgRole: string | null = null;
+      if (input.replacementUserId) {
+        const { rows: eligibleReplacement } = await client.query(
+          `SELECT m.role FROM memberships m
+             JOIN users u ON u.id=m.user_id AND u.status='ACTIVE'
+            WHERE m.org_id=$1 AND m.user_id=$2 AND m.status='ACTIVE'
+            FOR SHARE OF m, u`,
+          [ctx.orgId, input.replacementUserId],
+        );
+        if (!eligibleReplacement.length) {
+          throw new UnprocessableEntityException({ code: 'INVALID_REPLACEMENT_MEMBER' });
+        }
+        replacementOrgRole = eligibleReplacement[0].role;
+      }
+
       // PH2-G03-003: project closure and reassignment must serialize on the
       // same project rows. Checking status before acquiring these locks would
       // let a concurrent closure commit while responsibilities are rewritten.
@@ -834,21 +852,34 @@ export class OrganisationsService {
             detail: 'Reopen the affected project before moving its outstanding responsibilities.',
           });
         }
+        if (!['R-OWNER','R-ADMIN'].includes(replacementOrgRole ?? '')) {
+          for (const affected of affectedProjects) {
+            const { rows: scope } = await client.query(
+              `SELECT role FROM project_members
+                WHERE org_id=$1 AND project_id=$2 AND user_id=$3
+                  AND status='ACTIVE' FOR SHARE`,
+              [ctx.orgId, affected.id, input.replacementUserId],
+            );
+            if (!scope.length) {
+              throw new UnprocessableEntityException({
+                code: 'REPLACEMENT_PROJECT_SCOPE_REQUIRED',
+              });
+            }
+          }
+        }
+        const { rows: externalReviews } = await client.query(
+          `SELECT id FROM reviews WHERE org_id=$1 AND reviewer_user_id=$2
+             AND status IN ('PENDING','IN_REVIEW')
+             AND reviewer_subject_type IS DISTINCT FROM 'USER' LIMIT 1`,
+          [ctx.orgId, input.targetUserId],
+        );
+        if (externalReviews.length) {
+          throw new ConflictException({ code: 'EXTERNAL_REVIEW_AUTHORITY_REQUIRES_REVERIFICATION' });
+        }
       }
 
       // 3. Perform Bulk Reassignment if replacementUserId is provided (FR-IAM-008 / SCR-056 / Top 25 Item 19)
       if (input.replacementUserId) {
-        const { rows: repRows } = await client.query(
-          `SELECT role, status FROM memberships WHERE org_id = $1 AND user_id = $2 FOR SHARE`,
-          [ctx.orgId, input.replacementUserId],
-        );
-        if (repRows.length === 0 || repRows[0].status !== 'ACTIVE') {
-          throw new UnprocessableEntityException({
-            code: 'INVALID_REPLACEMENT_MEMBER',
-            detail: 'Replacement user must be an ACTIVE member of this organisation.',
-          });
-        }
-
         await client.query(
           `UPDATE requirements
               SET owner_user_id = $3, row_version = row_version + 1, updated_at = now()
@@ -862,6 +893,7 @@ export class OrganisationsService {
               SET reviewer_subject_id = $3, reviewer_user_id = $3,
                   row_version = row_version + 1
             WHERE org_id = $1 AND reviewer_user_id = $2
+              AND reviewer_subject_type = 'USER'
               AND status IN ('PENDING', 'IN_REVIEW')`,
           [ctx.orgId, input.targetUserId, input.replacementUserId],
         );
