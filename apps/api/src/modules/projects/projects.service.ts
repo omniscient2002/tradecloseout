@@ -909,14 +909,27 @@ export class ProjectsService {
     contractId: string,
     dto: { variationRef: string; title: string; costDeltaPaise: number | bigint; scopeDeltaJson?: any },
   ) {
-    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+    // PH2-G05-002/005: a commercial variation is a proposal, never an
+    // approval made by the creator. Validate its amount and scope before SQL.
+    if (typeof dto?.variationRef !== 'string' || !dto.variationRef.trim() ||
+        dto.variationRef.trim().length > 120 || typeof dto.title !== 'string' ||
+        !dto.title.trim() || dto.title.trim().length > 200) {
+      throw new UnprocessableEntityException({ code: 'INVALID_VARIATION_INPUT' });
+    }
+    const deltaPaise = exactPaise(dto.costDeltaPaise ?? 0n, true)!;
+    const scopeDeltaJson = dto.scopeDeltaJson ?? {};
+    if (typeof scopeDeltaJson !== 'object' || Array.isArray(scopeDeltaJson) ||
+        Object.getPrototypeOf(scopeDeltaJson) !== Object.prototype) {
+      throw new UnprocessableEntityException({ code: 'INVALID_VARIATION_SCOPE' });
+    }
+    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
       await this.lockEditableCommercialProject(client, ctx.orgId, projectId);
       const varId = uuidv7();
       const res = await client.query(
         `INSERT INTO variations (
           id, org_id, project_id, contract_id, variation_ref, title,
           cost_delta_paise, scope_delta_json, status, created_by
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'APPROVED', $9)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'DRAFT', $9)
         RETURNING *`,
         [
           varId,
@@ -925,11 +938,18 @@ export class ProjectsService {
           contractId,
           dto.variationRef.trim(),
           dto.title.trim(),
-          dto.costDeltaPaise ?? 0,
-          dto.scopeDeltaJson ? JSON.stringify(dto.scopeDeltaJson) : null,
+          deltaPaise.toString(),
+          JSON.stringify(scopeDeltaJson),
           ctx.userId,
         ],
       );
+      emit({
+        eventType: 'VARIATION_DRAFT_CREATED',
+        projectId,
+        entityType: 'VARIATION',
+        entityId: varId,
+        afterJson: { contractId, reference: dto.variationRef.trim(), status: 'DRAFT' },
+      });
       return res.rows[0];
     });
   }
