@@ -79,9 +79,9 @@ export async function compileAndPersistHandoverPackage(
       [orgId],
     );
     const { rows: packages } = await client.query(
-      `SELECT hp.id, hp.org_id, hp.project_id, hp.version_no, hp.status,
+      `SELECT hp.id, hp.org_id, hp.project_id, hp.version_no, hp.status, hp.manifest_format_version,
               hp.snapshot_checksum, hp.created_at, hp.updated_at, hp.requested_by,
-              hp.error_code, hp.pdf_object_id,
+              hp.error_code, hp.pdf_object_id, hp.package_purpose,
               p.code AS project_code, p.name AS project_name,
               o.display_name AS org_name,
               COALESCE(contract.contract_ref, contract.reference, '') AS contract_ref,
@@ -106,6 +106,9 @@ export async function compileAndPersistHandoverPackage(
     if (packageMeta.status === 'READY' && packageMeta.pdf_object_id) {
       await client.query('COMMIT');
       return { packageId, status: 'READY', replayed: true };
+    }
+    if (packageMeta.manifest_format_version !== 2 || packageMeta.package_purpose !== 'FULL_HANDOVER') {
+      throw new Error('PACKAGE_UNPINNED_MANIFEST_REQUIRES_REGENERATION');
     }
     // Advisory session ownership excludes a live competing attempt even when
     // BullMQ redelivers the same job ID. Reclaim a stalled GENERATING row only
