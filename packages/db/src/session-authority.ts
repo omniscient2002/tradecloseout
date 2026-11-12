@@ -61,13 +61,30 @@ export async function assertLiveSessionEligibleInTransaction(
     if (!ctx.guestGrantId ||
         session.rows[0].guest_grant_id !== ctx.guestGrantId) changed();
     const grant = await client.query(
-      `SELECT id FROM guest_grants WHERE org_id=$1 AND id=$2
-          AND status='ACTIVE' AND expires_at>now() FOR SHARE`,
+      `SELECT party_id, project_id FROM guest_grants
+        WHERE org_id=$1 AND id=$2
+          AND status='ACTIVE' AND expires_at>now()
+        FOR SHARE`,
       [ctx.orgId, ctx.guestGrantId],
     );
     if (grant.rows.length !== 1) changed();
-    // Guest asset/document/project and issuing-party scope are checked by
-    // command-specific live authorization. Do not grant an org-wide role.
+    // A previously valid grant is not sufficient when the issuing supplier
+    // party has been archived or the linked project has been closed. Lock the
+    // actual parent records too; do not rely on a stale guard snapshot.
+    const party = await client.query(
+      `SELECT id FROM parties WHERE org_id=$1 AND id=$2
+         AND status='ACTIVE' AND deleted_at IS NULL FOR SHARE`,
+      [ctx.orgId, grant.rows[0].party_id],
+    );
+    if (party.rows.length !== 1) changed();
+    const project = await client.query(
+      `SELECT id FROM projects WHERE org_id=$1 AND id=$2
+         AND status IN ('ACTIVE','HANDOVER') FOR SHARE`,
+      [ctx.orgId, grant.rows[0].project_id],
+    );
+    if (project.rows.length !== 1) changed();
+    // Guest document/asset/requirement links still require resource-specific
+    // scope checks; this fence does not confer project-wide authority.
     return;
   }
   if (session.rows[0].guest_grant_id != null) changed();
