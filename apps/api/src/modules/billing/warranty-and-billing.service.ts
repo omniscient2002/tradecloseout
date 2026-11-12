@@ -23,7 +23,7 @@ export class WarrantyAndBillingService {
    */
   private async supplierDefectGrant(
     client: PoolClient, ctx: TenantActorContext, projectId: string,
-  ): Promise<{partyId: string; assetIds: string[] | null}> {
+  ): Promise<{partyId: string; assetIds: string[] | null; assetCategories: string[] | null}> {
     if (!ctx.guestGrantId) {
       throw new ForbiddenException({ code: 'DEFECT_GUEST_GRANT_REQUIRED' });
     }
@@ -49,10 +49,23 @@ export class WarrantyAndBillingService {
     const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
     if (rawAssetIds !== undefined &&
         (!Array.isArray(rawAssetIds) || rawAssetIds.length > 1000 ||
+          new Set(rawAssetIds).size !== rawAssetIds.length ||
           rawAssetIds.some((id: unknown) => typeof id !== 'string' || !uuid.test(id)))) {
       throw new ForbiddenException({ code: 'DEFECT_SUPPLIER_ASSET_SCOPE_INVALID' });
     }
-    return { partyId: grant.party_id, assetIds: rawAssetIds ?? null };
+    const categories: unknown = scope?.assetCategories;
+    if (categories !== undefined &&
+        (!Array.isArray(categories) || categories.length > 100 ||
+         new Set(categories).size !== categories.length ||
+         categories.some((value: unknown) =>
+           typeof value !== 'string' || !/^[A-Za-z0-9_.:-]{1,80}$/.test(value)))) {
+      throw new ForbiddenException({ code: 'DEFECT_SUPPLIER_ASSET_SCOPE_INVALID' });
+    }
+    return {
+      partyId: grant.party_id,
+      assetIds: rawAssetIds ?? null,
+      assetCategories: (categories as string[] | undefined) ?? null,
+    };
   }
 
   /** Apply narrow asset scope to defect reads/writes, without granting
@@ -372,6 +385,16 @@ export class WarrantyAndBillingService {
             (grant.assetIds !== null &&
               (!defect.asset_id || !grant.assetIds.includes(defect.asset_id)))) {
           throw new ForbiddenException({ code: 'DEFECT_NOT_ASSIGNED_TO_SUPPLIER' });
+        }
+        if (grant.assetCategories !== null) {
+          const { rows } = defect.asset_id ? await client.query(
+            `SELECT category_key FROM assets
+              WHERE org_id = $1 AND project_id = $2 AND id = $3 FOR SHARE`,
+            [ctx.orgId, targetProjectId, defect.asset_id],
+          ) : { rows: [] };
+          if (!rows.length || !grant.assetCategories.includes(rows[0].category_key)) {
+            throw new ForbiddenException({ code: 'DEFECT_NOT_ASSIGNED_TO_SUPPLIER' });
+          }
         }
       }
       if (ctx.actorType !== 'GUEST' && !ctx.guestGrantId) {
@@ -728,6 +751,24 @@ export class WarrantyAndBillingService {
     return withTenantTransaction(this.pool, ctx, async (client) => {
       const guest = ctx.actorType === 'GUEST' || !!ctx.guestGrantId;
       const grant = guest ? await this.supplierDefectGrant(client, ctx, projectId) : null;
+      const member = ctx.actorType === 'MEMBER' || ctx.actorType === 'ADMIN';
+      const orgRole = (ctx as TenantActorContext & {orgRole?: string}).orgRole;
+      const unrestricted = orgRole === 'R-OWNER' || orgRole === 'R-ADMIN' ||
+        ctx.actorType === 'SYSTEM';
+      if (member && !unrestricted) {
+        try { assertValidMemberProjectScope(ctx.projectScope); }
+        catch { throw new ForbiddenException({ code: 'DEFECT_MEMBER_SCOPE_INVALID' }); }
+      }
+      const scope = member && !unrestricted ? ctx.projectScope : undefined;
+      const assetIds = grant?.assetIds ?? (
+        scope?.assetIds === undefined ? null : scope.assetIds as string[]);
+      const assetCategories = grant?.assetCategories ?? (
+        scope?.assetCategories === undefined ? null : scope.assetCategories as string[]);
+      // Site/subcontractor contributors can see only their actual assigned
+      // work. Independent QC and PM roles retain the review/triage queue.
+      const assignedUser = member && !unrestricted &&
+        ['R-SITE', 'R-SUBCONTRACTOR'].includes(ctx.projectRole || '')
+        ? ctx.userId : null;
       const { rows } = await client.query(
         `SELECT d.*, a.tag AS asset_tag, u.name AS raised_by_name
            FROM defects d
@@ -736,8 +777,14 @@ export class WarrantyAndBillingService {
           WHERE d.org_id = $1 AND d.project_id = $2
             AND ($3::uuid IS NULL OR d.assigned_party_id = $3)
             AND ($4::uuid[] IS NULL OR d.asset_id = ANY($4::uuid[]))
+            AND ($5::text[] IS NULL OR a.category_key = ANY($5::text[]))
+            AND ($6::uuid IS NULL OR d.assigned_user_id = $6)
+            AND ($7::date IS NULL OR d.raised_at::date >= $7)
+            AND ($8::date IS NULL OR d.raised_at::date <= $8)
           ORDER BY d.raised_at DESC`,
-        [ctx.orgId, projectId, grant?.partyId ?? null, grant?.assetIds ?? null],
+        [ctx.orgId, projectId, grant?.partyId ?? null, assetIds,
+          assetCategories, assignedUser,
+          scope?.startDate ?? null, scope?.endDate ?? null],
       );
       return rows;
     });
