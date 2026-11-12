@@ -12,7 +12,7 @@ import { uuidv7 } from 'uuidv7';
 import { createHash } from 'crypto';
 import { withTenantTransaction, consumePlanQuota, TenantActorContext } from '@tradecloseout/db/tenant-tx';
 import { S3StorageService } from '../documents/s3-storage.service';
-import { canonicalJson } from '@tradecloseout/shared';
+import { canonicalJson, isImmutableStorageVersion } from '@tradecloseout/shared';
 import { evaluateReadinessInTransaction } from './closeout-readiness';
 
 @Injectable()
@@ -818,7 +818,7 @@ export class HandoverService {
       const row = rows[0];
       if (!['READY', 'SUBMITTED', 'PARTIALLY_ACCEPTED', 'ACCEPTED'].includes(row.status) ||
           row.object_status !== 'READY' || row.mime !== 'application/pdf' ||
-          !row.provider_version_id || !row.sha256 || row.sha256 !== row.checksum ||
+          !isImmutableStorageVersion(row.provider_version_id) || !row.sha256 || row.sha256 !== row.checksum ||
           Number(row.observed_size_bytes) !== Number(row.size_bytes)) {
         throw new UnprocessableEntityException({
           code: 'PACKAGE_ARTIFACT_NOT_VERIFIED',
