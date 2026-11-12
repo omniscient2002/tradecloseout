@@ -141,6 +141,47 @@ describe('PH4-G17-001/002 Pass 03: actual PostgreSQL scanner receipt and shared 
         'SELECT status FROM defects WHERE id=$1', [defectB],
       );
       expect(secondDefect.status).toBe('RECTIFIED');
+
+      // Replay concurrent removals and new links at real PostgreSQL locks.
+      // The resolver holds the document FOR UPDATE and each current link
+      // FOR SHARE until commit: neither an unlink nor a new FK-dependent
+      // association may race a signed target-set snapshot.
+      const assetC = uuidv7();
+      await admin.query(
+        `INSERT INTO assets (id, org_id, project_id, tag, name, category_key, created_by)
+         VALUES ($1, $2, $3, 'AHU-03', 'Expansion air handling unit', 'AHU', $4)`,
+        [assetC, orgId, projectId, submitter],
+      );
+      const locker = await admin.connect(), mutator = await admin.connect();
+      try {
+        await locker.query('BEGIN');
+        await locker.query(
+          'SELECT id FROM documents WHERE id = $1 FOR UPDATE', [docId],
+        );
+        await locker.query(
+          'SELECT id FROM document_assets WHERE document_id = $1 FOR SHARE', [docId],
+        );
+        await mutator.query('BEGIN');
+        await mutator.query("SET LOCAL lock_timeout = '250ms'");
+        await expect(mutator.query(
+          `DELETE FROM document_assets
+           WHERE org_id = $1 AND project_id = $2 AND document_id = $3 AND asset_id = $4`,
+          [orgId, projectId, docId, assetA],
+        )).rejects.toMatchObject({code: '55P03'});
+        await mutator.query('ROLLBACK');
+        await mutator.query('BEGIN');
+        await mutator.query("SET LOCAL lock_timeout = '250ms'");
+        await expect(mutator.query(
+          `INSERT INTO document_assets (id, org_id, project_id, document_id, asset_id)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [uuidv7(), orgId, projectId, docId, assetC],
+        )).rejects.toMatchObject({code: '55P03'});
+        await mutator.query('ROLLBACK');
+      } finally {
+        await locker.query('ROLLBACK').catch(() => undefined);
+        await mutator.query('ROLLBACK').catch(() => undefined);
+        locker.release(); mutator.release();
+      }
     });
   });
 });
