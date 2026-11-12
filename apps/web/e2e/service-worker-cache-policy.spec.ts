@@ -75,6 +75,13 @@ function workerFixture() {
   };
 }
 
+test('install never precaches responses before cache-control checks', async () => {
+  const fixture = workerFixture();
+  await fixture.call('install', {});
+  expect(fixture.cacheData.get('tc-shell-v022')?.size).toBe(0);
+  expect(fixture.fetchCalls).toEqual([]);
+});
+
 test('activating TradeCloseout worker preserves unrelated origin caches', async () => {
   const fixture = workerFixture();
   await fixture.cacheData.set('another-application', new Map());
