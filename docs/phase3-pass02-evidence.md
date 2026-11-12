@@ -12,6 +12,7 @@
 - `apps/worker/src/queues/handover-package.processor.ts`: reject mutable source versions, check GetObject response is exactly the requested version, and refuse publishing READY artifacts unless the destination bucket has enabled versioning and the PUT/HEAD receipt matches.
 - `apps/worker/src/queues/portable-archive.processor.ts`: reject mutable historical and manifest source version IDs and refuse publication into a suspended/unversioned bucket. Existing checksum/readback requirements remain.
 - `apps/api/src/modules/handover/handover.service.ts` and `closeout-readiness.ts`: do not qualify legacy `null` storage IDs as ready evidence or handover/archive artifacts; check exact immutable ID before generating signed downloads. SQL filters out blank and `null` versions, runtime check additionally rejects control characters and malformed IDs.
+- Additional evidence eligibility consumers (`apps/api/src/modules/reviews/reviews.service.ts`, `apps/api/src/modules/assets/assets.service.ts`, `apps/api/src/modules/billing/warranty-and-billing.service.ts`, `apps/api/src/modules/parties/parties.service.ts`) now fail closed on legacy blank/`null` version IDs rather than letting a mutable object count as reviewed, qualified, commercially ready or supplier-accepted evidence.
 - Abort cleanup only attempts to delete a concrete immutable version. No fallback to unversioned provider operations is introduced.
 
 ## Regression evidence added/updated
