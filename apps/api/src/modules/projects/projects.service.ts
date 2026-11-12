@@ -11,7 +11,6 @@ import { Pool, PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import {
   withTenantTransaction,
-  consumePlanQuota,
   TenantActorContext,
   DomainOutboxEvent,
 } from '@tradecloseout/db';
@@ -36,6 +35,51 @@ export class ProjectsService {
         detail: 'Commercial records cannot be modified in this project lifecycle state.',
       });
     }
+  }
+
+  /**
+   * PH2-G18-004/G05-007: the canonical projects table is authoritative.
+   * The org-wide counter lock serializes competing activations and reopenings;
+   * a reservation is made before the status change in the *same transaction*.
+   * Active, suspended and handover projects all occupy a slot until closure.
+   * Reconciliation also repairs a stale historical counter without grants.
+   */
+  private async reconcileActiveProjectSlots(
+    client: PoolClient,
+    orgId: string,
+    reserveOne: boolean,
+    capacity?: bigint,
+  ): Promise<void> {
+    await client.query(
+      `INSERT INTO usage_counters (id, org_id, metric, period, value)
+       VALUES ($1, $2, 'ACTIVE_PROJECTS', 'ALL_TIME', 0)
+       ON CONFLICT (org_id, metric, period) DO NOTHING`,
+      [uuidv7(), orgId],
+    );
+    await client.query(
+      `SELECT value FROM usage_counters
+        WHERE org_id = $1 AND metric = 'ACTIVE_PROJECTS' AND period = 'ALL_TIME'
+        FOR UPDATE`,
+      [orgId],
+    );
+    const { rows: currentRows } = await client.query(
+      `SELECT COUNT(*)::text AS count FROM projects
+         WHERE org_id = $1 AND status IN ('ACTIVE','SUSPENDED','HANDOVER')
+           AND purged_at IS NULL`,
+      [orgId],
+    );
+    const next = BigInt(currentRows[0]?.count ?? '0') + (reserveOne ? 1n : 0n);
+    if (capacity !== undefined && next > capacity) {
+      throw new ConflictException({
+        code: 'ACTIVE_PROJECT_LIMIT_EXCEEDED',
+        detail: 'No additional active-project capacity is available.',
+      });
+    }
+    await client.query(
+      `UPDATE usage_counters SET value = $2::bigint, updated_at = now()
+        WHERE org_id = $1 AND metric = 'ACTIVE_PROJECTS' AND period = 'ALL_TIME'`,
+      [orgId, next.toString()],
+    );
   }
 
   /**
@@ -278,16 +322,9 @@ export class ProjectsService {
         });
       }
 
-      // Guard 3: Lock usage_counters FOR UPDATE and enforce plan limit (AUD-A-08)
+      // Reserve against the canonical active-project count and current plan.
       const maxProjectsLimit = await this.getOrgMaxActiveProjectsLimit(client, ctx.orgId);
-      await consumePlanQuota(
-        client,
-        ctx.orgId,
-        'ACTIVE_PROJECTS',
-        'ALL_TIME',
-        1n,
-        BigInt(maxProjectsLimit),
-      );
+      await this.reconcileActiveProjectSlots(client, ctx.orgId, true, BigInt(maxProjectsLimit));
 
       const { rows: updatedRows } = await client.query(
         `UPDATE projects
@@ -470,6 +507,7 @@ export class ProjectsService {
           RETURNING *`,
         [ctx.orgId, projectId],
       );
+      await this.reconcileActiveProjectSlots(client, ctx.orgId, false);
 
       emit({
         eventType: 'PROJECT_CLOSED',
@@ -519,6 +557,17 @@ export class ProjectsService {
           detail: 'Only CLOSED projects can be reopened.',
         });
       }
+      if (!Number.isSafeInteger(expectedRowVersion) || expectedRowVersion <= 0 ||
+          Number(proj.row_version) !== expectedRowVersion) {
+        throw new ConflictException({ code: 'PRECONDITION_FAILED', detail: 'Current rowVersion is required.' });
+      }
+      if (typeof reason !== 'string' || reason.trim().length < 5 || reason.trim().length > 500) {
+        throw new UnprocessableEntityException({
+          code: 'REOPEN_REASON_REQUIRED', detail: 'A specific reopening reason is required.',
+        });
+      }
+      const maxProjectsLimit = await this.getOrgMaxActiveProjectsLimit(client, ctx.orgId);
+      await this.reconcileActiveProjectSlots(client, ctx.orgId, true, BigInt(maxProjectsLimit));
 
       await client.query(
         `UPDATE projects
