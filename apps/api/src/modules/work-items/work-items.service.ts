@@ -105,6 +105,7 @@ export class WorkItemsService {
           project_id: project.id, scope,
           can_review: permissions(projectRole, 'review.decide'),
           can_waiver: permissions(projectRole, 'requirement.waive_second'),
+          is_manager: owner || (orgRole === 'R-PM' && projectRole === 'R-PM'),
           can_defect: permissions(projectRole, 'defect.manage') &&
             permissions(projectRole, 'document.upload'),
           can_revalidate: permissions(projectRole, 'asset.manage'),
@@ -351,9 +352,19 @@ export class WorkItemsService {
            ${projectFilterClause}
       `;
 
-      // Combine with UNION ALL
+      // Scope, filter, page and count on ONE PostgreSQL snapshot. No counts
+      // can reveal a resource absent from this actor's actionable queue.
       const combinedSql = `
-        WITH all_items AS (
+        WITH access AS (
+          SELECT x.project_id, x.scope, x.can_review, x.can_waiver,
+                 x.can_defect, x.can_revalidate, x.can_intake, x.is_manager
+            FROM jsonb_to_recordset($3::jsonb) AS x(
+              project_id uuid, scope jsonb,
+              can_review boolean, can_waiver boolean, can_defect boolean,
+              can_revalidate boolean, can_intake boolean, is_manager boolean
+            )
+        ),
+        all_items AS (
           ${reviewsSql}
           UNION ALL
           ${waiversSql}
@@ -363,44 +374,40 @@ export class WorkItemsService {
           ${revalidationsSql}
           UNION ALL
           ${obligationsSql}
+        ),
+        visible AS MATERIALIZED (
+          SELECT * FROM all_items
+           WHERE ($5::text IS NULL OR type = $5::text)
+             AND ($6::text IS NULL OR priority = $6::text)
+        ),
+        totals AS (
+          SELECT
+            COUNT(*) AS total,
+            COUNT(*) FILTER (WHERE type = 'REVIEW_PENDING') AS reviews,
+            COUNT(*) FILTER (WHERE type = 'WAIVER_PENDING_COUNTERSIGN') AS waivers,
+            COUNT(*) FILTER (WHERE type = 'DEFECT_ACTION') AS defects,
+            COUNT(*) FILTER (WHERE type = 'EVIDENCE_REVALIDATION_DUE') AS revalidations,
+            COUNT(*) FILTER (WHERE type = 'SUPPLIER_OBLIGATION_PENDING') AS supplier_obligations
+          FROM visible
         )
-        SELECT * FROM all_items
-        ${query.type ? `WHERE type = '${query.type.replace(/'/g, "''")}'` : ''}
-        ${query.priority ? `${query.type ? 'AND' : 'WHERE'} priority = '${query.priority.replace(/'/g, "''")}'` : ''}
-        ORDER BY
-          CASE priority WHEN 'CRITICAL' THEN 1 WHEN 'HIGH' THEN 2 WHEN 'MEDIUM' THEN 3 ELSE 4 END,
-          created_at DESC
-        LIMIT ${limit} OFFSET ${offset}
+        SELECT totals.*,
+          COALESCE((
+            SELECT jsonb_agg(to_jsonb(page))
+              FROM (
+                SELECT * FROM visible
+                 ORDER BY CASE priority
+                   WHEN 'CRITICAL' THEN 1 WHEN 'HIGH' THEN 2
+                   WHEN 'MEDIUM' THEN 3 ELSE 4 END,
+                   created_at DESC, entity_id DESC
+                 LIMIT $7::integer OFFSET $8::integer
+              ) page
+          ), '[]'::jsonb) AS items
+        FROM totals
       `;
-
-      const { rows } = await client.query(combinedSql, queryParams);
-
-      // Compute aggregate counts per domain category
-      const countsSql = `
-        WITH all_items AS (
-          ${reviewsSql}
-          UNION ALL
-          ${waiversSql}
-          UNION ALL
-          ${defectsSql}
-          UNION ALL
-          ${revalidationsSql}
-          UNION ALL
-          ${obligationsSql}
-        )
-        SELECT
-          COUNT(*) AS total,
-          COUNT(*) FILTER (WHERE type = 'REVIEW_PENDING') AS reviews,
-          COUNT(*) FILTER (WHERE type = 'WAIVER_PENDING_COUNTERSIGN') AS waivers,
-          COUNT(*) FILTER (WHERE type = 'DEFECT_ACTION') AS defects,
-          COUNT(*) FILTER (WHERE type = 'EVIDENCE_REVALIDATION_DUE') AS revalidations,
-          COUNT(*) FILTER (WHERE type = 'SUPPLIER_OBLIGATION_PENDING') AS supplier_obligations
-        FROM all_items
-      `;
-      const { rows: countRows } = await client.query(countsSql, queryParams);
-      const c = countRows[0] || {};
-
-      const items: WorkItem[] = rows.map((r: any) => ({
+      const { rows: resultRows } = await client.query(combinedSql, queryParams);
+      const c = resultRows[0] || {};
+      const itemRows: any[] = Array.isArray(c.items) ? c.items : [];
+      const items: WorkItem[] = itemRows.map((r: any) => ({
         id: `${r.type.toLowerCase()}:${r.entity_id}`,
         type: r.type,
         title: r.title,
@@ -410,7 +417,8 @@ export class WorkItemsService {
         projectName: r.project_name,
         entityType: r.entity_type,
         entityId: r.entity_id,
-        entityVersion: r.entity_version,
+        entityVersion: r.entity_version ?? undefined,
+        dueAt: r.due_at ?? null,
         waitingOn: r.waiting_on,
         nextCommand: {
           method: r.next_method,
@@ -433,7 +441,7 @@ export class WorkItemsService {
         pagination: {
           limit,
           offset,
-          hasMore: items.length === limit,
+          hasMore: offset + items.length < parseInt(c.total || '0', 10),
         },
       };
     });
