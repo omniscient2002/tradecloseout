@@ -595,6 +595,33 @@ export class WarrantyAndBillingService {
       backdatingReason?: string;
     },
   ) {
+    if (!input || typeof input.title !== 'string' ||
+        input.title.trim().length < 1 || input.title.trim().length > 255 ||
+        (input.description !== undefined &&
+          (typeof input.description !== 'string' || input.description.length > 8000)) ||
+        (input.location !== undefined &&
+          (typeof input.location !== 'string' || input.location.length > 500))) {
+      throw new UnprocessableEntityException({
+        code: 'DEFECT_INPUT_INVALID',
+        detail: 'Defect requires a nonempty title and bounded text fields.',
+      });
+    }
+    const knownSeverities = new Set(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL', 'MINOR', 'MAJOR']);
+    if (input.severity !== undefined &&
+        (typeof input.severity !== 'string' || !knownSeverities.has(input.severity))) {
+      throw new UnprocessableEntityException({
+        code: 'DEFECT_SEVERITY_UNSUPPORTED',
+        detail: 'Use LOW, MEDIUM, HIGH or CRITICAL; MINOR and MAJOR are supported legacy aliases.',
+      });
+    }
+    if (input.occurredAtPrecision !== undefined &&
+        !['INSTANT', 'DATE', 'UNKNOWN'].includes(input.occurredAtPrecision)) {
+      throw new UnprocessableEntityException({ code: 'DEFECT_OCCURRENCE_PRECISION_INVALID' });
+    }
+    if (input.occurredAt !== undefined &&
+        (typeof input.occurredAt !== 'string' || !Number.isFinite(Date.parse(input.occurredAt)))) {
+      throw new UnprocessableEntityException({ code: 'DEFECT_OCCURRENCE_DATE_INVALID' });
+    }
     return withTenantTransaction(this.pool, ctx, async (client, emit) => {
       const defectId = uuidv7();
       const severityMap: Record<string, 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'> = {
@@ -605,7 +632,7 @@ export class WarrantyAndBillingService {
         HIGH: 'HIGH',
         CRITICAL: 'CRITICAL',
       };
-      const severity = (input.severity && severityMap[input.severity]) || 'MEDIUM';
+      const severity = input.severity === undefined ? 'MEDIUM' : severityMap[input.severity];
       const description = input.location
         ? `${input.description || input.title} (Location: ${input.location})`
         : (input.description || input.title);
@@ -620,7 +647,7 @@ export class WarrantyAndBillingService {
           ctx.orgId,
           projectId,
           input.assetId || null,
-          input.title,
+          input.title.trim(),
           description,
           severity,
           ctx.userId,
