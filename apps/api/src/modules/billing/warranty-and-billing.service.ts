@@ -554,7 +554,7 @@ export class WarrantyAndBillingService {
   async getSubscription(ctx: TenantActorContext) {
     return withTenantTransaction(this.pool, ctx, async (client) => {
       const { rows } = await client.query(
-        `SELECT s.*, p.name AS plan_name, p.code AS plan_tier, p.limits_json, p.price_paise, p.interval
+        `SELECT s.*, p.name AS plan_name, p.code AS plan_tier, p.limits_json, p.price_paise, p.interval, p.status AS plan_status
            FROM subscriptions s
            JOIN plans p ON p.id = s.plan_id
           WHERE s.org_id = $1
@@ -570,7 +570,7 @@ export class WarrantyAndBillingService {
           seatLimit: 0,
           storageQuotaBytes: 0,
           pricePaise: 0,
-          limitsJson: { maxActiveProjects: 0, maxSeats: 0, maxStorageBytes: 0 },
+          limitsJson: { maxActiveProjects: 0, maxSeats: 0, maxStorageBytes: 0, maxPackageGenerationsPerMonth: 0 },
           plan_name: 'No Subscription',
           plan_tier: 'NONE',
           seat_limit: 0,
@@ -579,10 +579,28 @@ export class WarrantyAndBillingService {
         };
       }
       const sub = rows[0];
-      const limits = sub.limits_json || {};
-      const seatLimit = Number(limits.maxSeats ?? 20);
-      const storageQuotaBytes = Number(limits.maxStorageBytes ?? (100 * 1024 * 1024 * 1024));
-      const maxActiveProjects = Number(limits.maxActiveProjects ?? 15);
+      // PH2-G18-001: API capacity must agree with activation and package
+      // writes. Expired, inactive, cancelled or malformed policies grant no
+      // new consumption; a legacy missing field is not a free Starter plan.
+      const now = Date.now();
+      const start = new Date(sub.current_period_start).getTime();
+      const end = new Date(sub.current_period_end).getTime();
+      const cancelled = sub.cancel_at == null ? false : new Date(sub.cancel_at).getTime() <= now;
+      const eligible = ['TRIAL', 'ACTIVE'].includes(sub.status) && sub.plan_status === 'ACTIVE' &&
+        Number.isFinite(start) && Number.isFinite(end) && start <= now && now < end && !cancelled;
+      const configured = sub.limits_json && typeof sub.limits_json === 'object'
+        ? sub.limits_json : {};
+      const limit = (key: string): number => {
+        const raw = eligible ? configured[key] : 0;
+        return typeof raw === 'number' && Number.isSafeInteger(raw) && raw >= 0 ? raw : 0;
+      };
+      const seatLimit = limit('maxSeats');
+      const storageQuotaBytes = limit('maxStorageBytes');
+      const maxActiveProjects = limit('maxActiveProjects');
+      const limits = {
+        maxActiveProjects, maxSeats: seatLimit, maxStorageBytes: storageQuotaBytes,
+        maxPackageGenerationsPerMonth: limit('maxPackageGenerationsPerMonth'),
+      };
       return {
         id: sub.id,
         orgId: sub.org_id,
