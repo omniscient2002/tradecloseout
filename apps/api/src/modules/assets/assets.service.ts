@@ -1189,7 +1189,8 @@ export class AssetsService {
         const upperModel = a.model ? a.model.toUpperCase() : null;
 
         // 1. Exact Tag Boundary Match (e.g. "CH-01")
-        const escapedTag = upperTag.replace(/[.*+?^\$\{\}()|[\]\\]/g, '\\        const tagRegex = new RegExp(`(^|[^A-Z0-9])${upperTag}([^A-Z0-9]|$)`, 'i');');
+        // AssetTagSchema permits only letters, digits, underscore, hyphen and dot.
+        const escapedTag = upperTag.replace(/\./g, '\\.');
         const tagRegex = new RegExp(`(^|[^A-Z0-9])${escapedTag}([^A-Z0-9]|$)`, 'i');
         if (tagRegex.test(targetText)) {
           candidates.push({
