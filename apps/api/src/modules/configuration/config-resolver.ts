@@ -175,6 +175,10 @@ export function resolveConfigV021(
       message: 'Configuration layers must be a level-keyed record.' });
   }
   for (const rawLevel of Object.keys(suppliedLayers)) {
+    // RT-019: an installed organisation can carry its source TRADE pack as
+    // metadata; that level was already installed into an ORG version and
+    // must not be applied a second time. This is the one known ignored level.
+    if (!isPreview && rawLevel === 'TRADE') continue;
     if (!orderedLevels.includes(rawLevel as ConfigLevel)) {
       conflicts.push({ path: '$level', level: 'PROJECT',
         message: 'Unknown or inapplicable configuration level.' });
