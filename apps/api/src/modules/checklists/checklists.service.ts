@@ -1112,7 +1112,24 @@ export class ChecklistsService {
     changeRequestId: string,
     dto: { decision: 'APPROVED' | 'REJECTED'; comment?: string },
   ) {
-    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+    if (!dto || !['APPROVED', 'REJECTED'].includes(dto.decision) ||
+        (dto.comment !== undefined &&
+          (typeof dto.comment !== 'string' || dto.comment.length > 2000))) {
+      throw new UnprocessableEntityException({ code: 'INVALID_CHANGE_DECISION' });
+    }
+    return withTenantTransaction(this.pool, ctx, async (
+      client: PoolClient, emit: (ev: DomainOutboxEvent) => void,
+    ) => {
+      // PH2-G06-006: a change decision is an independently authorised action.
+      // A caller's project.manage/checklist.manage claim is not enough.
+      const { rows: approverRows } = await client.query(
+        `SELECT role FROM memberships
+           WHERE org_id=$1 AND user_id=$2 AND status='ACTIVE' FOR SHARE`,
+        [ctx.orgId, ctx.userId],
+      );
+      if (!['R-OWNER', 'R-ADMIN'].includes(approverRows[0]?.role)) {
+        throw new ForbiddenException({ code: 'CHANGE_REVIEW_AUTHORITY_REQUIRED' });
+      }
       const crRes = await client.query(
         `SELECT * FROM requirement_change_requests WHERE org_id = $1 AND id = $2 FOR UPDATE`,
         [ctx.orgId, changeRequestId],
@@ -1120,24 +1137,38 @@ export class ChecklistsService {
       if (!crRes.rows.length) throw new NotFoundException('CHANGE_REQUEST_NOT_FOUND');
       const cr = crRes.rows[0];
 
-      if (cr.status !== 'PENDING') {
+      if (!['PENDING','SUBMITTED'].includes(cr.status)) {
         throw new ConflictException('CHANGE_REQUEST_ALREADY_DECIDED');
+      }
+      if (cr.requested_by === ctx.userId) {
+        throw new ForbiddenException({ code: 'CHANGE_REQUEST_SELF_APPROVAL_FORBIDDEN' });
       }
 
       const res = await client.query(
         `UPDATE requirement_change_requests
-            SET status = $1, approved_by = $2, decided_at = now()
+            SET status = $1, approved_by = $2, decided_at = now(),
+                row_version = row_version + 1
           WHERE org_id = $3 AND id = $4
           RETURNING *`,
         [dto.decision, ctx.userId, ctx.orgId, changeRequestId],
       );
 
-      if (dto.decision === 'APPROVED' && cr.change_type === 'REMOVE' && cr.requirement_id) {
-        await client.query(
-          `UPDATE requirements SET superseded_at = now(), updated_at = now() WHERE org_id = $1 AND id = $2`,
-          [ctx.orgId, cr.requirement_id],
-        );
-      }
+      // Approval only authorises a subsequent, version-bound change-control
+      // application. It MUST NOT directly remove an active requirement:
+      // doing so invalidates readiness without generating a new snapshot,
+      // impact analysis, waiver reconciliation or revised acceptance.
+      emit({
+        eventType: 'REQUIREMENT_CHANGE_DECIDED',
+        projectId: cr.project_id,
+        entityType: 'REQUIREMENT_CHANGE_REQUEST',
+        entityId: cr.id,
+        beforeJson: { status: cr.status },
+        afterJson: {
+          status: dto.decision,
+          changeType: cr.change_type,
+          applied: false,
+        },
+      });
 
       return res.rows[0];
     });
