@@ -219,6 +219,12 @@ export default function ProjectWorkspacePage() {
   const [loadingReviews, setLoadingReviews] = useState(false);
   const [packages, setPackages] = useState<any[]>([]);
   const [loadingPackages, setLoadingPackages] = useState(false);
+  const [errorAssets, setErrorAssets] = useState<string | null>(null);
+  const [errorReviews, setErrorReviews] = useState<string | null>(null);
+  const [errorPackages, setErrorPackages] = useState<string | null>(null);
+  const requestGeneration = useRef({ summary: 0, reqs: 0, assets: 0, reviews: 0, packages: 0 });
+  const viewedProjectRef = useRef(projectId);
+  viewedProjectRef.current = projectId;
   const [warranties, setWarranties] = useState<any[]>([]);
   const [defects, setDefects] = useState<any[]>([]);
   const [loadingWarranties, setLoadingWarranties] = useState(false);
@@ -292,25 +298,36 @@ export default function ProjectWorkspacePage() {
 
   const fetchProjectSummary = useCallback(async () => {
     if (!projectId) return;
+    const generation = ++requestGeneration.current.summary;
     setLoadingSummary(true);
     setErrorSummary(null);
+    setSummary(null);
     try {
       const data = await apiFetch<ProjectSummaryDto>(`/api/v1/projects/${encodeURIComponent(projectId)}/dashboard`);
+      if (generation !== requestGeneration.current.summary || viewedProjectRef.current !== projectId) return;
+      if (!data || typeof data !== "object" || typeof data.id !== "string" || data.id !== projectId) {
+        throw new Error("PROJECT_SUMMARY_INVALID: Returned project does not match the requested project.");
+      }
       setSummary(data);
     } catch (err: any) {
+      if (generation !== requestGeneration.current.summary || viewedProjectRef.current !== projectId) return;
       setErrorSummary({
-        message: err.message || "Network error loading project overview.",
-        requestId: err.requestId,
+        message: err?.message || "Network error loading project overview.",
+        requestId: err?.requestId,
       });
     } finally {
-      setLoadingSummary(false);
+      if (generation === requestGeneration.current.summary && viewedProjectRef.current === projectId) {
+        setLoadingSummary(false);
+      }
     }
   }, [projectId]);
 
   const fetchRequirements = useCallback(async () => {
     if (!projectId) return;
+    const generation = ++requestGeneration.current.reqs;
     setLoadingReqs(true);
     setErrorReqs(null);
+    setRequirements([]);
     try {
       const qs = new URLSearchParams();
       if (statusFilter) qs.set("status", statusFilter);
@@ -318,56 +335,89 @@ export default function ProjectWorkspacePage() {
       qs.set("limit", "100");
 
       const payload = await apiFetch<any>(`/api/v1/projects/${encodeURIComponent(projectId)}/requirements?${qs.toString()}`);
+      if (generation !== requestGeneration.current.reqs || viewedProjectRef.current !== projectId) return;
       const mappedList: RequirementItemDto[] = parseProjectRequirementResponse(payload);
       setRequirements(mappedList);
     } catch (err: any) {
-      // Never render a previous project's checklist after a failed refresh.
+      if (generation !== requestGeneration.current.reqs || viewedProjectRef.current !== projectId) return;
       setRequirements([]);
       setErrorReqs({
         message: err?.message || "Network error loading checklist.",
         requestId: err?.requestId,
       });
     } finally {
-      setLoadingReqs(false);
+      if (generation === requestGeneration.current.reqs && viewedProjectRef.current === projectId) {
+        setLoadingReqs(false);
+      }
     }
   }, [projectId, statusFilter, searchQuery]);
 
   const fetchAssets = useCallback(async () => {
     if (!projectId) return;
+    const generation = ++requestGeneration.current.assets;
     setLoadingAssets(true);
+    setAssets([]);
+    setErrorAssets(null);
     try {
-      const data = await apiFetch<any>(`/api/v1/projects/${encodeURIComponent(projectId)}/assets`);
-      setAssets(Array.isArray(data) ? data : data?.data || []);
+      const data = await apiFetch<unknown>(`/api/v1/projects/${encodeURIComponent(projectId)}/assets`);
+      if (generation !== requestGeneration.current.assets || viewedProjectRef.current !== projectId) return;
+      const rows = Array.isArray(data) ? data :
+        (data && typeof data === "object" && "data" in data ? (data as { data: unknown }).data : null);
+      if (!Array.isArray(rows)) throw new Error("ASSET_RESPONSE_INVALID: Equipment list was not returned.");
+      setAssets(rows);
     } catch (err) {
-      console.error("Error loading assets", err);
+      if (generation !== requestGeneration.current.assets || viewedProjectRef.current !== projectId) return;
+      setErrorAssets(err instanceof Error ? err.message : "Equipment list unavailable.");
     } finally {
-      setLoadingAssets(false);
+      if (generation === requestGeneration.current.assets && viewedProjectRef.current === projectId) {
+        setLoadingAssets(false);
+      }
     }
   }, [projectId]);
 
   const fetchReviews = useCallback(async () => {
     if (!projectId) return;
+    const generation = ++requestGeneration.current.reviews;
     setLoadingReviews(true);
+    setReviews([]);
+    setErrorReviews(null);
     try {
-      const data = await apiFetch<any>(`/api/v1/projects/${encodeURIComponent(projectId)}/reviews`);
-      setReviews(Array.isArray(data) ? data : data?.data || []);
+      const data = await apiFetch<unknown>(`/api/v1/projects/${encodeURIComponent(projectId)}/reviews`);
+      if (generation !== requestGeneration.current.reviews || viewedProjectRef.current !== projectId) return;
+      const rows = Array.isArray(data) ? data :
+        (data && typeof data === "object" && "data" in data ? (data as { data: unknown }).data : null);
+      if (!Array.isArray(rows)) throw new Error("REVIEW_RESPONSE_INVALID: Review list was not returned.");
+      setReviews(rows);
     } catch (err) {
-      console.error("Error loading reviews", err);
+      if (generation !== requestGeneration.current.reviews || viewedProjectRef.current !== projectId) return;
+      setErrorReviews(err instanceof Error ? err.message : "Review list unavailable.");
     } finally {
-      setLoadingReviews(false);
+      if (generation === requestGeneration.current.reviews && viewedProjectRef.current === projectId) {
+        setLoadingReviews(false);
+      }
     }
   }, [projectId]);
 
   const fetchPackages = useCallback(async () => {
     if (!projectId) return;
+    const generation = ++requestGeneration.current.packages;
     setLoadingPackages(true);
+    setPackages([]);
+    setErrorPackages(null);
     try {
-      const data = await apiFetch<any>(`/api/v1/projects/${encodeURIComponent(projectId)}/packages`);
-      setPackages(Array.isArray(data) ? data : data?.data || []);
+      const data = await apiFetch<unknown>(`/api/v1/projects/${encodeURIComponent(projectId)}/packages`);
+      if (generation !== requestGeneration.current.packages || viewedProjectRef.current !== projectId) return;
+      const rows = Array.isArray(data) ? data :
+        (data && typeof data === "object" && "data" in data ? (data as { data: unknown }).data : null);
+      if (!Array.isArray(rows)) throw new Error("PACKAGE_RESPONSE_INVALID: Handover package list was not returned.");
+      setPackages(rows);
     } catch (err) {
-      console.error("Error loading packages", err);
+      if (generation !== requestGeneration.current.packages || viewedProjectRef.current !== projectId) return;
+      setErrorPackages(err instanceof Error ? err.message : "Handover dossiers unavailable.");
     } finally {
-      setLoadingPackages(false);
+      if (generation === requestGeneration.current.packages && viewedProjectRef.current === projectId) {
+        setLoadingPackages(false);
+      }
     }
   }, [projectId]);
 
