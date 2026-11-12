@@ -43,7 +43,8 @@ describe('PH5-G28-001 handover package quarantine and signing fence', () => {
         if (sql.includes('FROM package_items pi') && sql.includes('FOR SHARE OF dv, evidence')) {
           return { rows: overrides.missingSource ? [] : [{
             item_id: itemId, version_id: versionId, storage_id: objectId,
-            file_status: 'READY', version_deleted_at: overrides.sourceDeleted ? new Date() : null,
+            file_status: 'READY', review_status: 'APPROVED',
+            version_deleted_at: overrides.sourceDeleted ? new Date() : null,
             storage_status: overrides.status ?? 'READY',
           }] };
         }
