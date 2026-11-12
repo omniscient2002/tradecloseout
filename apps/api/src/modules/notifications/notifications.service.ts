@@ -47,7 +47,7 @@ export class NotificationsService {
   ) {
     // PH2-G20-001: external delivery is an internal template-only workflow.
     // A user cannot turn arbitrary JSON into an email or SMS by changing channel.
-    if (dto.channel !== 'IN_APP') {
+    if (dto.channel !== 'IN_APP' && ctx.actorType !== 'SYSTEM') {
       throw new ServiceUnavailableException({
         code: 'EXTERNAL_NOTIFICATION_TEMPLATES_REQUIRED',
         detail: 'External notifications require a reviewed server-owned event template.',
@@ -87,23 +87,26 @@ export class NotificationsService {
         }
       }
 
+      const external = dto.channel !== 'IN_APP';
       const { rows: inserted } = await client.query(
         `INSERT INTO notifications (
           id, org_id, project_id, recipient_user_id, channel, event_key,
           payload_json, status, dedup_key, sent_at, gateway_state
-        ) VALUES ($1, $2, $3, $4, 'IN_APP', $5, $6, 'SENT', $7, now(), 'DELIVERED')
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         ON CONFLICT (org_id, dedup_key, channel, COALESCE(recipient_user_id, recipient_party_id))
         DO NOTHING RETURNING *`,
         [uuidv7(), ctx.orgId, dto.projectId ?? null, ctx.userId,
-          dto.eventKey, canonicalPayload, dto.dedupKey],
+          dto.channel, dto.eventKey, canonicalPayload,
+          external ? 'QUEUED' : 'SENT', dto.dedupKey,
+          external ? null : new Date(), external ? 'PENDING' : 'DELIVERED'],
       );
       if (inserted.length) return { notification: inserted[0], deferredForQuietHours: false };
 
       const { rows: existing } = await client.query(
         `SELECT * FROM notifications
-          WHERE org_id = $1 AND dedup_key = $2 AND channel = 'IN_APP'
+          WHERE org_id = $1 AND dedup_key = $2 AND channel = $4
             AND recipient_user_id = $3 FOR SHARE`,
-        [ctx.orgId, dto.dedupKey, ctx.userId],
+        [ctx.orgId, dto.dedupKey, ctx.userId, dto.channel],
       );
       const previous = existing[0];
       const previousPayload = typeof previous?.payload_json === 'string'
