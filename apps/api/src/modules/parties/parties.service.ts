@@ -16,6 +16,7 @@ import { PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { TenantDbService, ExecutionContext } from '../../database/tenant-db.service';
 import { DltSmsGateway, TransactionalMailGateway } from '../identity/identity.controller';
+import { IndianGstinSchema } from '@tradecloseout/shared';
 
 export interface CreatePartyDto {
   name: string;
@@ -23,6 +24,60 @@ export interface CreatePartyDto {
   gstin?: string;
   email?: string;
   phone?: string;
+}
+
+/**
+ * PH3-G04-001: validate party registry data before starting a transaction.
+ * Party types are descriptors, NOT independent proof of counterparty authority.
+ * Preserve explicit legacy aliases until the tenant catalogue is migrated.
+ */
+const PARTY_TYPES = new Set([
+  'CLIENT', 'MAIN_CONTRACTOR', 'MC', 'CONSULTANT',
+  'SUPPLIER', 'SUPPLIER_OEM', 'MANUFACTURER',
+  'SUBCONTRACTOR', 'SUB_SUBCONTRACTOR', 'LAB', 'OTHER',
+]);
+export function normalizeCreateParty(input: unknown): CreatePartyDto {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    throw new BadRequestException('INVALID_PARTY_PAYLOAD');
+  }
+  const value = input as Record<string, unknown>;
+  if (Object.keys(value).some((key) => !['name', 'types', 'gstin', 'email', 'phone'].includes(key))) {
+    throw new BadRequestException('UNSUPPORTED_PARTY_FIELDS');
+  }
+  if (typeof value.name !== 'string' || value.name.trim().length < 2 || value.name.trim().length > 200) {
+    throw new BadRequestException('INVALID_PARTY_NAME');
+  }
+  const types = value.types === undefined ? ['SUPPLIER_OEM'] : value.types;
+  if (!Array.isArray(types) || types.length < 1 || types.length > 8 ||
+      types.some((type) => typeof type !== 'string' || !PARTY_TYPES.has(type)) ||
+      new Set(types).size !== types.length) {
+    throw new BadRequestException('INVALID_PARTY_TYPES');
+  }
+  let gstin: string | undefined;
+  if (value.gstin !== undefined && value.gstin !== null && value.gstin !== '') {
+    const result = IndianGstinSchema.safeParse(value.gstin);
+    if (!result.success) throw new BadRequestException('INVALID_PARTY_GSTIN');
+    gstin = result.data;
+  }
+  let email: string | undefined;
+  if (value.email !== undefined && value.email !== null && value.email !== '') {
+    if (typeof value.email !== 'string') throw new BadRequestException('INVALID_PARTY_EMAIL');
+    email = value.email.trim().toLowerCase();
+    if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      throw new BadRequestException('INVALID_PARTY_EMAIL');
+    }
+  }
+  let phone: string | undefined;
+  if (value.phone !== undefined && value.phone !== null && value.phone !== '') {
+    if (typeof value.phone !== 'string') throw new BadRequestException('INVALID_PARTY_PHONE');
+    phone = value.phone.trim();
+    const digits = phone.replace(/\D/g, '');
+    if (phone.length > 32 || digits.length < 7 || digits.length > 15 ||
+        !/^\+?[0-9 ()-]+$/.test(phone)) {
+      throw new BadRequestException('INVALID_PARTY_PHONE');
+    }
+  }
+  return { name: value.name.trim(), types: types as string[], gstin, email, phone };
 }
 
 export interface GuestGrantProfile {
@@ -110,6 +165,7 @@ export class PartiesService {
    * Registers a new counterparty (Client, MC, Consultant, Supplier OEM, Lab).
    */
   async createParty(ctx: ExecutionContext, dto: CreatePartyDto) {
+    const validated = normalizeCreateParty(dto);
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
       const id = uuidv7();
       const res = await client.query(
@@ -120,11 +176,11 @@ export class PartiesService {
         [
           id,
           ctx.orgId,
-          dto.name.trim(),
-          dto.types && dto.types.length ? dto.types : ['SUPPLIER_OEM'],
-          dto.gstin?.trim() || null,
-          dto.email?.trim() || null,
-          dto.phone?.trim() || null,
+          validated.name,
+          validated.types,
+          validated.gstin ?? null,
+          validated.email ?? null,
+          validated.phone ?? null,
           ctx.userId,
         ],
       );
