@@ -10,6 +10,14 @@ describe('PH1-G24-005: notification producer preserves accepted and in-flight co
   it('marks in-app delivered; external acceptance only after gateway; dedup cannot change submitted payload',async()=>{
     await withDisposableDatabase(async({admin,app})=>{
       const {userId,tenants:[tenant]}=await seedTenants(admin);
+      // The generic seedTenants helper creates projects, not organisation
+      // membership. The private inbox now requires a real active membership;
+      // do not weaken the service to accommodate a fixture without one.
+      await admin.query(
+        `INSERT INTO memberships(id,org_id,user_id,role,status)
+           VALUES($1,$2,$3,'R-OWNER','ACTIVE')`,
+        [uuidv7(),tenant.orgId,userId],
+      );
       const service=new NotificationsService(new TenantDbService(app));
       const ctx:any={orgId:tenant.orgId,userId,actorType:'SYSTEM',requestId:'g24-notification-producer'};
       const external=await service.createNotification(ctx,{channel:'EMAIL',eventKey:'G24_TEST',
