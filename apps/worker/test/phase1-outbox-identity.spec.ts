@@ -5,6 +5,8 @@ import { withTenantTransaction, buildTrustedOutboxPayload } from '@tradecloseout
 import { withDisposableDatabase } from '../../../packages/db/test/helpers/disposable-database';
 import { seedTenants, scoped } from '../../../packages/db/test/helpers/fixtures';
 import { authorizeOutboxDispatch } from '../src/outbox-identity';
+import Redis from 'ioredis';
+import { Queue } from 'bullmq';
 
 function packageRow(orgId: string, projectId: string, packageId: string, actorId = 'actor-a') {
   const eventId = randomUUID();
@@ -139,6 +141,30 @@ test('PH1-G27-004: migrated PG16 retains actor/event/request and disallows cross
       assert.equal(actual.actorUserId, userId);
       assert.equal(actual.requestId, requestId);
       assert.equal(actual.packageId, packageId);
+
+      // This is the same payload admitted to BullMQ by the production
+      // dispatcher. Verify real Redis stores trusted provenance unchanged.
+      const connection = new Redis(process.env.REDIS_URL || 'redis://127.0.0.1:6379', {
+        maxRetriesPerRequest: null,
+      });
+      const queue = new Queue(`g27-identity-${randomUUID()}`, { connection });
+      try {
+        const enqueued = await queue.add('compile', actual, {
+          jobId: `trusted-${stored.id}`,
+        });
+        const received = await queue.getJob(enqueued.id!);
+        assert(received);
+        assert.equal(received.data.orgId, a.orgId);
+        assert.equal(received.data.projectId, a.projectIds[0]);
+        assert.equal(received.data.eventId, stored.id);
+        assert.equal(received.data.entityId, packageId);
+        assert.equal(received.data.actorUserId, userId);
+        assert.equal(received.data.requestId, requestId);
+      } finally {
+        await queue.obliterate({ force: true });
+        await queue.close();
+        await connection.quit();
+      }
 
       const audit = await client.query(
         'SELECT actor_user_id,request_id,entity_id,action FROM audit_events WHERE action=$1 AND request_id=$2',
