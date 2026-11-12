@@ -212,6 +212,24 @@ export class BillingController {
     );
   }
 
+  @Post('projects/:projectId/defects/:id/severity')
+  @UseGuards(SessionCsrfGuard, PermissionGuard)
+  @RequirePermission('defect.manage')
+  async updateDefectSeverity(
+    @Req() req: any,
+    @Param('projectId') projectId: string,
+    @Param('id') defectId: string,
+    @Body() dto: {
+      expectedRowVersion: number;
+      severity: 'LOW'|'MEDIUM'|'HIGH'|'CRITICAL'|'MINOR'|'MAJOR';
+      reason: string;
+    },
+  ) {
+    return this.warrantyAndBillingService.updateDefectSeverity(
+      req.userContext, projectId, defectId, dto,
+    );
+  }
+
   @Post('projects/:projectId/defects/:id/reject-remedy')
   @UseGuards(SessionCsrfGuard, PermissionGuard)
   @RequirePermission('defect.manage')
