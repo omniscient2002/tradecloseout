@@ -102,6 +102,21 @@ describe('PH1-G01-003: MFA enrollment proposal is expiring and bound to exact se
         mfa_verified: true, revoked_at: null,
       });
       expect(secondary.revoked_at).toBeTruthy();
+
+      // The enrollment code's TOTP step was consumed at confirmation. It
+      // cannot be replayed to rotate a new privileged session.
+      await expect(store.verifyFactor(freshCtx, totp(active.manualSetupKey)))
+        .rejects.toMatchObject({ response: { code: 'MFA_CODE_INVALID_OR_REPLAYED' } });
+      const usedRecovery = await store.useRecoveryCode(freshCtx, enrolled.recoveryCodes[0]);
+      expect(usedRecovery.mfaVerified).toBe(true);
+      const afterRecovery = {
+        ...freshCtx,
+        sessionTokenHash: createHash('sha256').update(usedRecovery.newSessionToken).digest('hex'),
+      };
+      await expect(store.useRecoveryCode(afterRecovery, enrolled.recoveryCodes[0]))
+        .rejects.toMatchObject({ response: { code: 'RECOVERY_CODE_INVALID' } });
+      await expect(store.useRecoveryCode(freshCtx, enrolled.recoveryCodes[1]))
+        .rejects.toMatchObject({ response: { code: 'SESSION_CONTEXT_CHANGED' } });
       const { rows: result } = await admin.query(
         `SELECT p.status,p.encrypted_secret,u.mfa_totp_secret,u.mfa_enabled_at,
              (SELECT count(*)::int FROM mfa_recovery_codes WHERE user_id=$2) AS recovery_count
@@ -115,6 +130,11 @@ describe('PH1-G01-003: MFA enrollment proposal is expiring and bound to exact se
       expect(result[0].mfa_totp_secret).not.toContain(active.manualSetupKey);
       expect(result[0].mfa_enabled_at).toBeTruthy();
       expect(result[0].recovery_count).toBe(8);
+      const { rows: consumedCodes } = await admin.query(
+        "SELECT count(*)::int AS n FROM mfa_recovery_codes WHERE user_id=$1 AND consumed_at IS NOT NULL",
+        [userId],
+      );
+      expect(consumedCodes[0].n).toBe(1);
       for (const code of enrolled.recoveryCodes) {
         expect(JSON.stringify(result)).not.toContain(code);
       }
