@@ -89,7 +89,31 @@ describe('PH2-G05-001/002/005 canonical money and variation integrity', () => {
         VARIATION_DRAFT_CREATED:1,PROJECT_SPECIFICATION_ADDED:1,
       });
 
+      // A globally valid foreign party ID is not authority to link another
+      // organisation's commercial records to this project.
+      const foreignOrg=uuidv7(),foreignParty=uuidv7();
+      await admin.query(`INSERT INTO organisations(id,legal_name,display_name,state)
+        VALUES($1,'Foreign Owner','Foreign Owner','KA')`,[foreignOrg]);
+      await admin.query(`INSERT INTO parties(id,org_id,name,types)
+        VALUES($1,$2,'Foreign Supplier',ARRAY['SUPPLIER']::text[])`,[foreignParty,foreignOrg]);
+      await expect(service.createContract(ctx,large.projectId,{
+        contractRef:'FOREIGN-01',title:'Wrong tenant contract',partyId:foreignParty,
+      })).rejects.toThrow('CONTRACT_PARTY_NOT_FOUND');
+      await expect(service.createContract(ctx,large.projectId,{
+        contractRef:'BAD-RET',title:'Invalid retention',retentionBps:10001,
+      })).rejects.toMatchObject({
+        response:expect.objectContaining({code:'INVALID_RETENTION_BPS'}),
+      });
+      await expect(service.createSpecification(ctx,large.projectId,{
+        specNumber:'BAD-DOC',title:'Unverified document link',documentId:uuidv7(),
+      })).rejects.toThrow('SPECIFICATION_DOCUMENT_NOT_FOUND');
+
       await admin.query(`UPDATE projects SET status='HANDOVER' WHERE id=$1`,[large.projectId]);
+      await expect(service.createContract(ctx,large.projectId,{
+        contractRef:'LATE-01',title:'Handover contract mutation',
+      })).rejects.toMatchObject({
+        response:expect.objectContaining({code:'PROJECT_COMMERCIAL_WRITES_LOCKED'}),
+      });
       await expect(service.updateProject(ctx,large.projectId,{name:'Unsafe handover edit'}))
         .rejects.toMatchObject({response:expect.objectContaining({code:'PROJECT_IMMUTABLE'})});
 
