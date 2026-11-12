@@ -521,6 +521,7 @@ test('same authenticated member can deliberately recover only local-only previou
     Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
     await q.enqueueFieldUpload({
       actorPartition: member, projectId: 'project-one', requirementId: 'requirement-one',
+      requirementRowVersion: 7,
       file: new File(['original bytes'], 'saved.pdf', { type: 'application/pdf' }),
       revisionCode: 'A', issueDate: '2026-11-12', title: 'Saved original',
     });
@@ -533,8 +534,8 @@ test('same authenticated member can deliberately recover only local-only previou
     (window as any).__apiFetch = async (url: string, opts?: unknown) => {
       requests.push(url);
       if (url === '/api/v1/auth/me') return { userId, activeOrgId: orgId };
-      if (url.endsWith('/documents/recover-upload-authority/requirement-one')) {
-        return { allowed: true, projectId: 'project-one', requirementId: 'requirement-one' };
+      if (url.endsWith('/documents/recover-upload-authority/requirement-one?rowVersion=7')) {
+        return { allowed: true, projectId: 'project-one', requirementId: 'requirement-one', rowVersion: 7 };
       }
       return baseline(url, opts);
     };
@@ -547,7 +548,7 @@ test('same authenticated member can deliberately recover only local-only previou
   expect(result.after).toBe('QUEUED_OFFLINE');
   expect(result.requests).toEqual([
     '/api/v1/auth/me',
-    '/api/v1/projects/project-one/documents/recover-upload-authority/requirement-one',
+    '/api/v1/projects/project-one/documents/recover-upload-authority/requirement-one?rowVersion=7',
   ]);
 });
 
@@ -562,6 +563,7 @@ test('changed member identity cannot recover a previous actor original', async (
     Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
     await q.enqueueFieldUpload({
       actorPartition: member, projectId: 'project-one', requirementId: 'requirement-one',
+      requirementRowVersion: 7,
       file: new File(['original'], 'saved.pdf', { type: 'application/pdf' }),
       revisionCode: 'A', issueDate: '2026-11-12', title: 'Original',
     });
