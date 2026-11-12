@@ -175,6 +175,16 @@ describe('PH1-G01-004 / PH1-G26-004: session eligibility inside real tenant tran
       await admin.query("UPDATE guest_grants SET status='REVOKED' WHERE id=$1", [grantId]);
       await expect(service.withTenantContext(ctx, async () => 'guest-authorized'))
         .rejects.toThrow('AUTH_SESSION_CONTEXT_CHANGED');
+
+      await admin.query("UPDATE guest_grants SET status='ACTIVE' WHERE id=$1", [grantId]);
+      await admin.query("UPDATE parties SET status='ARCHIVED' WHERE id=$1", [partyId]);
+      await expect(service.withTenantContext(ctx, async () => 'guest-authorized'))
+        .rejects.toThrow('AUTH_SESSION_CONTEXT_CHANGED');
+
+      await admin.query("UPDATE parties SET status='ACTIVE' WHERE id=$1", [partyId]);
+      await admin.query("UPDATE projects SET status='CLOSED' WHERE id=$1", [a.projectIds[0]]);
+      await expect(service.withTenantContext(ctx, async () => 'guest-authorized'))
+        .rejects.toThrow('AUTH_SESSION_CONTEXT_CHANGED');
     });
   });
 });
