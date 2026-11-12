@@ -197,13 +197,37 @@ export async function reconcileStorageQuotaOnFileStatusChange(
   );
 }
 
+/**
+ * Sanitise nested audit metadata before it reaches durable audit/outbox storage.
+ * The key check is case-insensitive and supports camelCase, snake_case and header
+ * spellings. Never mutate the caller's object: it may still be needed by the command.
+ */
 export function redactSensitiveFields(obj: Record<string, unknown>): Record<string, unknown> {
-  const REDACTED_KEYS = new Set(['token', 'token_hash', 'otp', 'password', 'secret', 'qr_payload']);
-  const clone: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(obj)) {
-    clone[k] = REDACTED_KEYS.has(k.toLowerCase()) ? '[REDACTED]' : v;
-  }
-  return clone;
+  const sensitiveKey = (key: string): boolean => {
+    const normalised = key.replace(/[^a-z0-9]/gi, '').toLowerCase();
+    return /^(?:token|tokenhash|otp|password|secret|qrpayload|authorization|cookie|setcookie|apikey|clientsecret|accesstoken|refreshtoken|idtoken|recoverycode|recoverycodes|totpsecret|mfasecret|signedurl|presignedurl)$/.test(normalised)
+      || /(?:token|password|secret|recoverycode|signedurl|presignedurl)$/.test(normalised);
+  };
+
+  const seen = new WeakSet<object>();
+  const scrub = (value: unknown, depth: number): unknown => {
+    if (value === null || typeof value !== 'object') return value;
+    if (depth >= 32) return '[REDACTED:DEPTH_LIMIT]';
+    if (seen.has(value)) return '[REDACTED:CIRCULAR_REFERENCE]';
+    seen.add(value);
+    try {
+      if (Array.isArray(value)) return value.map(item => scrub(item, depth + 1));
+      const clone: Record<string, unknown> = {};
+      for (const [key, child] of Object.entries(value)) {
+        clone[key] = sensitiveKey(key) ? '[REDACTED]' : scrub(child, depth + 1);
+      }
+      return clone;
+    } finally {
+      seen.delete(value);
+    }
+  };
+
+  return scrub(obj, 0) as Record<string, unknown>;
 }
 
 export function hashRequestPayload(body: unknown): string {
