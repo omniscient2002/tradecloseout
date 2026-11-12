@@ -130,7 +130,7 @@ export class BillingController {
 
   @Get('projects/:id/defects')
   @UseGuards(SessionCsrfGuard, PermissionGuard)
-  @RequirePermission('document.read')
+  @RequirePermission('defect.manage')
   async listDefects(@Req() req: any, @Param('id') projectId: string) {
     return this.warrantyAndBillingService.listDefects(req.userContext, projectId);
   }
@@ -274,7 +274,7 @@ export class BillingController {
 
   @Get('projects/:projectId/defects/:id/history')
   @UseGuards(SessionCsrfGuard, PermissionGuard)
-  @RequirePermission('document.read')
+  @RequirePermission('defect.manage')
   async listDefectTransitions(
     @Req() req: any,
     @Param('projectId') projectId: string,
