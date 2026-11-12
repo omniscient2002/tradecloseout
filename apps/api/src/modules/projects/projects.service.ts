@@ -15,6 +15,7 @@ import {
   DomainOutboxEvent,
 } from '@tradecloseout/db';
 import { hasPermission, ProjectCodeSchema } from '@tradecloseout/shared';
+import { evaluateReadinessInTransaction } from '../handover/closeout-readiness';
 
 const POSTGRES_BIGINT_MAX = 9223372036854775807n;
 const POSTGRES_BIGINT_MIN = -9223372036854775808n;
@@ -26,7 +27,7 @@ function exactPaise(value: unknown, allowNegative = false): bigint | undefined {
     ? true
     : typeof value === 'number'
       ? Number.isSafeInteger(value)
-      : typeof value === 'string' && /^-?\\d{1,19}$/.test(value);
+      : typeof value === 'string' && /^-?\d{1,19}$/.test(value);
   if (!valid) throw new UnprocessableEntityException({ code: 'INVALID_MONEY_PAISE' });
   const amount = BigInt(value as bigint | number | string);
   if (amount > POSTGRES_BIGINT_MAX || amount < (allowNegative ? POSTGRES_BIGINT_MIN : 0n)) {
@@ -36,11 +37,10 @@ function exactPaise(value: unknown, allowNegative = false): bigint | undefined {
 }
 
 function validProjectDate(value: unknown): value is string {
-  if (typeof value !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/.test(value)) return false;
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const parsed = new Date(value + 'T00:00:00.000Z');
   return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
-import { evaluateReadinessInTransaction } from '../handover/closeout-readiness';
 
 @Injectable()
 export class ProjectsService {
@@ -128,7 +128,7 @@ export class ProjectsService {
     },
   ) {
     if (typeof input.name !== 'string' || input.name.trim().length < 2 ||
-        input.name.trim().length > 200 || /[\\u0000-\\u001f\\u007f]/.test(input.name)) {
+        input.name.trim().length > 200 || /[\u0000-\u001f\u007f]/.test(input.name)) {
       throw new UnprocessableEntityException({ code: 'INVALID_PROJECT_NAME' });
     }
     const contractValuePaise = exactPaise(input.contractValuePaise);
