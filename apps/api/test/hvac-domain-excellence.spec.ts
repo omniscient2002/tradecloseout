@@ -1040,6 +1040,17 @@ describe('HVAC Domain Excellence Suite (XP11..XP18)', () => {
           VALUES ($1, $2, $3, $4, 1, 'R0', $5, 'READY', 'APPROVED', CURRENT_DATE, $6)
         `, [remedyVerId, orgIdA, projectA0, remedyDocId, remedyEvidenceId, seededUserId]);
 
+        // Link this immutable remedy to a current approved document version
+        // and the exact asset; the matching S3 key is intentionally irrelevant.
+        await admin.query(`
+          UPDATE documents SET current_approved_version_id = $1
+           WHERE org_id = $2 AND project_id = $3 AND id = $4
+        `, [remedyVerId, orgIdA, projectA0, remedyDocId]);
+        await admin.query(`
+          INSERT INTO document_assets (id, org_id, project_id, document_id, asset_id)
+          VALUES ($1, $2, $3, $4, $5)
+        `, [uuidv7(), orgIdA, projectA0, remedyDocId, assetA0]);
+
         // Insert OPEN critical defect bound to assetA0
         await admin.query(`
           INSERT INTO defects (id, org_id, project_id, asset_id, title, description, severity, status, raised_by, row_version)
