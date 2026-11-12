@@ -1,6 +1,7 @@
 import { Pool, PoolClient } from 'pg';
 import { createHash } from 'crypto';
 import { uuidv7 } from 'uuidv7';
+import { assertLiveSessionEligibleInTransaction } from './session-authority';
 
 export interface TenantActorContext {
   orgId: string;       // Must come exclusively from session.active_org_id (AUD-014)
@@ -15,6 +16,7 @@ export interface TenantActorContext {
   guestProjectId?: string;
   guestCapabilities?: string[];
   guestScope?: Record<string, any>;
+  sessionId?: string;
 }
 
 export interface DomainOutboxEvent {
@@ -94,6 +96,9 @@ export async function withTenantTransaction<T>(
     await client.query(`SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`, [ctx.orgId]);
     await client.query(`SELECT set_config('app.current_user', $1, true)`, [ctx.userId]);
 
+    // Revalidate and lock the live browser principal after the RLS context
+    // is installed. Revocation/offboarding cannot overtake this transaction.
+    await assertLiveSessionEligibleInTransaction(client, ctx);
     const result = await work(client, (ev) => stagedEvents.push(ev));
 
     // Flush staged domain events to outbox_events & audit_events in the same tx (09 §5.2)
