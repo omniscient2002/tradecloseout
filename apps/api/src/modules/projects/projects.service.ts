@@ -727,18 +727,88 @@ export class ProjectsService {
   }
 
   /**
-   * PH2-G05-011: stable compatibility projection across SQL and web. Do not
-   * fabricate closeout percentages, missing parties or financial totals.
+   * PH2-G05-011/G20-002: project.read is not commercial-reporting authority.
+   * DTO allowlists also prevent arbitrary settings/site JSON from becoming an
+   * accidental disclosure surface when new database columns are introduced.
    */
-  private projectDirectoryDto(row: Record<string, any>) {
+  private projectDirectoryDto(row: Record<string, any>, commercial: boolean) {
+    const amount = commercial && row.contract_value_paise != null
+      ? String(row.contract_value_paise) : null;
     return {
-      ...row,
+      id: row.id,
+      org_id: row.org_id,
+      code: row.code,
+      name: row.name,
+      status: row.status,
+      project_type: row.project_type,
+      projectType: row.project_type,
+      client_party_id: row.client_party_id,
+      mc_party_id: row.mc_party_id,
+      consultant_party_id: row.consultant_party_id,
       clientName: row.client_name ?? null,
       mcName: row.mc_name ?? null,
       pmcName: row.pmc_name ?? null,
+      start_date: row.start_date ?? null,
+      target_handover_date: row.target_handover_date ?? null,
       targetHandoverDate: row.target_handover_date ?? null,
-      contractValuePaise: row.contract_value_paise == null ? null : String(row.contract_value_paise),
+      row_version: row.row_version,
       rowVersion: row.row_version,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      contract_value_paise: amount,
+      contractValuePaise: amount,
+    };
+  }
+
+  private async liveOrgCommercialRead(client: PoolClient, ctx: TenantActorContext): Promise<{
+    role: string;
+    canReadCommercial: boolean;
+  }> {
+    if (ctx.actorType === 'GUEST' || ctx.guestGrantId) {
+      throw new NotFoundException('PROJECT_NOT_FOUND');
+    }
+    const { rows } = await client.query(
+      `SELECT m.role FROM memberships m
+        JOIN users u ON u.id = m.user_id AND u.status = 'ACTIVE'
+       WHERE m.org_id = $1 AND m.user_id = $2 AND m.status = 'ACTIVE'
+       FOR SHARE OF m, u`,
+      [ctx.orgId, ctx.userId],
+    );
+    if (!rows.length) throw new NotFoundException('PROJECT_NOT_FOUND');
+    const role = String(rows[0].role);
+    return {
+      role,
+      canReadCommercial: hasPermission({ orgRole: role }, 'contract.manage').allowed,
+    };
+  }
+
+  private projectReadDto(row: Record<string, any>) {
+    return {
+      id: row.id,
+      org_id: row.org_id,
+      code: row.code,
+      name: row.name,
+      status: row.status,
+      project_type: row.project_type,
+      client_party_id: row.client_party_id,
+      mc_party_id: row.mc_party_id,
+      consultant_party_id: row.consultant_party_id,
+      start_date: row.start_date,
+      target_handover_date: row.target_handover_date,
+      currency: row.currency,
+      reopen_count: row.reopen_count,
+      closed_at: row.closed_at,
+      archived_at: row.archived_at,
+      row_version: row.row_version,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      // These keys are intentionally present but unavailable to restricted
+      // readers. Never copy site_json/settings_json: they may contain amounts
+      // or other future confidential configuration fields.
+      contract_value_paise: null,
+      retention_bps: null,
+      site_json: {},
+      settings_json: {},
     };
   }
 
@@ -747,13 +817,10 @@ export class ProjectsService {
    */
   async listProjects(ctx: TenantActorContext) {
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
-      const permission = hasPermission({
-        orgRole: ctx.orgRole,
-        projectRole: ctx.projectRole,
-        guestCapabilities: ctx.guestCapabilities,
-      }, 'project.read');
+      const visibility = await this.liveOrgCommercialRead(client, ctx);
+      // A project-specific role cannot authorize an unscoped directory query.
+      const permission = hasPermission({ orgRole: visibility.role }, 'project.read');
       if (!permission.allowed) throw new NotFoundException('PROJECT_NOT_FOUND');
-      if (ctx.guestGrantId) throw new NotFoundException('PROJECT_NOT_FOUND');
       if (permission.scope === 'S') {
         const res = await client.query(
           `SELECT p.*, client.name AS client_name,
@@ -772,7 +839,7 @@ export class ProjectsService {
            ORDER BY p.created_at DESC`,
           [ctx.orgId, ctx.userId],
         );
-        return res.rows.map((row) => this.projectDirectoryDto(row));
+        return res.rows.map((row) => this.projectDirectoryDto(row, visibility.canReadCommercial));
       }
       const res = await client.query(
         `SELECT p.*, client.name AS client_name,
@@ -788,7 +855,7 @@ export class ProjectsService {
           ORDER BY p.created_at DESC`,
         [ctx.orgId],
       );
-      return res.rows.map((row) => this.projectDirectoryDto(row));
+      return res.rows.map((row) => this.projectDirectoryDto(row, visibility.canReadCommercial));
     });
   }
 
@@ -800,6 +867,7 @@ export class ProjectsService {
       throw new NotFoundException('PROJECT_NOT_FOUND');
     }
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+      const visibility = await this.liveOrgCommercialRead(client, ctx);
       const res = await client.query(
         `SELECT * FROM projects WHERE org_id = $1 AND id = $2 AND purged_at IS NULL`,
         [ctx.orgId, projectId],
@@ -807,7 +875,7 @@ export class ProjectsService {
       if (!res.rows.length) {
         throw new NotFoundException('PROJECT_NOT_FOUND');
       }
-      return res.rows[0];
+      return visibility.canReadCommercial ? res.rows[0] : this.projectReadDto(res.rows[0]);
     });
   }
 
