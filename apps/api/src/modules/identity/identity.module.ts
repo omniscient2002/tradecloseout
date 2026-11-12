@@ -1,5 +1,4 @@
 import { Module, Injectable, ServiceUnavailableException } from '@nestjs/common';
-import { createHash } from 'node:crypto';
 import Redis from 'ioredis';
 import { DatabaseModule } from '../../database/database.module';
 import { IdentityController, DltSmsGateway, TransactionalMailGateway } from './identity.controller';
@@ -128,7 +127,7 @@ export class InMemoryRedis {
       return 'EXPIRED';
     }
 
-    let challenge: { id?: string; identifier?: string; salt?: string; otpHash?: string };
+    let challenge: { id?: string; identifier?: string; salt?: string; otpMac?: string };
     try {
       challenge = JSON.parse(challengeRaw);
     } catch {
@@ -166,9 +165,10 @@ export class InMemoryRedis {
       return 'MAX';
     }
 
-    if (!challenge.salt || !challenge.otpHash) return 'EXPIRED';
-    const computedHash = createHash('sha1').update(`${challenge.salt}:${candidateCode}`).digest('hex');
-    if (challenge.otpHash !== computedHash) return 'INVALID';
+    // Mirrors the real Redis Lua command. Only compare an HMAC computed in
+    // the API; never recover an OTP from a low-entropy stored digest here.
+    if (typeof challenge.otpMac !== 'string' || challenge.otpMac.length !== 64) return 'EXPIRED';
+    if (challenge.otpMac !== candidateCode) return 'INVALID';
 
     // Success: atomically delete challenge, attempts, and alias if current
     this.store.delete(directChallengeKey);
