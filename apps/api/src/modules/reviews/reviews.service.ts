@@ -568,6 +568,17 @@ export class ReviewsService {
     dto: DecisionDto,
     existingClient?: PoolClient,
   ) {
+    if (!dto || !['APPROVE', 'REQUEST_CHANGES', 'REJECT'].includes(dto.decision)) {
+      throw new BadRequestException('INVALID_REVIEW_DECISION');
+    }
+    if (dto.expectedRowVersion !== undefined &&
+        (!Number.isSafeInteger(dto.expectedRowVersion) || dto.expectedRowVersion < 1)) {
+      throw new BadRequestException('INVALID_REVIEW_PRECONDITION');
+    }
+    if (dto.comment !== undefined &&
+        (typeof dto.comment !== 'string' || dto.comment.length > 4000)) {
+      throw new BadRequestException('INVALID_REVIEW_COMMENT');
+    }
     if (
       (dto.decision === 'REQUEST_CHANGES' || dto.decision === 'REJECT') &&
       (!dto.comment || dto.comment.trim().length < 5)
@@ -576,22 +587,24 @@ export class ReviewsService {
     }
 
     const run = async (client: PoolClient) => {
-      // 1. Fetch review record
+      // Resolve immutable review identity without locking a sibling review
+      // first: two reviewers must acquire the *same* project/version locks
+      // before either obtains an individual assignment lock.
       const reviewRes = await client.query(
-        `SELECT * FROM reviews WHERE org_id = $1 AND id = $2 FOR UPDATE`,
+        `SELECT * FROM reviews WHERE org_id = $1 AND id = $2`,
         [ctx.orgId, reviewId],
       );
-      if (!reviewRes.rows.length) {
-        throw new NotFoundException('REVIEW_NOT_FOUND');
-      }
-      const review = reviewRes.rows[0];
-      if (review.status !== 'IN_REVIEW' && review.status !== 'PENDING') {
-        throw new ConflictException(`INVALID_STATE_TRANSITION: Review is already in status ${review.status}`);
-      }
-      if (ctx.actorType === 'GUEST' || review.reviewer_subject_type !== 'USER' ||
-          review.reviewer_subject_id !== ctx.userId ||
-          (review.reviewer_user_id && review.reviewer_user_id !== ctx.userId)) {
-        throw new ForbiddenException('REVIEW_ASSIGNMENT_REQUIRED');
+      if (!reviewRes.rows.length) throw new NotFoundException('REVIEW_NOT_FOUND');
+      let review = reviewRes.rows[0];
+
+      const projectRes = await client.query(
+        `SELECT status FROM projects WHERE org_id = $1 AND id = $2
+          AND purged_at IS NULL FOR UPDATE`,
+        [ctx.orgId, review.project_id],
+      );
+      if (!projectRes.rows.length) throw new NotFoundException('PROJECT_NOT_FOUND');
+      if (['CLOSED', 'ARCHIVED', 'CANCELLED'].includes(projectRes.rows[0].status)) {
+        throw new ConflictException('PROJECT_NOT_EDITABLE');
       }
 
       // 2. Lock document_version FOR UPDATE via document_version_id (CB-005, AUD-007)
@@ -603,6 +616,21 @@ export class ReviewsService {
         throw new NotFoundException('DOCUMENT_VERSION_NOT_FOUND');
       }
       const version = verRes.rows[0];
+      const lockedReviewRes = await client.query(
+        `SELECT * FROM reviews WHERE org_id = $1 AND id = $2 FOR UPDATE`,
+        [ctx.orgId, reviewId],
+      );
+      if (!lockedReviewRes.rows.length) throw new NotFoundException('REVIEW_NOT_FOUND');
+      review = lockedReviewRes.rows[0];
+      if (review.document_version_id !== version.id ||
+          review.status !== 'IN_REVIEW' && review.status !== 'PENDING') {
+        throw new ConflictException('REVIEW_ASSIGNMENT_NO_LONGER_CURRENT');
+      }
+      if (ctx.actorType === 'GUEST' || review.reviewer_subject_type !== 'USER' ||
+          review.reviewer_subject_id !== ctx.userId ||
+          (review.reviewer_user_id && review.reviewer_user_id !== ctx.userId)) {
+        throw new ForbiddenException('REVIEW_ASSIGNMENT_REQUIRED');
+      }
       // All sibling reviewers must serialize on this same row. The first
       // committed terminal result wins even if another review remains queued.
       assertReviewVersionNotTerminal(version.review_status);
@@ -736,14 +764,19 @@ export class ReviewsService {
           ],
         );
 
-        // Transition associated requirements to APPROVED
+        // Only the obligation actively submitted for this review may transition.
+        // An already-approved obligation may have independent qualified evidence.
         await client.query(
           `UPDATE requirements
               SET status = 'APPROVED', row_version = row_version + 1, updated_at = now()
-            WHERE org_id = $1 AND id IN (
-              SELECT requirement_id FROM document_requirements WHERE document_id = $2
-            )`,
-          [ctx.orgId, doc.id],
+            WHERE org_id = $1 AND project_id = $3
+              AND status IN ('IN_REVIEW', 'UNDER_REVIEW')
+              AND superseded_at IS NULL
+              AND id IN (
+                SELECT requirement_id FROM document_requirements
+                 WHERE org_id = $1 AND project_id = $3 AND document_id = $2
+              )`,
+          [ctx.orgId, doc.id, review.project_id],
         );
 
       } else {
@@ -775,7 +808,29 @@ export class ReviewsService {
             false,
           ],
         );
+        await client.query(
+          `UPDATE requirements
+              SET status = $1, row_version = row_version + 1, updated_at = now()
+            WHERE org_id = $2 AND project_id = $3
+              AND status IN ('IN_REVIEW', 'UNDER_REVIEW')
+              AND superseded_at IS NULL
+              AND id IN (
+                SELECT requirement_id FROM document_requirements
+                 WHERE org_id = $2 AND project_id = $3 AND document_id = $4
+              )`,
+          [nextStatus, ctx.orgId, review.project_id, doc.id],
+        );
       }
+
+      // Other assignments for the exact version are no longer actionable.
+      // The version was locked before any assignment lock, avoiding
+      // sibling-review lock inversion during competing decisions.
+      await client.query(
+        `UPDATE reviews SET status = 'CANCELLED', row_version = row_version + 1
+          WHERE org_id = $1 AND project_id = $2 AND document_version_id = $3
+            AND id <> $4 AND status IN ('PENDING', 'IN_REVIEW')`,
+        [ctx.orgId, review.project_id, version.id, review.id],
+      );
 
       // Record cryptographic audit event for review decision
       const auditEventId = uuidv7();
