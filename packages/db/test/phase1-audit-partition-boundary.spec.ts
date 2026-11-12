@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { withDisposableDatabase } from './helpers/disposable-database';
 import { scoped, seedTenants } from './helpers/fixtures';
 
@@ -54,7 +54,7 @@ async function assertPartitionContract(admin: Pool, name: string): Promise<void>
   }
 }
 
-async function asMigrator<T>(admin: Pool, work: (client: Awaited<ReturnType<Pool['connect']>>) => Promise<T>): Promise<T> {
+async function asMigrator<T>(admin: Pool, work: (client: PoolClient) => Promise<T>): Promise<T> {
   const client = await admin.connect();
   let clean = false;
   try {
@@ -81,9 +81,10 @@ test('PH1-G26-001: fresh PG16 parent access and every existing/default child are
         RETURNING id`, [eventId, a.orgId, a.projectIds[0]]);
       assert.equal(inserted.rowCount, 1);
       assert.equal((await client.query('SELECT id FROM audit_events WHERE id=$1', [eventId])).rowCount, 1);
-      await assert.rejects(client.query('UPDATE audit_events SET action=$1 WHERE id=$2',
-        ['FORGED', eventId]), err => isDenied(err) || /AUDIT_IMMUTABLE/.test(String(err)));
     });
+    await assert.rejects(scoped(app, a.orgId, client =>
+      client.query('UPDATE audit_events SET action=$1 WHERE id=$2',
+        ['FORGED', eventId])), err => isDenied(err) || /AUDIT_IMMUTABLE/.test(String(err)));
     assert.equal((await app.query('SELECT id FROM audit_events WHERE id=$1', [eventId])).rowCount, 0);
     await scoped(app, b.orgId, async client => {
       assert.equal((await client.query('SELECT id FROM audit_events WHERE id=$1', [eventId])).rowCount, 0);
