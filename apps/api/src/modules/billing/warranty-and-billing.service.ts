@@ -560,8 +560,8 @@ export class WarrantyAndBillingService {
       await this.assertMemberDefectScope(client, ctx, defect, true);
       if (ctx.actorType === 'MEMBER') {
         const orgRole = (ctx as TenantActorContext & {orgRole?:string}).orgRole;
-        if (!['R-OWNER', 'R-ADMIN'].includes(orgRole || '') &&
-            !['R-QC', 'R-PM'].includes(ctx.projectRole || '')) {
+        if (![orgRole, ctx.projectRole].some(role =>
+            ['R-OWNER', 'R-ADMIN', 'R-QC', 'R-PM'].includes(role || ''))) {
           throw new ForbiddenException({ code: 'DEFECT_VERIFIER_ROLE_REQUIRED' });
         }
       }
