@@ -326,7 +326,7 @@ describe('Production Review Remediation Suite (NP01..NP06, NP09, NP10)', () => {
       expect(sub.pricePaise).toBe(0);
       expect(sub.seatLimit).toBe(0);
       expect(sub.storageQuotaBytes).toBe(0);
-      expect(sub.limitsJson).toEqual({ maxActiveProjects: 0, maxSeats: 0, maxStorageBytes: 0 });
+      expect(sub.limitsJson).toEqual({ maxActiveProjects: 0, maxSeats: 0, maxStorageBytes: 0, maxPackageGenerationsPerMonth: 0 });
     });
 
     it('preserves legitimate zero limits without overriding with defaults', async () => {
