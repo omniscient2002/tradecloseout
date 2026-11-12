@@ -17,7 +17,8 @@ export type WorkerFailureEvent =
   | 'OUTBOX_EVENT_DISPATCH_FAILED'
   | 'OUTBOX_TENANT_POLL_FAILED'
   | 'OUTBOX_POLLER_FAILED'
-  | 'WORKER_BOOT_FAILED';
+  | 'WORKER_BOOT_FAILED'
+  | 'WORKER_SHUTDOWN_FAILED';
 
 const APPROVED_ERROR_CODES: Readonly<Record<string, string>> = Object.freeze({
   '23505': 'DB_UNIQUE_CONFLICT',
