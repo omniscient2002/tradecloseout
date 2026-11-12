@@ -18,6 +18,7 @@ export interface TenantActorContext {
   guestScope?: Record<string, any>;
   sessionId?: string;
   sessionTokenHash?: string;
+  mfaVerified?: boolean;
 }
 
 export interface DomainOutboxEvent {
