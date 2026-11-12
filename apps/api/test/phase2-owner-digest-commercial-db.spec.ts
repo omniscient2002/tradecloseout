@@ -73,6 +73,12 @@ describe('PH2-G20-009 / G05-001: financial exposure and actual overdue indicator
       expect(qualified.overdueOrExpiredRequirementsByMilestone).toEqual([
         expect.objectContaining({milestone_key:'HANDOVER',count:2}),
       ]);
+      const progress = await service.getProjectDashboard(ctx,project.projectId);
+      // Future-due NOT_STARTED work is not overdue; explicitly waived,
+      // approved and superseded obligations do not inflate current totals.
+      expect(progress.counts.overdueCount).toBe(2);
+      expect(progress.counts.dueSoonCount).toBe(1);
+      expect(progress.counts.unassignedCount).toBe(3);
 
       await service.createContract(ctx,project.projectId,{
         contractRef:'BIG',title:'Confirmed package',valuePaise:60000000000000000n,retentionBps:250,
