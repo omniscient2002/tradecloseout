@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { Modal } from "../ui/modal";
 import {
   UploadCloud,
@@ -38,7 +38,15 @@ export function UploadEvidenceModal({
   const [externalComment, setExternalComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [queuedLocally, setQueuedLocally] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (open) {
+      setQueuedLocally(false);
+      setError(null);
+    }
+  }, [open, requirement?.id]);
 
   if (!requirement) return null;
 
@@ -53,6 +61,7 @@ export function UploadEvidenceModal({
     }
 
     setError(null);
+    setQueuedLocally(false);
     setFile(selected);
 
   };
@@ -78,8 +87,9 @@ export function UploadEvidenceModal({
         externalComment: externalComment.trim() || undefined,
       });
 
+      // Persisted locally is not provider-uploaded, scan-verified or approved.
       onUploadSuccess();
-      onClose();
+      setQueuedLocally(true);
       setFile(null);
       setExternalComment("");
     } catch (err: any) {
@@ -127,14 +137,20 @@ export function UploadEvidenceModal({
                 {file ? file.name : "Click to select certificate, drawing, or photo"}
               </p>
               <p className="text-[11px] text-slate-500">
-                {file ? `${(file.size / 1024).toFixed(0)} KB` : "PDF, JPEG, PNG, WebP, XLSX, DOCX (Max 250 MB)"}
+                {file ? `${(file.size / 1024).toFixed(0)} KB` : "File type and size must be accepted by the server"}
               </p>
             </div>
           </div>
         </div>
 
+        {queuedLocally && (
+          <div role="status" aria-live="polite" className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+            Draft saved in this browser. It is <strong>not yet uploaded, scanned, verified or approved</strong>.
+            Keep the app open while online so synchronization can run. Browser storage may be evicted; do not discard the original file until verification is confirmed.
+          </div>
+        )}
         {error && (
-          <div className="rounded-md bg-red-50 border border-red-200 p-2.5 text-xs text-red-800 flex items-center gap-2">
+          <div role="alert" className="rounded-md bg-red-50 border border-red-200 p-2.5 text-xs text-red-800 flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
             <span>{error}</span>
           </div>
@@ -191,7 +207,7 @@ export function UploadEvidenceModal({
             onClick={onClose}
             className="rounded border border-slate-300 px-3.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer"
           >
-            Cancel
+            {queuedLocally ? "Close" : "Cancel"}
           </button>
           <button
             type="submit"
@@ -201,12 +217,12 @@ export function UploadEvidenceModal({
             {submitting ? (
               <>
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span>Uploading Evidence...</span>
+                <span>Saving Draft...</span>
               </>
             ) : (
               <>
                 <FileCheck2 className="w-3.5 h-3.5" />
-                <span>Submit Evidence</span>
+                <span>Save Upload Draft</span>
               </>
             )}
           </button>
