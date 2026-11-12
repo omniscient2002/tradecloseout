@@ -128,7 +128,7 @@ describe('PH1-G02-006 — guest version and detail scope (restricted PostgreSQL 
 
       // The grant is still ACTIVE, but its issuing supplier party is no longer
       // eligible. Both read and upload issuance must deny before a presigner call.
-      await admin.query("UPDATE parties SET status='INACTIVE' WHERE org_id=$1 AND id=$2", [a.orgId, partyId]);
+      await admin.query("UPDATE parties SET status='ARCHIVED' WHERE org_id=$1 AND id=$2", [a.orgId, partyId]);
       await expect(service.getDocument(ctx, documentId)).rejects.toThrow('DOCUMENT_NOT_FOUND');
       await expect(service.getDownloadUrl(ctx, readyVersionId)).rejects.toThrow('VERSION_NOT_FOUND');
       await expect(service.refreshUploadUrls(ctx, pendingVersionId)).rejects.toThrow('VERSION_NOT_FOUND');
