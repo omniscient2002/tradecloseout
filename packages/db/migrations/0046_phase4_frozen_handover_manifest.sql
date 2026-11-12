@@ -9,6 +9,16 @@ ALTER TABLE handover_packages
   ADD CONSTRAINT handover_manifest_format_positive
   CHECK (manifest_format_version BETWEEN 1 AND 2);
 
+ALTER TABLE handover_packages
+  ADD COLUMN metadata_snapshot_json JSONB;
+ALTER TABLE handover_packages
+  ADD CONSTRAINT handover_v2_metadata_required
+  CHECK (manifest_format_version <> 2 OR (
+    metadata_snapshot_json IS NOT NULL AND
+    jsonb_typeof(metadata_snapshot_json) = 'object' AND
+    metadata_snapshot_json ?& ARRAY['orgName', 'projectCode', 'projectName', 'clientName', 'contractRef']
+  ));
+
 ALTER TABLE package_items
   ADD COLUMN source_document_id UUID,
   ADD COLUMN source_object_id UUID,
