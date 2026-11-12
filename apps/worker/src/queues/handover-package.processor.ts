@@ -9,6 +9,7 @@ import { pipeline } from 'stream/promises';
 import { Readable } from 'stream';
 import { uuidv7 } from 'uuidv7';
 import { compileHandoverDossierStreamingQpdf } from './pdf-stream-compiler';
+import { isImmutableStorageVersion } from '@tradecloseout/shared';
 
 type PackageJob = { orgId: string; projectId?: string; packageId?: string; entityId?: string; entityType?: string; eventId?: string };
 
@@ -164,7 +165,7 @@ export async function compileAndPersistHandoverPackage(
   const maxSourceBytes = configuredLimit('PACKAGE_MAX_SOURCE_BYTES', DEFAULT_MAX_SOURCE_BYTES);
   let totalSourceBytes = 0;
   for (const source of sourceRows) {
-    if (source.object_status !== 'READY' || !source.provider_version_id || !source.sha256 ||
+    if (source.object_status !== 'READY' || !isImmutableStorageVersion(source.provider_version_id) || !source.sha256 ||
         Number(source.observed_size_bytes) !== Number(source.size_bytes)) {
       throw new Error(`PACKAGE_SOURCE_NOT_VERIFIED:${source.document_version_id}`);
     }
@@ -272,7 +273,7 @@ export async function compileAndPersistHandoverPackage(
       ServerSideEncryption: process.env.S3_KMS_KEY_ID ? 'aws:kms' : undefined,
       SSEKMSKeyId: process.env.S3_KMS_KEY_ID || undefined,
     }));
-    if (!putResult.VersionId) throw new Error('PACKAGE_STORAGE_VERSION_ID_MISSING');
+    if (!isImmutableStorageVersion(putResult.VersionId)) throw new Error('PACKAGE_STORAGE_VERSION_ID_MISSING');
     const head = await s3.send(new HeadObjectCommand({ Bucket: bucket, Key: objectKey, VersionId: putResult.VersionId }));
     if (head.ContentLength !== outputStats.size || head.VersionId !== putResult.VersionId ||
         head.Metadata?.sha256 !== actualOutputSha) {
