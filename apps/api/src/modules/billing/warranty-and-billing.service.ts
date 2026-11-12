@@ -45,8 +45,8 @@ export class WarrantyAndBillingService {
       [eventId, ctx.orgId, defect.project_id, defect.id, action,
         defect.status, toStatus, defect.row_version,
         defect.row_version + 1, ctx.userId,
-        details.assignedUserId ?? defect.assigned_user_id ?? null,
-        details.assignedPartyId ?? defect.assigned_party_id ?? null,
+        details.assignedUserId === undefined ? (defect.assigned_user_id ?? null) : details.assignedUserId,
+        details.assignedPartyId === undefined ? (defect.assigned_party_id ?? null) : details.assignedPartyId,
         details.dueAt === undefined ? (defect.due_at ?? null) : details.dueAt,
         details.evidenceObjectId ?? null, details.remedyVersionId ?? null,
         details.reason ?? null],
@@ -844,6 +844,280 @@ export class WarrantyAndBillingService {
       });
 
       return { defectId, status: 'CLOSED', rowVersion: defect.row_version + 1 };
+    });
+  }
+
+  /**
+   * Assign or explicitly unassign a defect under the project/defect locks.
+   * Active project membership and active supplier party must be checked now,
+   * not inferred from a user ID or stale browser role.
+   */
+  async assignDefect(
+    ctx: TenantActorContext, projectId: string, defectId: string,
+    input: {
+      expectedRowVersion: number;
+      assignedUserId?: string | null;
+      assignedPartyId?: string | null;
+      dueAt?: string | null;
+      reason?: string;
+    },
+  ) {
+    this.assertDefectSupervisor(ctx);
+    if (!input || typeof input !== 'object' ||
+        (input.assignedUserId === undefined &&
+          input.assignedPartyId === undefined && input.dueAt === undefined)) {
+      throw new UnprocessableEntityException({ code: 'DEFECT_ASSIGNMENT_INPUT_REQUIRED' });
+    }
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if ((input.assignedUserId != null &&
+          (typeof input.assignedUserId !== 'string' || !uuid.test(input.assignedUserId))) ||
+        (input.assignedPartyId != null &&
+          (typeof input.assignedPartyId !== 'string' || !uuid.test(input.assignedPartyId))) ||
+        (input.dueAt != null &&
+          (typeof input.dueAt !== 'string' || !Number.isFinite(Date.parse(input.dueAt))))) {
+      throw new UnprocessableEntityException({ code: 'DEFECT_ASSIGNMENT_INPUT_INVALID' });
+    }
+    const assignmentReason = input.reason === undefined ? null
+      : this.requireDefectDecisionReason(input.reason);
+    return withTenantTransaction(this.pool, ctx, async (client, emit) => {
+      const { defect, targetProjectId } = await this.lockDefectForMutation(
+        client, ctx, projectId, defectId,
+      );
+      await this.assertMemberDefectScope(client, ctx, defect, true);
+      this.assertDefectExpectedVersion(defect, input.expectedRowVersion);
+      if (!['OPEN', 'IN_PROGRESS'].includes(defect.status)) {
+        throw new ConflictException({ code: 'DEFECT_ASSIGNMENT_TRANSITION_BLOCKED' });
+      }
+      const userId = input.assignedUserId === undefined
+        ? (defect.assigned_user_id ?? null) : input.assignedUserId;
+      const partyId = input.assignedPartyId === undefined
+        ? (defect.assigned_party_id ?? null) : input.assignedPartyId;
+      const dueAt = input.dueAt === undefined
+        ? (defect.due_at ?? null) : input.dueAt === null ? null : new Date(input.dueAt);
+      if (userId) {
+        const { rows } = await client.query(
+          `SELECT pm.user_id FROM project_members pm
+             JOIN users u ON u.id = pm.user_id
+            WHERE pm.org_id = $1 AND pm.project_id = $2 AND pm.user_id = $3
+              AND pm.status = 'ACTIVE' AND u.status = 'ACTIVE'
+            FOR SHARE OF pm, u`,
+          [ctx.orgId, targetProjectId, userId],
+        );
+        if (!rows.length) throw new ConflictException({ code: 'DEFECT_ASSIGNEE_INACTIVE' });
+      }
+      if (partyId) {
+        const { rows } = await client.query(
+          `SELECT id FROM parties
+            WHERE org_id = $1 AND id = $2 AND status = 'ACTIVE'
+              AND deleted_at IS NULL FOR SHARE`,
+          [ctx.orgId, partyId],
+        );
+        if (!rows.length) throw new ConflictException({ code: 'DEFECT_PARTY_INACTIVE' });
+      }
+      if (userId === (defect.assigned_user_id ?? null) &&
+          partyId === (defect.assigned_party_id ?? null) &&
+          String(dueAt ?? '') === String(defect.due_at ?? '')) {
+        throw new ConflictException({ code: 'DEFECT_ASSIGNMENT_UNCHANGED' });
+      }
+      const nextStatus = userId || partyId ? 'IN_PROGRESS' : 'OPEN';
+      const updated = await client.query(
+        `UPDATE defects SET assigned_user_id = $4, assigned_party_id = $5,
+             due_at = $6, status = $7, row_version = row_version + 1
+          WHERE org_id = $1 AND project_id = $2 AND id = $3
+            AND row_version = $8`,
+        [ctx.orgId, targetProjectId, defectId, userId, partyId, dueAt,
+          nextStatus, defect.row_version],
+      );
+      if (updated.rowCount !== 1) {
+        throw new ConflictException({ code: 'DEFECT_CONCURRENCY_CONFLICT' });
+      }
+      const transitionId = await this.appendDefectTransition(
+        client, ctx, defect, 'ASSIGNED', nextStatus,
+        { assignedUserId: userId, assignedPartyId: partyId,
+          dueAt: dueAt == null ? null : new Date(dueAt),
+          reason: assignmentReason },
+      );
+      emit({
+        eventType: 'DEFECT_ASSIGNMENT_CHANGED', projectId: targetProjectId,
+        entityType: 'DEFECT', entityId: defectId,
+        afterJson: {
+          status: nextStatus, assignedUserId: userId, assignedPartyId: partyId,
+          transitionId, rowVersion: defect.row_version + 1,
+        },
+      });
+      return { defectId, status: nextStatus, rowVersion: defect.row_version + 1,
+        transitionId };
+    });
+  }
+
+  /** A reviewed rejection allows resubmission; previous remedy proof remains
+   * in immutable defect_transition_events rather than being overwritten. */
+  async rejectDefectRemedy(
+    ctx: TenantActorContext, projectId: string, defectId: string,
+    input: { expectedRowVersion: number; reason: string },
+  ) {
+    const reason = this.requireDefectDecisionReason(input?.reason);
+    return withTenantTransaction(this.pool, ctx, async (client, emit) => {
+      const { defect, targetProjectId } = await this.lockDefectForMutation(
+        client, ctx, projectId, defectId,
+      );
+      await this.assertMemberDefectScope(client, ctx, defect, true);
+      this.assertDefectIndependentReviewer(ctx, defect);
+      this.assertDefectExpectedVersion(defect, input.expectedRowVersion);
+      if (defect.status !== 'RECTIFIED') {
+        throw new ConflictException({ code: 'DEFECT_REJECTION_REQUIRES_RECTIFIED' });
+      }
+      const updated = await client.query(
+        `UPDATE defects SET status = 'IN_PROGRESS',
+           closure_evidence_object_id = NULL, remedy_document_version_id = NULL,
+           remedied_by = NULL, remedied_at = NULL,
+           row_version = row_version + 1
+         WHERE org_id = $1 AND project_id = $2 AND id = $3 AND row_version = $4`,
+        [ctx.orgId, targetProjectId, defectId, defect.row_version],
+      );
+      if (updated.rowCount !== 1) throw new ConflictException({ code: 'DEFECT_CONCURRENCY_CONFLICT' });
+      const transitionId = await this.appendDefectTransition(
+        client, ctx, defect, 'REMEDY_REJECTED', 'IN_PROGRESS',
+        { evidenceObjectId: defect.closure_evidence_object_id,
+          remedyVersionId: defect.remedy_document_version_id, reason },
+      );
+      emit({
+        eventType: 'DEFECT_REMEDY_REJECTED', projectId: targetProjectId,
+        entityType: 'DEFECT', entityId: defectId,
+        afterJson: { status: 'IN_PROGRESS', transitionId,
+          rowVersion: defect.row_version + 1, reason },
+      });
+      return { defectId, status: 'IN_PROGRESS',
+        rowVersion: defect.row_version + 1, transitionId };
+    });
+  }
+
+  /** Mandatory contractual closeout obligations cannot be waived by one
+   * supervisor: the separately approved two-party waiver path is not yet built. */
+  async waiveDefect(
+    ctx: TenantActorContext, projectId: string, defectId: string,
+    input: { expectedRowVersion: number; reason: string },
+  ) {
+    this.assertDefectSupervisor(ctx);
+    const reason = this.requireDefectDecisionReason(input?.reason);
+    return withTenantTransaction(this.pool, ctx, async (client, emit) => {
+      const { defect, targetProjectId } = await this.lockDefectForMutation(
+        client, ctx, projectId, defectId,
+      );
+      await this.assertMemberDefectScope(client, ctx, defect, true);
+      this.assertDefectExpectedVersion(defect, input.expectedRowVersion);
+      if (defect.mandatory !== false) {
+        throw new ConflictException({
+          code: 'DEFECT_MANDATORY_WAIVER_SECOND_APPROVAL_REQUIRED',
+        });
+      }
+      if (!['OPEN', 'IN_PROGRESS'].includes(defect.status)) {
+        throw new ConflictException({ code: 'DEFECT_WAIVER_TRANSITION_BLOCKED' });
+      }
+      const updated = await client.query(
+        `UPDATE defects SET status = 'WAIVED', row_version = row_version + 1
+          WHERE org_id = $1 AND project_id = $2 AND id = $3 AND row_version = $4`,
+        [ctx.orgId, targetProjectId, defectId, defect.row_version],
+      );
+      if (updated.rowCount !== 1) throw new ConflictException({ code: 'DEFECT_CONCURRENCY_CONFLICT' });
+      const transitionId = await this.appendDefectTransition(
+        client, ctx, defect, 'WAIVED', 'WAIVED', { reason },
+      );
+      emit({
+        eventType: 'DEFECT_WAIVED', projectId: targetProjectId,
+        entityType: 'DEFECT', entityId: defectId,
+        afterJson: { status: 'WAIVED', transitionId,
+          rowVersion: defect.row_version + 1, reason },
+      });
+      return { defectId, status: 'WAIVED', rowVersion: defect.row_version + 1,
+        transitionId };
+    });
+  }
+
+  /** Reopening is an explicit versioned decision; a closed contractual
+   * baseline cannot be changed without formal project re-opening first. */
+  async reopenDefect(
+    ctx: TenantActorContext, projectId: string, defectId: string,
+    input: { expectedRowVersion: number; reason: string },
+  ) {
+    this.assertDefectSupervisor(ctx);
+    const reason = this.requireDefectDecisionReason(input?.reason);
+    return withTenantTransaction(this.pool, ctx, async (client, emit) => {
+      const { defect, targetProjectId } = await this.lockDefectForMutation(
+        client, ctx, projectId, defectId,
+      );
+      await this.assertMemberDefectScope(client, ctx, defect, true);
+      this.assertDefectExpectedVersion(defect, input.expectedRowVersion);
+      if (!['CLOSED', 'WAIVED'].includes(defect.status)) {
+        throw new ConflictException({ code: 'DEFECT_REOPEN_TRANSITION_BLOCKED' });
+      }
+      const updated = await client.query(
+        `UPDATE defects SET status = 'OPEN',
+           closure_evidence_object_id = NULL, remedy_document_version_id = NULL,
+           remedied_by = NULL, remedied_at = NULL,
+           closed_by = NULL, closed_at = NULL,
+           row_version = row_version + 1
+         WHERE org_id = $1 AND project_id = $2 AND id = $3 AND row_version = $4`,
+        [ctx.orgId, targetProjectId, defectId, defect.row_version],
+      );
+      if (updated.rowCount !== 1) throw new ConflictException({ code: 'DEFECT_CONCURRENCY_CONFLICT' });
+      const transitionId = await this.appendDefectTransition(
+        client, ctx, defect, 'REOPENED', 'OPEN',
+        { evidenceObjectId: defect.closure_evidence_object_id,
+          remedyVersionId: defect.remedy_document_version_id, reason },
+      );
+      emit({
+        eventType: 'DEFECT_REOPENED', projectId: targetProjectId,
+        entityType: 'DEFECT', entityId: defectId,
+        afterJson: { status: 'OPEN', transitionId,
+          rowVersion: defect.row_version + 1, reason },
+      });
+      return { defectId, status: 'OPEN', rowVersion: defect.row_version + 1,
+        transitionId };
+    });
+  }
+
+  async listDefectTransitions(ctx: TenantActorContext, projectId: string, defectId: string) {
+    return withTenantTransaction(this.pool, ctx, async (client) => {
+      const { rows } = await client.query(
+        `SELECT d.* FROM defects d
+          WHERE d.org_id = $1 AND d.project_id = $2 AND d.id = $3`,
+        [ctx.orgId, projectId, defectId],
+      );
+      if (!rows.length) throw new NotFoundException({ code: 'DEFECT_NOT_FOUND' });
+      const defect = rows[0];
+      if (ctx.actorType === 'GUEST' || ctx.guestGrantId) {
+        const grant = await this.supplierDefectGrant(client, ctx, projectId);
+        if (defect.assigned_party_id !== grant.partyId ||
+            (grant.assetIds && (!defect.asset_id ||
+              !grant.assetIds.includes(defect.asset_id)))) {
+          throw new NotFoundException({ code: 'DEFECT_NOT_FOUND' });
+        }
+        if (grant.assetCategories) {
+          const { rows: assets } = await client.query(
+            `SELECT category_key FROM assets
+              WHERE org_id = $1 AND project_id = $2 AND id = $3 FOR SHARE`,
+            [ctx.orgId, projectId, defect.asset_id],
+          );
+          if (!assets.length ||
+              !grant.assetCategories.includes(assets[0].category_key)) {
+            throw new NotFoundException({ code: 'DEFECT_NOT_FOUND' });
+          }
+        }
+      } else {
+        await this.assertMemberDefectScope(client, ctx, defect, false);
+      }
+      const { rows: events } = await client.query(
+        `SELECT id, action, from_status, to_status,
+                previous_row_version, next_row_version, actor_user_id,
+                assigned_user_id, assigned_party_id, due_at,
+                evidence_object_id, remedy_document_version_id, reason, created_at
+           FROM defect_transition_events
+          WHERE org_id = $1 AND project_id = $2 AND defect_id = $3
+          ORDER BY next_row_version, id`,
+        [ctx.orgId, projectId, defectId],
+      );
+      return { defectId, events, historicalLedgerComplete: false };
     });
   }
 
