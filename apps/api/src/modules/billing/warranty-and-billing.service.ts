@@ -10,6 +10,7 @@ import { Pool, PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { withTenantTransaction, TenantActorContext } from '@tradecloseout/db/tenant-tx';
 import { isImmutableStorageVersion } from '@tradecloseout/shared';
+import { evaluateReadinessInTransaction } from '../handover/closeout-readiness';
 
 @Injectable()
 export class WarrantyAndBillingService {
@@ -963,36 +964,69 @@ export class WarrantyAndBillingService {
       const defectStats = defectRows[0] || {};
       const openDefects = Number(defectStats.open_defects || 0);
       const criticalDefects = Number(defectStats.critical_defects || 0);
+      // Commercial estimates cannot bypass the canonical live closeout check.
+      // An empty or missing checklist baseline is UNKNOWN, not 100% complete.
+      const canonical = await evaluateReadinessInTransaction(client, ctx.orgId, projectId);
 
       const { rows: subRows } = await client.query(
         `SELECT s.id, s.status, s.package_id, s.created_at
            FROM submissions s
+           JOIN handover_packages hp
+             ON hp.org_id = s.org_id AND hp.project_id = s.project_id AND hp.id = s.package_id
           WHERE s.org_id = $1 AND s.project_id = $2 AND s.status = 'ACCEPTED'
-          LIMIT 1`,
+            AND hp.package_purpose = 'FULL_HANDOVER'
+            AND hp.status = 'ACCEPTED'
+            AND hp.manifest_format_version = 2
+            AND hp.pdf_object_id IS NOT NULL
+            AND hp.id = (
+              SELECT newest.id FROM handover_packages newest
+               WHERE newest.org_id = hp.org_id AND newest.project_id = hp.project_id
+                 AND newest.package_purpose = 'FULL_HANDOVER'
+               ORDER BY newest.version_no DESC, newest.id DESC LIMIT 1
+            )
+            AND EXISTS (
+              SELECT 1 FROM submission_recipients sr
+               WHERE sr.org_id = s.org_id AND sr.project_id = s.project_id
+                 AND sr.submission_id = s.id AND sr.is_required_approver = true
+                 AND sr.decision = 'ACCEPT' AND sr.status = 'ACCEPTED'
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM submission_recipients sr
+               WHERE sr.org_id = s.org_id AND sr.project_id = s.project_id
+                 AND sr.submission_id = s.id AND sr.is_required_approver = true
+                 AND (sr.decision IS DISTINCT FROM 'ACCEPT' OR sr.status <> 'ACCEPTED')
+            )
+          ORDER BY s.decided_at DESC NULLS LAST, s.id DESC LIMIT 1`,
         [ctx.orgId, projectId],
       );
       const hasAcceptedHandover = subRows.length > 0;
 
-      const isRetentionEligible =
+      const advisoryPreconditionsMet =
+        canonical.readyWithoutOverride &&
         pendingMandatory === 0 &&
         criticalDefects === 0 &&
         hasAcceptedHandover &&
-        project.status !== 'SUSPENDED';
-
-      const contractVal = project.contract_value_paise != null ? BigInt(project.contract_value_paise) : 0n;
-      const retBps = project.retention_bps != null ? BigInt(project.retention_bps) : 500n;
-      const calculatedRetentionPaise = project.retention_at_risk_paise || ((contractVal * retBps) / 10000n).toString();
+        !['SUSPENDED', 'CANCELLED', 'ARCHIVED'].includes(project.status);
+      // Project-level amounts are informational inputs, not an authenticated
+      // contract ledger or finance-approved payment/retention release.
+      // Never invent a 5% retention rate or zero contract value on missing data.
+      const hasExplicitFinanceInputs =
+        project.contract_value_paise != null && project.retention_bps != null;
+      const calculatedRetentionPaise = hasExplicitFinanceInputs
+        ? ((BigInt(project.contract_value_paise) * BigInt(project.retention_bps)) / 10000n).toString()
+        : null;
 
       return {
         projectId,
         projectStatus: project.status,
-        contractValuePaise: project.contract_value_paise || '0',
+        contractValuePaise: project.contract_value_paise ?? null,
         retentionAtRiskPaise: calculatedRetentionPaise,
         mandatoryRequirements: {
           total: totalMandatory,
           satisfied: satisfiedMandatory,
           pending: pendingMandatory,
-          satisfactionPercentage: totalMandatory > 0 ? Math.round((satisfiedMandatory / totalMandatory) * 100) : 100,
+          satisfactionPercentage: canonical.configurationBlocker === null && totalMandatory > 0
+            ? Math.round((satisfiedMandatory / totalMandatory) * 100) : null,
         },
         defects: {
           open: openDefects,
@@ -1003,12 +1037,21 @@ export class WarrantyAndBillingService {
           acceptedSubmissionId: subRows[0]?.id || null,
         },
         commercialReadiness: {
-          isRetentionEligible,
-          releaseStatus: isRetentionEligible ? 'ELIGIBLE' : 'BLOCKED',
+          // Deliberately never assert release authority from a checklist or
+          // historic ACCEPTED status. Finance approval is a separate workflow.
+          isRetentionEligible: false,
+          advisoryPreconditionsMet,
+          releaseStatus: 'INFORMATIONAL_ONLY',
+          financeApprovalVerified: false,
+          contractualAmountVerified: false,
+          informationOnly: true,
+          configurationBlocker: canonical.configurationBlocker,
           blockingReasons: [
+            ...(canonical.configurationBlocker ? ['Current mandatory checklist baseline is not configured'] : []),
             ...(pendingMandatory > 0 ? [`${pendingMandatory} mandatory checklist requirements unsatisfied`] : []),
             ...(criticalDefects > 0 ? [`${criticalDefects} high/critical defects unresolved`] : []),
-            ...(!hasAcceptedHandover ? ['Client-accepted handover package submission required'] : []),
+            ...(!hasAcceptedHandover ? ['Latest full-handover package with all required recipient decisions is not accepted'] : []),
+            'Independent contract reconciliation and finance approval required before release',
           ],
         },
       };
