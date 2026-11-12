@@ -102,6 +102,54 @@ describe('Phase 2 configuration fail-closed boundaries', () => {
     expect(result.provenance.requirements).toEqual(result.provenance['checklist.requirements']);
   });
 
+  it('applies locked-item inheritance to the legacy requirements path used by snapshots', () => {
+    const locked = { key: 'REQUIRED-SAFETY', title: 'Safety test',
+      mandatory: true, locked: true, reviewerRole: 'R-QC', scopeType: 'PROJECT' };
+    const result = resolveConfigV021({
+      PLATFORM: layer('PLATFORM', { requirements: [locked] }),
+      PROJECT: layer('PROJECT', { requirements: [
+        { key: 'REQUIRED-SAFETY', mandatory: false, reviewerRole: 'R-PM' },
+      ] }),
+    });
+    expect(result.conflicts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: 'key:REQUIRED-SAFETY', level: 'PROJECT' }),
+    ]));
+    expect(result.payload.requirements).toEqual([
+      expect.objectContaining({ ...locked, provenanceLevel: 'PLATFORM' }),
+    ]);
+  });
+
+  it('rejects switching between flat and registered requirement encodings across layers', () => {
+    const result = resolveConfigV021({
+      PLATFORM: layer('PLATFORM', {
+        requirements: [{ key: 'MANDATORY', locked: true, mandatory: true }],
+      }),
+      PROJECT: layer('PROJECT', {
+        'checklist.requirements': [{ key: 'MANDATORY', mandatory: false }],
+      }),
+    });
+    expect(result.conflicts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: 'requirements', level: 'PROJECT' }),
+    ]));
+    expect(result.payload.requirements[0]).toMatchObject({
+      key: 'MANDATORY', mandatory: true, provenanceLevel: 'PLATFORM',
+    });
+  });
+
+  it('makes equivalent legacy/registered single-layer payload checksums identical', () => {
+    const reqs = [{ key: 'DOC-01', mandatory: true, docTypeKey: 'DT-001' }];
+    const flat = resolveConfigV021({
+      PROJECT: layer('PROJECT', { requirements: reqs }),
+    });
+    const registered = resolveConfigV021({
+      PROJECT: layer('PROJECT', { 'checklist.requirements': reqs }),
+    });
+    expect(flat.conflicts).toHaveLength(0);
+    expect(registered.conflicts).toHaveLength(0);
+    expect(flat.payload.requirements).toEqual(registered.payload.requirements);
+    expect(flat.checksum).toBe(registered.checksum);
+  });
+
   it('rejects contradictory legacy and registered checklist requirements', () => {
     const result = resolveConfigV021({
       PROJECT: layer('PROJECT', {
@@ -187,7 +235,9 @@ describe('Phase 2 configuration fail-closed boundaries', () => {
       { level: 'PROJECT', versionId: 'v1', payload: { requirements: [{ key: 'FIRST' }] } },
       { level: 'PROJECT', versionId: 'v2', payload: { requirements: [{ key: 'SECOND' }] } },
     ]);
-    expect(result.payload.requirements).toEqual([{ key: 'FIRST' }]);
+    expect(result.payload.requirements).toEqual([
+      expect.objectContaining({ key: 'FIRST', provenanceLevel: 'PROJECT' }),
+    ]);
     expect(result.conflicts).toEqual(expect.arrayContaining([
       expect.objectContaining({ path: '$level', attemptedAtLevel: 'PROJECT' }),
     ]));
