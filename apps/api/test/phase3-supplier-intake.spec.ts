@@ -38,9 +38,9 @@ describe('PH3-G04-004 — real PostgreSQL supplier intake authority and durabili
       await admin.query(
         `INSERT INTO guest_grants
           (id, org_id, project_id, party_id, grant_type, role, capabilities,
-           token_hash, expires_at, created_by)
+           token_hash, expires_at, created_by, target_email)
          VALUES ($1, $2, $3, $4, 'SUPPLIER_UPLOAD', 'R-SUPPLIER-OEM',
-           ARRAY['document.upload'], $5, now() + interval '30 days', $6)`,
+           ARRAY['document.upload'], $5, now() + interval '30 days', $6, 'supplier@example.test')`,
         [grantId, orgId, projectId, supplierId, 'intake-hash-' + grantId, actor],
       );
       await admin.query(
@@ -215,9 +215,9 @@ describe('PH3-G04-004 — real PostgreSQL supplier intake authority and durabili
       );
       await admin.query(
         `INSERT INTO guest_grants
-          (id,org_id,project_id,party_id,grant_type,role,capabilities,token_hash,expires_at,created_by)
+          (id,org_id,project_id,party_id,grant_type,role,capabilities,token_hash,expires_at,created_by,target_email)
          VALUES ($1,$2,$3,$4,'SUPPLIER_UPLOAD','R-SUPPLIER-OEM',
-           ARRAY['document.upload'], $5, now()+interval '1 month', $6)`,
+           ARRAY['document.upload'], $5, now()+interval '1 month', $6, 'supplier@example.test')`,
         [grantId,orgId,projectId,supplierId,'concurrency-'+grantId,actor],
       );
       await admin.query(
