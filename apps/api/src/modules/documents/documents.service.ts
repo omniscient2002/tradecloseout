@@ -11,6 +11,7 @@ import {
   GoneException,
   NotFoundException,
   UnprocessableEntityException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import path from 'path';
 import { Readable } from 'stream';
@@ -18,16 +19,14 @@ import { pipeline } from 'stream/promises';
 import { PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { TenantDbService, ExecutionContext } from '../../database/tenant-db.service';
-import { BulkImportStatus, FileVersionStatus } from '@tradecloseout/shared';
+import { BulkImportStatus, FileVersionStatus, isImmutableObjectVersionId } from '@tradecloseout/shared';
 
 import { Pool } from 'pg';
 import { S3StorageService } from './s3-storage.service';
 
 /** Reject S3's mutable null-version sentinel at every evidence read boundary. */
 export function isImmutableEvidenceVersion(value: unknown): value is string {
-  return typeof value === 'string' &&
-    value.trim().length > 0 &&
-    value.trim().toLowerCase() !== 'null';
+  return isImmutableObjectVersionId(value);
 }
 
 export interface ObjectStoragePresigner {
@@ -704,7 +703,7 @@ export class DocumentsService {
       await this.assertGuestVersionScope(client, ctx, versionId, 'document.upload');
       const version = verRes.rows[0];
       if (version.file_status !== 'PENDING_UPLOAD') {
-        if (['PROCESSING', 'READY'].includes(version.file_status) && version.provider_version_id) {
+        if (['PROCESSING', 'READY'].includes(version.file_status) && isImmutableEvidenceVersion(version.provider_version_id)) {
           return {
             versionId,
             documentId: version.doc_id,
@@ -727,6 +726,13 @@ export class DocumentsService {
         expectedSizeBytes: Number(version.storage_size_bytes),
         parts: dto?.parts || [],
       });
+      // The adapter is a boundary even in tests and alternate providers.
+      // Never transition out of PENDING_UPLOAD on an unversioned receipt.
+      if (!isImmutableEvidenceVersion(providerReceipt?.versionId) ||
+          !Number.isSafeInteger(providerReceipt?.observedSizeBytes) ||
+          providerReceipt.observedSizeBytes !== Number(version.storage_size_bytes)) {
+        throw new ServiceUnavailableException('IMMUTABLE_UPLOAD_RECEIPT_REQUIRED');
+      }
 
       // Security Invariant (TC2-001): Upload completion transitions file to PROCESSING.
       // It does not jump directly to READY; worker scan & verification must validate the object.
