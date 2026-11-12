@@ -589,3 +589,33 @@ test('changed member identity cannot recover a previous actor original', async (
     blocked: 'UPLOAD_ACTOR_CONTEXT_CHANGED', attempts: 1, status: 'BLOCKED_SCOPE',
   });
 });
+
+
+test('prior remote upload intent cannot be rebound after reauthentication', async ({ page }) => {
+  await fixture(page, false);
+  const result = await page.evaluate(async () => {
+    const q = (window as any).__queue;
+    const base = (window as any).__apiFetch;
+    (window as any).__apiFetch = async (url: string, opts?: unknown) => {
+      if (url.endsWith('/complete')) throw new Error('Lost completion response');
+      return base(url, opts);
+    };
+    await q.drainOfflineUploadQueue();
+    q.setOfflineActorPartition(null);
+    q.setOfflineActorPartition('actor-original');
+    const old = (await q.listOfflineUploadDrafts())[0];
+    let blocked = '';
+    try { await q.recoverOfflineUploadDraft(old.queueId); }
+    catch (e) { blocked = (e as Error).message; }
+    return {
+      blocked,
+      status: (await q.listOfflineUploadDrafts())[0].status,
+      retained: (await q.listOfflineUploadDrafts()).length,
+    };
+  });
+  expect(result).toEqual({
+    blocked: 'UPLOAD_REMOTE_INTENT_RECOVERY_UNSUPPORTED: Inspect or discard the remote intent first.',
+    status: 'BLOCKED_SCOPE',
+    retained: 1,
+  });
+});
