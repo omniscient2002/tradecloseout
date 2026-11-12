@@ -486,6 +486,15 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
           if (sql.includes('SELECT id, doc_type_key FROM requirements')) {
             return { rows: [{ id: '0192e3a0-req-allowed-1', doc_type_key: 'DT-043' }] };
           }
+          if (sql.includes("maxStorageBytes' AS max_storage_bytes")) {
+            return { rows: [{ max_storage_bytes: '1048576' }] };
+          }
+          if (sql.includes("metric='STORAGE_BYTES'") && sql.includes('FOR UPDATE')) {
+            return { rows: [{ value: '0' }] };
+          }
+          if (sql.includes('SUM(size_bytes)')) {
+            return { rows: [{ reserved_bytes: '0' }] };
+          }
           if (sql.includes('SELECT COALESCE(MAX(version_no)')) {
             return { rows: [{ max_v: 0 }] };
           }
