@@ -23,6 +23,13 @@ import { BulkImportStatus, FileVersionStatus } from '@tradecloseout/shared';
 import { Pool } from 'pg';
 import { S3StorageService } from './s3-storage.service';
 
+/** Reject S3's mutable null-version sentinel at every evidence read boundary. */
+export function isImmutableEvidenceVersion(value: unknown): value is string {
+  return typeof value === 'string' &&
+    value.trim().length > 0 &&
+    value.trim().toLowerCase() !== 'null';
+}
+
 export interface ObjectStoragePresigner {
   createUploadUrls(params: { objectKey: string; sizeBytes: number; mimeType?: string }): Promise<{
     uploadId: string | null;
@@ -772,7 +779,7 @@ export class DocumentsService {
 
       await this.assertGuestVersionScope(client, ctx, versionId, 'document.download');
       if (version.file_status !== 'READY' || version.storage_status !== 'READY' ||
-          !version.provider_version_id || !version.sha256 ||
+          !isImmutableEvidenceVersion(version.provider_version_id) || !version.sha256 ||
           version.observed_size_bytes == null || String(version.observed_size_bytes) !== String(version.size_bytes)) {
         throw new ForbiddenException({
           code: 'DOWNLOAD_BLOCKED',
@@ -818,7 +825,7 @@ export class DocumentsService {
 
       await this.assertGuestVersionScope(client, ctx, versionId, 'document.download');
       if (version.file_status !== 'READY' || version.storage_status !== 'READY' ||
-          !version.provider_version_id || !version.sha256 ||
+          !isImmutableEvidenceVersion(version.provider_version_id) || !version.sha256 ||
           version.observed_size_bytes == null || String(version.observed_size_bytes) !== String(version.size_bytes)) {
         throw new ForbiddenException({
           code: 'PREVIEW_BLOCKED',
@@ -878,7 +885,7 @@ export class DocumentsService {
       await this.assertGuestVersionScope(client, ctx, versionId, 'document.download');
 
       if (row.file_status !== 'READY' || row.storage_status !== 'READY' || !row.sha256 ||
-          !row.provider_version_id || row.observed_size_bytes == null ||
+          !isImmutableEvidenceVersion(row.provider_version_id) || row.observed_size_bytes == null ||
           String(row.observed_size_bytes) !== String(row.size_bytes)) {
         throw new ForbiddenException({
           code: 'FILE_NOT_READY',
@@ -889,7 +896,7 @@ export class DocumentsService {
       return row;
     });
 
-    if (!fileRecord.provider_version_id) {
+    if (!isImmutableEvidenceVersion(fileRecord.provider_version_id)) {
       throw new NotFoundException({
         code: 'IMMUTABLE_EVIDENCE_VERSION_MISSING',
         detail: 'Verified document metadata has no pinned provider object version.',
