@@ -17,6 +17,42 @@ export class WarrantyAndBillingService {
   constructor(private readonly pool: Pool) {}
 
   /**
+   * A supplier contributor's project-wide capability is NOT an assignment
+   * to every defect. Recheck the live guest grant and party in the same RLS
+   * transaction as the remedy mutation. Invalid scopes fail closed.
+   */
+  private async supplierDefectGrant(
+    client: PoolClient, ctx: TenantActorContext, projectId: string,
+  ): Promise<{partyId: string; assetIds: string[] | null}> {
+    if (!ctx.guestGrantId) {
+      throw new ForbiddenException({ code: 'DEFECT_GUEST_GRANT_REQUIRED' });
+    }
+    const { rows } = await client.query(
+      `SELECT party_id, grant_type, scope_json
+         FROM guest_grants
+        WHERE org_id = $1 AND project_id = $2 AND id = $3
+          AND principal_user_id = $4 AND status = 'ACTIVE'
+          AND expires_at > now()
+        FOR SHARE`,
+      [ctx.orgId, projectId, ctx.guestGrantId, ctx.userId],
+    );
+    const grant = rows[0];
+    if (!grant || grant.grant_type !== 'SUPPLIER_CONTRIBUTOR' || !grant.party_id) {
+      throw new ForbiddenException({ code: 'DEFECT_SUPPLIER_GRANT_INELIGIBLE' });
+    }
+    const scope = typeof grant.scope_json === 'string'
+      ? JSON.parse(grant.scope_json) : grant.scope_json;
+    const rawAssetIds = scope?.assetIds;
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (rawAssetIds !== undefined &&
+        (!Array.isArray(rawAssetIds) || rawAssetIds.length > 1000 ||
+          rawAssetIds.some((id: unknown) => typeof id !== 'string' || !uuid.test(id)))) {
+      throw new ForbiddenException({ code: 'DEFECT_SUPPLIER_ASSET_SCOPE_INVALID' });
+    }
+    return { partyId: grant.party_id, assetIds: rawAssetIds ?? null };
+  }
+
+  /**
    * Resolve and lock one exact current, approved, asset-qualified document
    * version for this remedy. Two different documents sharing the same storage
    * object are ambiguous and require explicit manual evidence selection.
@@ -231,6 +267,15 @@ export class WarrantyAndBillingService {
         });
       }
 
+      if (ctx.actorType === 'GUEST' || ctx.guestGrantId) {
+        const grant = await this.supplierDefectGrant(client, ctx, targetProjectId);
+        if (defect.assigned_party_id !== grant.partyId ||
+            (grant.assetIds !== null &&
+              (!defect.asset_id || !grant.assetIds.includes(defect.asset_id)))) {
+          throw new ForbiddenException({ code: 'DEFECT_NOT_ASSIGNED_TO_SUPPLIER' });
+        }
+      }
+
       if (!['OPEN', 'IN_PROGRESS'].includes(defect.status)) {
         throw new ConflictException({
           code: 'DEFECT_REMEDY_TRANSITION_NOT_ALLOWED',
@@ -367,6 +412,11 @@ export class WarrantyAndBillingService {
     closureEvidenceObjectId: string,
     expectedRowVersion?: number,
   ) {
+    // External supplier contributors cannot certify their own repairs.
+    // Qualified independent verifier authority is a distinct workflow.
+    if (ctx.actorType === 'GUEST' || ctx.guestGrantId) {
+      throw new ForbiddenException({ code: 'DEFECT_INDEPENDENT_VERIFIER_REQUIRED' });
+    }
     if (!closureEvidenceObjectId) {
       throw new UnprocessableEntityException({
         code: 'CLOSURE_EVIDENCE_REQUIRED',
@@ -584,14 +634,18 @@ export class WarrantyAndBillingService {
 
   async listDefects(ctx: TenantActorContext, projectId: string) {
     return withTenantTransaction(this.pool, ctx, async (client) => {
+      const guest = ctx.actorType === 'GUEST' || !!ctx.guestGrantId;
+      const grant = guest ? await this.supplierDefectGrant(client, ctx, projectId) : null;
       const { rows } = await client.query(
         `SELECT d.*, a.tag AS asset_tag, u.name AS raised_by_name
            FROM defects d
-           LEFT JOIN assets a ON a.id = d.asset_id
+           LEFT JOIN assets a ON a.org_id = d.org_id AND a.project_id = d.project_id AND a.id = d.asset_id
            LEFT JOIN users u ON u.id = d.raised_by
           WHERE d.org_id = $1 AND d.project_id = $2
+            AND ($3::uuid IS NULL OR d.assigned_party_id = $3)
+            AND ($4::uuid[] IS NULL OR d.asset_id = ANY($4::uuid[]))
           ORDER BY d.raised_at DESC`,
-        [ctx.orgId, projectId],
+        [ctx.orgId, projectId, grant?.partyId ?? null, grant?.assetIds ?? null],
       );
       return rows;
     });
@@ -611,6 +665,9 @@ export class WarrantyAndBillingService {
       backdatingReason?: string;
     },
   ) {
+    if (ctx.actorType === 'GUEST' || ctx.guestGrantId) {
+      throw new ForbiddenException({ code: 'DEFECT_CREATION_REQUIRES_INTERNAL_TRIAGE' });
+    }
     if (!input || typeof input.title !== 'string' ||
         input.title.trim().length < 1 || input.title.trim().length > 255 ||
         (input.description !== undefined &&
