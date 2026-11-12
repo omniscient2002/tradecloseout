@@ -90,6 +90,8 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
       const mockClient = {
         query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
           executedQueries.push({ sql, params });
+          if (sql.includes('SELECT m.role AS org_role')) return { rows: [{ org_role: 'R-OWNER' }] };
+          if (sql.includes('SELECT status FROM projects')) return { rows: [{ status: 'ACTIVE' }] };
           if (sql.includes('SELECT dv.*, so.id AS storage_id')) {
             return {
               rows: [
@@ -102,7 +104,9 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
                   storage_size_bytes: '1024',
                   expected_sha256: 'b'.repeat(64),
                   object_key: 'orgs/test/test.pdf',
-                  doc_id: 'doc-123',
+                  doc_id: 'doc-123', document_id: 'doc-123',
+                  doc_type_key: 'DT-001', category_key: 'DOCUMENT',
+                  document_created_at: new Date('2026-01-01T00:00:00Z'),
                   current_approved_version_id: null,
                 },
               ],
