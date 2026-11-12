@@ -104,6 +104,41 @@ describe('PH2-G20-009 / G05-001: financial exposure and actual overdue indicator
           VALUES($1,$2,$3,$4,'R-SITE',$5)`,
         [uuidv7(),orgId,project.projectId,other,owner],
       );
+      // Project list/detail are distinct HTTP surfaces from the dashboard:
+      // arbitrary settings_json and site_json must not reveal financial data
+      // through a shared project.read grant.
+      await admin.query(
+        `UPDATE projects
+          SET settings_json=$2::jsonb,site_json=$3::jsonb
+          WHERE id=$1`,
+        [project.projectId,
+          JSON.stringify({ internal_contract_value_paise:'SECRET-CONTRACT-DO-NOT-EXPOSE' }),
+          JSON.stringify({ retention_percent:'SECRET-RETENTION-DO-NOT-EXPOSE' })],
+      );
+      const siteCtx:any={
+        ...ctx,userId:other,orgRole:'R-SITE',projectRole:'R-SITE',
+        projectId:project.projectId,requestId:uuidv7(),
+      };
+      const listed=await service.listProjects(siteCtx);
+      const row=listed.find((item:any)=>item.id===project.projectId);
+      expect(row).toBeDefined();
+      expect(row.contractValuePaise).toBeNull();
+      expect(row.contract_value_paise).toBeNull();
+      expect(JSON.stringify(row)).not.toContain('SECRET-');
+      expect(JSON.stringify(row)).not.toContain('60000000000010000');
+
+      const restrictedDetail=await service.getProject(siteCtx,project.projectId);
+      expect(restrictedDetail.contract_value_paise).toBeNull();
+      expect(restrictedDetail.site_json).toEqual({});
+      expect(restrictedDetail.settings_json).toEqual({});
+      expect(JSON.stringify(restrictedDetail)).not.toContain('SECRET-');
+
+      const ownerDetail=await service.getProject(ctx,project.projectId);
+      expect(ownerDetail.contract_value_paise).toBe('123456789012345678');
+      expect(ownerDetail.settings_json).toMatchObject({
+        internal_contract_value_paise:'SECRET-CONTRACT-DO-NOT-EXPOSE',
+      });
+
       const siteView = await service.getProjectDashboard({
         ...ctx,userId:other,orgRole:'R-SITE',projectRole:'R-SITE',projectId:project.projectId,
         requestId:uuidv7(),
