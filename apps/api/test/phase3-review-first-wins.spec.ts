@@ -219,4 +219,31 @@ describe('PH3-G11-001 — exactly one terminal review decision per document vers
       expect(statements).not.toContain('COMMIT');
     },
   );
+
+  it.each(['APPROVED', 'REJECTED', 'CHANGES_REQUESTED', 'SUPERSEDED', 'WITHDRAWN'])(
+    'external approval cannot re-decide an already terminal version %s',
+    async (reviewStatus) => {
+      const statements: string[] = [];
+      const query = jest.fn(async (sql: string) => {
+        statements.push(sql);
+        if (sql.includes('SELECT * FROM document_versions')) {
+          return { rows: [{ id: uuidv7(), row_version: 1, review_status: reviewStatus }] };
+        }
+        return { rows: [] };
+      });
+      const service = new ReviewsService({
+        withTenantContext: async (_ctx: unknown, callback: any) => callback({ query }),
+      } as any);
+      await expect(service.recordExternalApproval({
+        orgId: uuidv7(), userId: uuidv7(), actorType: 'USER', requestId: 'phase3-external',
+      }, uuidv7(), {
+        externalPartyId: uuidv7(), externalApproverName: 'Consultant',
+        externalApproverRole: 'Engineer', externalReference: 'Evidence-1',
+        decidedAt: '2026-11-10T00:00:00.000Z',
+        proofVersionId: uuidv7(), decision: 'APPROVE', externalMethod: 'EMAIL',
+      } as any, 1)).rejects.toThrow(ConflictException);
+      expect(statements.filter(sql => /UPDATE |INSERT INTO /i.test(sql))).toEqual([]);
+      expect(statements.filter(sql => sql.includes('SELECT * FROM document_versions'))).toHaveLength(1);
+    },
+  );
 });
