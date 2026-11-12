@@ -122,7 +122,15 @@ export function resolveConfigV021(
         overridePolicy: 'REPLACE',
       };
 
-      // 1. LOCKED policy guard
+      // 1. LOCKED fields require their authoritative owner, even when
+      // the owner omitted a value. Missing platform policy is not permission
+      // for an organisation or project to establish its own security limit.
+      if (schema.overridePolicy === 'LOCKED' && schema.ownerLevel &&
+          level !== schema.ownerLevel && !provenance[path]) {
+        conflicts.push({ path, level,
+          message: `Field '${path}' must originate from ${schema.ownerLevel}.` });
+        continue;
+      }
       if (schema.overridePolicy === 'LOCKED' && provenance[path]) {
         if (JSON.stringify(rawVal) !== JSON.stringify(result[path])) {
           conflicts.push({
@@ -204,10 +212,12 @@ function mergeKeyedObjects(
     }
 
     if (current) {
-      if (current.locked === true && (
-        patch.locked === false ||
-        (patch.mandatory === false && current.mandatory === true) ||
-        patch.$clear === true
+      // A locked record protects its *whole* obligation, including reviewer,
+      // document type, scope and mandatory status. A child may only restate
+      // identical values; it cannot replace semantics while retaining locked.
+      if (current.locked === true && Object.entries(patch).some(
+        ([field, value]) => field !== 'provenanceLevel' &&
+          JSON.stringify(sortDeepKeys(value)) !== JSON.stringify(sortDeepKeys(current[field])),
       )) {
         conflicts.push({
           path: `${keyField}:${k}`,
