@@ -38,6 +38,8 @@ describe('HVAC Domain Excellence Suite (XP11..XP18)', () => {
       const mockPool: any = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string) => {
+            // The preview must establish the caller's *live* owner membership.
+            if (sql.includes('FROM memberships')) return { rows: [{ role: 'R-OWNER' }] };
             if (sql.includes('FROM assets WHERE')) {
               // Existing tag in database
               return { rows: [{ tag: 'CH-01' }] };
@@ -69,6 +71,8 @@ describe('HVAC Domain Excellence Suite (XP11..XP18)', () => {
       const mockPool: any = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string) => {
+            // The preview must establish the caller's *live* owner membership.
+            if (sql.includes('FROM memberships')) return { rows: [{ role: 'R-OWNER' }] };
             if (sql.includes('FROM assets WHERE')) {
               return { rows: [{ tag: 'CH-01' }] };
             }
