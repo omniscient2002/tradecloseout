@@ -7,9 +7,10 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /**
  * RB-08/09/12: scoped, attributable, fail-closed incident intervention.
  *
- * INCIDENT_DATABASE_URL must be an independently provisioned restricted
- * tc_incident_operator login. Never use a migrator, app or postgres identity.
- * --dry-run changes nothing; --execute requires a recorded approval reference.
+ * INCIDENT_DATABASE_URL must authenticate as an individually accountable
+ * non-superuser login permitted to SET ROLE tc_incident_operator. The shared
+ * operator role has NOLOGIN. Never use a migrator, app or postgres identity.
+ * --execute requires a matching, unexpired, single-use DB approval UUID.
  * This cannot revoke already distributed S3 presigned URLs (provider gate).
  */
 async function executeRunbook() {
@@ -19,8 +20,8 @@ async function executeRunbook() {
   const approvalRef = process.env.INCIDENT_APPROVAL_REF;
   if (!connectionString) throw new Error('INCIDENT_DATABASE_URL is required; migrator fallback is forbidden.');
   if (!operatorId || !UUID.test(operatorId)) throw new Error('INCIDENT_OPERATOR_ID must be an accountable operator UUID.');
-  if (args.execute && (!approvalRef || approvalRef.trim().length < 8 || approvalRef.length > 200)) {
-    throw new Error('INCIDENT_APPROVAL_REF is required for execution.');
+  if (args.execute && (!approvalRef || !UUID.test(approvalRef))) {
+    throw new Error('INCIDENT_APPROVAL_REF must be an approved, single-use UUID.');
   }
   const pool = new Pool({ connectionString, max: 1, connectionTimeoutMillis: 5000 });
   try {
@@ -30,14 +31,39 @@ async function executeRunbook() {
       try {
         await client.query("SET LOCAL statement_timeout = '10000ms'");
         await client.query("SET LOCAL lock_timeout = '3000ms'");
-        // Explicit independent operator role, not the migration superuser.
-        const identity = await client.query('SELECT current_user AS login');
-        if (identity.rows[0]?.login !== 'tc_incident_operator') {
-          throw new Error('Incident runbooks require the tc_incident_operator database role.');
+        // DB login is a distinct, least-privileged individual principal.
+        // Role membership is provisioned by the independent security operator.
+        const identity = await client.query(
+          `SELECT session_user AS login, rolsuper, rolbypassrls
+             FROM pg_roles WHERE rolname = session_user`,
+        );
+        const login = identity.rows[0];
+        if (!login || login.rolsuper || login.rolbypassrls ||
+            ['tc_incident_operator', 'tc_migrator', 'tc_app', 'postgres'].includes(login.login)) {
+          throw new Error('An independent nonprivileged operator database login is required.');
+        }
+        await client.query('SET LOCAL ROLE tc_incident_operator');
+        const switched = await client.query('SELECT current_user AS role');
+        if (switched.rows[0]?.role !== 'tc_incident_operator') {
+          throw new Error('Incident operator privilege boundary could not be established.');
         }
         await client.query("SELECT set_config('app.current_org', $1, true)", [args.orgId]);
         const org = await client.query('SELECT id FROM organisations WHERE id = $1', [args.orgId]);
         if (org.rowCount !== 1) throw new Error('Incident organisation not found.');
+
+        if (args.execute) {
+          // Consume independent approval atomically with the containment and
+          // audit records. A failed transaction rolls back consumption too.
+          const { rows: [claim] } = await client.query(
+            `SELECT public.claim_incident_runbook_approval(
+                $1::uuid, $2::uuid, $3::text, $4::uuid, $5::uuid, $6::text
+              ) AS permitted`,
+            [approvalRef, args.orgId, args.code, args.entityId, operatorId, args.reason],
+          );
+          if (!claim?.permitted) {
+            throw new Error('INCIDENT_APPROVAL_MISSING_EXPIRED_OR_USED');
+          }
+        }
 
         let targetCount = 0;
         let affected = 0;
