@@ -28,7 +28,7 @@ export class NotificationsService {
       }
       return entry;
     };
-    return JSON.stringify(sort(value));
+    return JSON.stringify(sort(value)) ?? '';
   }
 
   /**
@@ -57,7 +57,7 @@ export class NotificationsService {
         typeof dto.dedupKey !== 'string' || !/^[A-Za-z0-9_.:-]{1,160}$/.test(dto.dedupKey) ||
         !dto.payload || Array.isArray(dto.payload) || typeof dto.payload !== 'object' ||
         (dto.projectId !== undefined && (typeof dto.projectId !== 'string' ||
-          !/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(dto.projectId)))) {
+          !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(dto.projectId)))) {
       throw new UnprocessableEntityException({ code: 'INVALID_NOTIFICATION_INPUT' });
     }
     const canonicalPayload = this.canonicalNotificationJson(dto.payload);
@@ -156,7 +156,20 @@ export class NotificationsService {
    * Weekly Rupee-at-Risk Owner Digest (BR-GTM-07, RT-029)
    */
   async getOwnerDigest(ctx: ExecutionContext, projectId: string) {
+    // Owner-only financial projection: project.read does not grant billing visibility.
+    if (ctx.actorType !== 'USER' || ctx.orgRole !== 'R-OWNER') {
+      throw new ForbiddenException({ code: 'OWNER_DIGEST_RESTRICTED' });
+    }
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+      const { rows: currentOwners } = await client.query(
+        `SELECT 1 FROM memberships
+          WHERE org_id = $1 AND user_id = $2
+            AND role = 'R-OWNER' AND status = 'ACTIVE' FOR SHARE`,
+        [ctx.orgId, ctx.userId],
+      );
+      if (!currentOwners.length) {
+        throw new ForbiddenException({ code: 'OWNER_DIGEST_RESTRICTED' });
+      }
       const projRes = await client.query(
         `SELECT * FROM projects WHERE org_id = $1 AND id = $2 AND purged_at IS NULL`,
         [ctx.orgId, projectId],
