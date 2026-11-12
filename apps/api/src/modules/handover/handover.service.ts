@@ -873,6 +873,30 @@ export class HandoverService {
         detail: 'A handover submission must identify at least one required approver.',
       });
     }
+    const seenEmails = new Set<string>();
+    const seenRequiredParties = new Set<string>();
+    for (const recipient of dto.recipients) {
+      if (!recipient || typeof recipient.email !== 'string' ||
+          typeof recipient.name !== 'string' || !recipient.name.trim() ||
+          recipient.name.length > 200 ||
+          !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(recipient.email.trim()) ||
+          recipient.email.length > 254 ||
+          (recipient.isRequiredApprover !== undefined &&
+            typeof recipient.isRequiredApprover !== 'boolean') ||
+          (recipient.partyId !== undefined &&
+            !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(recipient.partyId))) {
+        throw new UnprocessableEntityException('HANDOVER_RECIPIENT_INVALID');
+      }
+      const email = recipient.email.trim().toLowerCase();
+      if (seenEmails.has(email)) throw new UnprocessableEntityException('HANDOVER_RECIPIENT_DUPLICATE');
+      seenEmails.add(email);
+      if (recipient.isRequiredApprover !== false) {
+        if (!recipient.partyId || seenRequiredParties.has(recipient.partyId)) {
+          throw new UnprocessableEntityException('HANDOVER_REQUIRED_PARTY_INVALID');
+        }
+        seenRequiredParties.add(recipient.partyId);
+      }
+    }
     return withTenantTransaction(this.pool, ctx, async (client, emit) => {
       // The legacy packages/:id/submit route supplies only a package ID.
       // Resolve the project from that tenant-owned package, never from a
@@ -916,6 +940,21 @@ export class HandoverService {
         });
       }
       const packageId = latest.id;
+      // Locking the latest package above serializes duplicate commands for this revision.
+      // A resend requires an explicit documented transition, not a second live submission.
+      const { rows: existingSubmission } = await client.query(
+        `SELECT id FROM submissions
+          WHERE org_id = $1 AND project_id = $2 AND package_id = $3
+            AND status NOT IN ('REJECTED', 'CANCELLED')
+          LIMIT 1`,
+        [ctx.orgId, targetProjectId, packageId],
+      );
+      if (existingSubmission.length) {
+        throw new ConflictException({
+          code: 'HANDOVER_SUBMISSION_ALREADY_EXISTS',
+          detail: 'This handover revision already has a submission. Use its current delivery and decision state.',
+        });
+      }
       const submissionId = uuidv7();
       await client.query(
         `INSERT INTO submissions (id, org_id, project_id, package_id, status, submitted_by, submitted_at, cover_note)
@@ -934,8 +973,8 @@ export class HandoverService {
             targetProjectId,
             submissionId,
             rec.partyId || null,
-            rec.name,
-            rec.email,
+            rec.name.trim(),
+            rec.email.trim().toLowerCase(),
             rec.role || 'CLIENT',
             rec.isRequiredApprover ?? true,
           ],
@@ -954,6 +993,7 @@ export class HandoverService {
         submissionId,
         packageId,
         status: 'SUBMITTED',
+        deliveryStatus: 'PENDING_DELIVERY',
         recipientsCount: dto.recipients.length,
       };
     });
