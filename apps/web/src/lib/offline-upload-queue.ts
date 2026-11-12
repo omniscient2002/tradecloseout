@@ -426,8 +426,10 @@ function openOfflineDb(): Promise<IDBDatabase> {
   });
 }
 
-export async function computeBrowserFileSha256(file: Blob): Promise<string> {
-  return sha256BlobChunked(file);
+export async function computeBrowserFileSha256(
+  file: Blob, signal?: AbortSignal,
+): Promise<string> {
+  return sha256BlobChunked(file, 1024 * 1024, signal);
 }
 
 /**
@@ -508,6 +510,8 @@ export async function enqueueFieldUpload(params: {
   requirementRowVersion?: number;
   assetId?: string | null;
   file: File;
+  /** Cancels local capture only before IndexedDB persistence. */
+  signal?: AbortSignal;
   revisionCode: string;
   issueDate: string;
   title: string;
@@ -524,10 +528,11 @@ export async function enqueueFieldUpload(params: {
   if (!actorEpoch) throw new Error('UPLOAD_ACTOR_CONTEXT_REQUIRED');
   assertOfflineDraftBudget(originalFile.size, [], actorPartition);
   assertSameActor({ actorPartition, actorEpoch });
-  const checksumSha256 = await computeBrowserFileSha256(originalFile);
+  const checksumSha256 = await computeBrowserFileSha256(originalFile, params.signal);
   // An account switch during the async hash must not persist the evidence
   // under an old actor's partition or trigger a stale-network upload.
   assertSameActor({ actorPartition, actorEpoch });
+  if (params.signal?.aborted) throw new Error('UPLOAD_CAPTURE_CANCELLED');
   const item: OfflineQueuedUpload = {
     queueId: crypto.randomUUID(),
     actorPartition,
@@ -562,6 +567,7 @@ export async function enqueueFieldUpload(params: {
       list.onsuccess = () => {
         try {
           assertSameActor(item);
+          if (params.signal?.aborted) throw new Error('UPLOAD_CAPTURE_CANCELLED');
           assertOfflineDraftBudget(item.sizeBytes, list.result as OfflineQueuedUpload[], actorPartition);
           store.put(item);
         } catch (error) {
