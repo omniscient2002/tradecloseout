@@ -309,6 +309,72 @@ export async function discardOfflineUploadDraft(queueId: string): Promise<void> 
   });
 }
 
+/**
+ * The ONLY supported epoch rebind: an original member consciously recovers
+ * a local-only Blob that has no remote intent or provider receipts.
+ *
+ * Same principal, same org, current live project/requirement AND current
+ * document.upload permission are checked against the server. Guest grants,
+ * remote multipart intents and processed scans cannot use this path.
+ */
+export async function recoverOfflineUploadDraft(queueId: string): Promise<void> {
+  if (typeof window === 'undefined' || !navigator.locks?.request) {
+    throw new Error('UPLOAD_CROSS_TAB_LOCK_UNAVAILABLE');
+  }
+  if (!queueId) throw new Error('UPLOAD_QUEUE_ID_REQUIRED');
+  await navigator.locks.request(DRAIN_LOCK_NAME, { mode: 'exclusive' }, async () => {
+    const db = await openOfflineDb();
+    try {
+      const item = await new Promise<OfflineQueuedUpload | undefined>((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const get = tx.objectStore(STORE_NAME).get(queueId);
+        get.onsuccess = () => resolve(get.result as OfflineQueuedUpload | undefined);
+        get.onerror = () => reject(get.error);
+      });
+      if (!item) throw new Error('UPLOAD_DRAFT_NOT_FOUND');
+      assertSameActorIdentity(item);
+      const epoch = window.localStorage.getItem(ACTOR_EPOCH_KEY);
+      if (!epoch || (item.actorEpoch && item.actorEpoch === epoch)) {
+        throw new Error('UPLOAD_RECOVERY_REQUIRES_OLD_SESSION_DRAFT');
+      }
+      if (item.uploadIntent || item.uploadedParts.length > 0 ||
+          item.completedUploadAt || item.completionRequestedAt) {
+        throw new Error('UPLOAD_REMOTE_INTENT_RECOVERY_UNSUPPORTED: Inspect or discard the remote intent first.');
+      }
+
+      // The only accepted actor identity is the current authenticated server
+      // principal, never a client-selected display name or stale local ID.
+      const identity = await apiFetch<{ userId?: string; activeOrgId?: string }>('/api/v1/auth/me');
+      if (!identity?.userId || !identity.activeOrgId ||
+          getMemberOfflineActorPartition(identity.userId, identity.activeOrgId) !== item.actorPartition) {
+        throw new Error('UPLOAD_ACTOR_CONTEXT_CHANGED');
+      }
+      assertSameActorIdentity(item);
+
+      const response = await apiFetch<{
+        projectId: string; requirementId: string; allowed: boolean;
+      }>(`/api/v1/projects/${encodeURIComponent(item.projectId)}/documents/recover-upload-authority/${encodeURIComponent(item.requirementId)}`);
+      if (!response?.allowed || response.projectId !== item.projectId ||
+          response.requirementId !== item.requirementId) {
+        throw new Error('UPLOAD_RECOVERY_AUTHORITY_MISMATCH');
+      }
+      assertSameActorIdentity(item);
+      if (window.localStorage.getItem(ACTOR_EPOCH_KEY) !== epoch) {
+        throw new Error('UPLOAD_ACTOR_CONTEXT_CHANGED');
+      }
+      item.actorEpoch = epoch;
+      item.status = 'QUEUED_OFFLINE';
+      item.terminalFailure = false;
+      item.retryCount = 0;
+      item.nextAttemptAt = undefined;
+      item.lastError = undefined;
+      await saveQueueItem(db, item);
+    } finally {
+      db.close();
+    }
+  });
+}
+
 function openOfflineDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     if (typeof indexedDB === 'undefined') {
