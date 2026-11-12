@@ -1065,6 +1065,16 @@ export class ReviewsService {
         [version.id, ctx.orgId, doc.id],
       );
 
+      // The accepted external response is a terminal decision too: align
+      // linked requirement state and preserve one atomic, audit-linked result.
+      await client.query(
+        `UPDATE requirements
+            SET status = 'APPROVED', row_version = row_version + 1, updated_at = now()
+          WHERE org_id = $1 AND project_id = $2 AND superseded_at IS NULL
+            AND id IN (SELECT requirement_id FROM document_requirements
+                         WHERE org_id = $1 AND project_id = $2 AND document_id = $3)`,
+        [ctx.orgId, version.project_id, version.document_id],
+      );
       // Recording a terminal external response must also cancel actionable
       // in-app assignments against this version, under the same version lock.
       await this.cancelPendingSiblingReviews(client, ctx.orgId, version.id);
@@ -1103,6 +1113,27 @@ export class ReviewsService {
           dto.occurredAtPrecision || 'INSTANT',
           dto.backdatingReason || null,
           proofRes.rows[0].proof_version_id,
+        ],
+      );
+
+      // The completed external proof is not an override of prior decisions.
+      // Its audit event and sibling cancellation commit with the pointer.
+      await client.query(
+        `INSERT INTO audit_events
+           (id, org_id, project_id, actor_type, actor_user_id, action,
+            entity_type, entity_id, before_json, after_json, request_id, created_at)
+         VALUES ($1,$2,$3,$4,$5,'REVIEW_APPROVED_EXTERNAL',
+                 'DOCUMENT_VERSION',$6,$7::jsonb,$8::jsonb,$9,now())`,
+        [
+          uuidv7(), ctx.orgId, version.project_id, ctx.actorType, ctx.userId,
+          version.id,
+          JSON.stringify({ reviewStatus: version.review_status }),
+          JSON.stringify({
+            reviewStatus: 'APPROVED', reviewId,
+            externalPartyId: dto.externalPartyId,
+            proofVersionId: proofRes.rows[0].proof_version_id,
+          }),
+          ctx.requestId,
         ],
       );
 
