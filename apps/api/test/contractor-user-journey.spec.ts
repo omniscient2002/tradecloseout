@@ -88,6 +88,26 @@ describe('Complete Application User Journey & Real Storage/Scanner Integration (
           VALUES ($1, 'AirCon MEP Contracting Pvt Ltd', 'AirCon MEP', 'TG', false)
         `, [orgId]);
 
+        // PH2-G18-005: generation requires a genuine configured entitlement.
+        // This disposable E2E tenant has an explicit test subscription rather
+        // than depending on the former hardcoded fifty-package allowance.
+        const planId = uuidv7();
+        await admin.query(
+          `INSERT INTO plans (id, code, name, limits_json, price_paise, interval, status)
+           VALUES ($1, 'E2E_HANDOVER_PLAN', 'E2E Handover Plan',
+             $2::jsonb, 0, 'MONTH', 'ACTIVE')`,
+          [planId, JSON.stringify({
+            maxActiveProjects: 5, maxSeats: 5, maxStorageBytes: 1073741824,
+            maxPackageGenerationsPerMonth: 3,
+          })],
+        );
+        await admin.query(
+          `INSERT INTO subscriptions
+             (id, org_id, plan_id, status, current_period_start, current_period_end)
+           VALUES ($1, $2, $3, 'TRIAL', now() - interval '1 day', now() + interval '30 days')`,
+          [uuidv7(), orgId, planId],
+        );
+
         // Seed project
         await admin.query(`
           INSERT INTO projects (id, org_id, code, name, project_type, created_by, status)
