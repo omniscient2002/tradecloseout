@@ -792,3 +792,37 @@ test('legacy drafts predating pre-network checkpoints cannot claim offline-only 
     denied: 'UPLOAD_REMOTE_INTENT_RECOVERY_UNSUPPORTED: Inspect or discard the remote intent first.',
   });
 });
+
+
+test('cancelled local capture leaves IndexedDB original inventory unchanged', async ({ page }) => {
+  await fixture(page, false);
+  const result = await page.evaluate(async () => {
+    const q = (window as any).__queue;
+    const before = await q.listOfflineUploadDrafts();
+    const controller = new AbortController();
+    controller.abort();
+    let cancelName = '';
+    try {
+      await q.enqueueFieldUpload({
+        actorPartition: 'actor-original', projectId: 'project-one',
+        requirementId: 'requirement-one', requirementRowVersion: 7,
+        file: new File(['must not save'], 'cancelled.pdf', { type: 'application/pdf' }),
+        revisionCode: 'A', issueDate: '2026-11-12', title: 'Cancelled original',
+        signal: controller.signal,
+      });
+    } catch (error) {
+      cancelName = (error as Error).name;
+    }
+    const after = await q.listOfflineUploadDrafts();
+    return {
+      cancelName,
+      before: before.map((entry: any) => entry.filename),
+      after: after.map((entry: any) => entry.filename),
+    };
+  });
+  expect(result).toEqual({
+    cancelName: 'AbortError',
+    before: ['site.pdf'],
+    after: ['site.pdf'],
+  });
+});
