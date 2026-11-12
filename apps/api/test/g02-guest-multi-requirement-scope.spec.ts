@@ -82,6 +82,7 @@ describe('PH1-G02-006 — guest version and detail scope (restricted PostgreSQL 
 
       const signer = {
         createSignedDownloadUrl: jest.fn().mockResolvedValue('https://signed.example.test/file'),
+        createUploadUrls: jest.fn(),
         refreshUploadUrls: jest.fn().mockResolvedValue({ parts: [], expiresInSeconds: 900 }),
         finalizeUpload: jest.fn(),
         abortUpload: jest.fn(),
@@ -123,6 +124,26 @@ describe('PH1-G02-006 — guest version and detail scope (restricted PostgreSQL 
       await admin.query("UPDATE projects SET status='CLOSED' WHERE org_id=$1 AND id=$2", [a.orgId, projectId]);
       await expect(service.refreshUploadUrls(ctx, pendingVersionId)).rejects.toThrow('VERSION_NOT_FOUND');
       expect(signer.refreshUploadUrls).toHaveBeenCalledTimes(1);
+      await admin.query("UPDATE projects SET status='ACTIVE' WHERE org_id=$1 AND id=$2", [a.orgId, projectId]);
+
+      // The grant is still ACTIVE, but its issuing supplier party is no longer
+      // eligible. Both read and upload issuance must deny before a presigner call.
+      await admin.query("UPDATE parties SET status='INACTIVE' WHERE org_id=$1 AND id=$2", [a.orgId, partyId]);
+      await expect(service.getDocument(ctx, documentId)).rejects.toThrow('DOCUMENT_NOT_FOUND');
+      await expect(service.getDownloadUrl(ctx, readyVersionId)).rejects.toThrow('VERSION_NOT_FOUND');
+      await expect(service.refreshUploadUrls(ctx, pendingVersionId)).rejects.toThrow('VERSION_NOT_FOUND');
+      await expect(service.createUploadIntent(ctx, projectId, {
+        mimeType: 'application/pdf', fileName: 'denied.pdf', sizeBytes: 1024,
+        requirementId: allowedRequirementId,
+      })).rejects.toThrow('RESOURCE_OUTSIDE_GUEST_SCOPE');
+      expect(signer.createUploadUrls).not.toHaveBeenCalled();
+      expect(signer.createSignedDownloadUrl).toHaveBeenCalledTimes(1);
+      expect(signer.refreshUploadUrls).toHaveBeenCalledTimes(1);
+      await admin.query("UPDATE parties SET status='ACTIVE' WHERE org_id=$1 AND id=$2", [a.orgId, partyId]);
+
+      await admin.query("UPDATE projects SET status='SUSPENDED' WHERE org_id=$1 AND id=$2", [a.orgId, projectId]);
+      await expect(service.getDownloadUrl(ctx, readyVersionId)).rejects.toThrow('VERSION_NOT_FOUND');
+      await expect(service.getDocument(ctx, documentId)).rejects.toThrow('DOCUMENT_NOT_FOUND');
       await admin.query("UPDATE projects SET status='ACTIVE' WHERE org_id=$1 AND id=$2", [a.orgId, projectId]);
 
       await admin.query(
