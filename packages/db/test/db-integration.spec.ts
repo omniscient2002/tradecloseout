@@ -71,6 +71,48 @@ void test('Disposable PostgreSQL migration, isolation and audit regression tests
         assert(row.relforcerowsecurity, `${row.relname} has unforced RLS`);
       }
     });
+    await t.test('PH1-G26-001/G27-001: runtime cannot access or mutate audit child partitions', async () => {
+      const children = (await admin.query(`
+        SELECT c.relname, c.relrowsecurity AS rls, c.relforcerowsecurity AS forced,
+               has_table_privilege('tc_app', c.oid, 'SELECT') AS can_select,
+               has_table_privilege('tc_app', c.oid, 'INSERT') AS can_insert,
+               has_table_privilege('tc_app', c.oid, 'UPDATE') AS can_update,
+               has_table_privilege('tc_app', c.oid, 'DELETE') AS can_delete,
+               has_table_privilege('tc_app', c.oid, 'TRUNCATE') AS can_truncate
+          FROM pg_inherits i JOIN pg_class c ON c.oid = i.inhrelid
+         WHERE i.inhparent = 'public.audit_events'::regclass ORDER BY c.relname`)).rows;
+      assert(children.length >= 4, 'Expected dated and default partitions');
+      for (const child of children) {
+        assert(child.rls && child.forced, `child RLS missing: ${child.relname}`);
+        for (const key of ['can_select', 'can_insert', 'can_update', 'can_delete', 'can_truncate']) {
+          assert.equal(child[key], false, `unexpected runtime ${key} on ${child.relname}`);
+        }
+        const name = '"' + String(child.relname).replace(/"/g, '""') + '"';
+        for (const sql of [
+          `SELECT id FROM public.${name} LIMIT 1`,
+          `INSERT INTO public.${name} DEFAULT VALUES`,
+          `UPDATE public.${name} SET action = action`,
+          `DELETE FROM public.${name}`,
+          `TRUNCATE public.${name}`,
+        ]) {
+          await assert.rejects(app.query(sql), (error: any) => error.code === '42501');
+        }
+      }
+
+      // Normal, tenant-scoped parent writes/reads remain operational.
+      const eventId = randomUUID();
+      await scoped(app, a.orgId, async client => {
+        await client.query(`INSERT INTO audit_events
+          (id, org_id, actor_type, action, entity_type, entity_id, request_id)
+          VALUES ($1,$2,'SYSTEM','PARTITION_BOUNDARY_TEST','PROJECT',$3,'partition-test')`,
+          [eventId, a.orgId, a.projectIds[0]]);
+        assert.equal((await client.query('SELECT id FROM audit_events WHERE id=$1', [eventId])).rowCount, 1);
+      });
+      await scoped(app, b.orgId, async client => {
+        assert.equal((await client.query('SELECT id FROM audit_events WHERE id=$1', [eventId])).rowCount, 0);
+      });
+    });
+
     await t.test('DB-08: direct cross-project procurement insert fails the intended composite FK', async () => {
       const partyId = randomUUID();
       await admin.query(`INSERT INTO parties (id, org_id, name, types) VALUES ($1, $2, 'Test supplier', ARRAY['SUPPLIER'])`, [partyId, a.orgId]);
