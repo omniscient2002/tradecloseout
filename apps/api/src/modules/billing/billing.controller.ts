@@ -46,14 +46,14 @@ export class BillingController {
 
   @Get(['billing/invoices', 'orgs/current/invoices'])
   @UseGuards(SessionCsrfGuard, PermissionGuard)
-  @RequirePermission('billing.manage')
+  @RequirePermission('billing.read')
   async listInvoices(@Req() req: any) {
     return this.billingService.listInvoices(req.userContext);
   }
 
   @Get('orgs/current/subscription')
   @UseGuards(SessionCsrfGuard, PermissionGuard)
-  @RequirePermission('billing.manage')
+  @RequirePermission('billing.read')
   async getCurrentSubscription(@Req() req: any) {
     return this.warrantyAndBillingService.getSubscription(req.userContext);
   }
