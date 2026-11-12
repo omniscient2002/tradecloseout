@@ -1,26 +1,43 @@
+import { randomUUID } from 'crypto';
 import { PassThrough, Readable } from 'node:stream';
 import { DocumentsService } from '../src/modules/documents/documents.service';
 import { TenantDbService } from '../src/database/tenant-db.service';
 
 describe('document download boundaries', () => {
-  const actor = { orgId: 'org-1', userId: 'user-1', actorType: 'USER' as const, requestId: 'request-1' };
+  const projectId = randomUUID();
+  const documentId = randomUUID();
+  const actor = { orgId: randomUUID(), userId: randomUUID(), actorType: 'USER' as const, requestId: 'request-1' };
   const verifiedVersion = {
     id: 'version-1', file_status: 'READY', storage_status: 'READY', object_key: 'private/object',
     mime: 'application/pdf', size_bytes: '12', observed_size_bytes: '12',
     sha256: 'a'.repeat(64), provider_version_id: 'provider-version', revision_code: 'R1',
-    title: 'Test-Doc',
+    title: 'Test-Doc', project_id: projectId, document_id: documentId,
+    doc_type_key: 'DT-001', category_key: 'DOCUMENT', document_created_at: new Date('2026-01-01T00:00:00Z'),
   };
 
-  function setup(version: Record<string, unknown>, guestScopeAllowed = false) {
+  function setup(version: Record<string, unknown>, guestScopeAllowed = false, scopedDocumentIds?: string[]) {
+    let transactionOpen = false;
     const query = jest.fn(async (sql: string) => {
+      if (sql === 'BEGIN') transactionOpen = true;
+      if (sql === 'COMMIT' || sql === 'ROLLBACK') transactionOpen = false;
       if (sql.includes('SELECT dv.*') || sql.includes('SELECT dv.id')) return { rows: [version] };
       if (sql.includes('FROM guest_grants g')) return { rows: guestScopeAllowed ? [{}] : [] };
+      if (sql.includes('SELECT m.role AS org_role')) {
+        return { rows: [{ org_role: scopedDocumentIds ? 'R-SITE' : 'R-OWNER' }] };
+      }
+      if (sql.includes('SELECT status FROM projects')) return { rows: [{ status: 'ACTIVE' }] };
+      if (sql.includes('SELECT role, scope_json FROM project_members')) {
+        return { rows: [{ role: 'R-SITE', scope_json: { documentIds: scopedDocumentIds, mode: 'READ_ONLY' } }] };
+      }
       return { rows: [] };
     });
     const client = { query, release: jest.fn() };
     const db = new TenantDbService({ connect: jest.fn().mockResolvedValue(client) });
     const storage = {
-      createSignedDownloadUrl: jest.fn().mockResolvedValue('signed-url'),
+      createSignedDownloadUrl: jest.fn().mockImplementation(async () => {
+        if (transactionOpen) throw new Error('SIGNING_UNDER_DATABASE_LOCK');
+        return 'signed-url';
+      }),
       finalizeUpload: jest.fn(), refreshUploadUrls: jest.fn(), abortUpload: jest.fn(),
       fetchObject: jest.fn().mockResolvedValue(Buffer.from('hello world!')),
     };
@@ -58,6 +75,29 @@ describe('document download boundaries', () => {
     const { service, storage } = setup(verifiedVersion);
     await service.getDownloadUrl(actor, 'version-1');
     expect(storage.createSignedDownloadUrl).toHaveBeenCalledWith(expect.objectContaining({ versionId: 'provider-version' }));
+  });
+
+  it('refuses out-of-scope member URLs, previews and streams before storage access', async () => {
+    const { service, storage } = setup(verifiedVersion, false, [randomUUID()]);
+    await expect(service.getDownloadUrl(actor, 'version-1')).rejects.toThrow('VERSION_NOT_FOUND');
+    await expect(service.getPreviewUrl(actor, 'version-1')).rejects.toThrow('VERSION_NOT_FOUND');
+    const req = { headers: {} };
+    const res = createMockResponse();
+    await expect(service.streamDocumentVersion(actor, undefined, 'version-1', req, res))
+      .rejects.toThrow('VERSION_NOT_FOUND');
+    expect(storage.createSignedDownloadUrl).not.toHaveBeenCalled();
+    expect(storage.fetchObject).not.toHaveBeenCalled();
+  });
+
+  it('signs preview URLs only after releasing the authorization transaction', async () => {
+    const { service, storage } = setup(verifiedVersion);
+    await expect(service.getPreviewUrl(actor, 'version-1')).resolves.toMatchObject({
+      previewUrl: 'signed-url',
+    });
+    expect(storage.createSignedDownloadUrl).toHaveBeenCalledWith(expect.objectContaining({
+      inline: true,
+      versionId: 'provider-version',
+    }));
   });
 
   it('prevents a guest from completing another grant’s upload', async () => {
@@ -136,6 +176,53 @@ describe('document download boundaries', () => {
 
       expect(res.statusCode).toBe(416);
       expect(res.headers['content-range']).toBe('bytes */1000');
+      expect(storage.fetchObject).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      'bytes=1abc-',
+      'bytes=0-100,200-300',
+      'bytes=1--2',
+      'bytes=-0',
+      'bytes=-',
+      'bytes=0-4garbage',
+      'bytes=0-999999999999999999999',
+    ])('rejects malformed or unsafe byte range %s without fetching storage', async range => {
+      const { service, storage } = setup(streamVersion);
+      const res = createMockResponse();
+      await service.streamDocumentVersion(actor, undefined, 'version-1', { headers: { range } }, res);
+      expect(res.statusCode).toBe(416);
+      expect(res.headers['content-range']).toBe('bytes */1000');
+      expect(storage.fetchObject).not.toHaveBeenCalled();
+    });
+
+    it('honors a suffix range and clamps end beyond the verified file size', async () => {
+      const suffix = setup(streamVersion);
+      const suffixResponse = createMockResponse();
+      await suffix.service.streamDocumentVersion(actor, undefined, 'version-1', {
+        headers: { range: 'bytes=-100' },
+      }, suffixResponse);
+      expect(suffixResponse.statusCode).toBe(206);
+      expect(suffixResponse.headers['content-range']).toBe('bytes 900-999/1000');
+      expect(suffix.storage.fetchObject).toHaveBeenCalledWith(expect.objectContaining({ range: 'bytes=900-999' }));
+
+      const clamped = setup(streamVersion);
+      const clampedResponse = createMockResponse();
+      await clamped.service.streamDocumentVersion(actor, undefined, 'version-1', {
+        headers: { range: 'bytes=0-99999' },
+      }, clampedResponse);
+      expect(clampedResponse.statusCode).toBe(206);
+      expect(clampedResponse.headers['content-range']).toBe('bytes 0-999/1000');
+    });
+
+    it('rejects sizes exceeding safe JavaScript integer precision', async () => {
+      const { service, storage } = setup({
+        ...streamVersion, size_bytes: '9007199254740993',
+        observed_size_bytes: '9007199254740993',
+      });
+      await expect(service.streamDocumentVersion(actor, undefined, 'version-1', {
+        headers: {},
+      }, createMockResponse())).rejects.toThrow();
       expect(storage.fetchObject).not.toHaveBeenCalled();
     });
 

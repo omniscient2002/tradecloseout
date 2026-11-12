@@ -14,6 +14,42 @@ import { uuidv7 } from 'uuidv7';
 import { AuthenticatedRequest } from '../guards/session-csrf.guard';
 import { hashRequestPayload } from '@tradecloseout/db';
 import { REQUIRE_IDEMPOTENCY_KEY } from '../decorators/idempotency.decorator';
+import { OMIT_GENERIC_IDEMPOTENCY_RECEIPT } from '../decorators/no-generic-idempotency-receipt.decorator';
+
+/**
+ * A general-purpose receipt is not an approved credential vault. Catch nested
+ * secret material even when a controller has not opted out explicitly. Fail
+ * closed on cyclic/deep responses because JSON serialisation is not reliable.
+ */
+export function containsCredentialReceiptData(value: unknown): boolean {
+  const seen = new WeakSet<object>();
+  const secretKey = /(?:password|passphrase|secret|credential|authorization|api.?key|token|otp|totp|mfa|recoverycode|csrf|cookie|privatekey|manualsetupkey|qrcode|qrpayload|magiclink|signedurl|presignedurl|uploadurl|downloadurl|sessionkey)/i;
+  const visit = (node: unknown, depth: number): boolean => {
+    if (depth > 32) return true;
+    if (typeof node === 'string') {
+      // Credential data can hide under innocent keys such as "value", "href",
+      // "text" or "payload". Block known one-time factor and bearer formats,
+      // not just fields whose names happen to look sensitive.
+      return /[?&](?:X-Amz-Signature|X-Goog-Signature|signature|access_token|token|api_key|client_secret)=/i.test(node) ||
+        /otpauth:\/\//i.test(node) ||
+        /-----BEGIN (?:[A-Z ]* )?PRIVATE KEY-----/i.test(node) ||
+        /(?:^|[\s"'=:])(?:Bearer|Basic)\s+[A-Za-z0-9._~+\/-]{12,}={0,2}(?=$|[\s"'&])/i.test(node) ||
+        /(?:^|[\s"'=:])(?:sk-(?:live|test)-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9_]{16,})(?=$|[\s"'&])/i.test(node);
+    }
+    if (node === null || typeof node !== 'object') return false;
+    if (seen.has(node)) return true;
+    seen.add(node);
+    try {
+      if (Array.isArray(node)) return node.some(item => visit(item, depth + 1));
+      return Object.entries(node).some(([key, child]) =>
+        secretKey.test(key.replace(/[^A-Za-z0-9]/g, '')) || visit(child, depth + 1),
+      );
+    } finally {
+      seen.delete(node);
+    }
+  };
+  return visit(value, 0);
+}
 
 @Injectable()
 export class IdempotencyInterceptor implements NestInterceptor {
@@ -35,6 +71,22 @@ export class IdempotencyInterceptor implements NestInterceptor {
       REQUIRE_IDEMPOTENCY_KEY,
       [context.getHandler(), context.getClass()],
     );
+
+    // Generic receipts are readable by receipt-replay consumers and must
+    // never become an at-rest store for OTP, session, MFA or recovery material.
+    const omitGenericReceipt = this.reflector.getAllAndOverride<boolean>(
+      OMIT_GENERIC_IDEMPOTENCY_RECEIPT,
+      [context.getHandler(), context.getClass()],
+    );
+    if (omitGenericReceipt) {
+      if (requiresIdempotency) {
+        throw new ConflictException({
+          code: 'AUTH_RECEIPT_CONTRACT_REQUIRED',
+          detail: 'This operation requires a dedicated protected retry contract.',
+        });
+      }
+      return next.handle();
+    }
 
     const idempotencyKey = req.headers['idempotency-key'];
     if (!idempotencyKey) {
@@ -72,18 +124,30 @@ export class IdempotencyInterceptor implements NestInterceptor {
     const ttlHours = endpoint.includes('upload-intents') ? 168 : 24;
     const withTenantClient = async <T>(work: (client: PoolClient) => Promise<T>): Promise<T> => {
       const client = await this.pool.connect();
+      let began = false;
+      let commitAttempted = false;
+      let discardConnection = false;
       try {
         await client.query('BEGIN');
+        began = true;
+        await client.query("SET LOCAL lock_timeout = '5s'");
+        await client.query("SET LOCAL statement_timeout = '60s'");
+        await client.query("SET LOCAL idle_in_transaction_session_timeout = '60s'");
         await client.query(`SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`, [orgId]);
         await client.query(`SELECT set_config('app.current_user', $1, true)`, [actorId === 'anonymous' ? '' : actorId]);
         const result = await work(client);
+        commitAttempted = true;
         await client.query('COMMIT');
         return result;
       } catch (err) {
-        await client.query('ROLLBACK').catch(() => {});
+        discardConnection = !began || commitAttempted;
+        if (began) {
+          try { await client.query('ROLLBACK'); }
+          catch { discardConnection = true; }
+        }
         throw err;
       } finally {
-        client.release();
+        client.release(discardConnection);
       }
     };
 
@@ -153,11 +217,36 @@ export class IdempotencyInterceptor implements NestInterceptor {
         const statusCode = res.statusCode || 200;
         if (statusCode >= 200 && statusCode < 300) {
           persistingReceipt = true;
+          // Inspect the actual serialized receipt as well as the source body.
+          // Nest responses may contain custom toJSON() methods or getters whose
+          // serialized fields are not visible to Object.entries(responseBody).
+          // Never scan one shape and then persist a different, unchecked one.
+          let receiptJson: string;
+          try {
+            const encoded = JSON.stringify(responseBody ?? {});
+            if (typeof encoded !== 'string') throw new Error('NON_JSON_RESPONSE');
+            receiptJson = encoded;
+          } catch {
+            throw new ConflictException({
+              code: 'IDEMPOTENCY_RECEIPT_NOT_SERIALIZABLE',
+              detail: 'The command requires a dedicated outcome recovery contract.',
+            });
+          }
+          if (containsCredentialReceiptData(responseBody) ||
+              containsCredentialReceiptData(JSON.parse(receiptJson))) {
+            // Leave the claim unresolved so a retry cannot re-run a possibly
+            // committed operation. A privileged reconciliation path must
+            // resolve the outcome; never write plaintext or invent an ACK.
+            throw new ConflictException({
+              code: 'SENSITIVE_RESPONSE_RECEIPT_BLOCKED',
+              detail: 'A protected operation requires a dedicated retry and recovery contract.',
+            });
+          }
           const saved = await withTenantClient((client) => client.query(
             `UPDATE idempotency_keys
                 SET response_status = $1, response_json = $2
               WHERE org_id = $3 AND key = $4 AND endpoint = $5 AND response_status = 0`,
-            [statusCode, JSON.stringify(responseBody ?? {}), orgId, idempotencyKey, endpoint],
+            [statusCode, receiptJson, orgId, idempotencyKey, endpoint],
           ));
           if (saved.rowCount !== 1) {
             throw new Error('IDEMPOTENCY_RECEIPT_WRITE_LOST');

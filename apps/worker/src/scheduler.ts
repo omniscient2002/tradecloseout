@@ -3,6 +3,7 @@ import Redis from 'ioredis';
 import { createHash } from 'crypto';
 import { uuidv7 } from 'uuidv7';
 import { deliverNotification } from './notification-delivery';
+import { reportWorkerFailure } from './safe-worker-errors';
 import { isIndiaQuietHour, sumPaise } from '@tradecloseout/shared';
 
 export class TradeCloseoutScheduler {
@@ -33,7 +34,7 @@ export class TradeCloseoutScheduler {
       try {
         await this.redis.eval(releaseLua, 1, fullKey, ownerToken);
       } catch (err) {
-        console.error(`[Scheduler Lock Release Error] Key ${fullKey}:`, err);
+        reportWorkerFailure('SCHEDULER_LOCK_RELEASE_FAILED', err);
       }
     }
   }
@@ -54,7 +55,20 @@ export class TradeCloseoutScheduler {
     try {
       if (await this.redis.exists(completedKey)) return;
       await fn();
-      await this.redis.set(completedKey, '1', 'EX', completedTtlSeconds);
+      // Completion is valid only for the holder that still owns the lease.
+      // Atomically check ownership and persist completion in the same Redis
+      // command, preventing an expired/stolen worker from marking false success.
+      const markCompletedLua = `
+        if redis.call("get", KEYS[1]) == ARGV[1] then
+          redis.call("set", KEYS[2], "1", "EX", ARGV[2])
+          return 1
+        end
+        return 0
+      `;
+      const marked = await this.redis.eval(
+        markCompletedLua, 2, fullKey, completedKey, ownerToken, String(completedTtlSeconds),
+      );
+      if (marked !== 1) throw new Error('SCHEDULER_LEASE_LOST');
     } finally {
       const releaseLua = `
         if redis.call("get", KEYS[1]) == ARGV[1] then
@@ -66,7 +80,7 @@ export class TradeCloseoutScheduler {
       try {
         await this.redis.eval(releaseLua, 1, fullKey, ownerToken);
       } catch (err) {
-        console.error(`[Scheduler Lock Release Error] Key ${fullKey}:`, err);
+        reportWorkerFailure('SCHEDULER_LOCK_RELEASE_FAILED', err);
       }
     }
   }
@@ -159,22 +173,39 @@ export class TradeCloseoutScheduler {
    */
   async runWeeklyOwnerRetentionAtRiskDigest(): Promise<void> {
     const client = await this.pool.connect();
+    let discardConnection = false;
     try {
+      // PH1-G24-002: membership is tenant-RLS-protected. Cross-tenant
+      // ownership discovery with no app.current_org silently returned zero.
+      // Global organisations is the reviewed discovery surface only.
       const { rows: activeOrgs } = await client.query(
-        `SELECT o.id AS org_id, o.display_name, m.user_id AS owner_user_id
-           FROM organisations o
-           JOIN memberships m ON m.org_id = o.id AND m.role = 'R-OWNER' AND m.status = 'ACTIVE'
-          WHERE o.status = 'ACTIVE'`,
+        `SELECT id AS org_id, display_name FROM organisations
+          WHERE status='ACTIVE' ORDER BY id`,
       );
 
       const weekKey = this.getIndiaSchedulePeriods().week;
-
+      let tenantFailures = 0;
       for (const org of activeOrgs) {
-        await client.query('BEGIN');
+        try {
+          await client.query('BEGIN');
+          await client.query("SET LOCAL lock_timeout = '5s'");
+          await client.query("SET LOCAL statement_timeout = '60s'");
+          await client.query("SET LOCAL idle_in_transaction_session_timeout = '60s'");
         await client.query(
           `SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`,
           [org.org_id],
         );
+        const { rows: owners } = await client.query(
+          `SELECT m.user_id FROM memberships m
+            JOIN users u ON u.id=m.user_id AND u.status='ACTIVE'
+            WHERE m.org_id=$1 AND m.role='R-OWNER' AND m.status='ACTIVE'
+            ORDER BY m.user_id`,
+          [org.org_id],
+        );
+        // Do not silently accept missing owners or pick an arbitrary owner
+        // when the exactly-one-eligible-owner invariant is violated.
+        if (owners.length !== 1) throw new Error('OWNER_DIGEST_OWNER_INVARIANT');
+        const ownerUserId: string = owners[0].user_id;
 
         // Calculate missing/expired counts and retention money gated per active project (RT-029)
         const { rows: projectRisks } = await client.query(
@@ -212,7 +243,7 @@ export class TradeCloseoutScheduler {
           [
             uuidv7(),
             org.org_id,
-            org.owner_user_id,
+            ownerUserId,
             JSON.stringify({
               orgDisplayName: org.display_name,
               totalRetentionAtRiskPaise: totalRetentionAtRiskPaise.toString(),
@@ -228,12 +259,23 @@ export class TradeCloseoutScheduler {
         );
 
         await client.query('COMMIT');
+        } catch {
+          tenantFailures += 1;
+          try {
+            await client.query('ROLLBACK');
+          } catch {
+            // Never move on to the next tenant using a connection of unknown state.
+            discardConnection = true;
+            console.error('OWNER_DIGEST_CONNECTION_UNSAFE');
+            break;
+          }
+          // Keep any tenant identifiers and SQL errors out of operational logs.
+          console.error('OWNER_DIGEST_TENANT_FAILED');
+        }
       }
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
+      if (tenantFailures) throw new Error('OWNER_DIGEST_INCOMPLETE');
     } finally {
-      client.release();
+      client.release(discardConnection);
     }
   }
 
@@ -249,7 +291,9 @@ export class TradeCloseoutScheduler {
       let verifiedEvents = 0;
 
       for (const org of orgs) {
-        await client.query('BEGIN');
+        // Read chain and registry under one snapshot, avoiding false alarms from
+        // a legitimate concurrent append between the two SELECTs.
+        await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
         await client.query(
           `SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`,
           [org.id],
@@ -273,25 +317,44 @@ export class TradeCloseoutScheduler {
                   )::text, 'sha256'), 'hex') AS computed_hash
              FROM audit_events
             WHERE org_id = $1
-            ORDER BY chain_seq ASC`,
+            ORDER BY chain_seq ASC, id ASC`,
           [org.id],
         );
 
-        let prevHash: string | null = null;
-        for (let i = 0; i < events.length; i++) {
-          const ev = events[i];
-          if (prevHash !== null && ev.prev_hash !== prevHash) {
-            throw new Error(
-              `AUDIT_HASH_CHAIN_CORRUPT: Tampering detected for org ${org.id} at chain_seq ${ev.chain_seq}. Expected prev_hash ${prevHash}, got ${ev.prev_hash}`,
-            );
+        const genesis = 'GENESIS_0000000000000000000000000000000000000000000000000000000000000000';
+        let prevHash = genesis;
+        let prevSeq = 0n;
+        for (const ev of events) {
+          // A nullable or caller-controlled ordering key must fail closed.
+          if (typeof ev.chain_seq !== 'string' || !/^[0-9]+$/.test(ev.chain_seq)) {
+            throw new Error('AUDIT_CHAIN_ORDER_INVALID');
           }
-          if (ev.computed_hash && ev.hash !== ev.computed_hash) {
-            throw new Error(
-              `AUDIT_CONTENT_TAMPERED: Payload tampering detected for org ${org.id} at chain_seq ${ev.chain_seq} (id: ${ev.id}). Stored hash ${ev.hash} does not match computed hash ${ev.computed_hash}`,
-            );
+          const sequence = BigInt(ev.chain_seq);
+          if (sequence <= prevSeq) throw new Error('AUDIT_CHAIN_ORDER_INVALID');
+          if (ev.prev_hash !== prevHash) throw new Error('AUDIT_HASH_CHAIN_CORRUPT');
+          if (typeof ev.hash !== 'string' || !/^[a-f0-9]{64}$/.test(ev.hash) ||
+              typeof ev.computed_hash !== 'string' || ev.hash !== ev.computed_hash) {
+            throw new Error('AUDIT_CONTENT_TAMPERED');
           }
+          prevSeq = sequence;
           prevHash = ev.hash;
           verifiedEvents++;
+        }
+
+        // A chain whose tail was removed can remain internally contiguous.
+        // The separate protected registry retains the committed head/count.
+        const { rows: expectedRows } = await client.query(
+          'SELECT event_count, head_seq, head_hash FROM public.phase1_audit_expected_head($1)',
+          [org.id],
+        );
+        if (expectedRows.length !== 1 ||
+            BigInt(expectedRows[0].event_count) !== BigInt(events.length) ||
+            (events.length > 0 &&
+              (BigInt(expectedRows[0].head_seq) !== prevSeq ||
+               expectedRows[0].head_hash !== prevHash)) ||
+            (events.length === 0 &&
+              (expectedRows[0].head_seq !== null || expectedRows[0].head_hash !== null))) {
+          throw new Error('AUDIT_CHAIN_HEAD_MISMATCH');
         }
 
         await client.query('COMMIT');

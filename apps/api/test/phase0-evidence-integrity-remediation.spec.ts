@@ -90,6 +90,8 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
       const mockClient = {
         query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
           executedQueries.push({ sql, params });
+          if (sql.includes('SELECT m.role AS org_role')) return { rows: [{ org_role: 'R-OWNER' }] };
+          if (sql.includes('SELECT status FROM projects')) return { rows: [{ status: 'ACTIVE' }] };
           if (sql.includes('SELECT dv.*, so.id AS storage_id')) {
             return {
               rows: [
@@ -102,7 +104,9 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
                   storage_size_bytes: '1024',
                   expected_sha256: 'b'.repeat(64),
                   object_key: 'orgs/test/test.pdf',
-                  doc_id: 'doc-123',
+                  doc_id: 'doc-123', document_id: 'doc-123',
+                  doc_type_key: 'DT-001', category_key: 'DOCUMENT',
+                  document_created_at: new Date('2026-01-01T00:00:00Z'),
                   current_approved_version_id: null,
                 },
               ],
@@ -140,9 +144,13 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
       expect(outboxQuery).toBeDefined();
       expect(outboxQuery!.sql).toContain("'FILE_UPLOAD_COMPLETED_ENQUEUE_SCAN'");
       const payload = JSON.parse(outboxQuery!.params[3]);
-      expect(payload.versionId).toBe('ver-123');
+      expect(payload.schemaVersion).toBe(1);
+      expect(payload.eventType).toBe('FILE_UPLOAD_COMPLETED_ENQUEUE_SCAN');
+      expect(payload.entityType).toBe('DOCUMENT_VERSION');
+      expect(payload.entityId).toBe('ver-123');
       expect(payload.orgId).toBe(orgId);
-      expect(payload.storageObjectId).toBe('storage-123');
+      expect(payload.data.versionId).toBe('ver-123');
+      expect(payload.data.storageObjectId).toBe('storage-123');
     });
   });
 
@@ -156,12 +164,15 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
         withTenantContext: jest.fn().mockImplementation(async (ctx, fn) => {
           const client = {
             query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
+              if (sql.includes('SELECT m.role AS org_role')) return { rows: [{ org_role: 'R-OWNER' }] };
+              if (sql.includes('SELECT status FROM projects')) return { rows: [{ status: 'ACTIVE' }] };
               if (sql.includes('SELECT * FROM reviews')) {
                 return {
                   rows: [
                     {
                       id: 'rev-1',
                       org_id: orgId,
+                      project_id: projectId,
                       document_version_id: 'ver-unscanned',
                       status: 'IN_REVIEW',
                       reviewer_subject_type: 'USER', reviewer_subject_id: userId,
@@ -175,6 +186,7 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
                     {
                       id: 'ver-unscanned',
                       org_id: orgId,
+                      project_id: projectId,
                       document_id: 'doc-1',
                       file_status: 'PROCESSING', // Not yet READY!
                       uploaded_by: 'other-user',
@@ -207,12 +219,15 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
           const client = {
             query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
               executedQueries.push({ sql, params });
+              if (sql.includes('SELECT m.role AS org_role')) return { rows: [{ org_role: 'R-OWNER' }] };
+              if (sql.includes('SELECT status FROM projects')) return { rows: [{ status: 'ACTIVE' }] };
               if (sql.includes('SELECT * FROM reviews')) {
                 return {
                   rows: [
                     {
                       id: 'rev-2',
                       org_id: orgId,
+                      project_id: projectId,
                       document_version_id: 'ver-ready',
                       status: 'IN_REVIEW',
                       reviewer_subject_type: 'USER', reviewer_subject_id: userId,
@@ -226,6 +241,7 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
                     {
                       id: 'ver-ready',
                       org_id: orgId,
+                      project_id: projectId,
                       document_id: 'doc-1',
                       file_status: 'READY',
                       object_id: 'object-1',
@@ -240,6 +256,7 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
                     {
                       id: 'doc-1',
                       org_id: orgId,
+                      project_id: projectId,
                       latest_version_id: 'ver-ready',
                       current_approved_version_id: null,
                     },
@@ -465,6 +482,11 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
           executedQueries.push({ sql, params });
           if (sql.includes('SELECT scope_json, capabilities FROM guest_grants')) {
             return { rows: [{ scope_json: { requirementIds: ['0192e3a0-req-allowed-1'] }, capabilities: ['document.upload'] }] };
+          }
+          // A legitimate guest issuance test needs an active project; denied
+          // or closed projects are covered by the Phase 1 lifecycle tests.
+          if (sql.includes('SELECT status FROM projects')) {
+            return { rows: [{ status: 'ACTIVE' }] };
           }
           if (sql.includes('SELECT id, doc_type_key FROM requirements')) {
             return { rows: [{ id: '0192e3a0-req-allowed-1', doc_type_key: 'DT-043' }] };

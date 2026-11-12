@@ -4,11 +4,13 @@ import { ValidationPipe } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { ProblemJsonExceptionFilter } from './common/filters/problem-json.filter';
+import { securityHeadersMiddleware } from './common/middleware/security-headers.middleware';
 import { VisibilityProjectionInterceptor } from './common/interceptors/visibility-projection.interceptor';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { rawBody: true });
 
+  app.use(securityHeadersMiddleware);
   app.use(cookieParser());
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   app.useGlobalFilters(new ProblemJsonExceptionFilter());
