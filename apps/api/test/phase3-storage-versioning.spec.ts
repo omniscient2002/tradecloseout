@@ -141,7 +141,7 @@ describe('PH3-G10-002 — immutable provider receipt contract', () => {
       provider_version_id: null, review_status: 'PENDING_REVIEW',
       current_approved_version_id: null, ...versionOverride,
     };
-    const query = jest.fn(async (sql: string) => {
+    const query = jest.fn(async (sql: string, _args?: any[]) => {
       if (sql.includes('SELECT dv.*')) return { rows: [version] };
       return { rows: [] };
     });
