@@ -234,3 +234,32 @@ test('same completion idempotency key is retried only after server confirms inte
   expect(result.keys[1]).toBe(result.keys[0]);
   expect(result.remaining).toBe(0);
 });
+
+
+test('browser storage write failure does not claim a saved original or delete previous drafts', async ({ page }) => {
+  await fixture(page, false);
+  const result = await page.evaluate(async () => {
+    const q = (window as any).__queue;
+    const previous = (await q.listOfflineUploadDrafts()).length;
+    const put = IDBObjectStore.prototype.put;
+    let error = '';
+    try {
+      IDBObjectStore.prototype.put = function () {
+        throw new DOMException('Simulated storage quota exhaustion', 'QuotaExceededError');
+      };
+      await q.enqueueFieldUpload({
+        projectId: 'project-one', requirementId: 'requirement-one',
+        file: new File(['new original'], 'second.pdf', { type: 'application/pdf' }),
+        revisionCode: 'B', issueDate: '2026-11-12', title: 'Second original',
+      });
+    } catch (failure) {
+      error = (failure as Error).message;
+    } finally {
+      IDBObjectStore.prototype.put = put;
+    }
+    return { previous, after: (await q.listOfflineUploadDrafts()).length, error };
+  });
+  expect(result.previous).toBe(1);
+  expect(result.after).toBe(1);
+  expect(result.error).toContain('Simulated storage quota exhaustion');
+});
