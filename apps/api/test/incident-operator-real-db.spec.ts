@@ -1,5 +1,5 @@
 import { uuidv7 } from 'uuidv7';
-import { withDisposableDatabase } from '@tradecloseout/db/test/helpers/disposable-database';
+import { withDisposableDatabase } from '../../../packages/db/test/helpers/disposable-database';
 
 describe('PH5-G28-001 restricted operator real-Postgres incident containment', () => {
   it('quarantines only the explicitly scoped organisation and never gains tenant read/write access', async () => {
