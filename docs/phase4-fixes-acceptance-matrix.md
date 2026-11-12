@@ -20,7 +20,7 @@
 | [PH4-G17-003](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G17.md#ph4-g17-003) | Define post-handover defect policy without rewriting accepted closeout | OPEN | Not yet implemented or independently verified |
 | [PH4-G17-004](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G17.md#ph4-g17-004) | Enforce current assignee, party and resource authority for defect work | OPEN | Not yet implemented or independently verified |
 | [PH4-G17-005](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G17.md#ph4-g17-005) | Persist assignment, remedy revisions and controlled reopen/waiver history | OPEN | Not yet implemented or independently verified |
-| [PH4-G17-006](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G17.md#ph4-g17-006) | Align defect severity, readiness and user-visible recovery | OPEN | Not yet implemented or independently verified |
+| [PH4-G17-006](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G17.md#ph4-g17-006) | Align defect severity, readiness and user-visible recovery | PARTIAL / VERIFY | Unknown severity and malformed defect inputs now explicitly rejected; legacy MINOR/MAJOR mapping retained with tests. Severity migration, readiness harmonization, notices, browser acceptance still open |
 | [PH4-G17-007](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G17.md#ph4-g17-007) | Accept genuine remedy and independent closure evidence | BLOCKED_EXTERNAL | Requires authorized external/domain acceptance |
 | [PH4-G25-001](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G25.md#ph4-g25-001) | Remove active PDF actions in the actual dossier pipeline | PARTIAL / VERIFY | Pre/post-merge PDF action rejection added; hostile-input and independent PDF acceptance outstanding |
 | [PH4-G25-002](https://github.com/omniscient2002/tradecloseout/blob/f51a90894589091ddeaeaeefea14f86473479568/docs/audits/remaining-phases-2026-11-12/phase4/G25.md#ph4-g25-002) | Unify sanitizer implementations and make evidence claims truthful | PARTIAL / VERIFY | Legacy sanitizer rejects unsafe PDFs rather than claiming removed actions; full cross-path proof outstanding |
@@ -68,7 +68,7 @@
 - Tax invoices, payment settlement, GST/IRP, actual provider delivery, OEM confirmations and real engineering certification remain **disabled or pending verified integration** where applicable. Do not replace them with pretend states.
 - No independent QA, architecture, HVAC, finance, legal, customer or operations reviewer has accepted the exact candidate. No deployment, merge or production sign-off is claimed.
 
-**Count:** 52 findings; 7 external gates; 17 partial remediation areas; 28 not yet addressed areas.
+**Count:** 52 findings; 7 external gates; 18 partial remediation areas; 27 not yet addressed areas.
 
 ## Dedicated PR and CI constraint
 
