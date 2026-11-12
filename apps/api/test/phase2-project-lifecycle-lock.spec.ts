@@ -24,6 +24,22 @@ describe('PH2-G05-005: project commercial-write lifecycle fence', () => {
     await expect(service.lockEditableCommercialProject(client(null), orgId, projectId)).rejects.toThrow();
   });
 
+  it('exposes stable directory fields without inventing financial or progress metrics', () => {
+    const dto = service.projectDirectoryDto({
+      id: 'project-1', code: 'HVAC-01', name: 'HVAC plant', status: 'ACTIVE',
+      client_name: 'Contracted Client', mc_name: null,
+      pmc_name: 'Engineering Consultant', contract_value_paise: '9007199254740993',
+      target_handover_date: '2027-03-01', row_version: 3,
+    });
+    expect(dto).toMatchObject({
+      clientName: 'Contracted Client', mcName: null, pmcName: 'Engineering Consultant',
+      contractValuePaise: '9007199254740993', targetHandoverDate: '2027-03-01',
+      rowVersion: 3,
+    });
+    expect(dto.approvedCount).toBeUndefined();
+    expect(dto.retentionAtRiskPaise).toBeUndefined();
+  });
+
   it.each(['DRAFT', 'ACTIVE'])('permits %s commercial changes', async status => {
     await expect(service.lockEditableCommercialProject(client({ status, purged_at: null }), orgId, projectId))
       .resolves.toBeUndefined();
