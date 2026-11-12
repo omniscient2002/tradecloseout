@@ -18,7 +18,7 @@ import { compileAndPersistHandoverPackage, markHandoverPackageFailed } from './q
 import { compileAndPersistPortableArchive } from './queues/portable-archive.processor';
 import { BoundedByteStream } from './queues/bounded-stream';
 import { OUTBOX_EVENT_REGISTRY } from './event-registry';
-import { jobFingerprint, reportWorkerFailure } from './safe-worker-errors';
+import { jobFingerprint, reportWorkerFailure, protectQueueJob } from './safe-worker-errors';
 
 const execFileAsync = promisify(execFile);
 
@@ -152,7 +152,7 @@ async function bootWorker() {
   // 3. BullMQ Workers
   const fileWorker = new Worker(
     'file-processing',
-    async (job) => {
+    async (job) => protectQueueJob('file', async () => {
       console.log(`[BullMQ] Processing file job ${jobFingerprint(job.id) ?? 'unknown'}`);
       const { originalFilename, expectedSha256, clamdHost, clamdPort, versionId, orgId, storageObjectId,
         bucket, objectKey, providerVersionId } = job.data;
@@ -294,13 +294,13 @@ async function bootWorker() {
       }
 
       return result;
-    },
+    }),
     { connection: redis, concurrency: 4 },
   );
 
   const pdfWorker = new Worker(
     'pdf-compilation',
-    async (job) => {
+    async (job) => protectQueueJob('pdf', async () => {
       console.log(`[BullMQ] Compiling PDF package job ${jobFingerprint(job.id) ?? 'unknown'}`);
       try {
         return await compileAndPersistHandoverPackage(pool, s3, job.data, String(job.id), qpdfAvailable);
@@ -310,25 +310,25 @@ async function bootWorker() {
         }
         throw err;
       }
-    },
+    }),
     { connection: redis, concurrency: 2 },
   );
 
   const formatWorker = new Worker(
     'format-conversion',
-    async (job) => {
+    async (job) => protectQueueJob('format', async () => {
       console.log(`[BullMQ] Converting format job ${jobFingerprint(job.id) ?? 'unknown'}`);
       return await convertSupportingFormatToPdf(job.data);
-    },
+    }),
     { connection: redis, concurrency: 2 },
   );
 
   const archiveWorker = new Worker(
     'archive-export',
-    async (job) => {
+    async (job) => protectQueueJob('archive', async () => {
       console.log(`[BullMQ] Compiling portable archive job ${jobFingerprint(job.id) ?? 'unknown'}`);
       return await compileAndPersistPortableArchive(pool, s3, job.data);
-    },
+    }),
     { connection: redis, concurrency: 2 },
   );
 
