@@ -1,0 +1,13 @@
+$ pnpm --filter @tradecloseout/web test:e2e --grep 'PH1-G27-007|E2E-01'
+$ playwright test --project=application --grep 'PH1-G27-007|E2E-01'
+
+Running 2 tests using 2 workers
+
+(node:145417) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:145418) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [application] › e2e/critical-flows.spec.ts:5:7 › TradeCloseout v0.2.1 Critical User Flows (SCR-002 -> SCR-010 -> SCR-013 -> SCR-025) › PH1-G27-007: application pages reject framing and proxied API responses cannot be cached (463ms)
+  ✓  2 [application] › e2e/critical-flows.spec.ts:32:7 › TradeCloseout v0.2.1 Critical User Flows (SCR-002 -> SCR-010 -> SCR-013 -> SCR-025) › E2E-01: Unauthenticated visitor to / is redirected to /login by middleware (5.4s)
+
+  2 passed (6.4s)

@@ -17,8 +17,10 @@ import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
 import { PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
+import { buildTrustedOutboxPayload } from '@tradecloseout/db';
 import { TenantDbService, ExecutionContext } from '../../database/tenant-db.service';
 import { BulkImportStatus, FileVersionStatus } from '@tradecloseout/shared';
+import { resolveLiveProjectCommandAuthority, assertReviewDocumentScope } from '../reviews/review-live-authority';
 
 import { Pool } from 'pg';
 import { S3StorageService } from './s3-storage.service';
@@ -83,18 +85,77 @@ export class DocumentsService {
     const { rows } = await client.query(
       `SELECT 1
          FROM guest_grants g
+         JOIN parties party ON party.org_id = g.org_id AND party.id = g.party_id
+           AND party.status = 'ACTIVE' AND party.deleted_at IS NULL
          JOIN document_versions dv
            ON dv.org_id = g.org_id AND dv.project_id = g.project_id
           AND dv.uploaded_by_grant_id = g.id AND dv.id = $3
-         JOIN document_requirements dr
-           ON dr.org_id = dv.org_id AND dr.project_id = dv.project_id AND dr.document_id = dv.document_id
+         JOIN documents d ON d.org_id = dv.org_id AND d.project_id = dv.project_id
+          AND d.id = dv.document_id AND d.deleted_at IS NULL
+         JOIN projects p ON p.org_id = d.org_id AND p.id = d.project_id
         WHERE g.org_id = $1 AND g.id = $2 AND g.status = 'ACTIVE' AND g.expires_at > now()
-          AND g.capabilities @> ARRAY[$4]::text[]
-          AND COALESCE(g.scope_json->'requirementIds', '[]'::jsonb) ? dr.requirement_id::text
-        LIMIT 1`,
+          AND dv.deleted_at IS NULL AND g.capabilities @> ARRAY[$4]::text[]
+          AND (($4 = 'document.upload' AND p.status IN ('ACTIVE', 'HANDOVER'))
+            OR ($4 = 'document.download' AND p.status NOT IN ('CANCELLED', 'SUSPENDED')))
+          AND jsonb_typeof(g.scope_json->'requirementIds') = 'array'
+          AND EXISTS (
+            SELECT 1 FROM document_requirements dr
+             WHERE dr.org_id = d.org_id AND dr.project_id = d.project_id
+               AND dr.document_id = d.id)
+          AND NOT EXISTS (
+            SELECT 1 FROM document_requirements dr
+             WHERE dr.org_id = d.org_id AND dr.project_id = d.project_id
+               AND dr.document_id = d.id
+               AND NOT (g.scope_json->'requirementIds' ? dr.requirement_id::text))
+          AND NOT EXISTS (
+            SELECT 1 FROM document_assets da
+             WHERE da.org_id = d.org_id AND da.project_id = d.project_id
+               AND da.document_id = d.id
+               AND NOT COALESCE(
+                 jsonb_typeof(g.scope_json->'assetIds') = 'array'
+                   AND (g.scope_json->'assetIds' ? da.asset_id::text), false))
+        LIMIT 1
+        FOR SHARE OF g, p, party`,
       [ctx.orgId, ctx.guestGrantId, versionId, capability],
     );
     if (!rows.length) throw new NotFoundException('VERSION_NOT_FOUND');
+  }
+
+  /**
+   * A signed URL or streamed response must be authorized against the actual
+   * document parent, current member scope and live project in the same RLS
+   * transaction. A route guard's project ID is not sufficient evidence.
+   */
+  private async assertMemberVersionScope(
+    client: PoolClient,
+    ctx: ExecutionContext,
+    version: {
+      project_id?: string;
+      document_id?: string;
+      doc_type_key?: string | null;
+      category_key?: string | null;
+      document_created_at?: Date | string | null;
+    },
+    permission: 'document.download' | 'document.upload' = 'document.download',
+  ): Promise<void> {
+    if (ctx.actorType === 'GUEST' || ctx.guestGrantId) return;
+    if (!version.project_id || !version.document_id) {
+      throw new NotFoundException('VERSION_NOT_FOUND');
+    }
+    try {
+      const authority = await resolveLiveProjectCommandAuthority(
+        client, ctx, version.project_id, permission,
+      );
+      await assertReviewDocumentScope(client, authority, ctx, version.project_id, {
+        id: version.document_id,
+        doc_type_key: version.doc_type_key,
+        category_key: version.category_key,
+        created_at: version.document_created_at,
+      });
+    } catch (error) {
+      if (error instanceof ForbiddenException) throw new NotFoundException('VERSION_NOT_FOUND');
+      throw error;
+    }
   }
 
   /**
@@ -116,6 +177,7 @@ export class DocumentsService {
       throw new NotFoundException('DOCUMENTS_NOT_FOUND');
     }
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+      const authority = await resolveLiveProjectCommandAuthority(client, ctx, projectId, 'document.read');
       let query = `
         SELECT d.*, 
                dv.id AS latest_version_id,
@@ -134,6 +196,36 @@ export class DocumentsService {
 
       if (!filter?.includeDeleted) {
         query += ` AND d.deleted_at IS NULL`;
+      }
+      // Apply restrictive member scopes in SQL before result materialisation.
+      // An unauthorized document must never influence a list, count or joined
+      // version/asset field. Empty lists are intentionally deny-all.
+      const scope = authority.scope;
+      if (scope.documentIds) {
+        params.push(scope.documentIds);
+        query += ` AND d.id = ANY($${params.length}::uuid[])`;
+      }
+      if (scope.documentTypes) {
+        params.push(scope.documentTypes);
+        query += ` AND (d.doc_type_key = ANY($${params.length}::text[]) OR d.category_key = ANY($${params.length}::text[]))`;
+      }
+      if (scope.startDate) {
+        params.push(scope.startDate);
+        query += ` AND d.created_at >= $${params.length}::date`;
+      }
+      if (scope.endDate) {
+        params.push(scope.endDate);
+        query += ` AND d.created_at < ($${params.length}::date + interval '1 day')`;
+      }
+      if (scope.requirementIds) {
+        params.push(scope.requirementIds);
+        query += ` AND EXISTS (
+          SELECT 1 FROM document_requirements dr
+           WHERE dr.org_id=d.org_id AND dr.project_id=d.project_id AND dr.document_id=d.id)
+          AND NOT EXISTS (
+            SELECT 1 FROM document_requirements dr
+             WHERE dr.org_id=d.org_id AND dr.project_id=d.project_id AND dr.document_id=d.id
+               AND NOT (dr.requirement_id = ANY($${params.length}::uuid[])))`;
       }
       if (filter?.categoryKey) {
         params.push(filter.categoryKey);
@@ -170,15 +262,33 @@ export class DocumentsService {
           `SELECT DISTINCT dv.id, dv.version_no, dv.revision_code, dv.file_status, dv.review_status,
                   dv.issue_date, dv.expiry_date, dv.created_at
              FROM guest_grants g
+             JOIN parties party ON party.org_id = g.org_id AND party.id = g.party_id
+               AND party.status = 'ACTIVE' AND party.deleted_at IS NULL
              JOIN documents d ON d.org_id = g.org_id AND d.project_id = g.project_id AND d.id = $3
              JOIN document_versions dv
                ON dv.org_id = d.org_id AND dv.project_id = d.project_id AND dv.document_id = d.id
               AND dv.uploaded_by_grant_id = g.id AND dv.deleted_at IS NULL
-             JOIN document_requirements dr
-               ON dr.org_id = d.org_id AND dr.project_id = d.project_id AND dr.document_id = d.id
+             JOIN projects p ON p.org_id = d.org_id AND p.id = d.project_id
             WHERE g.org_id = $1 AND g.id = $2 AND g.status = 'ACTIVE' AND g.expires_at > now()
-              AND g.capabilities @> ARRAY['document.upload']::text[] AND d.deleted_at IS NULL
-              AND COALESCE(g.scope_json->'requirementIds', '[]'::jsonb) ? dr.requirement_id::text
+              AND g.capabilities @> ARRAY['document.upload']::text[]
+              AND d.deleted_at IS NULL AND p.status NOT IN ('CANCELLED', 'SUSPENDED')
+              AND jsonb_typeof(g.scope_json->'requirementIds') = 'array'
+              AND EXISTS (
+                SELECT 1 FROM document_requirements dr
+                 WHERE dr.org_id = d.org_id AND dr.project_id = d.project_id
+                   AND dr.document_id = d.id)
+              AND NOT EXISTS (
+                SELECT 1 FROM document_requirements dr
+                 WHERE dr.org_id = d.org_id AND dr.project_id = d.project_id
+                   AND dr.document_id = d.id
+                   AND NOT (g.scope_json->'requirementIds' ? dr.requirement_id::text))
+              AND NOT EXISTS (
+                SELECT 1 FROM document_assets da
+                 WHERE da.org_id = d.org_id AND da.project_id = d.project_id
+                   AND da.document_id = d.id
+                   AND NOT COALESCE(
+                     jsonb_typeof(g.scope_json->'assetIds') = 'array'
+                       AND (g.scope_json->'assetIds' ? da.asset_id::text), false))
             ORDER BY dv.version_no DESC`,
           [ctx.orgId, ctx.guestGrantId, documentId],
         );
@@ -200,6 +310,26 @@ export class DocumentsService {
         throw new NotFoundException('DOCUMENT_NOT_FOUND');
       }
       const doc = docRes.rows[0];
+
+      // A route-level permission check cannot authorize individual documents:
+      // re-evaluate live account, tenant and project membership and validate
+      // the stored per-document scope in this same read transaction.
+      try {
+        const authority = await resolveLiveProjectCommandAuthority(
+          client, ctx, doc.project_id, 'document.read',
+        );
+        await assertReviewDocumentScope(client, authority, ctx, doc.project_id, {
+          id: doc.id,
+          doc_type_key: doc.doc_type_key,
+          category_key: doc.category_key,
+          created_at: doc.created_at,
+        });
+      } catch (error) {
+        if (error instanceof ForbiddenException) {
+          throw new NotFoundException('DOCUMENT_NOT_FOUND');
+        }
+        throw error;
+      }
 
       // Fetch all versions
       const verRes = await client.query(
@@ -290,9 +420,11 @@ export class DocumentsService {
           throw new ForbiddenException('GUEST_UPLOAD_SCOPE_REQUIRED');
         }
         const { rows: grants } = await client.query(
-          `SELECT scope_json, capabilities FROM guest_grants
-            WHERE org_id = $1 AND project_id = $2 AND id = $3
-              AND status = 'ACTIVE' AND expires_at > now() FOR SHARE`,
+          `SELECT scope_json, capabilities FROM guest_grants g
+            JOIN parties party ON party.org_id = g.org_id AND party.id = g.party_id
+              AND party.status = 'ACTIVE' AND party.deleted_at IS NULL
+            WHERE g.org_id = $1 AND g.project_id = $2 AND g.id = $3
+              AND g.status = 'ACTIVE' AND g.expires_at > now() FOR SHARE OF g, party`,
           [ctx.orgId, projectId, guestGrantId],
         );
         const grant = grants[0];
@@ -310,10 +442,27 @@ export class DocumentsService {
         const existingId = dto.documentId || existingDocumentId;
         if (existingId) {
           const owned = await client.query(
-            `SELECT 1 FROM document_versions
-              WHERE org_id = $1 AND project_id = $2 AND document_id = $3
-                AND uploaded_by_grant_id = $4 AND deleted_at IS NULL LIMIT 1`,
-            [ctx.orgId, projectId, existingId, guestGrantId],
+            `SELECT 1 FROM document_versions dv
+                JOIN documents d ON d.org_id = dv.org_id AND d.project_id = dv.project_id
+                  AND d.id = dv.document_id AND d.deleted_at IS NULL
+              WHERE dv.org_id = $1 AND dv.project_id = $2 AND dv.document_id = $3
+                AND dv.uploaded_by_grant_id = $4 AND dv.deleted_at IS NULL
+                AND EXISTS (
+                  SELECT 1 FROM document_requirements dr
+                   WHERE dr.org_id = d.org_id AND dr.project_id = d.project_id
+                     AND dr.document_id = d.id)
+                AND NOT EXISTS (
+                  SELECT 1 FROM document_requirements dr
+                   WHERE dr.org_id = d.org_id AND dr.project_id = d.project_id
+                     AND dr.document_id = d.id
+                     AND NOT (dr.requirement_id::text = ANY($5::text[])))
+                AND NOT EXISTS (
+                  SELECT 1 FROM document_assets da
+                   WHERE da.org_id = d.org_id AND da.project_id = d.project_id
+                     AND da.document_id = d.id
+                     AND NOT (da.asset_id::text = ANY($6::text[])))
+              LIMIT 1`,
+            [ctx.orgId, projectId, existingId, guestGrantId, allowedRequirements, allowedAssets],
           );
           if (!owned.rows.length) throw new NotFoundException('DOCUMENT_NOT_FOUND_IN_PROJECT');
         }
@@ -345,6 +494,60 @@ export class DocumentsService {
             code: 'DOCUMENT_TYPE_MISMATCH',
             detail: 'Uploaded evidence type must match its linked requirement.',
           });
+        }
+      }
+
+      // Live upload authority is mandatory even when a route-level guard
+      // permitted the request earlier. New documents cannot bypass restrictive
+      // member scope, and replacement must be authorised for the actual parent.
+      if (isGuest) {
+        // Revoking/closing a project must also fence previously issued grants.
+        const lifecycle = await client.query(
+          'SELECT status FROM projects WHERE org_id=$1 AND id=$2 FOR SHARE',
+          [ctx.orgId, projectId],
+        );
+        if (lifecycle.rows.length !== 1 ||
+            !['ACTIVE', 'HANDOVER'].includes(lifecycle.rows[0].status)) {
+          throw new ForbiddenException('PROJECT_UPLOAD_DISABLED');
+        }
+      } else {
+        const authority = await resolveLiveProjectCommandAuthority(
+          client, ctx, projectId, 'document.upload',
+        );
+        const scope = authority.scope;
+        const parentId = dto.documentId || existingDocumentId;
+        if (parentId) {
+          const parent = await client.query(
+            `SELECT id, project_id, doc_type_key, category_key, created_at
+               FROM documents
+              WHERE org_id=$1 AND project_id=$2 AND id=$3 AND deleted_at IS NULL
+              FOR UPDATE`,
+            [ctx.orgId, projectId, parentId],
+          );
+          if (parent.rows.length !== 1) throw new NotFoundException('DOCUMENT_NOT_FOUND_IN_PROJECT');
+          await assertReviewDocumentScope(client, authority, ctx, projectId, parent.rows[0]);
+        } else {
+          // A create has no pre-assigned document id, so an allowlist of existing
+          // document ids must not confer permission to mint arbitrary new rows.
+          if (scope.documentIds) throw new ForbiddenException('DOCUMENT_UPLOAD_OUTSIDE_SCOPE');
+          const type = linkedDocumentType || dto.docTypeKey || 'DT-001';
+          const category = dto.categoryKey || 'HANDOVER_DOCS';
+          if (scope.documentTypes && !scope.documentTypes.includes(type) &&
+              !scope.documentTypes.includes(category)) {
+            throw new ForbiddenException('DOCUMENT_UPLOAD_OUTSIDE_SCOPE');
+          }
+          const currentDay = new Date().toISOString().slice(0, 10);
+          if ((scope.startDate && currentDay < scope.startDate) ||
+              (scope.endDate && currentDay > scope.endDate)) {
+            throw new ForbiddenException('DOCUMENT_UPLOAD_OUTSIDE_SCOPE');
+          }
+        }
+        // For both new and existing evidence, new associations must also be
+        // entirely within the actor's currently allowed requirement set.
+        if (scope.requirementIds &&
+            ((!parentId && requestedRequirementIds.length === 0) ||
+             requestedRequirementIds.some(id => !scope.requirementIds!.includes(id)))) {
+          throw new ForbiddenException('DOCUMENT_UPLOAD_OUTSIDE_SCOPE');
         }
       }
 
@@ -557,37 +760,48 @@ export class DocumentsService {
    * API-082A POST /document-versions/:id/refresh-upload-urls (RT-012, CB-003 join fix)
    */
   async refreshUploadUrls(ctx: ExecutionContext, versionId: string) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+    // Authorize the current principal against the actual document, not only a
+    // route-level permission snapshot. Finish the RLS transaction before any
+    // storage presigner I/O; no DB locks remain held during network calls.
+    const ver = await this.db.withTenantContext(ctx, async (client: PoolClient) => {
       const verRes = await client.query(
-        `SELECT dv.*, so.object_key, so.s3_upload_id, so.size_bytes
-         FROM document_versions dv
-         JOIN storage_objects so ON so.id = dv.object_id
-         WHERE dv.org_id = $1 AND dv.id = $2`,
+        `SELECT dv.*, so.object_key, so.s3_upload_id, so.size_bytes,
+                d.doc_type_key, d.category_key,
+                d.created_at AS document_created_at
+           FROM document_versions dv
+           JOIN storage_objects so ON so.org_id = dv.org_id AND so.id = dv.object_id
+           JOIN documents d ON d.org_id = dv.org_id AND d.project_id = dv.project_id AND d.id = dv.document_id
+          WHERE dv.org_id = $1 AND dv.id = $2
+            AND dv.deleted_at IS NULL AND d.deleted_at IS NULL`,
         [ctx.orgId, versionId],
       );
-
-      if (!verRes.rows.length) {
-        throw new NotFoundException('VERSION_NOT_FOUND');
-      }
+      if (verRes.rows.length !== 1) throw new NotFoundException('VERSION_NOT_FOUND');
 
       await this.assertGuestVersionScope(client, ctx, versionId, 'document.upload');
-
-      const ver = verRes.rows[0];
-      if (!ver.s3_upload_id) {
-        throw new BadRequestException('NOT_A_MULTIPART_UPLOAD');
+      const current = verRes.rows[0];
+      await this.assertMemberVersionScope(client, ctx, current, 'document.upload');
+      if (current.file_status !== 'PENDING_UPLOAD') {
+        throw new ConflictException('UPLOAD_NOT_PENDING');
       }
-      const refreshed = await this.storageAdapter.refreshUploadUrls({
-        objectKey: ver.object_key,
-        uploadId: ver.s3_upload_id,
-        sizeBytes: Number(ver.size_bytes),
-      });
+      if (!current.s3_upload_id) throw new BadRequestException('NOT_A_MULTIPART_UPLOAD');
       return {
-        versionId: ver.id,
-        s3UploadId: ver.s3_upload_id,
-        refreshedParts: refreshed.parts,
-        expiresInSeconds: refreshed.expiresInSeconds,
+        id: current.id,
+        objectKey: current.object_key as string,
+        uploadId: current.s3_upload_id as string,
+        sizeBytes: Number(current.size_bytes),
       };
     });
+    const refreshed = await this.storageAdapter.refreshUploadUrls({
+      objectKey: ver.objectKey,
+      uploadId: ver.uploadId,
+      sizeBytes: ver.sizeBytes,
+    });
+    return {
+      versionId: ver.id,
+      s3UploadId: ver.uploadId,
+      refreshedParts: refreshed.parts,
+      expiresInSeconds: refreshed.expiresInSeconds,
+    };
   }
 
   /**
@@ -610,11 +824,13 @@ export class DocumentsService {
         `SELECT dv.*, so.id AS storage_id, so.object_key, so.bucket, so.s3_upload_id,
                 so.expected_sha256, so.size_bytes AS storage_size_bytes,
                 so.provider_version_id, so.original_filename, d.id AS doc_id, d.title AS doc_title,
+                d.doc_type_key, d.category_key, d.created_at AS document_created_at,
                 d.current_approved_version_id
            FROM document_versions dv
-           JOIN storage_objects so ON so.id = dv.object_id
-           JOIN documents d ON d.id = dv.document_id
-          WHERE dv.org_id = $1 AND dv.id = $2 FOR UPDATE OF dv`,
+           JOIN storage_objects so ON so.org_id = dv.org_id AND so.id = dv.object_id
+           JOIN documents d ON d.org_id = dv.org_id AND d.project_id = dv.project_id AND d.id = dv.document_id
+          WHERE dv.org_id = $1 AND dv.id = $2
+            AND dv.deleted_at IS NULL AND d.deleted_at IS NULL FOR UPDATE OF dv`,
         [ctx.orgId, versionId],
       );
 
@@ -623,6 +839,7 @@ export class DocumentsService {
       }
       await this.assertGuestVersionScope(client, ctx, versionId, 'document.upload');
       const version = verRes.rows[0];
+      await this.assertMemberVersionScope(client, ctx, version, 'document.upload');
       if (version.file_status !== 'PENDING_UPLOAD') {
         if (['PROCESSING', 'READY'].includes(version.file_status) && version.provider_version_id) {
           return {
@@ -677,10 +894,16 @@ export class DocumentsService {
           eventId,
           ctx.orgId,
           version.project_id || null,
-          JSON.stringify({
+          JSON.stringify(buildTrustedOutboxPayload({
             eventId,
+            eventType: 'FILE_UPLOAD_COMPLETED_ENQUEUE_SCAN',
             orgId: ctx.orgId,
             projectId: version.project_id || null,
+            entityType: 'DOCUMENT_VERSION',
+            entityId: versionId,
+            actorUserId: ctx.userId,
+            requestId: ctx.requestId,
+          }, {
             versionId,
             documentId: version.doc_id,
             storageObjectId: version.storage_id,
@@ -689,9 +912,7 @@ export class DocumentsService {
             expectedSha256: version.expected_sha256 || null,
             bucket: version.bucket,
             providerVersionId: providerReceipt.versionId,
-            actorUserId: ctx.userId,
-            requestId: ctx.requestId,
-          }),
+          })),
         ],
       );
 
@@ -720,9 +941,13 @@ export class DocumentsService {
   async abortUpload(ctx: ExecutionContext, versionId: string) {
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
       const verRes = await client.query(
-        `SELECT dv.*, so.id AS storage_id, so.object_key, so.s3_upload_id FROM document_versions dv
-           JOIN storage_objects so ON so.id = dv.object_id
-          WHERE dv.org_id = $1 AND dv.id = $2`,
+        `SELECT dv.*, so.id AS storage_id, so.object_key, so.s3_upload_id,
+                  d.doc_type_key, d.category_key, d.created_at AS document_created_at
+           FROM document_versions dv
+           JOIN storage_objects so ON so.org_id = dv.org_id AND so.id = dv.object_id
+           JOIN documents d ON d.org_id = dv.org_id AND d.project_id = dv.project_id AND d.id = dv.document_id
+          WHERE dv.org_id = $1 AND dv.id = $2
+            AND dv.deleted_at IS NULL AND d.deleted_at IS NULL`,
         [ctx.orgId, versionId],
       );
       if (!verRes.rows.length) {
@@ -730,6 +955,7 @@ export class DocumentsService {
       }
       await this.assertGuestVersionScope(client, ctx, versionId, 'document.upload');
       const version = verRes.rows[0];
+      await this.assertMemberVersionScope(client, ctx, version, 'document.upload');
 
       if (version.file_status !== 'PENDING_UPLOAD') {
         throw new ConflictException(`UPLOAD_CANNOT_ABORT_FROM_${version.file_status}`);
@@ -755,9 +981,10 @@ export class DocumentsService {
    * Generates 15-minute temporary signed download URL (TC-DOC-01: blocks PROCESSING, QUARANTINED, FAILED).
    */
   async getDownloadUrl(ctx: ExecutionContext, versionId: string) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+    const version = await this.db.withTenantContext(ctx, async (client: PoolClient) => {
       const verRes = await client.query(
-        `SELECT dv.*, so.object_key, so.mime, so.size_bytes, so.provider_version_id,
+        `SELECT dv.*, d.doc_type_key, d.category_key, d.created_at AS document_created_at,
+                so.object_key, so.mime, so.size_bytes, so.provider_version_id,
                 so.status AS storage_status, so.sha256, so.observed_size_bytes
            FROM document_versions dv
            JOIN storage_objects so ON so.org_id = dv.org_id AND so.id = dv.object_id
@@ -771,6 +998,7 @@ export class DocumentsService {
       const version = verRes.rows[0];
 
       await this.assertGuestVersionScope(client, ctx, versionId, 'document.download');
+      await this.assertMemberVersionScope(client, ctx, version);
       if (version.file_status !== 'READY' || version.storage_status !== 'READY' ||
           !version.provider_version_id || !version.sha256 ||
           version.observed_size_bytes == null || String(version.observed_size_bytes) !== String(version.size_bytes)) {
@@ -780,6 +1008,9 @@ export class DocumentsService {
           detail: `Cannot generate download URL: File is currently in ${version.file_status} state (TC-DOC-01).`,
         });
       }
+
+      return version;
+    });
 
       const downloadUrl = await this.storageAdapter.createSignedDownloadUrl({
         objectKey: version.object_key,
@@ -793,17 +1024,16 @@ export class DocumentsService {
         mime: version.mime,
         sizeBytes: version.size_bytes,
       };
-    });
   }
-
   /**
    * API-089 GET /document-versions/:id/preview-url
    * Generates 15-minute temporary inline preview URL.
    */
   async getPreviewUrl(ctx: ExecutionContext, versionId: string) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+    const version = await this.db.withTenantContext(ctx, async (client: PoolClient) => {
       const verRes = await client.query(
-        `SELECT dv.*, so.object_key, so.mime, so.size_bytes, so.provider_version_id,
+        `SELECT dv.*, d.doc_type_key, d.category_key, d.created_at AS document_created_at,
+                so.object_key, so.mime, so.size_bytes, so.provider_version_id,
                 so.status AS storage_status, so.sha256, so.observed_size_bytes
            FROM document_versions dv
            JOIN storage_objects so ON so.org_id = dv.org_id AND so.id = dv.object_id
@@ -817,6 +1047,7 @@ export class DocumentsService {
       const version = verRes.rows[0];
 
       await this.assertGuestVersionScope(client, ctx, versionId, 'document.download');
+      await this.assertMemberVersionScope(client, ctx, version);
       if (version.file_status !== 'READY' || version.storage_status !== 'READY' ||
           !version.provider_version_id || !version.sha256 ||
           version.observed_size_bytes == null || String(version.observed_size_bytes) !== String(version.size_bytes)) {
@@ -826,6 +1057,9 @@ export class DocumentsService {
           detail: `Cannot preview: File is in ${version.file_status} state.`,
         });
       }
+
+      return version;
+    });
 
       const previewUrl = await this.storageAdapter.createSignedDownloadUrl({
         objectKey: version.object_key,
@@ -838,9 +1072,7 @@ export class DocumentsService {
         mime: version.mime,
         expiresInSeconds: 900,
       };
-    });
   }
-
   /**
    * API-089 / Stream: Streams verified PDF bytes to browser viewer
    */
@@ -855,7 +1087,8 @@ export class DocumentsService {
     const res = resOptional || reqOrRes;
     const fileRecord = await this.db.withTenantContext(ctx, async (client: PoolClient) => {
       const { rows } = await client.query(
-        `SELECT dv.id, dv.file_status, dv.revision_code, d.title,
+        `SELECT dv.id, dv.project_id, dv.document_id, dv.file_status, dv.revision_code,
+                d.title, d.doc_type_key, d.category_key, d.created_at AS document_created_at,
                 so.object_key, so.mime, so.size_bytes, so.sha256, so.provider_version_id,
                 so.status AS storage_status, so.observed_size_bytes
            FROM document_versions dv
@@ -876,6 +1109,7 @@ export class DocumentsService {
       const row = rows[0];
 
       await this.assertGuestVersionScope(client, ctx, versionId, 'document.download');
+      await this.assertMemberVersionScope(client, ctx, row);
 
       if (row.file_status !== 'READY' || row.storage_status !== 'READY' || !row.sha256 ||
           !row.provider_version_id || row.observed_size_bytes == null ||
@@ -897,6 +1131,9 @@ export class DocumentsService {
     }
 
     const totalBytes = Number(fileRecord.size_bytes);
+    if (!Number.isSafeInteger(totalBytes) || totalBytes <= 0) {
+      throw new ForbiddenException({ code: 'FILE_SIZE_INVALID', detail: 'Verified file size is not streamable.' });
+    }
     const etag = `"${fileRecord.sha256}"`;
 
     res.setHeader('Content-Type', fileRecord.mime || 'application/pdf');
@@ -940,30 +1177,40 @@ export class DocumentsService {
       }
     };
 
-    // Range handling: bytes=start-end (VQ01)
+    // Strict single-range support. parseInt accepts trailing garbage and would
+    // turn malformed/multi-range input into an unintended byte disclosure.
     const rangeHeader = req.headers?.['range'];
-    if (rangeHeader && typeof rangeHeader === 'string' && rangeHeader.startsWith('bytes=')) {
-      const parts = rangeHeader.slice(6).split('-');
-      let start = parts[0] ? parseInt(parts[0], 10) : NaN;
-      let end = parts[1] ? parseInt(parts[1], 10) : NaN;
-
-      if (isNaN(start) && !isNaN(end)) {
-        // Suffix range: bytes=-500 (last 500 bytes)
-        start = Math.max(0, totalBytes - end);
-        end = totalBytes - 1;
-      } else if (!isNaN(start) && isNaN(end)) {
-        // Open-ended range: bytes=1000-
-        end = totalBytes - 1;
-      }
-
-      // Check range validity (HTTP 416 if unsatisfiable)
-      if (isNaN(start) || isNaN(end) || start < 0 || start > end || start >= totalBytes) {
+    if (typeof rangeHeader === 'string' && rangeHeader.startsWith('bytes=')) {
+      const match = /^bytes=([0-9]*)-([0-9]*)$/.exec(rangeHeader);
+      const unsatisfiable = () => {
         res.status(416);
         res.setHeader('Content-Range', `bytes */${totalBytes}`);
         res.end();
+      };
+      if (!match || (!match[1] && !match[2])) {
+        unsatisfiable();
         return;
       }
 
+      let start: number;
+      let end: number;
+      if (!match[1]) {
+        const suffixLength = Number(match[2]);
+        if (!Number.isSafeInteger(suffixLength) || suffixLength <= 0) {
+          unsatisfiable();
+          return;
+        }
+        start = Math.max(0, totalBytes - suffixLength);
+        end = totalBytes - 1;
+      } else {
+        start = Number(match[1]);
+        end = match[2] ? Number(match[2]) : totalBytes - 1;
+      }
+      if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) ||
+          start < 0 || start > end || start >= totalBytes) {
+        unsatisfiable();
+        return;
+      }
       end = Math.min(end, totalBytes - 1);
       const chunkSize = end - start + 1;
 
@@ -990,11 +1237,52 @@ export class DocumentsService {
   }
 
   /**
+   * G02-001/009: resolve the actual document and recheck current writable
+   * permission, stored member scope and project lifecycle in the SAME
+   * transaction as the delete/restore. Never trust the HTTP guard's snapshot.
+   */
+  private async assertDocumentLifecycleAuthority(
+    client: PoolClient,
+    ctx: ExecutionContext,
+    documentId: string,
+    restoring: boolean,
+  ): Promise<void> {
+    const missing = restoring ? 'DOCUMENT_NOT_FOUND_OR_NOT_DELETED' : 'DOCUMENT_NOT_FOUND_OR_DELETED';
+    if (typeof documentId !== 'string' ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(documentId)) {
+      throw new NotFoundException(missing);
+    }
+    const deletedPredicate = restoring ? 'IS NOT NULL' : 'IS NULL';
+    const candidate = await client.query(
+      `SELECT project_id FROM documents
+        WHERE org_id=$1 AND id=$2 AND deleted_at ${deletedPredicate}`,
+      [ctx.orgId, documentId],
+    );
+    if (candidate.rows.length !== 1) throw new NotFoundException(missing);
+    const projectId: string = candidate.rows[0].project_id;
+    const authority = await resolveLiveProjectCommandAuthority(client, ctx, projectId, 'document.delete');
+    // Serialize competing lifecycle changes and verify the resource still
+    // belongs to the same project after acquiring the authority locks.
+    const locked = await client.query(
+      `SELECT id, project_id, doc_type_key, category_key, created_at
+         FROM documents
+        WHERE org_id=$1 AND id=$2 AND deleted_at ${deletedPredicate}
+        FOR UPDATE`,
+      [ctx.orgId, documentId],
+    );
+    if (locked.rows.length !== 1 || locked.rows[0].project_id !== projectId) {
+      throw new NotFoundException(missing);
+    }
+    await assertReviewDocumentScope(client, authority, ctx, projectId, locked.rows[0]);
+  }
+
+  /**
    * API-090 DELETE /documents/:id (Soft-delete)
    * Refunds STORAGE_BYTES quota on soft-delete (Bug 2: 10.0/10)
    */
   async deleteDocument(ctx: ExecutionContext, documentId: string) {
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+      await this.assertDocumentLifecycleAuthority(client, ctx, documentId, false);
       const res = await client.query(
         `UPDATE documents
             SET deleted_at = now(), row_version = row_version + 1
@@ -1015,13 +1303,18 @@ export class DocumentsService {
       );
       const freedBytes = BigInt(sizeRows[0]?.total_bytes || 0);
       if (freedBytes > 0n) {
-        await client.query(
+        const adjusted = await client.query(
           `UPDATE usage_counters
-              SET value = GREATEST(0::numeric, value::numeric - $2)::text,
+              SET value = GREATEST(0::numeric, value::numeric - $2::numeric)::bigint,
                   updated_at = now()
-            WHERE org_id = $1 AND metric = 'STORAGE_BYTES' AND period = 'ALL_TIME'`,
+            WHERE org_id = $1 AND metric = 'STORAGE_BYTES' AND period = 'ALL_TIME'
+              AND value >= $2::bigint`,
           [ctx.orgId, freedBytes.toString()],
         );
+        if (adjusted.rowCount !== 1) {
+          // A failed counter reconciliation must roll back the document delete.
+          throw new ConflictException('STORAGE_QUOTA_RECONCILIATION_REQUIRED');
+        }
       }
 
       return { documentId, deleted: true, refundedBytes: Number(freedBytes) };
@@ -1033,6 +1326,7 @@ export class DocumentsService {
    */
   async restoreDocument(ctx: ExecutionContext, documentId: string) {
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+      await this.assertDocumentLifecycleAuthority(client, ctx, documentId, true);
       const res = await client.query(
         `UPDATE documents
             SET deleted_at = NULL, row_version = row_version + 1
@@ -1053,13 +1347,18 @@ export class DocumentsService {
       );
       const readdedBytes = BigInt(sizeRows[0]?.total_bytes || 0);
       if (readdedBytes > 0n) {
-        await client.query(
+        const adjusted = await client.query(
           `UPDATE usage_counters
-              SET value = (value::numeric + $2)::text,
+              SET value = (value::numeric + $2::numeric)::bigint,
                   updated_at = now()
-            WHERE org_id = $1 AND metric = 'STORAGE_BYTES' AND period = 'ALL_TIME'`,
+            WHERE org_id = $1 AND metric = 'STORAGE_BYTES' AND period = 'ALL_TIME'
+              AND value <= 9223372036854775807::bigint - $2::bigint`,
           [ctx.orgId, readdedBytes.toString()],
         );
+        if (adjusted.rowCount !== 1) {
+          // Do not make a document visible again if quota accounting cannot commit.
+          throw new ConflictException('STORAGE_QUOTA_RECONCILIATION_REQUIRED');
+        }
       }
 
       return { documentId, restored: true, readdedBytes: Number(readdedBytes) };
@@ -1079,23 +1378,25 @@ export class DocumentsService {
       revisionCode: string;
     },
   ) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
-      const docRes = await client.query(
-        `SELECT * FROM documents WHERE org_id = $1 AND id = $2 AND deleted_at IS NULL`,
+    // Do not hold one tenant transaction open while createUploadIntent opens
+    // another one and obtains signed storage URLs. The upload transaction
+    // re-locks and validates the parent document's project before writing.
+    const projectId = await this.db.withTenantContext(ctx, async (client: PoolClient) => {
+      const { rows } = await client.query(
+        `SELECT project_id FROM documents
+          WHERE org_id = $1 AND id = $2 AND deleted_at IS NULL`,
         [ctx.orgId, documentId],
       );
-      if (!docRes.rows.length) {
-        throw new NotFoundException('DOCUMENT_NOT_FOUND');
-      }
-      const doc = docRes.rows[0];
+      if (rows.length !== 1) throw new NotFoundException('DOCUMENT_NOT_FOUND');
+      return rows[0].project_id as string;
+    });
 
-      return this.createUploadIntent(ctx, doc.project_id, {
-        documentId,
-        fileName: dto.fileName,
-        mimeType: dto.mimeType,
-        sizeBytes: dto.sizeBytes,
-        revisionCode: dto.revisionCode,
-      });
+    return this.createUploadIntent(ctx, projectId, {
+      documentId,
+      fileName: dto.fileName,
+      mimeType: dto.mimeType,
+      sizeBytes: dto.sizeBytes,
+      revisionCode: dto.revisionCode,
     });
   }
 

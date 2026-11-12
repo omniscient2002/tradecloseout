@@ -17,8 +17,88 @@ import { compileAndPersistPortableArchive } from '../src/queues/portable-archive
 import { BoundedByteStream } from '../src/queues/bounded-stream';
 import { OUTBOX_EVENT_REGISTRY } from '../src/event-registry';
 import { storageServer } from './helpers/storage-server';
+import { jobFingerprint, reportWorkerFailure, safeWorkerErrorCategory } from '../src/safe-worker-errors';
+import { markHandoverPackageFailed } from '../src/queues/handover-package.processor';
 
 const exec = promisify(execFile);
+
+void test('PH1-G27-005: worker diagnostic egress and package failure persistence are secret-free', async t => {
+  const secret = 'postgres://admin:super-secret@internal-host/private?token=very-sensitive';
+  await t.test('raw errors, stack traces and untrusted job identifiers are never logged', () => {
+    const logs: string[] = [];
+    const originalError = console.error;
+    console.error = (...args: unknown[]) => { logs.push(args.map(String).join(' ')); };
+    try {
+      const databaseError = Object.assign(new Error(secret), { code: '23505' });
+      databaseError.stack = `Stacktrace: ${secret}`;
+      reportWorkerFailure('OUTBOX_EVENT_DISPATCH_FAILED', databaseError, secret);
+      const malicious = {
+        message: secret,
+        get code(): string { throw new Error(secret); },
+      };
+      reportWorkerFailure('SCHEDULER_LOCK_RELEASE_FAILED', malicious, secret);
+      assert.equal(safeWorkerErrorCategory(databaseError), 'DB_UNIQUE_CONFLICT');
+      assert.equal(safeWorkerErrorCategory(malicious), 'UNCLASSIFIED');
+      assert.equal(safeWorkerErrorCategory({ code: '__proto__' }), 'UNCLASSIFIED');
+      assert.equal(safeWorkerErrorCategory({ code: 'constructor' }), 'UNCLASSIFIED');
+      assert.equal(jobFingerprint(secret)?.length, 16);
+      assert(!logs.join(' ').includes(secret));
+      assert(logs.some(row => row.includes('OUTBOX_EVENT_DISPATCH_FAILED')));
+      assert(logs.some(row => row.includes('DB_UNIQUE_CONFLICT')));
+      assert(logs.every(row => !row.includes('Stacktrace:')));
+      assert(logs.every(row => !row.includes('internal-host')));
+    } finally {
+      console.error = originalError;
+    }
+  });
+
+  await t.test('terminal package DB status stores only a fixed, non-sensitive failure detail', async () => {
+    const queries: Array<{ sql: string; params?: unknown[] }> = [];
+    const client = {
+      query: async (sql: string, params?: unknown[]) => {
+        queries.push({ sql, params });
+        return { rowCount: 1 };
+      },
+      release: () => undefined,
+    };
+    const pool = { connect: async () => client };
+    await markHandoverPackageFailed(
+      pool as any, { orgId: randomUUID(), packageId: randomUUID() } as any,
+      randomUUID(), new Error(secret),
+    );
+    const update = queries.find(q => q.sql.includes('UPDATE handover_packages'));
+    assert(update, 'the status mutation must have been attempted');
+    assert.equal(update.params?.[3],
+      'Package generation failed. Review the processing status and retry after resolving the worker issue.');
+    assert(!JSON.stringify(queries).includes(secret));
+    assert(queries.some(q => q.sql === 'COMMIT'));
+  });
+
+  await t.test('database write failure logs a fixed category, not the thrown provider secret', async () => {
+    const logs: string[] = [];
+    const originalError = console.error;
+    console.error = (...args: unknown[]) => { logs.push(args.map(String).join(' ')); };
+    const client = {
+      query: async (sql: string) => {
+        if (sql.includes('UPDATE handover_packages')) throw new Error(secret);
+        return { rowCount: 1 };
+      },
+      release: () => undefined,
+    };
+    try {
+      await markHandoverPackageFailed(
+        { connect: async () => client } as any,
+        { orgId: randomUUID(), packageId: randomUUID() } as any,
+        randomUUID(), new Error(secret),
+      );
+      assert(logs.some(row => row.includes('PACKAGE_FAILURE_PERSIST_FAILED')));
+      assert(!logs.join(' ').includes(secret));
+    } finally {
+      console.error = originalError;
+    }
+  });
+});
+
 void test('Isolated worker DB/Redis and storage HTTP contract regressions', async t => {
   await withDisposableDatabase(async ({ admin, app }) => {
     const { userId, tenants: [a, b] } = await seedTenants(admin);
@@ -28,6 +108,93 @@ void test('Isolated worker DB/Redis and storage HTTP contract regressions', asyn
     const scheduler = new TradeCloseoutScheduler(app, redis);
     try {
       await redis.connect();
+      await t.test('PH1-G24-002: scoped owner discovery sends exactly one digest per eligible tenant', async () => {
+        for (const org of [a, b]) {
+          await admin.query(
+            "INSERT INTO memberships (id, org_id, user_id, role, status) VALUES ($1,$2,$3,'R-OWNER','ACTIVE')",
+            [randomUUID(), org.orgId, userId],
+          );
+        }
+        // With no tenant context the runtime role cannot see any membership.
+        assert.equal((await app.query("SELECT id FROM memberships WHERE role='R-OWNER'")).rowCount, 0);
+
+        await scheduler.runWeeklyOwnerRetentionAtRiskDigest();
+        const digestRows = await admin.query(
+          "SELECT org_id,recipient_user_id,payload_json FROM notifications WHERE event_key='WEEKLY_OWNER_DIGEST' AND org_id IN ($1,$2)",
+          [a.orgId, b.orgId],
+        );
+        assert.equal(digestRows.rowCount, 2, 'both active tenants must receive a scoped digest');
+        assert.deepEqual(new Set(digestRows.rows.map(row => row.org_id)), new Set([a.orgId, b.orgId]));
+        assert(digestRows.rows.every(row => row.recipient_user_id === userId));
+        assert(digestRows.rows.every(row => Array.isArray(row.payload_json.projects)));
+
+        await scheduler.runWeeklyOwnerRetentionAtRiskDigest();
+        assert.equal((await admin.query(
+          "SELECT id FROM notifications WHERE event_key='WEEKLY_OWNER_DIGEST' AND org_id IN ($1,$2)",
+          [a.orgId, b.orgId],
+        )).rowCount, 2, 'same period must deduplicate');
+
+        // A third active org with no eligible Owner must raise a visible failure
+        // rather than stop valid tenant processing or fabricate a recipient.
+        const orphanOrg = randomUUID();
+        await admin.query(
+          "INSERT INTO organisations (id, legal_name, display_name, state) VALUES ($1,'Orphan tenant','Orphan tenant','MH')",
+          [orphanOrg],
+        );
+        try {
+          await assert.rejects(scheduler.runWeeklyOwnerRetentionAtRiskDigest(), /OWNER_DIGEST_INCOMPLETE/);
+          assert.equal((await admin.query(
+            "SELECT id FROM notifications WHERE event_key='WEEKLY_OWNER_DIGEST' AND org_id=$1",
+            [orphanOrg],
+          )).rowCount, 0);
+        } finally {
+          await admin.query("UPDATE organisations SET status='SUSPENDED' WHERE id=$1", [orphanOrg]);
+        }
+      });
+      await t.test('PH1-G27-002: audit genesis and content tampering are detected without leaking event metadata', async () => {
+        const eventId = randomUUID();
+        await scoped(app, a.orgId, client => client.query(
+          `INSERT INTO audit_events (id,org_id,actor_type,action,entity_type,entity_id,request_id)
+           VALUES ($1,$2,'SYSTEM','CHAIN_VERIFIER_TEST','PROJECT',$3,'worker-verifier')`,
+          [eventId, a.orgId, a.projectIds[0]],
+        ));
+        const positive = await scheduler.verifyAuditHashChainIntegrity();
+        assert(positive.verifiedEvents >= 1);
+        const original = (await admin.query(
+          'SELECT prev_hash,after_json FROM audit_events WHERE id=$1 AND org_id=$2',
+          [eventId, a.orgId],
+        )).rows[0];
+
+        // Only the disposable privileged test connection may temporarily
+        // disable both legacy and new append-only guards to simulate tampering.
+        const tamper = async (sql: string, params: unknown[]) => {
+          await admin.query('ALTER TABLE audit_events DISABLE TRIGGER USER');
+          try { await admin.query(sql, params); }
+          finally { await admin.query('ALTER TABLE audit_events ENABLE TRIGGER USER'); }
+        };
+        try {
+          await tamper('UPDATE audit_events SET prev_hash=$1 WHERE id=$2 AND org_id=$3', [
+            'FORGED_GENESIS', eventId, a.orgId,
+          ]);
+          await assert.rejects(
+            scheduler.verifyAuditHashChainIntegrity(),
+            error => error instanceof Error && error.message === 'AUDIT_HASH_CHAIN_CORRUPT',
+          );
+          await tamper('UPDATE audit_events SET prev_hash=$1, after_json=$2 WHERE id=$3 AND org_id=$4', [
+            original.prev_hash, JSON.stringify({ forged: true }), eventId, a.orgId,
+          ]);
+          await assert.rejects(
+            scheduler.verifyAuditHashChainIntegrity(),
+            error => error instanceof Error && error.message === 'AUDIT_CONTENT_TAMPERED',
+          );
+        } finally {
+          await tamper('UPDATE audit_events SET prev_hash=$1, after_json=$2 WHERE id=$3 AND org_id=$4', [
+            original.prev_hash, original.after_json, eventId, a.orgId,
+          ]);
+        }
+        const restored = await scheduler.verifyAuditHashChainIntegrity();
+        assert(restored.verifiedEvents >= 1);
+      });
       await t.test('SCHED-01/02: real Redis NX excludes concurrent owner and old owner cannot delete replacement lock', async () => {
         const name = randomUUID();
         let enter!: () => void;
@@ -52,6 +219,19 @@ void test('Isolated worker DB/Redis and storage HTTP contract regressions', asyn
         await assert.rejects(scheduler.runWithPeriodLock(name, done, 30, 30, async () => { throw new Error('injected failure'); }), /injected/);
         assert.equal(await redis.exists(done), 0);
         await run(); assert.equal(effects, 2); await redis.del(done);
+        // A delayed worker must not claim successful completion if the lease
+        // expired or another process acquired it while its callback ran.
+        const lostKey = randomUUID();
+        const lostDone = `test:done:${lostKey}`;
+        await assert.rejects(
+          scheduler.runWithPeriodLock(lostKey, lostDone, 30, 30, async () => {
+            await redis.set(`lock:sched:${lostKey}`, 'replacement-owner', 'EX', 30);
+          }),
+          /SCHEDULER_LEASE_LOST/,
+        );
+        assert.equal(await redis.exists(lostDone), 0);
+        assert.equal(await redis.get(`lock:sched:${lostKey}`), 'replacement-owner');
+        await redis.del(`lock:sched:${lostKey}`);
         const period = scheduler.getIndiaSchedulePeriods(new Date('2027-01-03T18:30:00Z'));
         assert.equal(period.day, '2027-01-04'); assert.equal(period.hour, 0); assert.equal(period.week, '2027-W01');
       });
@@ -84,6 +264,8 @@ void test('Isolated worker DB/Redis and storage HTTP contract regressions', asyn
         gateway.listen(0, '127.0.0.1'); await once(gateway, 'listening');
         process.env.NOTIFICATION_DELIVERY_URL = `http://127.0.0.1:${(gateway.address() as any).port}`;
         process.env.NOTIFICATION_DELIVERY_TOKEN = 'local-capture-token';
+        const previousMode = process.env.NODE_ENV;
+        process.env.NODE_ENV = 'test';
         try {
           assert.equal(await scheduler.dispatchQueuedNotifications(), 0);
           mode = 'bad-ack'; assert.equal(await scheduler.dispatchQueuedNotifications(), 0);
@@ -92,7 +274,12 @@ void test('Isolated worker DB/Redis and storage HTTP contract regressions', asyn
           assert.equal(own.status, 'SENT'); assert(own.sent_at instanceof Date);
           assert.equal((await admin.query('SELECT status FROM notifications WHERE id = $1', [foreignId])).rows[0].status, 'QUEUED');
           assert(requests.some(request => request.key === id && request.payload.org_id === a.orgId && request.payload.recipient_user_id === userId));
-        } finally { gateway.closeAllConnections(); await new Promise<void>(resolve => gateway.close(() => resolve())); }
+        } finally {
+          if (previousMode === undefined) delete process.env.NODE_ENV;
+          else process.env.NODE_ENV = previousMode;
+          gateway.closeAllConnections();
+          await new Promise<void>(resolve => gateway.close(() => resolve()));
+        }
       });
       const storage = await storageServer();
       try {

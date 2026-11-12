@@ -9,6 +9,8 @@ import {
 import { createHash, timingSafeEqual } from 'crypto';
 import { Pool } from 'pg';
 import { Request } from 'express';
+import { requestCorrelationId } from '../middleware/request-correlation.middleware';
+import { validateRouteIdentifiers } from './route-identifiers';
 
 export interface AuthenticatedRequest extends Request {
   auth: {
@@ -20,10 +22,27 @@ export interface AuthenticatedRequest extends Request {
     requestId: string;
     ip: string;
     userAgent: string;
+    mfaVerified: boolean;
   };
 }
 
 const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+const PRIVILEGED_MFA_ROLES = new Set(['R-OWNER', 'R-ADMIN', 'R-BILLING']);
+// A pre-MFA session may bootstrap its identity, change the selected org,
+// safely log out, or complete the authentication challenge. Newly added
+// routes are denied by default until they are explicitly reviewed.
+const PRE_MFA_ROUTES = new Set([
+  'GET /api/v1/auth/me',
+  'GET /api/v1/auth/orgs',
+  'POST /api/v1/auth/switch-org',
+  'POST /api/v1/auth/logout',
+  'GET /api/v1/auth/mfa/status',
+  'POST /api/v1/auth/mfa/enroll/start',
+  'POST /api/v1/auth/mfa/enroll/confirm',
+  'POST /api/v1/auth/mfa/enroll/cancel',
+  'POST /api/v1/auth/mfa/verify',
+  'POST /api/v1/auth/mfa/recovery',
+]);
 
 @Injectable()
 export class SessionCsrfGuard implements CanActivate {
@@ -31,6 +50,8 @@ export class SessionCsrfGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest<AuthenticatedRequest>();
+    const requestId = requestCorrelationId(req);
+    validateRouteIdentifiers(req.params);
     const rawSessionToken =
       req.cookies?.['tc_session'] ||
       req.headers['authorization']?.replace(/^Bearer\s+/i, '');
@@ -51,11 +72,14 @@ export class SessionCsrfGuard implements CanActivate {
               s.user_id,
               s.active_org_id,
               s.csrf_token_hash,
+              s.mfa_verified,
               s.expires_at,
               s.guest_grant_id,
               u.name AS user_name,
               u.status AS user_status,
-              o.status AS org_status
+              u.mfa_enabled_at,
+              o.status AS org_status,
+              o.doc_controller_org_wide_download
          FROM sessions s
          JOIN users u ON u.id = s.user_id
          JOIN organisations o ON o.id = s.active_org_id
@@ -165,6 +189,26 @@ export class SessionCsrfGuard implements CanActivate {
       });
     }
 
+    // Production/staging privileged endpoints require an enrolled and verified
+    // MFA session. Do not inherit an earlier HTTP guard snapshot or trust role
+    // fields supplied by callers. Development/test may opt into strict mode.
+    const enforceMfa = process.env.NODE_ENV !== 'test' &&
+      process.env.NODE_ENV !== 'development' ||
+      process.env.AUTH_REQUIRE_PRIVILEGED_MFA === 'true';
+    if (enforceMfa && !session.guest_grant_id &&
+        PRIVILEGED_MFA_ROLES.has(orgRole) &&
+        (session.mfa_verified !== true || !session.mfa_enabled_at)) {
+      const routePath = String(req.originalUrl || req.path || '').split('?')[0].replace(/\/$/, '');
+      const routeKey = `${req.method.toUpperCase()} ${routePath}`;
+      if (!PRE_MFA_ROUTES.has(routeKey)) {
+        throw new ForbiddenException({
+          code: 'MFA_STEP_UP_REQUIRED',
+          title: 'Additional authentication required',
+          detail: 'Complete multi-factor verification to continue.',
+        });
+      }
+    }
+
     // Enforce CSRF token on all state-changing cookie requests (10 §2.2)
     if (UNSAFE_METHODS.has(req.method.toUpperCase())) {
       const csrfHeader = req.headers['x-csrf-token'];
@@ -247,9 +291,10 @@ export class SessionCsrfGuard implements CanActivate {
       activeOrgId: session.active_org_id,
       orgRole: orgRole,
       projectRole: projectRole,
-      requestId: (req.headers['x-request-id'] as string) || 'req_unknown',
+      requestId,
       ip: req.ip || '0.0.0.0',
       userAgent: (req.headers['user-agent'] as string) || 'unknown',
+      mfaVerified: session.mfa_verified === true && Boolean(session.mfa_enabled_at),
     };
 
     req.auth = authData;
@@ -264,13 +309,19 @@ export class SessionCsrfGuard implements CanActivate {
       guestScope: guestScope,
       guestGrantId: session.guest_grant_id,
       guestProjectId: guestProjectId,
-      docControllerOrgWideDownload: false,
+      docControllerOrgWideDownload: !session.guest_grant_id &&
+        session.doc_controller_org_wide_download === true,
     };
 
     (req as any).userContext = {
       orgId: session.active_org_id,
       userId: session.user_id,
       actorType: session.guest_grant_id ? 'GUEST' : 'USER',
+      // Server-derived only: never accept a session id from request body,
+      // path, header or caller-provided execution context.
+      sessionId: session.session_id,
+      sessionTokenHash: tokenHash,
+      mfaVerified: authData.mfaVerified,
       requestId: authData.requestId,
       orgRole,
       projectRole,

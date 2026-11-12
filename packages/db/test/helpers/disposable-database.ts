@@ -21,7 +21,11 @@ export async function migrateDatabase(url: string): Promise<void> {
 /** Never resets an existing database. Only a random database created here is removed. */
 export async function withDisposableDatabase(work: (db: {
   admin: Pool; app: Pool; url: string; name: string;
-}) => Promise<void>, options: { baselineThrough?: string } = {}) {
+}) => Promise<void>, options: {
+  baselineThrough?: string;
+  /** Populate and inspect the legacy schema before the real forward migrator. */
+  beforeUpgrade?: (baseline: Pool) => Promise<void>;
+} = {}) {
   const source = new URL(process.env.MIGRATOR_DATABASE_URL || 'postgres://postgres:postgres@127.0.0.1:5432/tradecloseout');
   const controlUrl = new URL(source);
   controlUrl.pathname = '/postgres';
@@ -52,6 +56,7 @@ export async function withDisposableDatabase(work: (db: {
           await client.query('INSERT INTO schema_migrations (name,checksum,applied_at) VALUES ($1,$2,now())', [file, createHash('sha256').update(sql).digest('hex')]);
           await client.query('COMMIT');
         }
+        await options.beforeUpgrade?.(baseline);
       } finally { client.release(); await baseline.end(); }
     }
     await migrateDatabase(url);

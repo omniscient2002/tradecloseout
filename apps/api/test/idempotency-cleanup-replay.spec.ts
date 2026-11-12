@@ -14,7 +14,7 @@ describe('TX-05/06: receipt persistence failure and cleanup', () => {
         auth: { activeOrgId: tenant.orgId, userId } };
       const context = { switchToHttp: () => ({ getRequest: () => request, getResponse: () => ({ statusCode: 200 }) }),
         getHandler: () => ({}), getClass: () => ({}) } as any;
-      const reflector = { getAllAndOverride: () => true } as any;
+      const reflector = { getAllAndOverride: (key: string) => key === 'REQUIRE_IDEMPOTENCY' } as any;
       // Simulates losing the receipt store after the handler's real transaction commits.
       const failedReceiptPool = { connect: async () => {
         const client = await app.connect();

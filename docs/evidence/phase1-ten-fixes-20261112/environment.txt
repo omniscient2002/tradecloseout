@@ -1,0 +1,4 @@
+v22.23.5
+12.4.1
+qpdf version 12.3.2
+Run qpdf --copyright to see copyright and license information.

@@ -14,12 +14,16 @@ import Redis from 'ioredis';
 
 describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () => {
   let redis: Redis;
+  const previousOtpKey = process.env.AUTH_OTP_HMAC_KEY;
 
   beforeAll(() => {
+    process.env.AUTH_OTP_HMAC_KEY = 'test-only-otp-hmac-key-for-hvac-regressions-000000000';
     redis = new Redis(process.env.REDIS_URL || 'redis://127.0.0.1:6379');
   });
 
   afterAll(async () => {
+    if (previousOtpKey === undefined) delete process.env.AUTH_OTP_HMAC_KEY;
+    else process.env.AUTH_OTP_HMAC_KEY = previousOtpKey;
     await redis.quit();
   });
 

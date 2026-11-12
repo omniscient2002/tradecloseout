@@ -117,11 +117,14 @@ export async function verifyAndScanUploadedFile(
   const avVerdict = await scanFileWithClamd(localFilePath, clamdHost, clamdPort);
   if (avVerdict.scanUnavailable) {
     if (process.env.NODE_ENV === 'test' && process.env.ALLOW_UNENFORCED_SCANNER_IN_TEST === 'true') {
-      console.warn(`[ClamAV Warning] Scanner unavailable (${avVerdict.error}), but ALLOW_UNENFORCED_SCANNER_IN_TEST=true is set.`);
+      console.warn('[ClamAV Warning] Scanner unavailable; ALLOW_UNENFORCED_SCANNER_IN_TEST=true is set.');
     } else {
       // Infrastructure unavailability is retryable. The worker's bounded retry policy
       // persists the final FAILED state only after the last attempt is exhausted.
-      throw new Error(`SCAN_UNAVAILABLE: ${avVerdict.error || 'Antivirus scanner connection failed'}`);
+      // Scanner diagnostics can contain raw network addresses, file names, or
+      // provider response text. BullMQ persists thrown Error.message in Redis;
+      // never copy these untrusted details into durable job failure history.
+      throw new Error('SCAN_UNAVAILABLE: Antivirus scanner connection failed');
     }
   } else if (avVerdict.infected) {
     return {
