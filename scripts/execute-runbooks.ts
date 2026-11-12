@@ -1,80 +1,151 @@
 import { Pool } from 'pg';
 import { uuidv7 } from 'uuidv7';
+import { parseIncidentRunbookArgs } from './incident-runbook-args';
 
-const adminPool = new Pool({
-  connectionString: process.env.MIGRATOR_DATABASE_URL || 'postgres://postgres:postgres@127.0.0.1:5432/tradecloseout',
-});
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * Executable Incident Runbooks (15-DEPLOYMENT-AND-OPERATIONS.md §10 RB-08, RB-09, RB-12)
+ * RB-08/09/12: scoped, attributable, fail-closed incident intervention.
+ *
+ * INCIDENT_DATABASE_URL must be an independently provisioned restricted
+ * tc_incident_operator login. Never use a migrator, app or postgres identity.
+ * --dry-run changes nothing; --execute requires a recorded approval reference.
+ * This cannot revoke already distributed S3 presigned URLs (provider gate).
  */
 async function executeRunbook() {
-  const [, , rbCode, targetOrgId, targetEntityId, reason] = process.argv;
-  if (!rbCode || !targetOrgId) {
-    console.log(
-      'Usage: pnpm tsx scripts/execute-runbooks.ts <RB-08|RB-09|RB-12> <orgId> [entityId] [reason]',
-    );
-    process.exit(1);
+  const args = parseIncidentRunbookArgs(process.argv.slice(2));
+  const connectionString = process.env.INCIDENT_DATABASE_URL;
+  const operatorId = process.env.INCIDENT_OPERATOR_ID;
+  const approvalRef = process.env.INCIDENT_APPROVAL_REF;
+  if (!connectionString) throw new Error('INCIDENT_DATABASE_URL is required; migrator fallback is forbidden.');
+  if (!operatorId || !UUID.test(operatorId)) throw new Error('INCIDENT_OPERATOR_ID must be an accountable operator UUID.');
+  if (args.execute && (!approvalRef || approvalRef.trim().length < 8 || approvalRef.length > 200)) {
+    throw new Error('INCIDENT_APPROVAL_REF is required for execution.');
   }
-
-  const client = await adminPool.connect();
+  const pool = new Pool({ connectionString, max: 1, connectionTimeoutMillis: 5000 });
   try {
-    await client.query('BEGIN');
-    await client.query(`SELECT set_config('app.current_org', $1, true)`, [targetOrgId]);
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      try {
+        await client.query("SET LOCAL statement_timeout = '10000ms'");
+        await client.query("SET LOCAL lock_timeout = '3000ms'");
+        // Explicit independent operator role, not the migration superuser.
+        const identity = await client.query('SELECT current_user AS login');
+        if (identity.rows[0]?.login !== 'tc_incident_operator') {
+          throw new Error('Incident runbooks require the tc_incident_operator database role.');
+        }
+        const org = await client.query('SELECT id FROM organisations WHERE id = $1', [args.orgId]);
+        if (org.rowCount !== 1) throw new Error('Incident organisation not found.');
+        await client.query("SELECT set_config('app.current_org', $1, true)", [args.orgId]);
 
-    if (rbCode === 'RB-08') {
-      // RB-08: Suspected Tenant Isolation Breach — Immediately revoke all active sessions for org
-      const { rowCount } = await client.query(
-        `UPDATE sessions SET revoked_at = now() WHERE active_org_id = $1 AND revoked_at IS NULL`,
-        [targetOrgId],
-      );
-      console.log(`✓ [RB-08 CONTAINMENT] Revoked ${rowCount} active sessions for org ${targetOrgId}.`);
-    } else if (rbCode === 'RB-09' && targetEntityId) {
-      // RB-09: Malware Upload — Quarantine version and storage object immediately
-      await client.query(
-        `UPDATE document_versions SET file_status = 'QUARANTINED', row_version = row_version + 1
-          WHERE org_id = $1 AND id = $2`,
-        [targetOrgId, targetEntityId],
-      );
-      console.log(`✓ [RB-09 QUARANTINE] Quarantined document_version ${targetEntityId}.`);
-    } else if (rbCode === 'RB-12' && targetEntityId) {
-      // RB-12: Suspected PDF Injection — Mark generated package FAILED/REJECTED to block download
-      await client.query(
-        `UPDATE handover_packages
-            SET status = 'REJECTED', row_version = row_version + 1
-          WHERE org_id = $1 AND id = $2`,
-        [targetOrgId, targetEntityId],
-      );
-      console.log(
-        `✓ [RB-12 PDF INJECTION CONTAINMENT] Marked package ${targetEntityId} REJECTED (${reason || 'escaping audit'}).`,
-      );
+        let targetCount = 0;
+        let affected = 0;
+        let projectId: string | null = null;
+        if (args.code === 'RB-08') {
+          const query = args.execute
+            ? 'UPDATE sessions SET revoked_at = now() WHERE active_org_id = $1 AND revoked_at IS NULL RETURNING id'
+            : 'SELECT id FROM sessions WHERE active_org_id = $1 AND revoked_at IS NULL';
+          const result = await client.query(query, [args.orgId]);
+          targetCount = result.rowCount || 0;
+          affected = args.execute ? targetCount : 0;
+        } else if (args.code === 'RB-09') {
+          const version = await client.query(
+            `SELECT dv.id, dv.project_id, dv.review_status, dv.file_status,
+                    so.id AS storage_object_id, so.status AS storage_status
+               FROM document_versions dv
+               JOIN storage_objects so ON so.org_id = dv.org_id AND so.id = dv.object_id
+              WHERE dv.org_id = $1 AND dv.id = $2
+              ${args.execute ? 'FOR UPDATE OF dv, so' : ''}`,
+            [args.orgId, args.entityId],
+          );
+          if (version.rowCount !== 1) throw new Error('Incident document version not found.');
+          targetCount = 1;
+          projectId = version.rows[0].project_id;
+          if (args.execute) {
+            // Do not rewrite historical review_status='APPROVED': the DB correctly
+            // forbids APPROVED with non-READY file_status. Quarantine the backing
+            // object instead; all document download/preview/stream paths already
+            // deny storage_status != READY, independent of the historical decision.
+            const result = await client.query(
+              `UPDATE storage_objects SET status = 'QUARANTINED'
+                WHERE org_id = $1 AND id = $2 RETURNING id`,
+              [args.orgId, version.rows[0].storage_object_id],
+            );
+            if (result.rowCount !== 1) throw new Error('Storage quarantine did not affect exactly one object.');
+            affected = 1;
+          }
+        } else if (args.code === 'RB-12') {
+          const pkg = await client.query(
+            `SELECT id, project_id, status, pdf_object_id, zip_object_id, manifest_object_id
+               FROM handover_packages WHERE org_id = $1 AND id = $2
+              ${args.execute ? 'FOR UPDATE' : ''}`,
+            [args.orgId, args.entityId],
+          );
+          if (pkg.rowCount !== 1) throw new Error('Incident package not found.');
+          targetCount = 1;
+          projectId = pkg.rows[0].project_id;
+          if (args.execute) {
+            const update = await client.query(
+              `UPDATE handover_packages
+                  SET status = 'REJECTED', row_version = row_version + 1, updated_at = now()
+                WHERE org_id = $1 AND id = $2 RETURNING id`,
+              [args.orgId, args.entityId],
+            );
+            if (update.rowCount !== 1) throw new Error('Package containment did not affect exactly one package.');
+            await client.query(
+              `UPDATE storage_objects SET status = 'QUARANTINED'
+                WHERE org_id = $1 AND id = ANY($2::uuid[])`,
+              [args.orgId, [pkg.rows[0].pdf_object_id, pkg.rows[0].zip_object_id, pkg.rows[0].manifest_object_id].filter(Boolean)],
+            );
+            affected = 1;
+          }
+        }
+
+        if (args.execute) {
+          const eventId = uuidv7();
+          const requestId = `rb_${eventId}`;
+          const after = JSON.stringify({
+            code: args.code, approvalRef: approvalRef!.trim(), reason: args.reason,
+            matchedTargets: targetCount, affected, containment: 'DATABASE_AND_FUTURE_APP_DOWNLOADS_ONLY',
+          });
+          await client.query(
+            `INSERT INTO admin_audit_events
+              (id, org_id, admin_user_id, action, reason, entity_type, entity_id, after_json, request_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)`,
+            [uuidv7(), args.orgId, operatorId, `INCIDENT_${args.code}`, args.reason,
+              'INCIDENT_RUNBOOK', args.entityId, after, requestId],
+          );
+          await client.query(
+            `INSERT INTO audit_events
+              (id, org_id, project_id, actor_type, actor_user_id, action, entity_type, entity_id, after_json, request_id)
+             VALUES ($1, $2, $3, 'ADMIN', $4, $5, 'RUNBOOK_EXECUTION', $6, $7::jsonb, $8)`,
+            [eventId, args.orgId, projectId, operatorId,
+              `RUNBOOK_${args.code}`, args.entityId || args.orgId, after, requestId],
+          );
+          await client.query('COMMIT');
+        } else {
+          await client.query('ROLLBACK');
+        }
+        // Never print success until the database confirms COMMIT.
+        console.log(JSON.stringify({
+          code: args.code, mode: args.execute ? 'EXECUTED' : 'DRY_RUN',
+          matchedTargets: targetCount, changedTargets: affected,
+          status: args.execute ? 'DATABASE_CONTAINMENT_COMMITTED' : 'NO_CHANGES',
+          warning: 'Prior signed provider URLs and external replicas are not revoked by this database command.',
+        }));
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => undefined);
+        throw error;
+      }
+    } finally {
+      client.release();
     }
-
-    await client.query(
-      `INSERT INTO audit_events
-        (id, org_id, actor_type, action, entity_type, entity_id, after_json, request_id)
-       VALUES ($1, $2, 'ADMIN', $3, 'RUNBOOK_EXECUTION', $4, $5, $6)`,
-      [
-        uuidv7(),
-        targetOrgId,
-        `RUNBOOK_${rbCode}`,
-        targetEntityId || targetOrgId,
-        JSON.stringify({ rbCode, reason: reason || 'Emergency runbook execution' }),
-        `rb_${uuidv7()}`,
-      ],
-    );
-
-    await client.query('COMMIT');
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
   } finally {
-    client.release();
-    await adminPool.end();
+    await pool.end();
   }
 }
-
-executeRunbook().catch((err) => {
-  console.error(err);
-  process.exit(1);
+executeRunbook().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : 'Incident runbook failed.');
+  process.exitCode = 1;
 });
