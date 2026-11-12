@@ -112,6 +112,11 @@ test('PH1-G27-004: migrated PG16 retains actor/event/request and disallows cross
       "INSERT INTO handover_packages(id,org_id,project_id,status,version_no,snapshot_checksum) VALUES($1,$2,$3,'QUEUED',1,$4)",
       [packageId, a.orgId, a.projectIds[0], 'a'.repeat(64)],
     );
+    const archiveId = randomUUID();
+    await admin.query(
+      "INSERT INTO archive_exports(id,org_id,project_id,status) VALUES($1,$2,$3,'PENDING')",
+      [archiveId, a.orgId, a.projectIds[0]],
+    );
     const requestId = 'G27-004-real-postgres-provenance';
     await withTenantTransaction(app, {
       orgId: a.orgId, userId, actorType: 'SYSTEM',
@@ -176,6 +181,33 @@ test('PH1-G27-004: migrated PG16 retains actor/event/request and disallows cross
           audit.rows[0].entity_id, audit.rows[0].action],
         [userId, requestId, packageId, 'HANDOVER_PACKAGE_QUEUED'],
       );
+
+      // The same DB-scoped executor checks archive identities, not just
+      // package identities. Cross-project and cross-tenant attempts cannot
+      // pass the SELECT before any queue admission.
+      const archiveEventId = randomUUID();
+      const archiveEvent = {
+        id: archiveEventId, org_id: a.orgId, project_id: a.projectIds[0],
+        event_type: 'PROJECT_ARCHIVE_EXPORT_QUEUED',
+        payload_json: buildTrustedOutboxPayload({
+          eventId: archiveEventId, eventType: 'PROJECT_ARCHIVE_EXPORT_QUEUED',
+          orgId: a.orgId, projectId: a.projectIds[0],
+          entityType: 'PROJECT_ARCHIVE', entityId: archiveId,
+          actorUserId: userId, requestId,
+        }, { exportId: archiveId }),
+      };
+      const archivePayload = await authorizeOutboxDispatch(client, archiveEvent);
+      assert.equal(archivePayload.exportId, archiveId);
+      await assert.rejects(authorizeOutboxDispatch(client, {
+        ...archiveEvent,
+        project_id: a.projectIds[1],
+        payload_json: buildTrustedOutboxPayload({
+          eventId: archiveEventId, eventType: 'PROJECT_ARCHIVE_EXPORT_QUEUED',
+          orgId: a.orgId, projectId: a.projectIds[1],
+          entityType: 'PROJECT_ARCHIVE', entityId: archiveId,
+          actorUserId: userId, requestId,
+        }, { exportId: archiveId }),
+      }), /OUTBOX_RESOURCE_SCOPE_MISMATCH/);
 
       const fakeProject = packageRow(a.orgId, a.projectIds[1], packageId, userId);
       await assert.rejects(authorizeOutboxDispatch(client, fakeProject),
