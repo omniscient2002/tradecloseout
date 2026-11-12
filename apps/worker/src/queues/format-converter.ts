@@ -1,11 +1,36 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { readFile, writeFile, mkdtemp, rm } from 'fs/promises';
+import { readFile, writeFile, mkdtemp, rm, lstat, stat } from 'fs/promises';
 import os from 'os';
 import path from 'path';
 
 const execFileAsync = promisify(execFile);
+
+const MAX_IMAGE_SOURCE_BYTES = 25 * 1024 * 1024;
+const MAX_OFFICE_SOURCE_BYTES = 40 * 1024 * 1024;
+const MAX_CONVERTED_PDF_BYTES = 100 * 1024 * 1024;
+const MAX_IMAGE_PIXELS = 60_000_000;
+const MAX_CONVERTED_PAGES = 1_000;
+
+async function assertRegularBoundedInput(source: string, limit: number): Promise<void> {
+  if (!path.isAbsolute(source)) throw new Error('CONVERSION_SOURCE_PATH_INVALID');
+  const info = await lstat(source);
+  if (!info.isFile() || info.isSymbolicLink() ||
+      !Number.isSafeInteger(info.size) || info.size < 1 || info.size > limit) {
+    throw new Error('CONVERSION_SOURCE_RESOURCE_LIMIT');
+  }
+}
+
+async function assertBoundedOutput(pdfPath: string, pageCount: number): Promise<void> {
+  const output = await stat(pdfPath);
+  if (!output.isFile() || !Number.isSafeInteger(output.size) ||
+      output.size < 1 || output.size > MAX_CONVERTED_PDF_BYTES ||
+      !Number.isSafeInteger(pageCount) || pageCount < 1 || pageCount > MAX_CONVERTED_PAGES) {
+    throw new Error('CONVERSION_OUTPUT_RESOURCE_LIMIT');
+  }
+}
+
 
 /**
  * Converts JPEG / PNG site photos or DOCX / XLSX registers into standardized A4 PDFs
@@ -17,6 +42,13 @@ export async function convertSupportingFormatToPdf(params: {
   outputPdfPath: string;
   headerStampText: string;
 }): Promise<{ converted: boolean; pageCount: number }> {
+  if (!params || typeof params.sourcePath !== 'string' ||
+      typeof params.outputPdfPath !== 'string' || !path.isAbsolute(params.outputPdfPath) ||
+      params.sourcePath === params.outputPdfPath ||
+      typeof params.detectedMime !== 'string' ||
+      typeof params.headerStampText !== 'string') {
+    throw new Error('CONVERSION_INPUT_INVALID');
+  }
   const { sourcePath, detectedMime, outputPdfPath, headerStampText } = params;
 
   // 1. Native Image-to-A4-PDF Conversion (JPEG / PNG / WebP)
@@ -25,6 +57,7 @@ export async function convertSupportingFormatToPdf(params: {
     detectedMime === 'image/png' ||
     detectedMime === 'image/webp'
   ) {
+    await assertRegularBoundedInput(sourcePath, MAX_IMAGE_SOURCE_BYTES);
     const imgBytes = await readFile(sourcePath);
     const pdfDoc = await PDFDocument.create();
     const fontMono = await pdfDoc.embedFont(StandardFonts.Courier);
@@ -35,10 +68,14 @@ export async function convertSupportingFormatToPdf(params: {
     if (detectedMime === 'image/webp') {
       try {
         const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'webp-conv-'));
-        const tmpPng = path.join(tmpDir, 'converted.png');
-        await execFileAsync('convert', [sourcePath, tmpPng], { timeout: 10_000 });
-        finalImgBytes = await readFile(tmpPng);
-        await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+        try {
+          const tmpPng = path.join(tmpDir, 'converted.png');
+          await execFileAsync('convert', [sourcePath, tmpPng], { timeout: 10_000, maxBuffer: 1024 * 1024 });
+          await assertRegularBoundedInput(tmpPng, MAX_IMAGE_SOURCE_BYTES);
+          finalImgBytes = await readFile(tmpPng);
+        } finally {
+          await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+        }
       } catch (convErr) {
         throw new Error(`UNSUPPORTED_IMAGE_FORMAT: WebP format could not be converted to PNG: ${(convErr as Error).message}`);
       }
@@ -49,6 +86,11 @@ export async function convertSupportingFormatToPdf(params: {
       ? await pdfDoc.embedJpg(finalImgBytes)
       : await pdfDoc.embedPng(finalImgBytes);
 
+    if (!Number.isSafeInteger(embeddedImg.width) || !Number.isSafeInteger(embeddedImg.height) ||
+        embeddedImg.width < 1 || embeddedImg.height < 1 ||
+        embeddedImg.width * embeddedImg.height > MAX_IMAGE_PIXELS) {
+      throw new Error('CONVERSION_IMAGE_PIXELS_EXCEEDED');
+    }
     const maxW = 595.28 - 72;
     const maxH = 841.89 - 120;
     const scale = Math.min(maxW / embeddedImg.width, maxH / embeddedImg.height, 1);
@@ -70,17 +112,24 @@ export async function convertSupportingFormatToPdf(params: {
       height: drawH,
     });
 
-    await writeFile(outputPdfPath, await pdfDoc.save());
+    const pdfBytes = await pdfDoc.save();
+    if (pdfBytes.length > MAX_CONVERTED_PDF_BYTES) throw new Error('CONVERSION_OUTPUT_RESOURCE_LIMIT');
+    await writeFile(outputPdfPath, pdfBytes);
+    await assertBoundedOutput(outputPdfPath, 1);
     return { converted: true, pageCount: 1 };
   }
 
   // 2. Sandboxed Headless LibreOffice Conversion for DOCX / XLSX
   if (
-    detectedMime === 'application/zip' ||
-    detectedMime.includes('officedocument') ||
-    detectedMime.includes('msword') ||
-    detectedMime.includes('msexcel')
+    [
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/msword', 'application/vnd.ms-excel',
+      'application/vnd.oasis.opendocument.text',
+      'application/vnd.oasis.opendocument.spreadsheet',
+    ].includes(detectedMime)
   ) {
+    await assertRegularBoundedInput(sourcePath, MAX_OFFICE_SOURCE_BYTES);
     const isolatedUserDir = await mkdtemp(path.join(os.tmpdir(), 'tc-lo-jail-'));
     const outDir = path.dirname(outputPdfPath);
 
@@ -124,17 +173,19 @@ export async function convertSupportingFormatToPdf(params: {
         const { stdout: npagesOut } = await execFileAsync('qpdf', ['--show-npages', outputPdfPath], {
           timeout: 10_000,
         });
-        return {
-          converted: true,
-          pageCount: parseInt(npagesOut.trim(), 10) || 1,
-        };
+        const pages = Number(npagesOut.trim());
+        await assertBoundedOutput(outputPdfPath, pages);
+        return { converted: true, pageCount: pages };
       } catch {
+        const stats = await stat(outputPdfPath);
+        if (!stats.isFile() || stats.size > MAX_CONVERTED_PDF_BYTES || stats.size < 1) {
+          throw new Error('CONVERSION_OUTPUT_RESOURCE_LIMIT');
+        }
         const bytes = await readFile(outputPdfPath);
         const doc = await PDFDocument.load(bytes);
-        return {
-          converted: true,
-          pageCount: doc.getPageCount(),
-        };
+        const pages = doc.getPageCount();
+        await assertBoundedOutput(outputPdfPath, pages);
+        return { converted: true, pageCount: pages };
       }
     } catch (err: any) {
       return { converted: false, pageCount: 0 };
