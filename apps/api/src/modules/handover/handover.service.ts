@@ -45,93 +45,38 @@ export class HandoverService {
   ) {
     // Exclusions are not applied to the immutable manifest in this release.
     // Silently ignoring them can disclose evidence the requester intended to omit.
-    if (input.excludedRequirementIds?.length) {
+    if (input?.excludedRequirementIds?.length) {
       throw new UnprocessableEntityException({
         code: 'PACKAGE_EXCLUSIONS_NOT_SUPPORTED',
         detail: 'Partial-package exclusions are not supported. No evidence has been excluded or exported.',
       });
     }
-    const readiness = await this.evaluateProjectReadiness(ctx, projectId);
-    if (!readiness.readyWithoutOverride) {
-      throw new UnprocessableEntityException({
-        code: 'READINESS_BLOCKERS_PRESENT',
-        title: 'Mandatory requirements are missing or expired',
-        detail: 'Resolve blockers or record an authorised waiver/not-applicable decision before requesting a final handover package.',
-      });
-    }
-
     return withTenantTransaction(this.pool, ctx, async (client, emit) => {
-      // Recheck in the package-creation transaction so a concurrent review or evidence
-      // change cannot invalidate the readiness result calculated immediately above.
-      const { rows: configuredRows } = await client.query(
-        `SELECT s.resolved_payload_json
-           FROM checklist_snapshots s
-          WHERE s.org_id = $1 AND s.project_id = $2 AND s.status = 'ACTIVE'
-            AND EXISTS (
-              SELECT 1 FROM requirements r
-               WHERE r.org_id = s.org_id AND r.project_id = s.project_id
-                 AND r.current_snapshot_id = s.id AND r.superseded_at IS NULL
-                 AND r.mandatory = true
-            )
-          LIMIT 1`,
+      // Project closure and handover generation share this row lock.
+      // Canonical readiness and source selection use one REPEATABLE READ snapshot.
+      const { rows: projects } = await client.query(
+        `SELECT id, status FROM projects
+           WHERE org_id = $1 AND id = $2 FOR UPDATE`,
         [ctx.orgId, projectId],
       );
-      const rawSnapshot = configuredRows[0]?.resolved_payload_json;
-      const configuredSnapshot = typeof rawSnapshot === 'string' ? JSON.parse(rawSnapshot) : rawSnapshot;
-      if (!Array.isArray(configuredSnapshot?.requirements) ||
-          configuredSnapshot.requirements.length === 0) {
-        throw new UnprocessableEntityException({
-          code: 'NO_APPLICABLE_MANDATORY_CHECKLIST',
-          detail: 'The project needs an active, non-empty checklist with mandatory requirements before handover.',
+      if (!projects.length) {
+        throw new NotFoundException({ code: 'PROJECT_NOT_FOUND' });
+      }
+      if (!['ACTIVE', 'HANDOVER'].includes(projects[0].status)) {
+        throw new ConflictException({
+          code: 'PACKAGE_PROJECT_LIFECYCLE_BLOCKED',
+          detail: 'Final handover generation requires an active or handover project.',
         });
       }
-      const { rows: blockerRows } = await client.query(
-        `SELECT r.id
-           FROM requirements r
-          WHERE r.org_id = $1 AND r.project_id = $2
-            AND r.superseded_at IS NULL AND r.mandatory = true
-            AND NOT EXISTS (
-              SELECT 1 FROM waivers w
-               WHERE w.org_id = r.org_id AND w.project_id = r.project_id
-                 AND w.requirement_id = r.id AND w.status = 'ACTIVE'
-                 AND w.type IN ('WAIVE', 'NOT_APPLICABLE')
-                 AND w.second_approved_by IS NOT NULL AND w.second_approved_by <> w.approved_by
-            )
-            AND NOT EXISTS (
-              SELECT 1
-                FROM document_requirements dr
-                JOIN documents d
-                  ON d.org_id = dr.org_id AND d.project_id = dr.project_id AND d.id = dr.document_id
-                 AND d.deleted_at IS NULL AND d.status = 'ACTIVE'
-              AND d.doc_type_key = r.doc_type_key
-                JOIN document_versions dv
-                  ON dv.org_id = d.org_id AND dv.project_id = d.project_id
-                 AND dv.document_id = d.id AND dv.id = d.current_approved_version_id
-                 AND dv.deleted_at IS NULL AND dv.superseded_at IS NULL
-                 AND dv.review_status = 'APPROVED' AND dv.file_status = 'READY'
-                 AND (dv.expiry_date IS NULL OR dv.expiry_date >= CURRENT_DATE)
-                JOIN storage_objects so
-                  ON so.org_id = dv.org_id AND so.id = dv.object_id
-                 AND so.status = 'READY' AND so.sha256 IS NOT NULL
-                 AND so.observed_size_bytes = so.size_bytes
-                 AND so.provider_version_id IS NOT NULL
-               WHERE dr.org_id = r.org_id AND dr.project_id = r.project_id
-                 AND dr.requirement_id = r.id
-                 AND NOT EXISTS (
-                   SELECT 1 FROM evidence_revalidations er
-                    WHERE er.org_id = dv.org_id AND er.project_id = dv.project_id
-                      AND er.document_version_id = dv.id
-                      AND (r.scope_key IS NULL OR r.scope_key NOT LIKE 'asset:%' OR er.asset_id::text = substring(r.scope_key from 7))
-                      AND er.status IN ('PENDING', 'MISMATCH')
-                 )
-            )
-          LIMIT 1`,
-        [ctx.orgId, projectId],
-      );
-      if (blockerRows.length > 0) {
+      const readiness = await evaluateReadinessInTransaction(client, ctx.orgId, projectId);
+      if (!readiness.readyWithoutOverride) {
         throw new UnprocessableEntityException({
-          code: 'READINESS_CHANGED',
-          detail: 'Mandatory evidence changed while the package request was being created. Refresh readiness and resolve the current blockers.',
+          code: 'READINESS_BLOCKERS_PRESENT',
+          title: 'Mandatory requirements are missing or expired',
+          detail: 'Resolve blockers or record an authorised waiver/not-applicable decision before requesting a final handover package.',
+          configurationBlocker: readiness.configurationBlocker,
+          missingMandatoryCount: readiness.blockers.missingMandatoryCount,
+          expiredMandatoryCount: readiness.blockers.expiredMandatoryCount,
         });
       }
 
@@ -141,13 +86,14 @@ export class HandoverService {
       const { rows: snapRows } = await client.query(
         `SELECT id, checksum FROM checklist_snapshots
           WHERE org_id = $1 AND project_id = $2 AND status = 'ACTIVE'
-          LIMIT 1`,
+          ORDER BY created_at DESC, id DESC
+          LIMIT 2`,
         [ctx.orgId, projectId],
       );
-      if (snapRows.length === 0) {
+      if (snapRows.length !== 1) {
         throw new UnprocessableEntityException({
-          code: 'NO_ACTIVE_SNAPSHOT',
-          detail: 'Project has no active checklist snapshot.',
+          code: snapRows.length ? 'MULTIPLE_ACTIVE_SNAPSHOTS' : 'NO_ACTIVE_SNAPSHOT',
+          detail: 'Exactly one active checklist snapshot is required for final handover.',
         });
       }
       const activeSnapshot = snapRows[0];
@@ -341,7 +287,7 @@ export class HandoverService {
         status: 'QUEUED',
         snapshotChecksum: activeSnapshot.checksum,
       };
-    });
+    }, { isolationLevel: 'REPEATABLE READ' });
   }
 
   /**
