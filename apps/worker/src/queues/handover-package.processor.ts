@@ -272,7 +272,9 @@ export async function compileAndPersistHandoverPackage(
       ServerSideEncryption: process.env.S3_KMS_KEY_ID ? 'aws:kms' : undefined,
       SSEKMSKeyId: process.env.S3_KMS_KEY_ID || undefined,
     }));
-    if (!putResult.VersionId) throw new Error('PACKAGE_STORAGE_VERSION_ID_MISSING');
+    if (!putResult.VersionId || putResult.VersionId.trim().toLowerCase() === 'null') {
+      throw new Error('PACKAGE_STORAGE_VERSION_ID_MISSING');
+    }
     const head = await s3.send(new HeadObjectCommand({ Bucket: bucket, Key: objectKey, VersionId: putResult.VersionId }));
     if (head.ContentLength !== outputStats.size || head.VersionId !== putResult.VersionId ||
         head.Metadata?.sha256 !== actualOutputSha) {
