@@ -178,9 +178,15 @@ void test('Disposable PostgreSQL migration, isolation and audit regression tests
       for (const mutation of ['UPDATE audit_events SET action = action', 'DELETE FROM audit_events']) {
         await assert.rejects(scoped(app, a.orgId, client => client.query(mutation)), /AUDIT_IMMUTABLE/);
       }
-      await admin.query('ALTER TABLE audit_events DISABLE TRIGGER trg_audit_events_immutable');
-      try { await admin.query(`UPDATE audit_events SET after_json = '{"tampered":true}' WHERE org_id = $1`, [a.orgId]); }
-      finally { await admin.query('ALTER TABLE audit_events ENABLE TRIGGER trg_audit_events_immutable'); }
+      // Only a privileged attacker with DDL/superuser authority can disable
+      // every append-only trigger. Exercise that boundary on this disposable
+      // test database, then restore the controls even if the probe fails.
+      await admin.query('ALTER TABLE audit_events DISABLE TRIGGER USER');
+      try {
+        await admin.query(`UPDATE audit_events SET after_json = '{"tampered":true}' WHERE org_id = $1`, [a.orgId]);
+      } finally {
+        await admin.query('ALTER TABLE audit_events ENABLE TRIGGER USER');
+      }
       assert((await check()).every(event => event.hash !== event.computed));
     });
     await t.test('N30: canonical tenant alias validation rejects conflicting tenant settings', async () => {
