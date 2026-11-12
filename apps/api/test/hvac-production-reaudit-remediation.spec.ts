@@ -532,6 +532,11 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
         assigned_user_id: assigneeUserId,
         closure_evidence_object_id: null as string | null,
         remedy_document_version_id: null as string | null,
+        remedy_sha256: null as string | null,
+        remedy_provider_version_id: null as string | null,
+        remedy_size_bytes: null as number | null,
+        remedy_scanned_at: null as string | null,
+        remedy_asset_scope_ids: null as string[] | null,
       };
 
       const mockPool: any = {
@@ -555,6 +560,7 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
                     sha256: 'a'.repeat(64),
                     size_bytes: 512,
                     observed_size_bytes: 512,
+                    av_scanned_at: '2026-11-12T10:00:00.000Z',
                     linked_in_project: true,
                     linked_to_defect_asset: true,
                   },
@@ -562,9 +568,10 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
               };
             }
             if (sql.includes('FROM document_versions dv')) {
-              return { rows: [{ id: remedyVersionId, document_id: uuidv7() }] };
+              return { rows: [{ id: remedyVersionId, document_id: uuidv7(),
+                metadata_json: {remedyDefectId: defectId} }] };
             }
-            if (sql.includes('SELECT id FROM document_assets')) return { rows: [{ id: uuidv7() }] };
+            if (sql.includes('FROM document_assets da')) return { rows: [] };
             if (sql.includes('UPDATE defects')) {
               if (sql.includes("status = 'RECTIFIED'")) {
                 currentDefect = {
@@ -573,6 +580,11 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
                   row_version: 2,
                   closure_evidence_object_id: remedyEvidenceId,
                   remedy_document_version_id: remedyVersionId,
+                  remedy_sha256: params[7],
+                  remedy_provider_version_id: params[8],
+                  remedy_size_bytes: params[9],
+                  remedy_scanned_at: params[10],
+                  remedy_asset_scope_ids: params[11],
                 };
                 return { rowCount: 1 };
               }
