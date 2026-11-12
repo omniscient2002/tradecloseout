@@ -351,3 +351,51 @@ test('member evidence partition must use valid authenticated tenant and user IDs
     invalidDenied: true,
   });
 });
+
+
+test('READY version with quarantined backing object remains a failed local draft, never accepted', async ({ page }) => {
+  const puts = await fixture(page, false);
+  const result = await page.evaluate(async () => {
+    const q = (window as any).__queue;
+    const originalApi = (window as any).__apiFetch;
+    (window as any).__apiFetch = async (url: string, options?: unknown) => {
+      if (url.includes('/document-versions/version-one/upload-state')) {
+        return { versionId: 'version-one', fileStatus: 'READY', storageStatus: 'QUARANTINED' };
+      }
+      return originalApi(url, options);
+    };
+    await q.drainOfflineUploadQueue();
+    const first = await q.listOfflineUploadDrafts();
+    await q.drainOfflineUploadQueue();
+    const second = await q.listOfflineUploadDrafts();
+    return {
+      first: first.map((d: any) => d.status),
+      second: second.map((d: any) => d.status),
+      completeCalls: ((window as any).__actions as string[]).filter((x: string) => x === 'complete').length,
+    };
+  });
+  expect(puts).toEqual(['expired']);
+  expect(result).toEqual({ first: ['FAILED'], second: ['FAILED'], completeCalls: 1 });
+});
+
+test('guest upload status uses only upload permission response and does not require document.read', async ({ page }) => {
+  const puts = await fixture(page, false);
+  const result = await page.evaluate(async () => {
+    const q = (window as any).__queue;
+    const originalApi = (window as any).__apiFetch;
+    const requests: string[] = [];
+    (window as any).__apiFetch = async (url: string, options?: unknown) => {
+      requests.push(url);
+      if (url.includes('/documents/doc-one')) throw new Error('document.read denied');
+      return originalApi(url, options);
+    };
+    await q.drainOfflineUploadQueue();
+    return {
+      statusQueries: requests.filter((url) => url.endsWith('/upload-state')).length,
+      readQueries: requests.filter((url) => url.includes('/documents/doc-one')).length,
+      remaining: (await q.listOfflineUploadDrafts()).length,
+    };
+  });
+  expect(puts).toEqual(['expired']);
+  expect(result).toEqual({ statusQueries: 1, readQueries: 0, remaining: 0 });
+});
