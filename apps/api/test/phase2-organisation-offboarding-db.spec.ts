@@ -55,6 +55,28 @@ describe('PH2-G03-003: live offboarding authority and project closure fence', ()
         `SELECT assigned_user_id FROM defects WHERE org_id=$1 AND project_id=$2`,[orgId,projectId],
       );
       expect(result.rows[0].assigned_user_id).toBe(target);
+
+      // Reopening by itself does not authorize an arbitrary org member to
+      // inherit project-scoped work. Assign the replacement explicitly.
+      await admin.query(`UPDATE projects SET status='ACTIVE' WHERE id=$1`, [projectId]);
+      await expect(service.offboardOrReassignMember(makeCtx(owner),{
+        targetUserId:target,action:'REASSIGN_ONLY',replacementUserId:replacement,
+      })).rejects.toMatchObject({response:expect.objectContaining({
+        code:'REPLACEMENT_PROJECT_SCOPE_REQUIRED',
+      })});
+      await admin.query(
+        `INSERT INTO project_members(id,org_id,project_id,user_id,role,added_by)
+         VALUES($1,$2,$3,$4,'R-SITE',$5)`,
+        [uuidv7(),orgId,projectId,replacement,owner],
+      );
+      const transferred=await service.offboardOrReassignMember(makeCtx(owner),{
+        targetUserId:target,action:'REASSIGN_ONLY',replacementUserId:replacement,
+      });
+      expect(transferred.reassignedTo).toBe(replacement);
+      const {rows:assigned}=await admin.query(
+        `SELECT assigned_user_id FROM defects WHERE org_id=$1 AND project_id=$2`,[orgId,projectId],
+      );
+      expect(assigned[0].assigned_user_id).toBe(replacement);
     });
   });
 });
