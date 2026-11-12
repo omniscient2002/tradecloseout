@@ -99,6 +99,20 @@ describe('PH2-G20-009 / G05-001: financial exposure and actual overdue indicator
       expect((await service.getProjectDashboard(ctx,project.projectId)).retentionAtRiskPaise)
         .toBeNull();
 
+      await admin.query(
+        `INSERT INTO project_members(id,org_id,project_id,user_id,role,added_by)
+          VALUES($1,$2,$3,$4,'R-SITE',$5)`,
+        [uuidv7(),orgId,project.projectId,other,owner],
+      );
+      const siteView = await service.getProjectDashboard({
+        ...ctx,userId:other,orgRole:'R-SITE',projectRole:'R-SITE',projectId:project.projectId,
+        requestId:uuidv7(),
+      },project.projectId);
+      expect(siteView.counts).toBeDefined(); // project progress remains visible
+      expect(siteView.contractValuePaise).toBeNull();
+      expect(siteView.retentionAtRiskPaise).toBeNull();
+      expect(siteView.financialSummaryBasis).toBe('RESTRICTED');
+
       await expect(digest.getOwnerDigest({...ownerCtx,userId:other,orgRole:'R-SITE'},project.projectId))
         .rejects.toMatchObject({response:expect.objectContaining({code:'OWNER_DIGEST_RESTRICTED'})});
     });
