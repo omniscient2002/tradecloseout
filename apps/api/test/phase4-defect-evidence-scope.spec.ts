@@ -43,6 +43,26 @@ describe('PH4-G17-002 exact remedy scope qualification', () => {
     } as any), queries };
   }
 
+  it('PH4-G17-005: never overwrites an already RECTIFIED remedy without independent reversal', async () => {
+    const queries: string[] = [];
+    const pool: any = { connect: jest.fn(async () => ({
+      query: jest.fn(async (sql: string) => {
+        queries.push(sql);
+        if (sql.includes('FROM defects d')) return { rows: [{
+          id: defectId, org_id: orgId, project_id: projectId,
+          asset_id: assetId, status: 'RECTIFIED', row_version: 2,
+          closure_evidence_object_id: objectId, remedy_document_version_id: versionId,
+        }] };
+        return { rows: [] };
+      }),
+      release: jest.fn(),
+    })) };
+    await expect(new WarrantyAndBillingService(pool).submitDefectRemedy(
+      ctx, projectId, defectId, randomUUID(), 2,
+    )).rejects.toMatchObject({ response: { code: 'DEFECT_REMEDY_TRANSITION_NOT_ALLOWED' } });
+    expect(queries.some(sql => sql.includes('UPDATE defects'))).toBe(false);
+  });
+
   it('rejects a convincingly named storage key without a current project document link', async () => {
     const { service, queries } = fixture({
       linked_in_project: false, linked_to_defect_asset: false,
