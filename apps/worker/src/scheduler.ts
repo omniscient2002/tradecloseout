@@ -324,8 +324,6 @@ export class TradeCloseoutScheduler {
           [org.org_id],
         );
 
-        const totalRetentionAtRiskPaise = sumPaise(projectRisks.map(p => String(p.retention_at_risk_paise ?? 0)));
-
         await client.query(
           `INSERT INTO notifications
             (id, org_id, recipient_user_id, channel, event_key, payload_json, status, dedup_key)
@@ -338,12 +336,12 @@ export class TradeCloseoutScheduler {
             ownerUserId,
             JSON.stringify({
               orgDisplayName: org.display_name,
-              totalRetentionAtRiskPaise: totalRetentionAtRiskPaise.toString(),
+              // PH2-G20-001: external email digest contains no financial totals,
+              // project names or raw requirements. Detailed commercial data
+              // stays behind the authenticated owner dashboard.
               projects: projectRisks.map((pr) => ({
                 projectCode: pr.project_code,
-                projectName: String(pr.project_name).slice(0, 60), // FR-NOT-013 max 60 chars
                 missingOrExpiredCount: pr.missing_or_expired_count,
-                retentionAtRiskPaise: String(pr.retention_at_risk_paise),
               })),
             }),
             `weekly-owner-digest:${weekKey}`,
