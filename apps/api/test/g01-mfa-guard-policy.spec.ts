@@ -21,7 +21,9 @@ describe('PH1-G01 privileged MFA gate and secret-bearing endpoint contract', () 
 
   function fixture(opts: { role?: string; verified?: boolean; method?: string; path?: string } = {}) {
     const csrf = 'correct-csrf';
-    const member = { role: opts.role ?? 'R-OWNER', membership_status: 'ACTIVE' };
+    // Match the actual SELECT alias in SessionCsrfGuard. A mock returning
+    // "role" silently sets orgRole to undefined and bypasses the MFA branch.
+    const member = { org_role: opts.role ?? 'R-OWNER', membership_status: 'ACTIVE' };
     const session = {
       session_id: 'session-123', user_id: 'user-123', active_org_id: 'org-123',
       mfa_enabled_at: opts.verified ? '2026-11-12T00:00:00.000Z' : null,
