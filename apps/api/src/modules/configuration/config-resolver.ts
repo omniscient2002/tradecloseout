@@ -123,16 +123,16 @@ function safeConfigData(value: unknown, depth = 0): boolean {
 function validateConfigValue(schema: FieldSchema, value: unknown): boolean {
   if (!safeConfigData(value)) return false;
   if (schema.type === 'keyed_array') {
-    return Array.isArray(value) && value.every(item => isConfigRecord(item) &&
-      typeof item[schema.mergeKey ?? 'key'] === 'string' &&
-      (item[schema.mergeKey ?? 'key'] as string).trim().length > 0);
+    // The keyed merge reports per-item conflicts, without silently losing
+    // unrelated valid items during a read-only preview.
+    return Array.isArray(value) && value.every(item => isConfigRecord(item));
   }
   if (schema.type === 'unkeyed_array') {
     if (!Array.isArray(value)) return false;
     if (schema.path === 'notifications.extra_recipients') {
       return value.every(recipient => typeof recipient === 'string' &&
-        /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(recipient) &&
-        recipient.length <= 254);
+        /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(recipient.trim()) &&
+        recipient.trim().length <= 254);
     }
     return true;
   }
