@@ -16,7 +16,7 @@ const queueSource = readFileSync(resolve(process.cwd(), 'src/lib/offline-upload-
   `)
   .replace(/\bexport\s+/g, '');
 const queueScript = ts.transpileModule(
-  hashSource + '\n' + queueSource + '\nwindow.__queue = { enqueueFieldUpload, drainOfflineUploadQueue, setOfflineActorPartition, listOfflineUploadDrafts, discardOfflineUploadDraft, assertOfflineDraftBudget, ApiProblemError };',
+  hashSource + '\n' + queueSource + '\nwindow.__queue = { enqueueFieldUpload, drainOfflineUploadQueue, setOfflineActorPartition, listOfflineUploadDrafts, discardOfflineUploadDraft, assertOfflineDraftBudget, getMemberOfflineActorPartition, ApiProblemError };',
   { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } },
 ).outputText;
 
@@ -314,4 +314,39 @@ test('remote abort forbidden never deletes local original', async ({ page }) => 
     return { refused, remaining: (await q.listOfflineUploadDrafts()).length };
   });
   expect(result).toEqual({ refused: true, remaining: 1 });
+});
+
+
+test('same identity after logout/login cannot revive an earlier session-generation draft', async ({ page }) => {
+  const puts = await fixture(page, false);
+  const result = await page.evaluate(async () => {
+    const q = (window as any).__queue;
+    const before = await q.listOfflineUploadDrafts();
+    q.setOfflineActorPartition(null);
+    q.setOfflineActorPartition('actor-original');
+    await q.drainOfflineUploadQueue();
+    const after = await q.listOfflineUploadDrafts();
+    await q.discardOfflineUploadDraft(after[0].queueId);
+    return { before: before[0].status, after: after[0].status,
+      remaining: (await q.listOfflineUploadDrafts()).length };
+  });
+  expect(puts).toHaveLength(0);
+  expect(result).toEqual({ before: 'QUEUED_OFFLINE', after: 'BLOCKED_SCOPE', remaining: 0 });
+});
+
+test('member evidence partition must use valid authenticated tenant and user IDs', async ({ page }) => {
+  await fixture(page, false);
+  const result = await page.evaluate(() => {
+    const q = (window as any).__queue;
+    const u = '0192e000-0000-7000-8000-000000000101';
+    const org = '0192e000-0000-7000-8000-000000000001';
+    let invalidDenied = false;
+    try { q.getMemberOfflineActorPartition('User Display Name', org); }
+    catch { invalidDenied = true; }
+    return { partition: q.getMemberOfflineActorPartition(u, org), invalidDenied };
+  });
+  expect(result).toEqual({
+    partition: 'member:0192e000-0000-7000-8000-000000000001:0192e000-0000-7000-8000-000000000101',
+    invalidDenied: true,
+  });
 });
