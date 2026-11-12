@@ -51,9 +51,21 @@ function normalizeParts(parts: PresignedPart[]): Array<{ partNumber: number; url
   return parts.map((part) => {
     const url = part.url || part.uploadUrl;
     if (!Number.isInteger(part.partNumber) || part.partNumber < 1 ||
-        typeof url !== 'string' || !/^https?:\/\//.test(url) ||
-        seen.has(part.partNumber)) {
+        typeof url !== 'string' || seen.has(part.partNumber)) {
       throw new Error('UPLOAD_PARTS_INVALID');
+    }
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      throw new Error('UPLOAD_PARTS_INVALID');
+    }
+    // Evidence must never be delivered over plaintext to a remote storage
+    // gateway. Only loopback HTTP is allowed for disposable local fixtures.
+    const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname);
+    if ((parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && loopback)) ||
+        parsed.username || parsed.password || parsed.hash) {
+      throw new Error('UPLOAD_PART_URL_INSECURE');
     }
     seen.add(part.partNumber);
     return { partNumber: part.partNumber, url, requiredHeaders: part.requiredHeaders || {} };
