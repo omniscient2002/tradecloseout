@@ -110,8 +110,8 @@ export class HandoverService {
       await client.query(
         `INSERT INTO handover_packages
           (id, org_id, project_id, version_no, status, snapshot_id, snapshot_checksum,
-           override_reason, requested_by, package_purpose)
-         VALUES ($1, $2, $3, $4, 'QUEUED', $5, $6, $7, $8, 'FULL_HANDOVER')`,
+           override_reason, requested_by, package_purpose, manifest_format_version)
+         VALUES ($1, $2, $3, $4, 'QUEUED', $5, $6, $7, $8, 'FULL_HANDOVER', 2)`,
         [
           packageId,
           ctx.orgId,
