@@ -179,6 +179,53 @@ describe('document download boundaries', () => {
       expect(storage.fetchObject).not.toHaveBeenCalled();
     });
 
+    it.each([
+      'bytes=1abc-',
+      'bytes=0-100,200-300',
+      'bytes=1--2',
+      'bytes=-0',
+      'bytes=-',
+      'bytes=0-4garbage',
+      'bytes=0-999999999999999999999',
+    ])('rejects malformed or unsafe byte range %s without fetching storage', async range => {
+      const { service, storage } = setup(streamVersion);
+      const res = createMockResponse();
+      await service.streamDocumentVersion(actor, undefined, 'version-1', { headers: { range } }, res);
+      expect(res.statusCode).toBe(416);
+      expect(res.headers['content-range']).toBe('bytes */1000');
+      expect(storage.fetchObject).not.toHaveBeenCalled();
+    });
+
+    it('honors a suffix range and clamps end beyond the verified file size', async () => {
+      const suffix = setup(streamVersion);
+      const suffixResponse = createMockResponse();
+      await suffix.service.streamDocumentVersion(actor, undefined, 'version-1', {
+        headers: { range: 'bytes=-100' },
+      }, suffixResponse);
+      expect(suffixResponse.statusCode).toBe(206);
+      expect(suffixResponse.headers['content-range']).toBe('bytes 900-999/1000');
+      expect(suffix.storage.fetchObject).toHaveBeenCalledWith(expect.objectContaining({ range: 'bytes=900-999' }));
+
+      const clamped = setup(streamVersion);
+      const clampedResponse = createMockResponse();
+      await clamped.service.streamDocumentVersion(actor, undefined, 'version-1', {
+        headers: { range: 'bytes=0-99999' },
+      }, clampedResponse);
+      expect(clampedResponse.statusCode).toBe(206);
+      expect(clampedResponse.headers['content-range']).toBe('bytes 0-999/1000');
+    });
+
+    it('rejects sizes exceeding safe JavaScript integer precision', async () => {
+      const { service, storage } = setup({
+        ...streamVersion, size_bytes: '9007199254740993',
+        observed_size_bytes: '9007199254740993',
+      });
+      await expect(service.streamDocumentVersion(actor, undefined, 'version-1', {
+        headers: {},
+      }, createMockResponse())).rejects.toThrow();
+      expect(storage.fetchObject).not.toHaveBeenCalled();
+    });
+
     it('returns HTTP 304 Not Modified when If-None-Match matches ETag', async () => {
       const { service, storage } = setup(streamVersion);
       const req = { headers: { 'if-none-match': `"${streamVersion.sha256}"` } } as any;
