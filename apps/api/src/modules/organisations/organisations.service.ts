@@ -1213,8 +1213,27 @@ export class OrganisationsService {
     };
   }
 
-  async getAuditLog(ctx: TenantActorContext, orgId: string) {
+  async getAuditLog(ctx: TenantActorContext, targetOrgId: string) {
+    const orgId = targetOrgId === 'current' ? ctx.orgId : targetOrgId;
+    if (orgId !== ctx.orgId || ctx.actorType === 'GUEST' || ctx.guestGrantId) {
+      throw new NotFoundException('ORGANISATION_NOT_FOUND');
+    }
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+      // PH2-G03: a project-scoped audit grant cannot turn the unscoped
+      // organisation audit endpoint into a full-tenant data leak.
+      // Fetch the CURRENT account and org membership inside the transaction,
+      // not the possibly stale role claims in the browser session.
+      const { rows: liveMembers } = await client.query(
+        `SELECT m.role FROM memberships m
+           JOIN users u ON u.id=m.user_id AND u.status='ACTIVE'
+          WHERE m.org_id=$1 AND m.user_id=$2 AND m.status='ACTIVE'
+          FOR SHARE OF m,u`,
+        [orgId, ctx.userId],
+      );
+      if (!liveMembers.length ||
+          !hasPermission({orgRole:liveMembers[0].role}, 'audit.read').allowed) {
+        throw new ForbiddenException({code:'AUDIT_READ_RESTRICTED'});
+      }
       const { rows } = await client.query(
         `SELECT a.id, a.org_id, a.project_id, a.actor_type, a.actor_user_id, a.action, a.entity_type, a.entity_id,
                 a.before_json, a.after_json, a.ip, a.user_agent, a.request_id, a.prev_hash, a.hash, a.chain_seq, a.created_at,
