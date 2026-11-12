@@ -37,12 +37,12 @@ export async function assertConverterWorkspace(
   const root = await realpath(workspace);
   const input = await realpath(sourcePath);
   const parent = await realpath(path.dirname(outputPdfPath));
-  const within = (file: string) => {
+  const within = (file: string, allowRoot: boolean) => {
     const relative = path.relative(root, file);
-    return relative !== '' && relative !== '..' &&
+    return (allowRoot || relative !== '') && relative !== '..' &&
       !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative);
   };
-  if (!within(input) || !within(parent)) {
+  if (!within(input, false) || !within(parent, true)) {
     throw new Error('CONVERSION_WORKSPACE_ESCAPE');
   }
   try {
