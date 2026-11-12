@@ -154,6 +154,13 @@ async function checkDocumentProcessingState(item: OfflineQueuedUpload): Promise<
 }
 
 
+/** Server-derived membership partition: never use a caller-supplied display name. */
+export function getMemberOfflineActorPartition(userId: string, orgId: string): string {
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuid.test(userId) || !uuid.test(orgId)) throw new Error('UPLOAD_ACTOR_IDENTITY_INVALID');
+  return `member:${orgId.toLowerCase()}:${userId.toLowerCase()}`;
+}
+
 export function setOfflineActorPartition(partition: string | null): void {
   if (typeof window === 'undefined') return;
   if (!partition) {
