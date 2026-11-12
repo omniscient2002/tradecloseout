@@ -308,9 +308,12 @@ export class ProjectsService {
 
       // Guard 2: Must have at least one active managing member (FR-PRJ-003)
       const { rows: mgrRows } = await client.query(
-        `SELECT id FROM project_members
-          WHERE org_id = $1 AND project_id = $2
-            AND status = 'ACTIVE' AND role IN ('R-PM','R-OWNER','R-ADMIN')
+        `SELECT pm.id FROM project_members pm
+           JOIN memberships m ON m.org_id=pm.org_id AND m.user_id=pm.user_id
+             AND m.status='ACTIVE'
+           JOIN users u ON u.id=pm.user_id AND u.status='ACTIVE'
+          WHERE pm.org_id = $1 AND pm.project_id = $2
+            AND pm.status = 'ACTIVE' AND pm.role IN ('R-PM','R-OWNER','R-ADMIN')
           LIMIT 1`,
         [ctx.orgId, projectId],
       );
@@ -992,8 +995,8 @@ export class ProjectsService {
           WHERE org_id = $1 AND project_id = $2 AND user_id = $3 FOR UPDATE`,
         [ctx.orgId, projectId, dto.userId],
       );
-      if (existing[0]?.status === 'ACTIVE' && existing[0].role === 'R-PM' &&
-          dto.role !== 'R-PM') {
+      if (existing[0]?.status === 'ACTIVE' &&
+          ['R-PM','R-OWNER','R-ADMIN'].includes(existing[0].role) && dto.role !== 'R-PM') {
         await this.ensureAnotherActiveProjectManager(client, ctx.orgId, projectId, dto.userId);
       }
 
