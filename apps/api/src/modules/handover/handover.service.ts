@@ -429,6 +429,169 @@ export class HandoverService {
   }
 
   /**
+   * PH4-G14-001/003: explicit cancellation before READY.
+   * Cancellation is durable and fences the worker's READY compare-and-set.
+   * No provider delivery or successful artifact is implied.
+   */
+  async cancelHandoverPackage(
+    ctx: TenantActorContext,
+    projectId: string,
+    packageId: string,
+    input: { expectedRowVersion: number; reason: string },
+  ) {
+    if (!Number.isSafeInteger(input?.expectedRowVersion) || input.expectedRowVersion < 1 ||
+        typeof input.reason !== 'string' || input.reason.trim().length < 10 ||
+        input.reason.length > 1000) {
+      throw new UnprocessableEntityException({ code: 'PACKAGE_CANCELLATION_INPUT_INVALID' });
+    }
+    return withTenantTransaction(this.pool, ctx, async (client) => {
+      const { rows: projects } = await client.query(
+        `SELECT id, status FROM projects
+          WHERE org_id = $1 AND id = $2 FOR UPDATE`,
+        [ctx.orgId, projectId],
+      );
+      if (!projects.length) throw new NotFoundException({ code: 'PROJECT_NOT_FOUND' });
+      if (!['ACTIVE', 'HANDOVER'].includes(projects[0].status)) {
+        throw new ConflictException({ code: 'PACKAGE_PROJECT_LIFECYCLE_BLOCKED' });
+      }
+      const { rows } = await client.query(
+        `SELECT id, status, row_version, pdf_object_id, package_purpose
+           FROM handover_packages
+          WHERE org_id = $1 AND project_id = $2 AND id = $3 FOR UPDATE`,
+        [ctx.orgId, projectId, packageId],
+      );
+      const pkg = rows[0];
+      if (!pkg) throw new NotFoundException({ code: 'HANDOVER_PACKAGE_NOT_FOUND' });
+      if (pkg.row_version !== input.expectedRowVersion) {
+        throw new ConflictException({ code: 'PACKAGE_ROW_VERSION_CONFLICT' });
+      }
+      if (pkg.package_purpose !== 'FULL_HANDOVER' ||
+          !['QUEUED', 'GENERATING', 'FAILED'].includes(pkg.status) || pkg.pdf_object_id) {
+        throw new ConflictException({ code: 'PACKAGE_NOT_CANCELLABLE' });
+      }
+      const { rows: submitted } = await client.query(
+        `SELECT id FROM submissions
+          WHERE org_id = $1 AND project_id = $2 AND package_id = $3 LIMIT 1`,
+        [ctx.orgId, projectId, packageId],
+      );
+      if (submitted.length) throw new ConflictException({ code: 'PACKAGE_ALREADY_SUBMITTED' });
+      const { rows: updated } = await client.query(
+        `UPDATE handover_packages
+            SET status = 'CANCELLED', error_code = 'PACKAGE_CANCELLED',
+                error_detail = $4, row_version = row_version + 1, updated_at = now()
+          WHERE org_id = $1 AND project_id = $2 AND id = $3
+            AND row_version = $5 AND status IN ('QUEUED', 'GENERATING', 'FAILED')
+          RETURNING id, status, row_version`,
+        [ctx.orgId, projectId, packageId, input.reason.trim(), input.expectedRowVersion],
+      );
+      if (!updated.length) throw new ConflictException({ code: 'PACKAGE_CANCEL_CONFLICT' });
+      // Cancellation is an audit-only domain decision. Do not enqueue an
+      // unsupported worker dispatch event, which would poison the outbox.
+      await client.query(
+        `INSERT INTO audit_events
+          (id, org_id, project_id, actor_type, actor_user_id, action, entity_type, entity_id,
+           before_json, after_json, ip, user_agent, request_id, created_at)
+         VALUES ($1, $2, $3, $4, $5, 'HANDOVER_PACKAGE_CANCELLED',
+                 'HANDOVER_PACKAGE', $6, $7::jsonb, $8::jsonb, $9, $10, $11, now())`,
+        [
+          uuidv7(), ctx.orgId, projectId, ctx.actorType === 'MEMBER' ? 'USER' : ctx.actorType,
+          ctx.userId, packageId,
+          JSON.stringify({ status: pkg.status, rowVersion: pkg.row_version }),
+          JSON.stringify({ status: 'CANCELLED', reason: input.reason.trim(),
+            rowVersion: updated[0].row_version }),
+          ctx.ip, ctx.userAgent, ctx.requestId,
+        ],
+      );
+      return updated[0];
+    });
+  }
+
+  /**
+   * PH4-G14-003: explicit authorised retry of a FAILED frozen package. The
+   * original version and immutable receipts remain; quota is not charged twice.
+   * Re-enqueue a distinct worker command, never resurrect CANCELLED or READY.
+   */
+  async retryHandoverPackage(
+    ctx: TenantActorContext,
+    projectId: string,
+    packageId: string,
+    input: { expectedRowVersion: number; reason: string },
+  ) {
+    if (!Number.isSafeInteger(input?.expectedRowVersion) || input.expectedRowVersion < 1 ||
+        typeof input.reason !== 'string' || input.reason.trim().length < 10 ||
+        input.reason.length > 1000) {
+      throw new UnprocessableEntityException({ code: 'PACKAGE_RETRY_INPUT_INVALID' });
+    }
+    return withTenantTransaction(this.pool, ctx, async (client, emit) => {
+      const { rows: projects } = await client.query(
+        `SELECT id, status FROM projects
+          WHERE org_id = $1 AND id = $2 FOR UPDATE`,
+        [ctx.orgId, projectId],
+      );
+      if (!projects.length) throw new NotFoundException({ code: 'PROJECT_NOT_FOUND' });
+      if (!['ACTIVE', 'HANDOVER'].includes(projects[0].status)) {
+        throw new ConflictException({ code: 'PACKAGE_PROJECT_LIFECYCLE_BLOCKED' });
+      }
+      const { rows: packages } = await client.query(
+        `SELECT id, status, row_version, version_no, pdf_object_id,
+                snapshot_id, snapshot_checksum, package_purpose, manifest_format_version
+           FROM handover_packages
+          WHERE org_id = $1 AND project_id = $2 AND id = $3 FOR UPDATE`,
+        [ctx.orgId, projectId, packageId],
+      );
+      const pkg = packages[0];
+      if (!pkg) throw new NotFoundException({ code: 'HANDOVER_PACKAGE_NOT_FOUND' });
+      if (pkg.row_version !== input.expectedRowVersion) {
+        throw new ConflictException({ code: 'PACKAGE_ROW_VERSION_CONFLICT' });
+      }
+      if (pkg.status !== 'FAILED' || pkg.pdf_object_id ||
+          pkg.package_purpose !== 'FULL_HANDOVER' || pkg.manifest_format_version !== 2) {
+        throw new ConflictException({ code: 'PACKAGE_NOT_RETRYABLE' });
+      }
+      const { rows: submitted } = await client.query(
+        `SELECT id FROM submissions
+          WHERE org_id = $1 AND project_id = $2 AND package_id = $3 LIMIT 1`,
+        [ctx.orgId, projectId, packageId],
+      );
+      if (submitted.length) throw new ConflictException({ code: 'PACKAGE_ALREADY_SUBMITTED' });
+      const { rows: liveSnapshots } = await client.query(
+        `SELECT id FROM checklist_snapshots
+          WHERE org_id = $1 AND project_id = $2 AND id = $3
+            AND checksum = $4 AND status = 'ACTIVE' FOR SHARE`,
+        [ctx.orgId, projectId, pkg.snapshot_id, pkg.snapshot_checksum],
+      );
+      if (!liveSnapshots.length) {
+        throw new ConflictException({ code: 'PACKAGE_SNAPSHOT_SUPERSEDED' });
+      }
+      const readiness = await evaluateReadinessInTransaction(client, ctx.orgId, projectId);
+      if (!readiness.readyWithoutOverride) {
+        throw new ConflictException({ code: 'PACKAGE_RETRY_READINESS_BLOCKED' });
+      }
+      const { rows: updated } = await client.query(
+        `UPDATE handover_packages
+            SET status = 'QUEUED', error_code = NULL, error_detail = NULL,
+                row_version = row_version + 1, updated_at = now()
+          WHERE org_id = $1 AND project_id = $2 AND id = $3
+            AND row_version = $4 AND status = 'FAILED'
+          RETURNING id, status, row_version`,
+        [ctx.orgId, projectId, packageId, input.expectedRowVersion],
+      );
+      if (!updated.length) throw new ConflictException({ code: 'PACKAGE_RETRY_CONFLICT' });
+      emit({
+        eventType: 'HANDOVER_PACKAGE_QUEUED',
+        projectId, entityType: 'HANDOVER_PACKAGE', entityId: packageId,
+        beforeJson: { status: 'FAILED', rowVersion: pkg.row_version },
+        afterJson: {
+          status: 'QUEUED', retry: true, versionNo: pkg.version_no,
+          reason: input.reason.trim(), snapshotChecksum: pkg.snapshot_checksum,
+          rowVersion: updated[0].row_version,
+        },
+      });
+      return { ...updated[0], packageId, retried: true };
+    });
+  }
+
+  /**
    * API-117: POST /api/v1/submissions/:id/decision
    * Records recipient decision (ACCEPT / ACCEPT_WITH_EXCEPTIONS / REJECT) and writes
    * exceptions back as requirement_change_requests (SCR-031 / AUD-P-16).
