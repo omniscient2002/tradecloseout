@@ -107,6 +107,12 @@ export function UploadEvidenceModal({
     }
   }, [open, requirement?.id, refreshDrafts]);
 
+  // Switching a target project/obligation or unmounting the dialog cancels
+  // an unfinished local capture rather than saving under a stale target.
+  useEffect(() => {
+    return () => captureControllerRef.current?.abort();
+  }, [projectId, requirement?.id]);
+
   if (!requirement) return null;
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -132,6 +138,7 @@ export function UploadEvidenceModal({
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (captureControllerRef.current) return; // synchronous double-submit fence
     const form = e.currentTarget;
     if (!file) {
       setError("Please select a document or test record file.");
