@@ -186,6 +186,17 @@ export async function executeReviewDecision(
       );
     }
 
+    // Keep the legacy helper consistent with the canonical version-level
+    // terminal outcome: no pending assignment may remain actionable.
+    await client.query(
+      `UPDATE reviews
+          SET status = 'CANCELLED', row_version = row_version + 1,
+              recorded_at = now(),
+              comment = COALESCE(comment, 'Cancelled following terminal document decision')
+        WHERE org_id = $1 AND project_id = $2 AND document_version_id = $3
+          AND status IN ('PENDING', 'IN_REVIEW')`,
+      [ctx.activeOrgId, input.projectId, input.documentVersionId],
+    );
     await client.query('COMMIT');
     return {
       documentVersionId: input.documentVersionId,
