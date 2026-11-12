@@ -179,15 +179,20 @@ export class AssetsService {
       // If this asset replaces an older unit, link replacement lineage (FR-AST-006 / FR-AST-011)
       if (input.replacesAssetId) {
         await this.assertCurrentAssetAccess(client, ctx, projectId, input.replacesAssetId, true);
-        await client.query(
+        const prior = await client.query(
           `UPDATE assets
               SET status = 'REPLACED',
                   replaced_by_asset_id = $4,
                   row_version = row_version + 1,
                   updated_at = now()
-            WHERE org_id = $1 AND project_id = $2 AND id = $3`,
+            WHERE org_id = $1 AND project_id = $2 AND id = $3
+              AND status = 'ACTIVE' AND replaced_by_asset_id IS NULL AND deleted_at IS NULL
+            RETURNING id`,
           [ctx.orgId, projectId, input.replacesAssetId, assetId],
         );
+        if (prior.rows.length !== 1) {
+          throw new ConflictException('REPLACED_ASSET_NOT_ACTIVE');
+        }
       }
 
       // Instantiate asset-scoped requirements from active snapshot (AUD-002 / FR-AST-005)
@@ -366,6 +371,18 @@ export class AssetsService {
       const modelChanged = dto.model !== undefined && dto.model.trim() !== (current.model || '');
       const serialChanged = dto.serialNo !== undefined && dto.serialNo.trim() !== (current.serial_no || '');
       const locationChanged = dto.location !== undefined && dto.location.trim() !== (current.location || '');
+
+      if (dto.status !== undefined) {
+        throw new UnprocessableEntityException('ASSET_STATUS_REQUIRES_DEDICATED_TRANSITION');
+      }
+      if (tagChanged) {
+        const { rows: collision } = await client.query(
+          `SELECT id FROM assets WHERE org_id = $1 AND project_id = $2
+            AND upper(tag) = upper($3) AND id <> $4 AND deleted_at IS NULL LIMIT 1`,
+          [ctx.orgId, projectId, normalizedUpdateTag, assetId],
+        );
+        if (collision.length) throw new ConflictException('DUPLICATE_ASSET_TAG');
+      }
 
       const identityChanged = tagChanged || nameChanged || makeChanged || modelChanged || serialChanged || locationChanged;
 
@@ -675,8 +692,17 @@ export class AssetsService {
     options: { conflictStrategy?: 'SKIP' | 'FAIL' | 'UPDATE'; atomic?: boolean } = {},
   ) {
     const conflictStrategy = options.conflictStrategy || 'SKIP';
+    if (!Array.isArray(items) || items.length < 1 || items.length > 500) {
+      throw new UnprocessableEntityException('IMPORT_ROW_COUNT_INVALID');
+    }
+    if (options.atomic !== undefined && typeof options.atomic !== 'boolean') {
+      throw new UnprocessableEntityException('IMPORT_ATOMIC_FLAG_INVALID');
+    }
     if (conflictStrategy === 'UPDATE') {
       throw new UnprocessableEntityException('IMPORT_UPDATE_NOT_SUPPORTED');
+    }
+    if (conflictStrategy !== 'FAIL' && conflictStrategy !== 'SKIP') {
+      throw new UnprocessableEntityException('IMPORT_CONFLICT_STRATEGY_INVALID');
     }
     const isAtomic = options.atomic !== false;
 
@@ -703,10 +729,15 @@ export class AssetsService {
       const item = items[i];
       const rowNumber = i + 1;
 
-      if (!item.tag || !item.name || !item.categoryKey) {
+      if (!item || typeof item !== 'object' ||
+          typeof item.tag !== 'string' ||
+          typeof item.name !== 'string' || !item.name.trim() ||
+          item.name.trim().length > 200 ||
+          typeof item.categoryKey !== 'string' ||
+          !/^[A-Za-z0-9_.:-]{1,80}$/.test(item.categoryKey)) {
         results.push({
           rowNumber,
-          tag: item.tag || 'UNKNOWN',
+          tag: typeof item?.tag === 'string' ? item.tag : 'UNKNOWN',
           status: 'ERROR',
           error: 'Missing required fields tag, name, or categoryKey',
         });
