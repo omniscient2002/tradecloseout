@@ -1165,13 +1165,18 @@ export class DocumentsService {
       );
       const freedBytes = BigInt(sizeRows[0]?.total_bytes || 0);
       if (freedBytes > 0n) {
-        await client.query(
+        const adjusted = await client.query(
           `UPDATE usage_counters
               SET value = GREATEST(0::numeric, value::numeric - $2::numeric)::bigint,
                   updated_at = now()
-            WHERE org_id = $1 AND metric = 'STORAGE_BYTES' AND period = 'ALL_TIME'`,
+            WHERE org_id = $1 AND metric = 'STORAGE_BYTES' AND period = 'ALL_TIME'
+              AND value >= $2::bigint`,
           [ctx.orgId, freedBytes.toString()],
         );
+        if (adjusted.rowCount !== 1) {
+          // A failed counter reconciliation must roll back the document delete.
+          throw new ConflictException('STORAGE_QUOTA_RECONCILIATION_REQUIRED');
+        }
       }
 
       return { documentId, deleted: true, refundedBytes: Number(freedBytes) };
@@ -1204,13 +1209,18 @@ export class DocumentsService {
       );
       const readdedBytes = BigInt(sizeRows[0]?.total_bytes || 0);
       if (readdedBytes > 0n) {
-        await client.query(
+        const adjusted = await client.query(
           `UPDATE usage_counters
               SET value = (value::numeric + $2::numeric)::bigint,
                   updated_at = now()
-            WHERE org_id = $1 AND metric = 'STORAGE_BYTES' AND period = 'ALL_TIME'`,
+            WHERE org_id = $1 AND metric = 'STORAGE_BYTES' AND period = 'ALL_TIME'
+              AND value <= 9223372036854775807::bigint - $2::bigint`,
           [ctx.orgId, readdedBytes.toString()],
         );
+        if (adjusted.rowCount !== 1) {
+          // Do not make a document visible again if quota accounting cannot commit.
+          throw new ConflictException('STORAGE_QUOTA_RECONCILIATION_REQUIRED');
+        }
       }
 
       return { documentId, restored: true, readdedBytes: Number(readdedBytes) };
