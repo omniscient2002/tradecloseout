@@ -865,7 +865,8 @@ export class ProjectsService {
    * API-032 GET /projects/:id
    */
   async getProject(ctx: TenantActorContext, projectId: string) {
-    if ((ctx.actorType === 'GUEST' || ctx.guestGrantId) && ctx.guestProjectId && ctx.guestProjectId !== projectId) {
+    if ((ctx.actorType === 'GUEST' || ctx.guestGrantId) &&
+        (!ctx.guestProjectId || ctx.guestProjectId !== projectId)) {
       throw new NotFoundException('PROJECT_NOT_FOUND');
     }
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
@@ -882,7 +883,8 @@ export class ProjectsService {
   }
 
   async getProjectDashboard(ctx: TenantActorContext, projectId: string) {
-    if ((ctx.actorType === 'GUEST' || ctx.guestGrantId) && ctx.guestProjectId && ctx.guestProjectId !== projectId) {
+    if ((ctx.actorType === 'GUEST' || ctx.guestGrantId) &&
+        (!ctx.guestProjectId || ctx.guestProjectId !== projectId)) {
       throw new NotFoundException('PROJECT_NOT_FOUND');
     }
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
