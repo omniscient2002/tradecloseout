@@ -360,6 +360,8 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
         withTenantContext: jest.fn().mockImplementation(async (ctx, fn) => {
           const client = {
             query: jest.fn().mockImplementation(async (sql: string, params?: any[]) => {
+              if (sql.includes('SELECT m.role AS org_role')) return { rows: [{ org_role: 'R-OWNER' }] };
+              if (sql.includes('SELECT status FROM projects')) return { rows: [{ status: 'ACTIVE' }] };
               if (sql.includes('SELECT * FROM reviews WHERE org_id = $1 AND id = $2')) {
                 return {
                   rows: [
@@ -379,6 +381,7 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
                     {
                       id: versionId,
                       document_id: 'doc-pressure-test',
+                      project_id: projectId,
                       file_status: 'READY',
                       review_status: 'IN_REVIEW',
                       uploaded_by: 'another-user-id',
@@ -392,6 +395,7 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
                   rows: [
                     {
                       id: 'doc-pressure-test',
+                      project_id: projectId,
                       category_key: 'DT-018', // Pressure / Hydrostatic Test Report
                       latest_version_id: versionId,
                     },
@@ -427,6 +431,8 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
         withTenantContext: jest.fn().mockImplementation(async (ctx, fn) => {
           const client = {
             query: jest.fn().mockImplementation(async (sql: string, params?: any[]) => {
+              if (sql.includes('SELECT m.role AS org_role')) return { rows: [{ org_role: 'R-OWNER' }] };
+              if (sql.includes('SELECT status FROM projects')) return { rows: [{ status: 'ACTIVE' }] };
               if (sql.includes('SELECT * FROM reviews WHERE org_id = $1 AND id = $2')) {
                 return {
                   rows: [
@@ -446,6 +452,7 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
                     {
                       id: versionId,
                       document_id: 'doc-pressure-test',
+                      project_id: projectId,
                       file_status: 'READY',
                       review_status: 'IN_REVIEW',
                       uploaded_by: 'another-user-id',
@@ -459,6 +466,7 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
                   rows: [
                     {
                       id: 'doc-pressure-test',
+                      project_id: projectId,
                       category_key: 'DT-018',
                       latest_version_id: versionId,
                     },
