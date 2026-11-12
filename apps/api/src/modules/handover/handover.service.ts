@@ -887,6 +887,32 @@ export class HandoverService {
         });
       }
       const packageId = latest.id;
+      // An emergency quarantine may occur after package generation without
+      // rewriting historical review decisions. Re-check the included evidence
+      // under row locks before dispatching any new customer acceptance request.
+      // FOR SHARE serializes this decision with RB-09's storage-object update.
+      const { rows: includedEvidence } = await client.query(
+        `SELECT pi.id, dv.file_status, dv.review_status,
+                so.status AS storage_status, so.provider_version_id, so.sha256
+           FROM package_items pi
+           JOIN document_versions dv
+             ON dv.org_id = pi.org_id AND dv.project_id = pi.project_id
+            AND dv.id = pi.document_version_id
+           JOIN storage_objects so
+             ON so.org_id = dv.org_id AND so.id = dv.object_id
+          WHERE pi.org_id = $1 AND pi.project_id = $2 AND pi.package_id = $3
+            AND pi.included = true
+          FOR SHARE OF dv, so`,
+        [ctx.orgId, targetProjectId, packageId],
+      );
+      if (includedEvidence.some((row) =>
+          row.file_status !== 'READY' || row.review_status !== 'APPROVED' ||
+          row.storage_status !== 'READY' || !row.provider_version_id || !row.sha256)) {
+        throw new ConflictException({
+          code: 'HANDOVER_PACKAGE_EVIDENCE_NO_LONGER_QUALIFIED',
+          detail: 'A source document has been quarantined or is no longer approved; regenerate the package before submitting.',
+        });
+      }
       const submissionId = uuidv7();
       await client.query(
         `INSERT INTO submissions (id, org_id, project_id, package_id, status, submitted_by, submitted_at, cover_note)
