@@ -16,6 +16,7 @@ export interface ExecutionContext {
   guestScope?: Record<string, unknown>;
   guestCapabilities?: string[];
   sessionId?: string;
+  sessionTokenHash?: string;
 }
 
 @Injectable()
