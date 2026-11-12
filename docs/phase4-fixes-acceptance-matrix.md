@@ -69,3 +69,7 @@
 - No independent QA, architecture, HVAC, finance, legal, customer or operations reviewer has accepted the exact candidate. No deployment, merge or production sign-off is claimed.
 
 **Count:** 52 findings; 7 external gates; 10 partial remediation areas; 35 not yet addressed areas.
+
+## Dedicated PR and CI constraint
+
+This Phase 4 branch is stacked on the audited Phase 1 candidate. Its preferred review base is `fix/phase1-foundation-repairs-20261112` so the proposed Phase 4 diff is independently readable. Repository CI currently triggers pull requests into `main` only; when running exact-head CI via a temporary `main` PR target, retarget the same draft PR to the Phase 1 branch after recording the run. This is a test operation, not an instruction to merge unreviewed Phase 1 changes.
