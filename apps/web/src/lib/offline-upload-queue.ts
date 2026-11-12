@@ -89,6 +89,19 @@ export interface OfflineUploadDraftSummary {
   createdAt: number;
   lastError?: string;
   hasActiveIntent: boolean;
+  canRecoverLocalOnly: boolean;
+}
+
+/** A lost intent POST is unknowable without its durable pre-network marker. */
+function isProvablyLocalOnly(item: OfflineQueuedUpload): boolean {
+  return Boolean(item.actorEpoch) &&
+    Number.isSafeInteger(item.requirementRowVersion) &&
+    (item.requirementRowVersion as number) > 0 &&
+    ['QUEUED_OFFLINE', 'BLOCKED_SCOPE'].includes(item.status) &&
+    !item.uploadIntentRequestedAt && !item.uploadIntent &&
+    item.uploadedParts.length === 0 && !item.completedUploadAt &&
+    !item.completionRequestedAt && !item.retryCount && !item.nextAttemptAt &&
+    !item.terminalFailure;
 }
 
 export function assertOfflineDraftBudget(
@@ -257,6 +270,8 @@ export async function listOfflineUploadDrafts(): Promise<OfflineUploadDraftSumma
         createdAt: item.createdAt,
         lastError: item.lastError,
         hasActiveIntent: Boolean(item.uploadIntent),
+        canRecoverLocalOnly: item.actorPartition.startsWith('member:') &&
+          item.actorEpoch !== activeEpoch && isProvablyLocalOnly(item),
       }))
       .sort((a, b) => b.createdAt - a.createdAt);
   } finally {
@@ -346,12 +361,7 @@ export async function recoverOfflineUploadDraft(queueId: string): Promise<void> 
       // server. An offline-only original is eligible even if an auth boundary
       // marked it BLOCKED_SCOPE: the durable pre-POST checkpoint is decisive.
       // Legacy records whose network history cannot be proven stay blocked.
-      if (!item.actorEpoch || !item.requirementRowVersion ||
-          !['QUEUED_OFFLINE', 'BLOCKED_SCOPE'].includes(item.status) ||
-          item.uploadIntentRequestedAt || item.uploadIntent ||
-          item.uploadedParts.length > 0 || item.completedUploadAt ||
-          item.completionRequestedAt || item.retryCount || item.nextAttemptAt ||
-          item.terminalFailure) {
+      if (!item.actorPartition.startsWith('member:') || !isProvablyLocalOnly(item)) {
         throw new Error('UPLOAD_REMOTE_INTENT_RECOVERY_UNSUPPORTED: Inspect or discard the remote intent first.');
       }
 
