@@ -140,9 +140,9 @@ describe('PH4-G17-005/006 Pass 2 defect revisions and recovery', () => {
     expect(state.closure_evidence_object_id).toBeNull();
     const old = actions(calls)[0].params;
     expect(old[4]).toBe('REMEDY_REJECTED');
-    expect(old[13]).toBe(objectId);
-    expect(old[14]).toBe(versionId);
-    expect(old[15]).toBe(reason);
+    expect(old[15]).toBe(objectId);
+    expect(old[16]).toBe(versionId);
+    expect(old[17]).toBe(reason);
     const remedied = await service.submitDefectRemedy(
       {...pm(), userId: assigneeId}, projectId, defectId, objectId, 2,
     );
