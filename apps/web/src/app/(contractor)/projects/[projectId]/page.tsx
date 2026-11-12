@@ -46,6 +46,7 @@ import { AddRequirementModal } from "@/components/modals/add-requirement-modal";
 import { ExternalApprovalModal } from "@/components/modals/external-approval-modal";
 import { apiFetch, ApiProblemError } from "@/lib/api-client";
 import { downloadCsv } from "@/lib/csv-export";
+import { getMemberOfflineActorPartition, setOfflineActorPartition } from "@/lib/offline-upload-queue";
 
 /* -------------------------------------------------------------------------- */
 /* TYPES & CONSTANTS                                                          */
@@ -285,8 +286,22 @@ export default function ProjectWorkspacePage() {
   // Detect connectivity
   useEffect(() => {
     apiFetch<any>("/api/v1/auth/me")
-      .then((u: any) => u && setCurrentUser(u))
-      .catch(() => {});
+      .then((user: any) => {
+        if (!user?.userId || !user?.activeOrgId) {
+          setCurrentUser(null);
+          setOfflineActorPartition(null);
+          return;
+        }
+        setCurrentUser(user);
+        // Actor and tenant come from the authenticated server session, not
+        // a form field or stale browser preference. An org change re-partitions
+        // queued drafts rather than replaying them under another authority.
+        setOfflineActorPartition(getMemberOfflineActorPartition(user.userId, user.activeOrgId));
+      })
+      .catch(() => {
+        setCurrentUser(null);
+        setOfflineActorPartition(null);
+      });
 
     const onOnline = () => setIsOffline(false);
     const onOffline = () => setIsOffline(true);
