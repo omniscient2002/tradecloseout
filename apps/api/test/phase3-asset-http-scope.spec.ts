@@ -46,6 +46,12 @@ describe('PH3-G08-002 HTTP routes — asset scope and live revocation', () => {
           [id, orgId, projectId, tag, userId],
         );
       }
+      // The readable predecessor points at a successor that is NOT in scope.
+      await admin.query(
+        `UPDATE assets SET status = 'REPLACED', replaced_by_asset_id = $3
+           WHERE org_id = $1 AND id = $2`,
+        [orgId, visibleId, hiddenId],
+      );
 
       const testModule = await Test.createTestingModule({
         controllers: [AssetsController],
@@ -80,7 +86,15 @@ describe('PH3-G08-002 HTTP routes — asset scope and live revocation', () => {
 
         const listed = await call('');
         expect(listed.status).toBe(200);
-        expect((await listed.json() as any[]).map((a: any) => a.id)).toEqual([visibleId]);
+        const visibleList = await listed.json() as any[];
+        expect(visibleList.map((a: any) => a.id)).toEqual([visibleId]);
+        expect(visibleList[0].replaced_by_asset_id).toBeNull();
+        expect(visibleList[0].replacementRestricted).toBe(true);
+        const visibleDetail = await call(`/${visibleId}`);
+        expect(visibleDetail.status).toBe(200);
+        const visibleBody = await visibleDetail.json() as any;
+        expect(visibleBody.replaced_by_asset_id).toBeNull();
+        expect(visibleBody.replacementRestricted).toBe(true);
 
         const exported = await call('/export');
         expect(exported.status).toBe(200);
