@@ -17,13 +17,13 @@
 | PH5-G23-003 | OPEN | Server-derived per-action capability UI missing |
 | PH5-G23-004 | PARTIAL | Removed invented warranty/defect defaults and exact BigInt-only INR paise display (invalid money is unavailable, not zero); authoritative scoped reporting/search still missing |
 | PH5-G23-005 | CANDIDATE | Safe UTF-8 CSV/Blob export, formula-prefix policy, regression tests; consumer/large-file acceptance pending |
-| PH5-G23-006 | PARTIAL | Technical evidence upload has associated labels, keyboard-accessible file input and live/error messages; full assistive-tech/mobile journey verification missing |
+| PH5-G23-006 | PARTIAL | Technical evidence upload has associated labels, live/error messages, draft status and explicit recovery/discard confirmations with project and requirement context; full keyboard/screen-reader/mobile acceptance missing |
 | PH5-G23-007 | PARTIAL | Warranty/defect, equipment, reviews and packages distinguish denied/failed/malformed from valid empty state; affected views have visible retry. Project-route and per-request-generation fences block stale responses across core loads; other pages and full browser denial/timeout replay pending |
 | PH5-G23-008 | BLOCKED_EXTERNAL | Human user/accessibility acceptance |
 | PH5-G22-001 | CANDIDATE | Bounded URL refresh/retry, stable uploaded receipts, backend blocks refresh when intent is no longer PENDING_UPLOAD/PENDING; real provider acceptance pending |
 | PH5-G22-002 | CANDIDATE | Origin-wide Web Locks serialize drains; unsupported environments fail closed; tab crash/mobile coverage pending |
 | PH5-G22-003 | PARTIAL | Scoped upload-state endpoint checks version AND backing storage (including upload-only guests); completion checkpoint and server-first lost-response reconciliation; durable exponential 30s–1h retry with six-attempt ceiling, terminal-failure quarantine, and current-actor-only writes; deliberate rebind/cancel and real provider acceptance pending |
-| PH5-G22-004 | PARTIAL | Server-derived member/tenant queue partition, auth/tenant-boundary epoch rotation and strict no-auto-replay after same-user re-login; original actor can list/discard old generation; explicit authorized recovery UI remains open |
+| PH5-G22-004 | PARTIAL | Same authenticated member/tenant can explicitly recover previous-epoch **local-only** original after server `document.upload` permission and live project/requirement checks; UI shows original target IDs. No automatic replay, no cross-actor/guest/remote-intent rebind. Cross-service browser/API/RLS and real-device acceptance still pending |
 | PH5-G22-005 | PARTIAL | Atomic 100 MiB file/300 MiB actor/500 MiB browser/10-draft caps; account-scoped inventory without cross-account queue mutation; abort-first discard and explicit old-epoch abort reconciliation, preserving originals on denial; TTL/eviction/real-device proof pending |
 | PH5-G22-006 | CANDIDATE | Incremental 1 MiB SHA-256 original-byte hashing matches known vectors/Node crypto across block boundaries; real 100 MiB mobile peak-memory and worker/cancellation evidence pending |
 | PH5-G22-007 | PARTIAL | No closed-tab provider writes; unsupported lock surfaces fail closed; upload modal explicitly distinguishes saved draft vs scanned/verified evidence; device/scope acceptance pending |
@@ -42,7 +42,7 @@
 
 The browser regression file `apps/web/e2e/offline-queue-phase5.spec.ts` executes the actual queue against a stubbed API client, real Chromium IndexedDB/Web Locks and loopback HTTP PUTs. It covers expired presigned URL refresh, concurrent drains, actor isolation, per-actor/global quota, scoped draft inventory/discard, missing completion responses and same-key retry when the server remains pending, plus injected browser-storage exhaustion. `apps/web/e2e/chunked-sha256.spec.ts` compares original-byte SHA-256 against known empty/abc vectors and Node crypto across padding/segment boundaries. `apps/web/e2e/csv-export.spec.ts` covers Unicode, #/%/CRLF, quoting, formula prefixes and malformed values. Backend regressions check restricted incident SQL privileges and deny refresh of quarantined upload intents. These are fixture/DB mechanics tests, **not** production provider or end-to-end acceptance.
 
-**Latest verified passing engineering head before this ledger edit:** `8fa78280ed1ecefe6bc9ce79692d4143c368ffa0`, GitHub `verify-and-test` and `group-register` successful, with **281/281 API**, **39/39 Chromium archive-project**, **15/15 security** and **44/44 shared** tests. This head includes project-page loading/empty/error and stale-generation guards plus the shared list-parser tests. The later strict dashboard parser needs an exact-head CI result. Do not infer human/provider acceptance from green fixture tests.
+**Latest verified passing engineering head before this ledger edit:** `79f2f46cc1c683e57bdea04e322476a54c2b299a`, GitHub `verify-and-test` and `group-register` successful, with **281/281 API**, **42/42 Chromium archive-project**, **15/15 security** and **44/44 shared** tests. This covers strict dashboard/checklist DTO and current-project guards. New member-only draft recovery commits require a separate exact-head CI check. Do not infer human/provider acceptance from green fixture tests.
 
 Useful commands on a clean Node 22/pnpm 12.4.1 checkout with isolated PG16/Redis and Chromium:
 ```sh
@@ -74,6 +74,10 @@ The foreground drain is limited to one sender per origin via Web Locks. Transien
 ## Actor-bound queue recovery contract
 
 On the contractor project screen, `GET /api/v1/auth/me` supplies `userId` and `activeOrgId`; these define the upload partition instead of stale browser-provided input. Session and organisation changes clear the partition and rotate a non-secret local generation value. Enqueued originals are tagged with their current generation; legacy drafts without one and pre-logout drafts are **not automatically replayed**, even if the same user signs back in. The returning original actor may inspect and deliberately discard drafts; restoring old bytes for upload would require an explicit server-verified authority check and user confirmation (still outstanding). Browser-local storage is **not** a security boundary against people sharing one OS/browser profile.
+
+## Explicit older-session member draft recovery (PH5-G22-004)
+
+The recovery action is intentionally **not** an automatic backfill after logout/login. It only works for a local original with no `uploadIntent`, completed part receipts or completion checkpoint. Under the shared Web Lock, the queue checks the current authenticated `/auth/me` identity against its original member/org partition and asks `GET /projects/:projectId/documents/recover-upload-authority/:requirementId` for a fresh current `document.upload` permission and live, non-superseded project/requirement state. It then rebinds the actor epoch without transmitting bytes during the confirmation action. Guest grant, different member/tenant and prior remote intents remain **blocked**. This is not a background-sync promise and does not certify the full multi-tenant UI/browser/API/worker journey.
 
 ## Incident operation limitations (PH5-G28-001)
 
