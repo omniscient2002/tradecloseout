@@ -16,7 +16,7 @@ const queueSource = readFileSync(resolve(process.cwd(), 'src/lib/offline-upload-
   `)
   .replace(/\bexport\s+/g, '');
 const queueScript = ts.transpileModule(
-  hashSource + '\n' + queueSource + '\nwindow.__queue = { enqueueFieldUpload, drainOfflineUploadQueue, setOfflineActorPartition, listOfflineUploadDrafts, discardOfflineUploadDraft, assertOfflineDraftBudget, getMemberOfflineActorPartition, ApiProblemError };',
+  hashSource + '\n' + queueSource + '\nwindow.__queue = { enqueueFieldUpload, drainOfflineUploadQueue, setOfflineActorPartition, listOfflineUploadDrafts, discardOfflineUploadDraft, assertOfflineDraftBudget, getMemberOfflineActorPartition, nextUploadRetryDelay, isTransientUploadFailure, ApiProblemError };',
   { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } },
 ).outputText;
 
@@ -427,4 +427,55 @@ test('guest upload status uses only upload permission response and does not requ
   });
   expect(puts).toEqual(['expired']);
   expect(result).toEqual({ statusQueries: 1, readQueries: 0, remaining: 0 });
+});
+
+test('retry classifier limits retry storms to transient network/provider failures', async ({ page }) => {
+  await fixture(page, false);
+  const result = await page.evaluate(() => {
+    const q = (window as any).__queue;
+    const denied = new q.ApiProblemError('Access revoked');
+    denied.status = 403;
+    const unavailable = new q.ApiProblemError('Temporary outage');
+    unavailable.status = 503;
+    return {
+      retry1: q.nextUploadRetryDelay(1),
+      retry2: q.nextUploadRetryDelay(2),
+      retry8: q.nextUploadRetryDelay(8),
+      retryNetwork: q.isTransientUploadFailure(new TypeError('Failed to fetch')),
+      retryProvider: q.isTransientUploadFailure(new Error('UPLOAD_PART_HTTP_503')),
+      retryHttp: q.isTransientUploadFailure(unavailable),
+      denyAuth: q.isTransientUploadFailure(denied),
+      denyPart: q.isTransientUploadFailure(new Error('UPLOAD_PART_HTTP_403')),
+    };
+  });
+  expect(result).toEqual({
+    retry1: 30_000, retry2: 60_000, retry8: 3_600_000,
+    retryNetwork: true, retryProvider: true, retryHttp: true,
+    denyAuth: false, denyPart: false,
+  });
+});
+
+test('network error persists retry checkpoint and prevents immediate second provider PUT', async ({ page }) => {
+  await fixture(page, false);
+  let attemptedPuts = 0;
+  await page.route('http://127.0.0.1:32114/expired', async route => {
+    attemptedPuts++;
+    await route.abort('failed');
+  });
+  const result = await page.evaluate(async () => {
+    const q = (window as any).__queue;
+    await q.drainOfflineUploadQueue();
+    const first = await q.listOfflineUploadDrafts();
+    await q.drainOfflineUploadQueue();
+    const second = await q.listOfflineUploadDrafts();
+    return {
+      first: first[0].status,
+      second: second[0].status,
+      error: second[0].lastError,
+    };
+  });
+  expect(attemptedPuts).toBe(1);
+  expect(result.first).toBe('FAILED');
+  expect(result.second).toBe('FAILED');
+  expect(result.error).toContain('attempt 1/6');
 });
