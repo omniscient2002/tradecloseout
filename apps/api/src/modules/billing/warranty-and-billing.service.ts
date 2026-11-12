@@ -1138,6 +1138,9 @@ export class WarrantyAndBillingService {
       const updated = await client.query(
         `UPDATE defects SET status = 'IN_PROGRESS',
            closure_evidence_object_id = NULL, remedy_document_version_id = NULL,
+           remedy_sha256 = NULL, remedy_provider_version_id = NULL,
+           remedy_size_bytes = NULL, remedy_scanned_at = NULL,
+           remedy_asset_scope_ids = NULL,
            remedied_by = NULL, remedied_at = NULL,
            row_version = row_version + 1
          WHERE org_id = $1 AND project_id = $2 AND id = $3 AND row_version = $4`,
@@ -1147,7 +1150,15 @@ export class WarrantyAndBillingService {
       const transitionId = await this.appendDefectTransition(
         client, ctx, defect, 'REMEDY_REJECTED', 'IN_PROGRESS',
         { evidenceObjectId: defect.closure_evidence_object_id,
-          remedyVersionId: defect.remedy_document_version_id, reason },
+          remedyVersionId: defect.remedy_document_version_id, reason,
+          ...(defect.remedy_sha256 && {
+            receipt: {sha256: defect.remedy_sha256,
+              providerVersionId: defect.remedy_provider_version_id,
+              sizeBytes: Number(defect.remedy_size_bytes),
+              scannedAt: new Date(defect.remedy_scanned_at),
+              assetIds: defect.remedy_asset_scope_ids},
+          }),
+        },
       );
       emit({
         eventType: 'DEFECT_REMEDY_REJECTED', projectId: targetProjectId,
@@ -1222,6 +1233,9 @@ export class WarrantyAndBillingService {
       const updated = await client.query(
         `UPDATE defects SET status = 'OPEN',
            closure_evidence_object_id = NULL, remedy_document_version_id = NULL,
+           remedy_sha256 = NULL, remedy_provider_version_id = NULL,
+           remedy_size_bytes = NULL, remedy_scanned_at = NULL,
+           remedy_asset_scope_ids = NULL,
            remedied_by = NULL, remedied_at = NULL,
            closed_by = NULL, closed_at = NULL,
            row_version = row_version + 1
@@ -1232,7 +1246,15 @@ export class WarrantyAndBillingService {
       const transitionId = await this.appendDefectTransition(
         client, ctx, defect, 'REOPENED', 'OPEN',
         { evidenceObjectId: defect.closure_evidence_object_id,
-          remedyVersionId: defect.remedy_document_version_id, reason },
+          remedyVersionId: defect.remedy_document_version_id, reason,
+          ...(defect.remedy_sha256 && {
+            receipt: {sha256: defect.remedy_sha256,
+              providerVersionId: defect.remedy_provider_version_id,
+              sizeBytes: Number(defect.remedy_size_bytes),
+              scannedAt: new Date(defect.remedy_scanned_at),
+              assetIds: defect.remedy_asset_scope_ids},
+          }),
+        },
       );
       emit({
         eventType: 'DEFECT_REOPENED', projectId: targetProjectId,
