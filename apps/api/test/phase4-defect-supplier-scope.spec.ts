@@ -19,6 +19,9 @@ describe('PH4-G17-004: supplier defect authority must be scoped to live assignme
     const pool: any = { connect: jest.fn(async () => ({
       query: jest.fn(async (sql: string, params: unknown[] = []) => {
         statements.push({ sql, params });
+        if (sql.includes('FROM projects') && sql.includes('FOR UPDATE')) {
+          return { rows: [{ id: projectId, status: 'ACTIVE', purged_at: null }] };
+        }
         if (sql.includes('FROM defects d')) return { rows: [{
           id: defectId, org_id: orgId, project_id: projectId,
           assigned_party_id: options.assignedPartyId ?? null,
@@ -68,6 +71,8 @@ describe('PH4-G17-004: supplier defect authority must be scoped to live assignme
     const sql = statements.find(x => x.sql.includes('SELECT d.*, a.tag AS asset_tag'));
     expect(sql?.sql).toContain('d.assigned_party_id = $3');
     expect(sql?.sql).toContain('d.asset_id = ANY($4::uuid[])');
+    expect(sql?.sql).toContain('a.category_key = ANY($5::text[])');
+    expect(sql?.sql).toContain('d.assigned_user_id = $6');
     expect(sql?.params[2]).toEqual(supplierPartyId);
     expect(sql?.params[3]).toEqual([assetId]);
   });
