@@ -703,6 +703,11 @@ describe('Production Re-Audit Remediation Suite (PROD-001..PROD-018)', () => {
 
       const mockClient: any = {
         query: jest.fn().mockImplementation(async (sql: string) => {
+          // Current financial policy checks the LIVE organisation membership,
+          // not only the caller-supplied orgRole claim.
+          if (sql.includes('FROM memberships')) {
+            return { rows: [{ role: 'R-OWNER' }] };
+          }
           if (sql.includes('FROM projects p')) {
             return {
               rows: [
