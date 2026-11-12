@@ -909,8 +909,40 @@ export class ProjectsService {
       completionDate?: string;
     },
   ) {
+    if (!dto || typeof dto.contractRef !== 'string' || !dto.contractRef.trim() ||
+        dto.contractRef.trim().length > 120 || typeof dto.title !== 'string' ||
+        !dto.title.trim() || dto.title.trim().length > 200) {
+      throw new UnprocessableEntityException({ code: 'INVALID_CONTRACT_INPUT' });
+    }
+    if (dto.partyId !== undefined &&
+        (typeof dto.partyId !== 'string' ||
+         !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(dto.partyId))) {
+      throw new UnprocessableEntityException({ code: 'INVALID_CONTRACT_PARTY' });
+    }
+    if (dto.retentionBps !== undefined &&
+        (!Number.isInteger(dto.retentionBps) || dto.retentionBps < 0 || dto.retentionBps > 10000)) {
+      throw new UnprocessableEntityException({ code: 'INVALID_RETENTION_BPS' });
+    }
+    for (const key of ['commencementDate','completionDate'] as const) {
+      if (dto[key] !== undefined && !validProjectDate(dto[key])) {
+        throw new UnprocessableEntityException({ code: 'INVALID_CONTRACT_DATE' });
+      }
+    }
+    if (dto.commencementDate && dto.completionDate &&
+        dto.completionDate < dto.commencementDate) {
+      throw new UnprocessableEntityException({ code: 'INVALID_CONTRACT_DATE_ORDER' });
+    }
+    const valuePaise = exactPaise(dto.valuePaise);
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
       await this.lockEditableCommercialProject(client, ctx.orgId, projectId);
+      if (dto.partyId) {
+        const { rows: party } = await client.query(
+          `SELECT 1 FROM parties WHERE org_id=$1 AND id=$2
+            AND deleted_at IS NULL AND status='ACTIVE' FOR SHARE`,
+          [ctx.orgId, dto.partyId],
+        );
+        if (!party.length) throw new NotFoundException('CONTRACT_PARTY_NOT_FOUND');
+      }
       const contractId = uuidv7();
       const res = await client.query(
         `INSERT INTO contracts (
@@ -925,7 +957,7 @@ export class ProjectsService {
           dto.contractRef.trim(),
           dto.title.trim(),
           dto.partyId || null,
-          dto.valuePaise ?? 0,
+          valuePaise === undefined ? null : valuePaise.toString(),
           dto.retentionBps ?? 500,
           dto.commencementDate || null,
           dto.completionDate || null,
@@ -1020,8 +1052,27 @@ export class ProjectsService {
     projectId: string,
     dto: { specNumber: string; title: string; division?: string; documentId?: string },
   ) {
+    if (!dto || typeof dto.specNumber !== 'string' ||
+        !dto.specNumber.trim() || dto.specNumber.trim().length > 120 ||
+        typeof dto.title !== 'string' || !dto.title.trim() ||
+        dto.title.trim().length > 200 ||
+        (dto.division !== undefined &&
+          (typeof dto.division !== 'string' || dto.division.length > 120)) ||
+        (dto.documentId !== undefined &&
+          (typeof dto.documentId !== 'string' ||
+           !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(dto.documentId)))) {
+      throw new UnprocessableEntityException({ code: 'INVALID_SPECIFICATION_INPUT' });
+    }
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
       await this.lockEditableCommercialProject(client, ctx.orgId, projectId);
+      if (dto.documentId) {
+        const { rows: document } = await client.query(
+          `SELECT 1 FROM documents WHERE org_id=$1 AND project_id=$2
+            AND id=$3 AND deleted_at IS NULL FOR SHARE`,
+          [ctx.orgId, projectId, dto.documentId],
+        );
+        if (!document.length) throw new NotFoundException('SPECIFICATION_DOCUMENT_NOT_FOUND');
+      }
       const specId = uuidv7();
       const res = await client.query(
         `INSERT INTO specification_refs (
