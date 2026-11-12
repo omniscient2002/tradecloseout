@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Modal } from "../ui/modal";
 import {
   UploadCloud,
@@ -45,6 +45,7 @@ export function UploadEvidenceModal({
   const [issueDate, setIssueDate] = useState(new Date().toISOString().slice(0, 10));
   const [externalComment, setExternalComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const captureControllerRef = useRef<AbortController | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [queuedLocally, setQueuedLocally] = useState(false);
   const [drafts, setDrafts] = useState<OfflineUploadDraftSummary[]>([]);
@@ -99,6 +100,10 @@ export function UploadEvidenceModal({
       setQueuedLocally(false);
       setError(null);
       void refreshDrafts();
+    } else {
+      // Closing the dialog stops uncommitted hashing, but never discards an
+      // original that already successfully reached IndexedDB.
+      captureControllerRef.current?.abort();
     }
   }, [open, requirement?.id, refreshDrafts]);
 
@@ -133,11 +138,14 @@ export function UploadEvidenceModal({
       return;
     }
 
+    const controller = new AbortController();
+    captureControllerRef.current = controller;
     setSubmitting(true);
     setError(null);
 
     try {
       await enqueueFieldUpload({
+        signal: controller.signal,
         projectId,
         requirementId: requirement.id,
         requirementRowVersion: requirement.rowVersion,
@@ -162,8 +170,10 @@ export function UploadEvidenceModal({
         // A page refresh callback failure does not undo the saved local draft.
       }
     } catch (err: any) {
-      setError(err?.message || "Failed to enqueue upload.");
+      setError(err?.name === "AbortError" ? "Local capture cancelled before saving." :
+        err?.message || "Failed to enqueue upload.");
     } finally {
+      if (captureControllerRef.current === controller) captureControllerRef.current = null;
       setSubmitting(false);
     }
   };
@@ -333,10 +343,10 @@ export function UploadEvidenceModal({
         <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => submitting ? captureControllerRef.current?.abort() : onClose()}
             className="rounded border border-slate-300 px-3.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer"
           >
-            {queuedLocally ? "Close" : "Cancel"}
+            {submitting ? "Stop Local Capture" : queuedLocally ? "Close" : "Cancel"}
           </button>
           <button
             type="submit"
