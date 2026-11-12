@@ -162,7 +162,7 @@ void test('Isolated worker DB/Redis and storage HTTP contract regressions', asyn
       await t.test('NOTIF-01/04: no configuration, rejection and invalid ack stay queued; matching capture acknowledgment permits SENT', async () => {
         const id = randomUUID(); const foreignId = randomUUID();
         await admin.query(`INSERT INTO notifications (id, org_id, recipient_user_id, channel, event_key, payload_json, status, dedup_key)
-          VALUES ($1::uuid,$2,$3,'EMAIL','TEST','{"message":"local test"}','QUEUED',$1::text),
+          VALUES ($1::uuid,$2,$3,'EMAIL','WEEKLY_OWNER_DIGEST','{"projects":[{"projectCode":"HVAC-01","missingOrExpiredCount":1}],"retentionAtRiskPaise":"99999999"}','QUEUED',$1::text),
                  ($4::uuid,$5,$3,'EMAIL','TEST','{}','QUEUED',$4::text)`, [id, a.orgId, userId, foreignId, b.orgId]);
         delete process.env.NOTIFICATION_DELIVERY_URL; delete process.env.NOTIFICATION_DELIVERY_TOKEN;
         assert.equal(await scheduler.dispatchQueuedNotifications(), 0);
@@ -192,7 +192,12 @@ void test('Isolated worker DB/Redis and storage HTTP contract regressions', asyn
           const own = (await admin.query('SELECT status, sent_at FROM notifications WHERE id = $1', [id])).rows[0];
           assert.equal(own.status, 'SENT'); assert(own.sent_at instanceof Date);
           assert.equal((await admin.query('SELECT status FROM notifications WHERE id = $1', [foreignId])).rows[0].status, 'QUEUED');
-          assert(requests.some(request => request.key === id && request.payload.org_id === a.orgId && request.payload.recipient_user_id === userId));
+          assert(requests.some(request => request.key === id &&
+            request.payload.org_id === a.orgId &&
+            request.payload.recipient_user_id === userId));
+          // The gateway only receives the reviewed projection, not the legacy
+          // queued JSON containing confidential commercial information.
+          assert(requests.every(request => !JSON.stringify(request.payload).includes('99999999')));
         } finally { gateway.closeAllConnections(); await new Promise<void>(resolve => gateway.close(() => resolve())); }
       });
       const storage = await storageServer();
