@@ -16,8 +16,8 @@ interface SubscriptionDto {
   storage_quota_bytes?: number;
   maxActiveProjects?: number;
   max_active_projects?: number;
-  pricePaise?: number;
-  price_paise?: number;
+  pricePaise?: string | number | null;
+  price_paise?: string | number | null;
 }
 
 interface InvoiceDto {
@@ -25,12 +25,12 @@ interface InvoiceDto {
   invoice_number?: string;
   invoiceNumber?: string;
   status: string;
-  total_paise?: number;
-  totalPaise?: number;
-  tax_paise?: number;
-  taxPaise?: number;
-  subtotal_paise?: number;
-  subtotalPaise?: number;
+  total_paise?: string | number | null;
+  totalPaise?: string | number | null;
+  tax_paise?: string | number | null;
+  taxPaise?: string | number | null;
+  subtotal_paise?: string | number | null;
+  subtotalPaise?: string | number | null;
   place_of_supply?: string;
   placeOfSupply?: string;
   created_at: string;
@@ -66,13 +66,20 @@ export default function BillingPage() {
     fetchBillingData();
   }, [fetchBillingData]);
 
-  const formatInr = (paise?: number) => {
-    if (paise == null || !Number.isFinite(paise)) return "—";
-    return new Intl.NumberFormat("en-IN", {
-      style: "currency",
-      currency: "INR",
-      maximumFractionDigits: 2,
-    }).format(paise / 100);
+  // Read only exact integer paise from PostgreSQL. Converting BIGINT to
+  // Number before formatting silently changes invoice and subscription sums.
+  const formatInr = (paise?: string | number | null) => {
+    if (paise == null) return "—";
+    if (typeof paise === "number" && (!Number.isSafeInteger(paise) || paise < 0)) return "—";
+    if (typeof paise === "string" && !/^[0-9]+$/.test(paise)) return "—";
+    try {
+      const exact = BigInt(paise);
+      if (exact < 0n) return "—";
+      return `₹${(exact / 100n).toLocaleString("en-IN")}.${(exact % 100n)
+        .toString().padStart(2, "0")}`;
+    } catch {
+      return "—";
+    }
   };
 
   const formatDate = (isoDate: string) => {
