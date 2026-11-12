@@ -144,7 +144,7 @@ export class HandoverService {
       );
       if (entitlementRows.length !== 1 ||
           typeof entitlementRows[0].monthly_limit !== 'string' ||
-          !/^\\d+$/.test(entitlementRows[0].monthly_limit)) {
+          !/^\d+$/.test(entitlementRows[0].monthly_limit)) {
         throw new ConflictException({
           code: 'PACKAGE_ENTITLEMENT_UNAVAILABLE',
           detail: 'An active subscription with a configured monthly package limit is required.',
