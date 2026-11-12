@@ -1,0 +1,75 @@
+# Phase 5 fixes — exact candidate and release ledger
+
+**Status: DRAFT / NO-GO. No independent approval, production deployment, provider verification or merge.**
+
+- Implementation branch: `fix/phase-5-fixes` / PR #20, based on main `c6b6024d3d5b25d2d1ab87f77e2d3294500c5bb0`.
+- Audit authority: PR #18, `docs/audits/remaining-phases-2026-11-12/phase5/G23.md`, `G22.md`, `G28.md` at `f51a90894589091ddeaeaeefea14f86473479568`. Audit examined a **different, unmerged** app candidate `36c8efb94ce2ed77ef016ef58ad44d494bfc6e84`. Do not treat its observations as automatically re-proven after integration.
+- Phase 5 audit covers **25 items** (G23=8, G22=8, G28=9), including one P0 (PH5-G28-001). These are group obligations, not 25 independent root causes.
+- Implementation vs acceptance: **all 25 findings remain canonically OPEN or BLOCKED_EXTERNAL** pending per-ID independent review and final integrated-source/provider evidence. The candidate statuses below only describe code progress.
+- External providers, service accounts and real-world acceptance remain deferred per user request. Do not substitute synthetic READY statuses or development fixtures.
+
+## Per-ID candidate status
+
+| Finding | Candidate | Changes / outstanding closure |
+|---|---|---|
+| PH5-G23-001 | OPEN | Real end-to-end product journeys remain incomplete |
+| PH5-G23-002 | PARTIAL | Audit-page missing/metadata-only hashes handled; shared typed DTO/permission integration pending |
+| PH5-G23-003 | OPEN | Server-derived per-action capability UI missing |
+| PH5-G23-004 | PARTIAL | Removed invented warranty/defect defaults; authoritative scoped reporting still missing |
+| PH5-G23-005 | CANDIDATE | Safe UTF-8 CSV/Blob export, formula-prefix policy, regression tests; consumer/large-file acceptance pending |
+| PH5-G23-006 | OPEN | Core keyboard/screen-reader/mobile workflow verification missing |
+| PH5-G23-007 | PARTIAL | Distinct warranty/defect failure, empty/loading/retry states; stale response fence and other pages pending |
+| PH5-G23-008 | BLOCKED_EXTERNAL | Human user/accessibility acceptance |
+| PH5-G22-001 | CANDIDATE | One bounded multipart URL refresh/retry, preserves receipts; real provider and expiry-window tests pending |
+| PH5-G22-002 | CANDIDATE | Origin-wide Web Locks serialize drains; unsupported environments fail closed; tab crash/mobile coverage pending |
+| PH5-G22-003 | PARTIAL | Completed upload checkpoint/status-only reconciliation; periodic foreground retries; full error taxonomy/cancellation pending |
+| PH5-G22-004 | PARTIAL | Stop silent blocked-draft revival; explicit same-identity recovery UI/current-authority challenge pending |
+| PH5-G22-005 | OPEN | Durable quota/error/retention inventory and discard |
+| PH5-G22-006 | OPEN | Chunked bounded-memory hash and device testing |
+| PH5-G22-007 | PARTIAL | No closed-tab provider writes; unsupported lock surfaces fail closed; user-facing scope explanation pending |
+| PH5-G22-008 | BLOCKED_EXTERNAL | Real provider, device and interruption acceptance |
+| PH5-G28-001 | PARTIAL (P0 OPEN) | Scoped incident parser, explicit dry-run/execute, restricted-role requirement, backing-storage quarantine, dependent package download denial. No IAM/operator role provisioning, signed-URL revocation, archive/acceptance invalidation or real PG test yet |
+| PH5-G28-002 | OPEN | Validated deployable infrastructure, privilege and network contract |
+| PH5-G28-003 | OPEN | Promoted image/DB migration/rollback pipeline |
+| PH5-G28-004 | OPEN | Actual PITR and object/key recovery evidence |
+| PH5-G28-005 | BLOCKED_EXTERNAL | Load/soak/on-call/alert/chaos receipts |
+| PH5-G28-006 | PARTIAL | Real queue module exercised in Chromium with IndexedDB, provider loopback and concurrency; full service E2E pending |
+| PH5-G28-007 | PARTIAL | Runbook demands independent operator role; approved IAM/admin surface not yet implemented |
+| PH5-G28-008 | OPEN | Legal hold, retention and complete deletion contract |
+| PH5-G28-009 | BLOCKED_EXTERNAL | One final integrated, independently reviewed production release |
+
+## Code mechanics and verification
+
+The browser regression file `apps/web/e2e/offline-queue-phase5.spec.ts` executes the actual queue with a stubbed API client, real Chromium IndexedDB/Web Locks and real loopback HTTP PUT responses. Its three tests assert: (1) expired URL refresh once with one completion; (2) concurrent drains issue one PUT/complete; and (3) a different actor cannot upload or silently revive a blocked item. `apps/web/e2e/csv-export.spec.ts` covers Unicode, #/%/CRLF, quoting, formula prefixes and invalid shape/number.
+
+**Verified historical passing head:** `6cc14cd6fa39dd5ff7c90a0401441bf190fb9405`, GitHub `verify-and-test` and `group-register` successful. The browser project reported **12 passed**, including the three queue regressions and three CSV regressions. A prior head briefly failed TypeScript on an escaped regex; that exact syntax error was corrected and CI rerun successfully. All subsequent commits require new exact-head results; never inherit old green claims.
+
+Useful commands on a clean Node 22/pnpm 12.4.1 checkout with isolated PG16/Redis and Chromium:
+```sh
+pnpm install --frozen-lockfile
+pnpm typecheck
+pnpm build
+pnpm test
+pnpm test:security
+pnpm test:rbac
+pnpm --filter @tradecloseout/web exec playwright test --project=archive
+# Full application e2e requires live isolated API/web/worker fixtures:
+pnpm test:e2e
+```
+
+## Incident operation limitations (PH5-G28-001)
+
+`scripts/execute-runbooks.ts` now requires `INCIDENT_DATABASE_URL` for a separately provisioned `tc_incident_operator` login; `INCIDENT_OPERATOR_ID` and (for actual execution) `INCIDENT_APPROVAL_REF`. No superuser/migrator fallback exists. Invocation is:
+
+```sh
+pnpm tsx scripts/execute-runbooks.ts RB-09 <org-uuid> <document-version-uuid> "<12+ character incident reason>" --dry-run
+# --execute only after independently approved, restricted IAM and staging rehearsal
+```
+
+RB09 changes the **storage_objects** state rather than overwriting an APPROVED document version to violate `review_status <> APPROVED OR file_status = READY`. Existing document download/preview/stream endpoints deny non-READY storage objects. Package PDF download now additionally rejects included source evidence whose storage status is not READY. These controls **do not revoke previously distributed provider-signed URLs or copied exports**, and they are not sufficient to close the P0. Real restricted-PG dry-run/execute/replay, audit-chain, package/acceptance/archives propagation and operator IAM must be accepted independently.
+
+## Remaining prerequisite integration
+
+- Main does not contain all still-unmerged Phase1/2/3/4 candidate code. Bring separately reviewed changes onto a coordinated SHA, resolve migration numbering and execute full regression on that actual tree. Do not automatically copy provider credentials, change audit registers, claim old approvals, merge or deploy.
+- Supported browser/device/version matrix, accessible UI and explicit user draft recovery remain required.
+- Actual S3/object-version/checksum, scanner quarantine, approved domain content, finance, counterparty receipts, deployment restoration and on-call approval are **not provided**. Keep unsupported features safely disabled.
