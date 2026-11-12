@@ -13,7 +13,7 @@ CREATE TABLE defect_transition_events (
   defect_id UUID NOT NULL,
   action TEXT NOT NULL CHECK (action IN (
     'ASSIGNED','REMEDY_SUBMITTED','REMEDY_REJECTED',
-    'INDEPENDENTLY_CLOSED','WAIVED','REOPENED'
+    'INDEPENDENTLY_CLOSED','WAIVED','REOPENED','SEVERITY_UPDATED'
   )),
   from_status TEXT NOT NULL CHECK (from_status IN
     ('OPEN','IN_PROGRESS','RECTIFIED','CLOSED','WAIVED')),
@@ -25,12 +25,16 @@ CREATE TABLE defect_transition_events (
   assigned_user_id UUID REFERENCES users(id),
   assigned_party_id UUID,
   due_at TIMESTAMPTZ,
+  from_severity TEXT CHECK (from_severity IS NULL OR from_severity IN
+    ('LOW','MEDIUM','HIGH','CRITICAL')),
+  to_severity TEXT CHECK (to_severity IS NULL OR to_severity IN
+    ('LOW','MEDIUM','HIGH','CRITICAL')),
   evidence_object_id UUID,
   remedy_document_version_id UUID,
   reason TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   FOREIGN KEY (org_id, project_id, defect_id)
-    REFERENCES defects(org_id, project_id, id) ON DELETE CASCADE,
+    REFERENCES defects(org_id, project_id, id) ON DELETE RESTRICT,
   FOREIGN KEY (org_id, assigned_party_id)
     REFERENCES parties(org_id, id),
   FOREIGN KEY (org_id, evidence_object_id)
@@ -40,8 +44,13 @@ CREATE TABLE defect_transition_events (
   CONSTRAINT defect_event_version_step CHECK
     (next_row_version = previous_row_version + 1),
   CONSTRAINT defect_event_reason_required CHECK (
-    action NOT IN ('REMEDY_REJECTED','WAIVED','REOPENED') OR
+    action NOT IN ('REMEDY_REJECTED','WAIVED','REOPENED','SEVERITY_UPDATED') OR
     (reason IS NOT NULL AND length(btrim(reason)) BETWEEN 12 AND 1200)
+  ),
+  CONSTRAINT defect_event_severity_change CHECK (
+    action <> 'SEVERITY_UPDATED' OR
+    (from_severity IS NOT NULL AND to_severity IS NOT NULL
+     AND from_severity <> to_severity)
   )
 );
 
