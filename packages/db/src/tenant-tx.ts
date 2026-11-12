@@ -36,14 +36,27 @@ export async function withSavepoint<T>(
   savepointName: string,
   work: () => Promise<T>,
 ): Promise<T> {
-  const safeName = (savepointName || 'sp_' + uuidv7()).replace(/[^a-zA-Z0-9_]/g, '_');
+  // PostgreSQL truncates identifiers to 63 bytes. A bounded, prefixed name
+  // with a digest suffix avoids invalid numeric prefixes, SQL injection and
+  // accidental collisions between long caller-provided savepoint names.
+  const raw = savepointName || uuidv7();
+  const safePrefix = raw.replace(/[^a-zA-Z0-9_]/g, '_').slice(0, 35);
+  const digest = createHash('sha256').update(raw).digest('hex').slice(0, 16);
+  const safeName = `sp_${safePrefix}_${digest}`;
   await client.query(`SAVEPOINT ${safeName}`);
   try {
     const res = await work();
     await client.query(`RELEASE SAVEPOINT ${safeName}`);
     return res;
   } catch (err) {
-    await client.query(`ROLLBACK TO SAVEPOINT ${safeName}`);
+    // Preserve the command failure. The owning outer transaction must handle
+    // an unsuccessful rollback and discard the connection if state is unknown.
+    try {
+      await client.query(`ROLLBACK TO SAVEPOINT ${safeName}`);
+      await client.query(`RELEASE SAVEPOINT ${safeName}`);
+    } catch {
+      // Do not replace the original command error with a cleanup error.
+    }
     throw err;
   }
 }
