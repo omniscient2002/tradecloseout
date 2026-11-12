@@ -688,7 +688,7 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
   // Finding N21: Multi-Contract Pre-Aggregation & Rupee-at-Risk Precision
   // --------------------------------------------------------------------------
   describe('N21: Owner Digest & Multi-Contract Dashboard Calculation', () => {
-    it('calculates owner digest with exact paise integer math and supports 0% retention', async () => {
+    it('reports exact informational retention without claiming a financial hold', async () => {
       const orgId = uuidv7();
       const projectId = uuidv7();
 
@@ -731,8 +731,13 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
 
       expect(digest.contractValuePaise).toBe('50000000');
       expect(digest.contractValueInr).toBe(500000);
-      expect(digest.retentionMoneyGatedPaise).toBe('2500000'); // 25,000 INR
-      expect(digest.retentionMoneyGatedInr).toBe(25000);
+      // A configured retention percentage is NOT proof that funds are
+      // withheld. Old "gated" fields are deprecated until payment evidence.
+      expect(digest.retentionMoneyGatedPaise).toBeNull();
+      expect(digest.retentionMoneyGatedInr).toBeNull();
+      expect(digest.informationalRetentionExposurePaise).toBe('2500000');
+      expect(digest.informationalRetentionExposureInr).toBe(25000);
+      expect(digest.financialSummaryBasis).toBe('PROJECT_ESTIMATE');
     });
 
     it('V08: Dashboard contract summary includes only ACTIVE contracts and excludes SUPERSEDED ones', async () => {
