@@ -396,6 +396,7 @@ async function bootWorker() {
     }
   });
   formatWorker.on('failed', (job, err) => reportWorkerFailure('FORMAT_JOB_FAILED', err, job?.id));
+  archiveWorker.on('failed', (job, err) => reportWorkerFailure('ARCHIVE_JOB_FAILED', err, job?.id));
 
   // 4. Outbox Poller (every 2s) with durable transaction locking (TC2-005)
   const pollOutbox = async () => {
