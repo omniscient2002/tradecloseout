@@ -48,20 +48,33 @@ export class OrganisationsService {
    */
   async getDashboard(ctx: TenantActorContext, targetOrgId: string) {
     const orgId = targetOrgId === 'current' ? ctx.orgId : targetOrgId;
-    if (ctx.guestGrantId) throw new NotFoundException('ORGANISATION_NOT_FOUND');
-    const projectRead = hasPermission({ orgRole: ctx.orgRole, projectRole: ctx.projectRole }, 'project.read');
-    if (!projectRead.allowed) throw new NotFoundException('ORGANISATION_NOT_FOUND');
-    const projectScopeClause = projectRead.scope === 'S'
-      ? `AND EXISTS (SELECT 1 FROM project_members pm
-                      WHERE pm.org_id = p.org_id AND pm.project_id = p.id
-                        AND pm.user_id = $2 AND pm.status = 'ACTIVE')`
-      : '';
-    const requirementsScopeClause = projectRead.scope === 'S'
-      ? `AND EXISTS (SELECT 1 FROM project_members pm
-                      WHERE pm.org_id = r.org_id AND pm.project_id = r.project_id
-                        AND pm.user_id = $2 AND pm.status = 'ACTIVE')`
-      : '';
+    if (orgId !== ctx.orgId || ctx.actorType === 'GUEST' || ctx.guestGrantId) {
+      throw new NotFoundException('ORGANISATION_NOT_FOUND');
+    }
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+      // PH2-G03: a previously privileged user must not enumerate projects or
+      // receive commercial metrics after demotion. Resolve the live current
+      // org grant before building either the scoped queries or the DTO.
+      const { rows: userRows } = await client.query(
+        `SELECT u.id, u.name, m.role
+           FROM users u JOIN memberships m ON m.user_id=u.id AND m.org_id=$1
+          WHERE u.id=$2 AND u.status='ACTIVE' AND m.status='ACTIVE'
+          FOR SHARE OF u,m`,
+        [orgId,ctx.userId],
+      );
+      if (!userRows.length) throw new NotFoundException('ORGANISATION_NOT_FOUND');
+      const user=userRows[0];
+      const projectRead = hasPermission({orgRole:user.role}, 'project.read');
+      if (!projectRead.allowed) throw new NotFoundException('ORGANISATION_NOT_FOUND');
+      const mayReadCommercial = hasPermission({orgRole:user.role}, 'contract.manage').allowed;
+      const projectScopeClause = projectRead.scope === 'S'
+        ? `AND EXISTS (SELECT 1 FROM project_members pm
+                        WHERE pm.org_id=p.org_id AND pm.project_id=p.id
+                          AND pm.user_id=$2 AND pm.status='ACTIVE')` : '';
+      const requirementsScopeClause = projectRead.scope === 'S'
+        ? `AND EXISTS (SELECT 1 FROM project_members pm
+                        WHERE pm.org_id=r.org_id AND pm.project_id=r.project_id
+                          AND pm.user_id=$2 AND pm.status='ACTIVE')` : '';
       // 1. Fetch Org and Profile
       const { rows: orgRows } = await client.query(
         `SELECT o.id, o.legal_name, o.display_name, o.state, op.gstin
@@ -75,17 +88,7 @@ export class OrganisationsService {
       }
       const org = orgRows[0];
 
-      // 2. Fetch User & Membership
-      const { rows: userRows } = await client.query(
-        `SELECT u.id, u.name, m.role
-           FROM users u
-           JOIN memberships m ON m.user_id = u.id AND m.org_id = $1
-          WHERE u.id = $2 LIMIT 1`,
-        [orgId, ctx.userId],
-      );
-      const user = userRows[0] || { id: ctx.userId, name: 'Team Member', role: 'R-SITE' };
-
-      // 3. Fetch Projects with Pre-Aggregated Contracts, Counterparties & Requirement Counts (Finding N21)
+      // 2. Fetch Projects with Pre-Aggregated Contracts, Counterparties & Requirement Counts (Finding N21)
       const { rows: projRows } = await client.query(
         `WITH contract_summary AS (
            SELECT project_id, org_id,
@@ -137,8 +140,8 @@ export class OrganisationsService {
         pmcName: p.pmc_name || '—',
         city: p.city || '—',
         targetHandoverDate: p.target_handover_date || '',
-        contractValuePaise: p.contract_value_paise,
-        retentionAtRiskPaise: p.retention_at_risk_paise,
+        contractValuePaise: mayReadCommercial ? p.contract_value_paise : null,
+        retentionAtRiskPaise: mayReadCommercial ? p.retention_at_risk_paise : null,
         approvedCount: Number(p.approved_count || 0),
         applicableCount: Number(p.applicable_count || 0),
         missingCount: Number(p.missing_count || 0),
@@ -221,7 +224,7 @@ export class OrganisationsService {
           totalMissingOrExpiredCount: totalMissingOrExpired,
           awaitingMyReviewCount: awaitingReview,
           expiringSoonCount,
-          totalRetentionAtRiskPaise: totalRetentionAtRisk.toString(),
+          totalRetentionAtRiskPaise: mayReadCommercial ? totalRetentionAtRisk.toString() : null,
         },
         projects,
         needsAttention,
