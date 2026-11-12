@@ -382,25 +382,58 @@ export class DocumentsService {
         }
       }
 
-      // Soft check plan storage limit without premature deduction (Bug 2 / Dimension 10)
-      const { rows: quotaRows } = await client.query(
-        `SELECT uc.value AS current_storage, p.limits_json
-           FROM organisations o
-           LEFT JOIN subscriptions s ON s.org_id = o.id AND s.status IN ('TRIAL', 'ACTIVE')
-           LEFT JOIN plans p ON p.id = s.plan_id
-           LEFT JOIN usage_counters uc ON uc.org_id = o.id AND uc.metric = 'STORAGE_BYTES' AND uc.period = 'ALL_TIME'
-          WHERE o.id = $1 LIMIT 1`,
+      // PH2-G18-003: zero capacity is a real limit. Acquire subscription
+      // and plan locks, then serialize all upload-intent reservations through
+      // the org's STORAGE_BYTES counter. Include every unfinished PENDING
+      // object in the prospective capacity (they become charged READY bytes
+      // on finalization). Intent rows are committed in this same transaction.
+      const { rows: entitlement } = await client.query(
+        `SELECT p.limits_json ->> 'maxStorageBytes' AS max_storage_bytes
+           FROM subscriptions s
+           JOIN plans p ON p.id = s.plan_id
+          WHERE s.org_id = $1 AND s.status IN ('TRIAL','ACTIVE')
+            AND s.current_period_start <= now() AND s.current_period_end > now()
+            AND (s.cancel_at IS NULL OR s.cancel_at > now())
+            AND p.status = 'ACTIVE'
+          FOR SHARE OF s, p`,
         [ctx.orgId],
       );
-      if (quotaRows.length > 0 && quotaRows[0].limits_json?.maxStorageBytes) {
-        const currentBytes = BigInt(quotaRows[0].current_storage || '0');
-        const limitBytes = BigInt(quotaRows[0].limits_json.maxStorageBytes);
-        if (currentBytes + BigInt(dto.sizeBytes) > limitBytes) {
-          throw new BadRequestException({
-            code: 'STORAGE_QUOTA_EXCEEDED',
-            detail: `Upload exceeds organization storage ceiling (${currentBytes + BigInt(dto.sizeBytes)} > ${limitBytes} bytes).`,
-          });
-        }
+      const maxStorageText = entitlement[0]?.max_storage_bytes;
+      if (entitlement.length !== 1 || typeof maxStorageText !== 'string' ||
+          !/^\d+$/.test(maxStorageText)) {
+        throw new ConflictException({
+          code: 'STORAGE_ENTITLEMENT_UNAVAILABLE',
+          detail: 'An active subscription with a valid storage limit is required to upload.',
+        });
+      }
+      const storageCeiling = BigInt(maxStorageText);
+      if (storageCeiling > 9223372036854775807n) {
+        throw new ConflictException({ code: 'INVALID_STORAGE_ENTITLEMENT' });
+      }
+      await client.query(
+        `INSERT INTO usage_counters(id, org_id, metric, period, value)
+         VALUES($1, $2, 'STORAGE_BYTES', 'ALL_TIME', 0)
+         ON CONFLICT(org_id, metric, period) DO NOTHING`,
+        [uuidv7(), ctx.orgId],
+      );
+      const { rows: charged } = await client.query(
+        `SELECT value FROM usage_counters
+           WHERE org_id=$1 AND metric='STORAGE_BYTES' AND period='ALL_TIME'
+           FOR UPDATE`,
+        [ctx.orgId],
+      );
+      const { rows: reserved } = await client.query(
+        `SELECT COALESCE(SUM(size_bytes),0)::text AS reserved_bytes
+           FROM storage_objects WHERE org_id=$1 AND status='PENDING'`,
+        [ctx.orgId],
+      );
+      const occupied = BigInt(charged[0]?.value ?? '0') +
+        BigInt(reserved[0]?.reserved_bytes ?? '0');
+      if (occupied + BigInt(dto.sizeBytes) > storageCeiling) {
+        throw new ConflictException({
+          code: 'STORAGE_QUOTA_EXCEEDED',
+          detail: 'Insufficient storage capacity for this upload.',
+        });
       }
 
       let documentId = dto.documentId || existingDocumentId;
