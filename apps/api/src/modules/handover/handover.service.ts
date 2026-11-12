@@ -879,7 +879,7 @@ export class HandoverService {
       if (!recipient || typeof recipient.email !== 'string' ||
           typeof recipient.name !== 'string' || !recipient.name.trim() ||
           recipient.name.length > 200 ||
-          !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(recipient.email.trim()) ||
+          !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient.email.trim()) ||
           recipient.email.length > 254 ||
           (recipient.isRequiredApprover !== undefined &&
             typeof recipient.isRequiredApprover !== 'boolean') ||
