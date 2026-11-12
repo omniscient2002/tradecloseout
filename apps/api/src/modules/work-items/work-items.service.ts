@@ -132,21 +132,35 @@ export class WorkItemsService {
                p.name AS project_name,
                d.raised_at AS created_at,
                'DEFECT_ACTION' AS type,
-               CASE WHEN d.severity IN ('CRITICAL', 'HIGH') THEN 'CRITICAL'
-                    WHEN d.severity = 'MAJOR' THEN 'HIGH'
-                    ELSE 'MEDIUM' END AS priority,
-               CASE WHEN d.status = 'OPEN' THEN 'Awaiting defect remedy submission'
-                    ELSE 'Awaiting independent closure verification' END AS waiting_on,
+               CASE
+                 WHEN d.severity = 'CRITICAL' THEN 'CRITICAL'
+                 WHEN d.due_at IS NOT NULL AND d.due_at < now()
+                      AND d.status IN ('OPEN','IN_PROGRESS')
+                      AND d.severity = 'HIGH' THEN 'CRITICAL'
+                 WHEN d.severity IN ('HIGH','MAJOR') THEN 'HIGH'
+                 WHEN d.severity = 'MEDIUM' THEN 'MEDIUM'
+                 ELSE 'LOW' END AS priority,
+               CASE WHEN d.status = 'RECTIFIED'
+                    THEN 'Awaiting qualified independent remedy decision'
+                    WHEN d.assigned_user_id IS NULL AND d.assigned_party_id IS NULL
+                    THEN 'Awaiting project supervisor assignment'
+                    WHEN d.due_at IS NOT NULL AND d.due_at < now()
+                    THEN 'Assigned remedy overdue; escalation required'
+                    ELSE 'Awaiting assigned remedy submission' END AS waiting_on,
                'DEFECT' AS entity_type,
-               CASE WHEN d.status = 'OPEN'
-                    THEN '/api/v1/projects/' || p.id || '/defects/' || d.id || '/remedy'
-                    ELSE '/api/v1/projects/' || p.id || '/defects/' || d.id || '/close' END AS next_path,
+               CASE WHEN d.status = 'RECTIFIED'
+                    THEN '/api/v1/projects/' || p.id || '/defects/' || d.id || '/close'
+                    WHEN d.assigned_user_id IS NULL AND d.assigned_party_id IS NULL
+                    THEN '/api/v1/projects/' || p.id || '/defects/' || d.id || '/assign'
+                    ELSE '/api/v1/projects/' || p.id || '/defects/' || d.id || '/remedy' END AS next_path,
                'POST' AS next_method,
-               CASE WHEN d.status = 'OPEN' THEN 'SUBMIT_REMEDY' ELSE 'VERIFY_CLOSE' END AS next_action
+               CASE WHEN d.status = 'RECTIFIED' THEN 'VERIFY_CLOSE'
+                    WHEN d.assigned_user_id IS NULL AND d.assigned_party_id IS NULL THEN 'ASSIGN_DEFECT'
+                    ELSE 'SUBMIT_REMEDY' END AS next_action
           FROM defects d
           JOIN projects p ON p.id = d.project_id AND p.org_id = d.org_id
          WHERE d.org_id = $1
-           AND d.status IN ('OPEN', 'RECTIFIED')
+           AND d.status IN ('OPEN', 'IN_PROGRESS', 'RECTIFIED')
            ${scopeClause}
            ${projectFilterClause}
       `;
