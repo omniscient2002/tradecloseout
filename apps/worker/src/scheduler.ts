@@ -314,23 +314,26 @@ export class TradeCloseoutScheduler {
                   )::text, 'sha256'), 'hex') AS computed_hash
              FROM audit_events
             WHERE org_id = $1
-            ORDER BY chain_seq ASC`,
+            ORDER BY chain_seq ASC, id ASC`,
           [org.id],
         );
 
-        let prevHash: string | null = null;
-        for (let i = 0; i < events.length; i++) {
-          const ev = events[i];
-          if (prevHash !== null && ev.prev_hash !== prevHash) {
-            throw new Error(
-              `AUDIT_HASH_CHAIN_CORRUPT: Tampering detected for org ${org.id} at chain_seq ${ev.chain_seq}. Expected prev_hash ${prevHash}, got ${ev.prev_hash}`,
-            );
+        const genesis = 'GENESIS_0000000000000000000000000000000000000000000000000000000000000000';
+        let prevHash = genesis;
+        let prevSeq = 0n;
+        for (const ev of events) {
+          // A nullable or caller-controlled ordering key must fail closed.
+          if (typeof ev.chain_seq !== 'string' || !/^[0-9]+$/.test(ev.chain_seq)) {
+            throw new Error('AUDIT_CHAIN_ORDER_INVALID');
           }
-          if (ev.computed_hash && ev.hash !== ev.computed_hash) {
-            throw new Error(
-              `AUDIT_CONTENT_TAMPERED: Payload tampering detected for org ${org.id} at chain_seq ${ev.chain_seq} (id: ${ev.id}). Stored hash ${ev.hash} does not match computed hash ${ev.computed_hash}`,
-            );
+          const sequence = BigInt(ev.chain_seq);
+          if (sequence <= prevSeq) throw new Error('AUDIT_CHAIN_ORDER_INVALID');
+          if (ev.prev_hash !== prevHash) throw new Error('AUDIT_HASH_CHAIN_CORRUPT');
+          if (typeof ev.hash !== 'string' || !/^[a-f0-9]{64}$/.test(ev.hash) ||
+              typeof ev.computed_hash !== 'string' || ev.hash !== ev.computed_hash) {
+            throw new Error('AUDIT_CONTENT_TAMPERED');
           }
+          prevSeq = sequence;
           prevHash = ev.hash;
           verifiedEvents++;
         }
