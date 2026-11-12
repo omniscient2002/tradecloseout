@@ -17,6 +17,7 @@ import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
 import { PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
+import { buildTrustedOutboxPayload } from '@tradecloseout/db';
 import { TenantDbService, ExecutionContext } from '../../database/tenant-db.service';
 import { BulkImportStatus, FileVersionStatus } from '@tradecloseout/shared';
 import { resolveLiveProjectCommandAuthority, assertReviewDocumentScope } from '../reviews/review-live-authority';
@@ -893,10 +894,16 @@ export class DocumentsService {
           eventId,
           ctx.orgId,
           version.project_id || null,
-          JSON.stringify({
+          JSON.stringify(buildTrustedOutboxPayload({
             eventId,
+            eventType: 'FILE_UPLOAD_COMPLETED_ENQUEUE_SCAN',
             orgId: ctx.orgId,
             projectId: version.project_id || null,
+            entityType: 'DOCUMENT_VERSION',
+            entityId: versionId,
+            actorUserId: ctx.userId,
+            requestId: ctx.requestId,
+          }, {
             versionId,
             documentId: version.doc_id,
             storageObjectId: version.storage_id,
@@ -905,9 +912,7 @@ export class DocumentsService {
             expectedSha256: version.expected_sha256 || null,
             bucket: version.bucket,
             providerVersionId: providerReceipt.versionId,
-            actorUserId: ctx.userId,
-            requestId: ctx.requestId,
-          }),
+          })),
         ],
       );
 
