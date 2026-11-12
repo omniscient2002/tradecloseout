@@ -20,8 +20,11 @@ describe('PH1-G24-005: notification producer preserves accepted and in-flight co
       const id=external.notification.id;
       await admin.query(`UPDATE notifications SET delivery_attempts=1,
         claim_token=$2,claim_until=now()+interval '30 seconds' WHERE id=$1`,[id,uuidv7()]);
-      await service.createNotification(ctx,{channel:'EMAIL',eventKey:'G24_TEST',
-        payload:{message:'forged after submission'},dedupKey:external.notification.dedup_key});
+      await expect(service.createNotification(ctx,{channel:'EMAIL',eventKey:'G24_TEST',
+        payload:{message:'forged after submission'},dedupKey:external.notification.dedup_key}))
+        .rejects.toMatchObject({
+          response: expect.objectContaining({ code: 'NOTIFICATION_DEDUP_CONFLICT' }),
+        });
       const {rows:[after]}=await admin.query(`SELECT id,status,gateway_state,payload_json,
         delivery_attempts FROM notifications WHERE id=$1`,[id]);
       expect(after.id).toBe(id);
