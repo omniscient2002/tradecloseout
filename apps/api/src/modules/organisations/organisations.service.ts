@@ -728,7 +728,18 @@ export class OrganisationsService {
       replacementUserId?: string;
     },
   ) {
+    if (input.replacementUserId === input.targetUserId) {
+      throw new UnprocessableEntityException({ code: 'SELF_REPLACEMENT_NOT_ALLOWED' });
+    }
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      const { rows: actorRows } = await client.query(
+        `SELECT role FROM memberships
+           WHERE org_id=$1 AND user_id=$2 AND status='ACTIVE' FOR SHARE`,
+        [ctx.orgId, ctx.userId],
+      );
+      if (!['R-OWNER','R-ADMIN'].includes(actorRows[0]?.role)) {
+        throw new ForbiddenException({ code: 'OFFBOARDING_NOT_AUTHORIZED' });
+      }
       const { rows: targetMemberRows } = await client.query(
         `SELECT id, role, status FROM memberships
           WHERE org_id = $1 AND user_id = $2
@@ -740,6 +751,13 @@ export class OrganisationsService {
         throw new NotFoundException({ code: 'NOT_FOUND', detail: 'Member not found in organisation.' });
       }
       const targetMember = targetMemberRows[0];
+      if (targetMember.status === 'REMOVED') {
+        throw new ConflictException({ code: 'MEMBERSHIP_ALREADY_REMOVED' });
+      }
+      if (actorRows[0]?.role !== 'R-OWNER' &&
+          ['R-OWNER','R-ADMIN'].includes(targetMember.role)) {
+        throw new ForbiddenException({ code: 'PROTECTED_MEMBER_TRANSITION' });
+      }
 
       // Guardrail (11 §4.13 & WF-21): Cannot suspend or remove the sole Owner
       if (targetMember.role === 'R-OWNER' && input.action !== 'REASSIGN_ONLY') {
@@ -788,10 +806,40 @@ export class OrganisationsService {
         });
       }
 
+      // PH2-G03-003: project closure and reassignment must serialize on the
+      // same project rows. Checking status before acquiring these locks would
+      // let a concurrent closure commit while responsibilities are rewritten.
+      if (input.replacementUserId) {
+        const { rows: affectedProjects } = await client.query(
+          `SELECT p.id,p.status FROM projects p
+             WHERE p.org_id=$1 AND (
+               EXISTS (SELECT 1 FROM requirements r
+                 WHERE r.org_id=p.org_id AND r.project_id=p.id AND r.owner_user_id=$2
+                   AND r.status NOT IN ('APPROVED','WAIVED','NOT_APPLICABLE','SUPERSEDED'))
+               OR EXISTS (SELECT 1 FROM reviews rv
+                 WHERE rv.org_id=p.org_id AND rv.project_id=p.id
+                   AND rv.reviewer_user_id=$2 AND rv.status IN ('PENDING','IN_REVIEW'))
+               OR EXISTS (SELECT 1 FROM handover_packages hp
+                 WHERE hp.org_id=p.org_id AND hp.project_id=p.id AND hp.requested_by=$2
+                   AND hp.status IN ('DRAFT','QUEUED','GENERATING'))
+               OR EXISTS (SELECT 1 FROM defects d
+                 WHERE d.org_id=p.org_id AND d.project_id=p.id AND d.assigned_user_id=$2
+                   AND d.status IN ('OPEN','IN_PROGRESS'))
+             ) ORDER BY p.id FOR UPDATE OF p`,
+          [ctx.orgId, input.targetUserId],
+        );
+        if (affectedProjects.some(project => !['DRAFT','ACTIVE','HANDOVER'].includes(project.status))) {
+          throw new ConflictException({
+            code: 'PROJECT_LIFECYCLE_BLOCKS_REASSIGNMENT',
+            detail: 'Reopen the affected project before moving its outstanding responsibilities.',
+          });
+        }
+      }
+
       // 3. Perform Bulk Reassignment if replacementUserId is provided (FR-IAM-008 / SCR-056 / Top 25 Item 19)
       if (input.replacementUserId) {
         const { rows: repRows } = await client.query(
-          `SELECT role, status FROM memberships WHERE org_id = $1 AND user_id = $2`,
+          `SELECT role, status FROM memberships WHERE org_id = $1 AND user_id = $2 FOR SHARE`,
           [ctx.orgId, input.replacementUserId],
         );
         if (repRows.length === 0 || repRows[0].status !== 'ACTIVE') {
