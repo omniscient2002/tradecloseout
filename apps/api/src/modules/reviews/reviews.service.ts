@@ -976,6 +976,9 @@ export class ReviewsService {
       );
       if (!documentRes.rows.length) throw new NotFoundException('DOCUMENT_NOT_FOUND');
       const doc = documentRes.rows[0];
+      if (doc.current_approved_version_id === version.id) {
+        throw new ConflictException('DOCUMENT_VERSION_ALREADY_APPROVED_POINTER');
+      }
       if (doc.latest_version_id && doc.latest_version_id !== version.id) {
         throw new ConflictException('EXTERNAL_APPROVAL_VERSION_NOT_LATEST');
       }
