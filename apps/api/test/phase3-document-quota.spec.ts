@@ -95,9 +95,9 @@ describe('PH3-G09-001: typed document quota arithmetic on restricted PostgreSQL'
       const packageItemId = uuidv7();
       await admin.query(
         `INSERT INTO handover_packages
-          (id, org_id, project_id, version_no, title, status, created_by)
-          VALUES ($1, $2, $3, 1, 'Retained package', 'READY', $4)`,
-        [packageId, orgId, projectId, userId],
+          (id, org_id, project_id, version_no, title, status, created_by, snapshot_checksum)
+          VALUES ($1, $2, $3, 1, 'Retained package', 'READY', $4, $5)`,
+        [packageId, orgId, projectId, userId, 'f'.repeat(64)],
       );
       await admin.query(
         `INSERT INTO package_items
