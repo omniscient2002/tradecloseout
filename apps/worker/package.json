@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "tsx watch ./src/main.ts",
     "build": "tsc",
-    "test": "node --import tsx --test test/worker-integration.spec.ts test/phase1-worker-secrecy.spec.ts test/phase1-scheduler-orchestration.spec.ts test/phase1-worker-drain.spec.ts test/phase1-outbox-identity.spec.ts",
+    "test": "node --import tsx --test test/worker-integration.spec.ts test/phase1-worker-secrecy.spec.ts test/phase1-scheduler-orchestration.spec.ts test/phase1-worker-drain.spec.ts test/phase1-outbox-identity.spec.ts test/phase1-audit-chain-restore.spec.ts",
     "start": "node ./dist/apps/worker/src/main.js"
   },
   "dependencies": {
