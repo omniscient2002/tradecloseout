@@ -8,8 +8,9 @@ describe('PH1-G01 privileged MFA gate and secret-bearing endpoint contract', () 
   const original = process.env.NODE_ENV;
   const originalOverride = process.env.AUTH_REQUIRE_PRIVILEGED_MFA;
   beforeEach(() => {
-    process.env.NODE_ENV = 'production';
-    delete process.env.AUTH_REQUIRE_PRIVILEGED_MFA;
+    // Jest may normalize NODE_ENV to test. Explicitly request the same
+    // strict policy that production/staging enables by default.
+    process.env.AUTH_REQUIRE_PRIVILEGED_MFA = 'true';
   });
   afterAll(() => {
     if (original === undefined) delete process.env.NODE_ENV;
