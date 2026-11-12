@@ -124,7 +124,7 @@ export class S3StorageService implements ObjectStoragePresigner {
       } catch (err) {
         // Continue only if an earlier request already completed this exact-size object.
         const prior = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: params.objectKey })).catch(() => null);
-        if (prior?.ContentLength === params.expectedSizeBytes && prior.VersionId) {
+        if (prior?.ContentLength === params.expectedSizeBytes && isImmutableStorageVersion(prior.VersionId)) {
           return { observedSizeBytes: prior.ContentLength, versionId: prior.VersionId };
         }
         throw err;
