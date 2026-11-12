@@ -1,0 +1,375 @@
+FAIL test/phase2-easy-ten.spec.ts
+  Phase2 easiest ten: pre-database runtime boundaries
+    ✕ B01 forwards the supplied project start date to the canonical validator/writer (7 ms)
+    ✕ B02 rejects invalid closure date 2027-02-30 before SQL (3 ms)
+    ✕ B02 rejects invalid closure date 2027-13-01 before SQL (2 ms)
+    ✕ B02 rejects invalid closure date yesterday before SQL (2 ms)
+    ✕ B02 rejects invalid closure date  before SQL (1 ms)
+    ✕ B02 rejects invalid closure date null before SQL (1 ms)
+    ✕ B02 rejects invalid closure date 3 before SQL (1 ms)
+    ✕ B03 rejects control characters in project renames consistently with creation (1 ms)
+    ✕ B06 rejects oversized variation scope before SQL (1 ms)
+    ✕ B07 rejects malformed notification envelopes (2 ms)
+    ✓ B07 rejects malformed notification envelopes (1 ms)
+    ✕ B07 rejects malformed notification envelopes (1 ms)
+    ✕ B07 rejects cyclic or excessively deep notification payloads before SQL (6 ms)
+    ✕ B08 cannot enable self-approval through a branding/profile edit (1 ms)
+    ✕ B10 rejects a profile PATCH naming a different organisation through controller and service wrapper (1 ms)
+
+  ● Phase2 easiest ten: pre-database runtime boundaries › B01 forwards the supplied project start date to the canonical validator/writer
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 1
+    + Received  + 8
+
+      Object {
+    -   "startDate": "2027-02-01",
+    +   "clientPartyId": undefined,
+    +   "code": "START-DATE",
+    +   "consultantPartyId": undefined,
+    +   "contractValuePaise": undefined,
+    +   "mcPartyId": undefined,
+    +   "name": "Start date project",
+    +   "projectType": undefined,
+    +   "targetHandoverDate": undefined,
+      }
+
+      13 |     const draft=jest.spyOn(service,'createDraftProject').mockResolvedValue({projectId:'fixture'} as any);
+      14 |     await service.createProject(ctx,{code:'START-DATE',name:'Start date project',startDate:'2027-02-01'} as any);
+    > 15 |     expect(draft.mock.calls[0][1]).toMatchObject({startDate:'2027-02-01'});
+         |                                    ^
+      16 |   });
+      17 |   it.each(['2027-02-30','2027-13-01','yesterday','',null,3])('B02 rejects invalid closure date %s before SQL',async value=>{
+      18 |     const pool=forbiddenPool();
+
+      at Object.<anonymous> (test/phase2-easy-ten.spec.ts:15:36)
+
+  ● Phase2 easiest ten: pre-database runtime boundaries › B02 rejects invalid closure date 2027-02-30 before SQL
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 5
+    + Received  + 1
+
+    - Object {
+    -   "response": ObjectContaining {
+    -     "code": "INVALID_CLOSURE_DATE",
+    -   },
+    - }
+    + [Error: DATABASE_REACHED]
+
+      18 |     const pool=forbiddenPool();
+      19 |     await expect(new ProjectsService(pool as any).closeProject(ctx,ctx.orgId,undefined,{closureDate:value} as any))
+    > 20 |       .rejects.toMatchObject(invalid('INVALID_CLOSURE_DATE'));
+         |                ^
+      21 |     expect(pool.connect).not.toHaveBeenCalled();
+      22 |   });
+      23 |   it('B03 rejects control characters in project renames consistently with creation',async()=>{
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-easy-ten.spec.ts:20:16
+
+  ● Phase2 easiest ten: pre-database runtime boundaries › B02 rejects invalid closure date 2027-13-01 before SQL
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 5
+    + Received  + 1
+
+    - Object {
+    -   "response": ObjectContaining {
+    -     "code": "INVALID_CLOSURE_DATE",
+    -   },
+    - }
+    + [Error: DATABASE_REACHED]
+
+      18 |     const pool=forbiddenPool();
+      19 |     await expect(new ProjectsService(pool as any).closeProject(ctx,ctx.orgId,undefined,{closureDate:value} as any))
+    > 20 |       .rejects.toMatchObject(invalid('INVALID_CLOSURE_DATE'));
+         |                ^
+      21 |     expect(pool.connect).not.toHaveBeenCalled();
+      22 |   });
+      23 |   it('B03 rejects control characters in project renames consistently with creation',async()=>{
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-easy-ten.spec.ts:20:16
+
+  ● Phase2 easiest ten: pre-database runtime boundaries › B02 rejects invalid closure date yesterday before SQL
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 5
+    + Received  + 1
+
+    - Object {
+    -   "response": ObjectContaining {
+    -     "code": "INVALID_CLOSURE_DATE",
+    -   },
+    - }
+    + [Error: DATABASE_REACHED]
+
+      18 |     const pool=forbiddenPool();
+      19 |     await expect(new ProjectsService(pool as any).closeProject(ctx,ctx.orgId,undefined,{closureDate:value} as any))
+    > 20 |       .rejects.toMatchObject(invalid('INVALID_CLOSURE_DATE'));
+         |                ^
+      21 |     expect(pool.connect).not.toHaveBeenCalled();
+      22 |   });
+      23 |   it('B03 rejects control characters in project renames consistently with creation',async()=>{
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-easy-ten.spec.ts:20:16
+
+  ● Phase2 easiest ten: pre-database runtime boundaries › B02 rejects invalid closure date  before SQL
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 5
+    + Received  + 1
+
+    - Object {
+    -   "response": ObjectContaining {
+    -     "code": "INVALID_CLOSURE_DATE",
+    -   },
+    - }
+    + [Error: DATABASE_REACHED]
+
+      18 |     const pool=forbiddenPool();
+      19 |     await expect(new ProjectsService(pool as any).closeProject(ctx,ctx.orgId,undefined,{closureDate:value} as any))
+    > 20 |       .rejects.toMatchObject(invalid('INVALID_CLOSURE_DATE'));
+         |                ^
+      21 |     expect(pool.connect).not.toHaveBeenCalled();
+      22 |   });
+      23 |   it('B03 rejects control characters in project renames consistently with creation',async()=>{
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-easy-ten.spec.ts:20:16
+
+  ● Phase2 easiest ten: pre-database runtime boundaries › B02 rejects invalid closure date null before SQL
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 5
+    + Received  + 1
+
+    - Object {
+    -   "response": ObjectContaining {
+    -     "code": "INVALID_CLOSURE_DATE",
+    -   },
+    - }
+    + [Error: DATABASE_REACHED]
+
+      18 |     const pool=forbiddenPool();
+      19 |     await expect(new ProjectsService(pool as any).closeProject(ctx,ctx.orgId,undefined,{closureDate:value} as any))
+    > 20 |       .rejects.toMatchObject(invalid('INVALID_CLOSURE_DATE'));
+         |                ^
+      21 |     expect(pool.connect).not.toHaveBeenCalled();
+      22 |   });
+      23 |   it('B03 rejects control characters in project renames consistently with creation',async()=>{
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-easy-ten.spec.ts:20:16
+
+  ● Phase2 easiest ten: pre-database runtime boundaries › B02 rejects invalid closure date 3 before SQL
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 5
+    + Received  + 1
+
+    - Object {
+    -   "response": ObjectContaining {
+    -     "code": "INVALID_CLOSURE_DATE",
+    -   },
+    - }
+    + [Error: DATABASE_REACHED]
+
+      18 |     const pool=forbiddenPool();
+      19 |     await expect(new ProjectsService(pool as any).closeProject(ctx,ctx.orgId,undefined,{closureDate:value} as any))
+    > 20 |       .rejects.toMatchObject(invalid('INVALID_CLOSURE_DATE'));
+         |                ^
+      21 |     expect(pool.connect).not.toHaveBeenCalled();
+      22 |   });
+      23 |   it('B03 rejects control characters in project renames consistently with creation',async()=>{
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-easy-ten.spec.ts:20:16
+
+  ● Phase2 easiest ten: pre-database runtime boundaries › B03 rejects control characters in project renames consistently with creation
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 5
+    + Received  + 1
+
+    - Object {
+    -   "response": ObjectContaining {
+    -     "code": "INVALID_PROJECT_NAME",
+    -   },
+    - }
+    + [Error: DATABASE_REACHED]
+
+      24 |     const pool=forbiddenPool();
+      25 |     await expect(new ProjectsService(pool as any).updateProject(ctx,ctx.orgId,{name:'Plant\u0000Room'}))
+    > 26 |       .rejects.toMatchObject(invalid('INVALID_PROJECT_NAME'));
+         |                ^
+      27 |     expect(pool.connect).not.toHaveBeenCalled();
+      28 |   });
+      29 |   it('B06 rejects oversized variation scope before SQL',async()=>{
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at Object.<anonymous> (test/phase2-easy-ten.spec.ts:26:16)
+
+  ● Phase2 easiest ten: pre-database runtime boundaries › B06 rejects oversized variation scope before SQL
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 5
+    + Received  + 1
+
+    - Object {
+    -   "response": ObjectContaining {
+    -     "code": "INVALID_VARIATION_SCOPE",
+    -   },
+    - }
+    + [Error: DATABASE_REACHED]
+
+      31 |     await expect(new ProjectsService(pool as any).createVariation(ctx,ctx.orgId,ctx.userId,
+      32 |       {variationRef:'V1',title:'Scope change',costDeltaPaise:0,scopeDeltaJson:{detail:'x'.repeat(32769)}}))
+    > 33 |       .rejects.toMatchObject(invalid('INVALID_VARIATION_SCOPE'));
+         |                ^
+      34 |     expect(pool.connect).not.toHaveBeenCalled();
+      35 |   });
+      36 |   it.each([null,[],{channel:'PIGEON',eventKey:'TEST',dedupKey:'key',payload:{}}])('B07 rejects malformed notification envelopes',async dto=>{
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at Object.<anonymous> (test/phase2-easy-ten.spec.ts:33:16)
+
+  ● Phase2 easiest ten: pre-database runtime boundaries › B07 rejects malformed notification envelopes
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 5
+    + Received  + 1
+
+    - Object {
+    -   "response": ObjectContaining {
+    -     "code": "INVALID_NOTIFICATION_INPUT",
+    -   },
+    - }
+    + [TypeError: Cannot read properties of null (reading 'channel')]
+
+      37 |     const db={withTenantContext:jest.fn()};
+      38 |     await expect(new NotificationsService(db as any).createNotification({...ctx,actorType:'SYSTEM'},dto as any))
+    > 39 |       .rejects.toMatchObject(invalid('INVALID_NOTIFICATION_INPUT'));
+         |                ^
+      40 |     expect(db.withTenantContext).not.toHaveBeenCalled();
+      41 |   });
+      42 |   it('B07 rejects cyclic or excessively deep notification payloads before SQL',async()=>{
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-easy-ten.spec.ts:39:16
+
+  ● Phase2 easiest ten: pre-database runtime boundaries › B07 rejects malformed notification envelopes
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: undefined
+
+      36 |   it.each([null,[],{channel:'PIGEON',eventKey:'TEST',dedupKey:'key',payload:{}}])('B07 rejects malformed notification envelopes',async dto=>{
+      37 |     const db={withTenantContext:jest.fn()};
+    > 38 |     await expect(new NotificationsService(db as any).createNotification({...ctx,actorType:'SYSTEM'},dto as any))
+         |           ^
+      39 |       .rejects.toMatchObject(invalid('INVALID_NOTIFICATION_INPUT'));
+      40 |     expect(db.withTenantContext).not.toHaveBeenCalled();
+      41 |   });
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at test/phase2-easy-ten.spec.ts:38:11
+
+  ● Phase2 easiest ten: pre-database runtime boundaries › B07 rejects cyclic or excessively deep notification payloads before SQL
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 5
+    + Received  + 1
+
+    - Object {
+    -   "response": ObjectContaining {
+    -     "code": "INVALID_NOTIFICATION_INPUT",
+    -   },
+    - }
+    + [RangeError: Maximum call stack size exceeded]
+
+      46 |       await expect(new NotificationsService(db as any).createNotification({...ctx,actorType:'USER'},
+      47 |         {channel:'IN_APP',eventKey:'TEST',dedupKey:'key',payload}))
+    > 48 |         .rejects.toMatchObject(invalid('INVALID_NOTIFICATION_INPUT'));
+         |                  ^
+      49 |     }
+      50 |     expect(db.withTenantContext).not.toHaveBeenCalled();
+      51 |   });
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at Object.<anonymous> (test/phase2-easy-ten.spec.ts:48:18)
+
+  ● Phase2 easiest ten: pre-database runtime boundaries › B08 cannot enable self-approval through a branding/profile edit
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 2
+    + Received  + 2
+
+      Object {
+    -   "response": ObjectContaining {
+    -     "code": "SELF_APPROVAL_POLICY_UNAVAILABLE",
+    +   "response": Object {
+    +     "code": "SELF_APPROVAL_POLICY_NOT_SUPPORTED",
+        },
+      }
+
+      53 |     const pool=forbiddenPool();
+      54 |     await expect(new OrganisationsService(pool as any).updateOrgProfile(ctx,1,{allowSelfApproval:true}))
+    > 55 |       .rejects.toMatchObject(invalid('SELF_APPROVAL_POLICY_UNAVAILABLE'));
+         |                ^
+      56 |     expect(pool.connect).not.toHaveBeenCalled();
+      57 |   });
+      58 |   it('B10 rejects a profile PATCH naming a different organisation through controller and service wrapper',async()=>{
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at Object.<anonymous> (test/phase2-easy-ten.spec.ts:55:16)
+
+  ● Phase2 easiest ten: pre-database runtime boundaries › B10 rejects a profile PATCH naming a different organisation through controller and service wrapper
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 5
+    + Received  + 1
+
+    - Object {
+    -   "response": ObjectContaining {
+    -     "code": "NOT_FOUND",
+    -   },
+    - }
+    + [Error: DATABASE_REACHED]
+
+      61 |     for(const call of [()=>service.updateOrganisation(ctx,ctx.userId,{rowVersion:1,displayName:'Valid name'}),
+      62 |       ()=>controller.updateOrganisation({userContext:ctx},ctx.userId,{rowVersion:1,displayName:'Valid name'})]) {
+    > 63 |       await expect(call()).rejects.toMatchObject(invalid('NOT_FOUND'));
+         |                                    ^
+      64 |     }
+      65 |     expect(pool.connect).not.toHaveBeenCalled();
+      66 |   });
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at Object.<anonymous> (test/phase2-easy-ten.spec.ts:63:36)
+
+Test Suites: 1 failed, 1 total
+Tests:       14 failed, 1 passed, 15 total
+Snapshots:   0 total
+Time:        3.817 s
+Ran all test suites matching /test\/phase2-easy-ten.spec.ts/i.
+Error: ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL
+
+  × "pnpm recursive exec" failed in /tmp/tco-phase2-reaudit/apps/api
+

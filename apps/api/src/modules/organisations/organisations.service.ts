@@ -252,7 +252,7 @@ export class OrganisationsService {
 
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
       const { rows: orgRows } = await client.query(
-        `SELECT id, legal_name, display_name, entity_type, status, country, state, timezone, row_version, created_at, updated_at
+        `SELECT id, legal_name, display_name, entity_type, status, country, state, timezone, allow_self_approval, row_version, created_at, updated_at
            FROM organisations WHERE id = $1 LIMIT 1`,
         [orgId],
       );
@@ -269,7 +269,7 @@ export class OrganisationsService {
 
       return {
         ...orgRows[0],
-        profile: profileRows[0] ?? null,
+        profile: profileRows[0] ? {...profileRows[0], allow_self_approval: orgRows[0].allow_self_approval} : null,
       };
     });
   }
@@ -286,7 +286,7 @@ export class OrganisationsService {
     if(input.allowSelfApproval===true)throw new UnprocessableEntityException({code:'SELF_APPROVAL_POLICY_NOT_SUPPORTED'});
     const orgColumns: Record<string, string> = {
       legalName:'legal_name', displayName:'display_name', entityType:'entity_type',
-      state:'state', timeZone:'timezone',
+      state:'state', timeZone:'timezone', allowSelfApproval:'allow_self_approval',
     };
     const profileColumns: Record<string, string> = {
       gstin:'gstin', pan:'pan', brandColor:'brand_color',
@@ -315,7 +315,9 @@ export class OrganisationsService {
              WHERE org_id=$1 AND id=$2 AND status='READY'
                AND av_scanned_at IS NOT NULL
                AND mime IN ('image/png','image/jpeg','image/webp')
-               AND sha256 IS NOT NULL AND size_bytes>0
+               AND sha256 ~ '^[a-fA-F0-9]{64}$' AND size_bytes>0
+               AND observed_size_bytes=size_bytes
+               AND provider_version_id IS NOT NULL AND provider_version_id<>''
              FOR SHARE`,[ctx.orgId,input.logoObjectId],
         );
         if (!logo.length) throw new UnprocessableEntityException({code:'INVALID_BRANDING_OBJECT'});
@@ -361,6 +363,9 @@ export class OrganisationsService {
    * API-011: Backward-compatible wrapper for controller
    */
   async updateOrganisation(ctx: TenantActorContext, orgId: string, dto: any) {
+    if (orgId !== 'current' && orgId !== ctx.orgId) {
+      throw new NotFoundException({ code: 'NOT_FOUND' });
+    }
     const {parseOrgProfilePatch} = await import('./organisation-validation');
     const patch = parseOrgProfilePatch(dto);
     return this.updateOrgProfile(ctx, patch.rowVersion, patch.input);

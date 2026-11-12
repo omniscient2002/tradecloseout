@@ -1,0 +1,28 @@
+FAIL test/g01-two-api-http.spec.ts (41.617 s)
+  ✕ G01 actual two-API strict-mode HTTP: shared budgets, MFA, lost response and crash rollback (38947 ms)
+
+  ● G01 actual two-API strict-mode HTTP: shared budgets, MFA, lost response and crash rollback
+
+    G01_DELIVERY_RECONCILE_TIMEOUT {"workerExit":1,"workerSignal":null,"challengeStatus":"AMBIGUOUS","attemptStatus":"AMBIGUOUS","channel":"EMAIL","attempts":0,"sequence":"0","nextDue":true,"workerStarted":false,"workerQpdfDetected":false,"workerDependencyFailure":true,"schedulerDeliveryFailure":false}
+
+      214 |         // Only coarse process and delivery-state indicators may be printed.
+      215 |         // Never include captured gateway traffic, OTP, bearer grants, or logs.
+    > 216 |         throw new Error('G01_DELIVERY_RECONCILE_TIMEOUT '+JSON.stringify({
+          |               ^
+      217 |           workerExit:receiptWorker.exitCode,
+      218 |           workerSignal:receiptWorker.signalCode,
+      219 |           challengeStatus:challengeState?.delivery_status,
+
+      at test/g01-two-api-http.spec.ts:216:15
+      at async withDisposableDatabase (../../packages/db/test/helpers/disposable-database.ts:107:5)
+      at async Object.<anonymous> (test/g01-two-api-http.spec.ts:74:5)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 1 total
+Snapshots:   0 total
+Time:        41.683 s
+Ran all test suites matching /test\/g01-two-api-http.spec.ts/i.
+Error: ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL
+
+  × "pnpm recursive exec" failed in /tmp/tco-phase2-reaudit/apps/api
+

@@ -1,0 +1,7 @@
+gpgv: Signature made Sat Feb 14 17:56:27 2026 IST
+gpgv:                using RSA key ADC8A1FCC15E01D45310419E94657AB20F2A092B
+gpgv: Good signature from "Andreas Radke <andyrtr@archlinux.org>"
+gpgv:                 aka "Andreas Radke <andreas.radke@mailbox.org>"
+gpgv:                 aka "Andreas Radke <andyrtr@mailbox.org>"
+qpdf version 12.3.2
+Run qpdf --copyright to see copyright and license information.

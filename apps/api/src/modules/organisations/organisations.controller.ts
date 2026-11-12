@@ -13,7 +13,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { OrganisationsService } from './organisations.service';
-import { parseOrgProfilePatch, requireOrganisationUuid } from './organisation-validation';
+import { requireOrganisationUuid } from './organisation-validation';
 import { SessionCsrfGuard } from '../../common/guards/session-csrf.guard';
 import { PermissionGuard, RequirePermission } from '../../common/guards/permission.guard';
 
@@ -47,8 +47,7 @@ export class OrganisationsController {
     @Param('orgId') orgId: string,
     @Body() dto: any,
   ) {
-    const patch = parseOrgProfilePatch(dto);
-    return this.orgsService.updateOrgProfile(req.userContext, patch.rowVersion, patch.input);
+    return this.orgsService.updateOrganisation(req.userContext, orgId, dto);
   }
 
   @Get('members')

@@ -1,0 +1,9 @@
+PASS test/phase2-easy-ten-db.spec.ts (6.292 s)
+  Phase2 easiest ten: real tenant transactions
+    ✓ persists dates, fences current relationships, reads canonical policy and requires immutable branding identity (3221 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       1 passed, 1 total
+Snapshots:   0 total
+Time:        6.356 s
+Ran all test suites matching /test\/phase2-easy-ten-db.spec.ts/i.

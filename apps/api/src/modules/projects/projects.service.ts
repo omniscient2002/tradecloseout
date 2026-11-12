@@ -17,6 +17,7 @@ import {
 } from '@tradecloseout/db';
 import { hasPermission, ProjectCodeSchema } from '@tradecloseout/shared';
 import { evaluateReadinessInTransaction } from '../handover/closeout-readiness';
+import { boundedJsonObject } from '../../common/validation/bounded-json';
 import { getProjectCommercialSummary } from './project-commercial-summary';
 
 const POSTGRES_BIGINT_MAX = 9223372036854775807n;
@@ -172,6 +173,14 @@ export class ProjectsService {
     }
 
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      for (const partyId of [input.clientPartyId, input.mcPartyId, input.consultantPartyId]) {
+        if (!partyId) continue;
+        const { rows: party } = await client.query(
+          `SELECT id FROM parties WHERE org_id=$1 AND id=$2
+            AND status='ACTIVE' AND deleted_at IS NULL FOR SHARE`, [ctx.orgId, partyId],
+        );
+        if (!party.length) throw new NotFoundException('PROJECT_PARTY_NOT_FOUND');
+      }
       const projectId = uuidv7();
 
       const settingsJson = {
@@ -237,6 +246,7 @@ export class ProjectsService {
       mcPartyId?: string;
       consultantPartyId?: string;
       contractValuePaise?: string | number | bigint;
+      startDate?: string;
       targetHandoverDate?: string;
     },
   ) {
@@ -248,6 +258,7 @@ export class ProjectsService {
       mcPartyId: dto.mcPartyId,
       consultantPartyId: dto.consultantPartyId,
       contractValuePaise: exactPaise(dto.contractValuePaise),
+      startDate: dto.startDate,
       targetHandoverDate: dto.targetHandoverDate,
     });
   }
@@ -267,7 +278,7 @@ export class ProjectsService {
       throw new UnprocessableEntityException({ code: 'INVALID_PROJECT_UPDATE' });
     }
     if (dto.name !== undefined && (typeof dto.name !== 'string' ||
-        dto.name.trim().length < 2 || dto.name.trim().length > 200)) {
+        dto.name.trim().length < 2 || dto.name.trim().length > 200 || /[\u0000-\u001f\u007f]/.test(dto.name))) {
       throw new UnprocessableEntityException({ code: 'INVALID_PROJECT_NAME' });
     }
     if (dto.code !== undefined && (typeof dto.code !== 'string' ||
@@ -304,6 +315,15 @@ export class ProjectsService {
             detail: 'Project code is immutable once the project is activated.',
           });
         }
+      }
+
+      if (dto.clientPartyId) {
+        const { rows: party } = await client.query(
+          `SELECT id FROM parties WHERE org_id=$1 AND id=$2
+            AND status='ACTIVE' AND deleted_at IS NULL FOR SHARE`,
+          [ctx.orgId, dto.clientPartyId],
+        );
+        if (!party.length) throw new NotFoundException('PROJECT_PARTY_NOT_FOUND');
       }
 
       const { rows: updatedRows } = await client.query(
@@ -465,7 +485,10 @@ export class ProjectsService {
     expectedRowVersion?: number,
     input?: { closureDate?: string },
   ) {
-    const closureDate = input?.closureDate || new Date().toISOString().split('T')[0];
+    if (input?.closureDate !== undefined && !validProjectDate(input.closureDate)) {
+      throw new UnprocessableEntityException({ code: 'INVALID_CLOSURE_DATE' });
+    }
+    const closureDate = input?.closureDate ?? new Date().toISOString().split('T')[0];
 
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
       const { rows: projRows } = await client.query(
@@ -1088,13 +1111,16 @@ export class ProjectsService {
       throw new UnprocessableEntityException({ code: 'INVALID_VARIATION_INPUT' });
     }
     const deltaPaise = exactPaise(dto.costDeltaPaise ?? 0n, true)!;
-    const scopeDeltaJson = dto.scopeDeltaJson ?? {};
-    if (typeof scopeDeltaJson !== 'object' || Array.isArray(scopeDeltaJson) ||
-        Object.getPrototypeOf(scopeDeltaJson) !== Object.prototype) {
-      throw new UnprocessableEntityException({ code: 'INVALID_VARIATION_SCOPE' });
-    }
+    let scopeDeltaJson: Record<string, unknown>;
+    try { scopeDeltaJson = boundedJsonObject(dto.scopeDeltaJson === undefined ? {} : dto.scopeDeltaJson, 32768); }
+    catch { throw new UnprocessableEntityException({ code: 'INVALID_VARIATION_SCOPE' }); }
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
       await this.lockEditableCommercialProject(client, ctx.orgId, projectId);
+      const { rows: contract } = await client.query(
+        `SELECT id FROM contracts WHERE org_id=$1 AND project_id=$2 AND id=$3
+          AND status='ACTIVE' FOR SHARE`, [ctx.orgId, projectId, contractId],
+      );
+      if (!contract.length) throw new NotFoundException('VARIATION_CONTRACT_NOT_FOUND');
       const varId = uuidv7();
       const res = await client.query(
         `INSERT INTO variations (

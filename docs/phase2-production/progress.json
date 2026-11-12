@@ -692,6 +692,122 @@
       "id": "PH2-G06-009",
       "state": "IMPLEMENTED_SUBSET_TESTED_NOT_ACCEPTED",
       "notes": "Separate provisioned author/reviewer principals, immutable payload/review provenance, bounded schema validation, no runtime edit/trigger/publication authority, explicit candidate/qualification/catalogue/mapping/applicability/scenario/exception records, retirement and guarded install. No real author/reviewer memberships or approval evidence seeded. CLI uses a separately configured least-privileged human connection; external gate stays blocked."
+    },
+    {
+      "id": "PH2-G05-002",
+      "state": "IMPLEMENTED_SUBSET_TESTED_NOT_ACCEPTED",
+      "notes": "B01/B03/B04/B05/B06: project start date, rename control characters, active tenant parties, active variation parent and bounded scope JSON. Complete input contracts and independent acceptance remain open."
+    },
+    {
+      "id": "PH2-G05-006",
+      "state": "IMPLEMENTED_SUBSET_TESTED_NOT_ACCEPTED",
+      "notes": "B02: closure calendar validation before SQL. Optimistic concurrency and reasons across lifecycle routes remain open."
+    },
+    {
+      "id": "PH2-G03-002",
+      "state": "IMPLEMENTED_SUBSET_TESTED_NOT_ACCEPTED",
+      "notes": "B08/B09/B10: canonical self-approval reads/explicit disable, immutable branding identity eligibility and profile target binding. Full branding consumers, language/date/signatory work and independent approval remain open."
+    },
+    {
+      "id": "PH2-G20-001",
+      "state": "IMPLEMENTED_SUBSET_TESTED_NOT_ACCEPTED",
+      "notes": "B07: typed notification envelope/channel/urgency and bounded detached JSON. Reviewed external templates/provider acceptance remain separately gated."
+    }
+  ],
+  "engineeringBatches": [
+    {
+      "id": "PH2-EASY-TEN-20261112",
+      "baselineSha": "369a132f694322da0b9f7a1a82b38277159c35b4",
+      "fixCount": 10,
+      "state": "CANDIDATE_FIX_TESTED",
+      "scope": "B01..B10 in TEN-SMALL-FIXES-2026-11-12.md; scoped mechanisms, not canonical finding closures",
+      "canonicalStatusUnchanged": true,
+      "providerIntegrationsEnabled": false,
+      "verification": "531 API tests verified across full run (530 passing plus one setup failure) and corrected HTTP rerun (1 passing); typecheck/build/security15/RBAC8 passed; remote CI and independent acceptance pending.",
+      "fixes": [
+        {
+          "id": "B01",
+          "parentFindingIds": [
+            "PH2-G05-002"
+          ],
+          "title": "Preserve startDate through project creation",
+          "state": "CANDIDATE_FIX_TESTED"
+        },
+        {
+          "id": "B02",
+          "parentFindingIds": [
+            "PH2-G05-006"
+          ],
+          "title": "Validate closure calendar dates",
+          "state": "CANDIDATE_FIX_TESTED"
+        },
+        {
+          "id": "B03",
+          "parentFindingIds": [
+            "PH2-G05-002"
+          ],
+          "title": "Reject control characters on project rename",
+          "state": "CANDIDATE_FIX_TESTED"
+        },
+        {
+          "id": "B04",
+          "parentFindingIds": [
+            "PH2-G05-002"
+          ],
+          "title": "Require current tenant-party eligibility",
+          "state": "CANDIDATE_FIX_TESTED"
+        },
+        {
+          "id": "B05",
+          "parentFindingIds": [
+            "PH2-G05-002",
+            "PH2-G05-005"
+          ],
+          "title": "Require active exact-scope variation parent",
+          "state": "CANDIDATE_FIX_TESTED"
+        },
+        {
+          "id": "B06",
+          "parentFindingIds": [
+            "PH2-G05-002"
+          ],
+          "title": "Bound and detach variation JSON",
+          "state": "CANDIDATE_FIX_TESTED"
+        },
+        {
+          "id": "B07",
+          "parentFindingIds": [
+            "PH2-G20-001",
+            "PH2-G20-006"
+          ],
+          "title": "Validate notification envelopes and bounded JSON",
+          "state": "CANDIDATE_FIX_TESTED"
+        },
+        {
+          "id": "B08",
+          "parentFindingIds": [
+            "PH2-G03-002"
+          ],
+          "title": "Read canonical self-approval policy and synchronize explicit disable",
+          "state": "CANDIDATE_FIX_TESTED"
+        },
+        {
+          "id": "B09",
+          "parentFindingIds": [
+            "PH2-G03-002"
+          ],
+          "title": "Require pinned verified branding metadata",
+          "state": "CANDIDATE_FIX_TESTED"
+        },
+        {
+          "id": "B10",
+          "parentFindingIds": [
+            "PH2-G03-002"
+          ],
+          "title": "Enforce profile-update organisation target",
+          "state": "CANDIDATE_FIX_TESTED"
+        }
+      ]
     }
   ]
 }

@@ -42,6 +42,7 @@ export class ProjectsController {
       mcPartyId?: string;
       consultantPartyId?: string;
       contractValuePaise?: string | number | bigint;
+      startDate?: string;
       targetHandoverDate?: string;
     },
   ) {

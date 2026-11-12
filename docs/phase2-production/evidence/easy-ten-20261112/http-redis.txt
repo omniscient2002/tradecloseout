@@ -1,0 +1,46 @@
+FAIL test/g01-two-api-http.spec.ts (41.872 s)
+  ✕ G01 actual two-API strict-mode HTTP: shared budgets, MFA, lost response and crash rollback (38800 ms)
+
+  ● G01 actual two-API strict-mode HTTP: shared budgets, MFA, lost response and crash rollback
+
+    G01_API_STARTUP_FAILED: /tmp/tco-phase2-reaudit/apps/api/dist/apps/api/src/modules/identity/auth-security.js:98
+            throw new Error('BOOT_AUTH_DATABASE_ROLE_INVALID');
+                  ^
+
+    Error: BOOT_AUTH_DATABASE_ROLE_INVALID
+
+       96 |         !db.username || ['postgres', 'tc_migrator'].includes(db.username) ||
+       97 |         db.password.length < 12) {
+    >  98 |         throw new Error('BOOT_AUTH_DATABASE_ROLE_INVALID');
+          |               ^
+       99 |     }
+      100 |     if (Buffer.from(env.AUTH_MFA_ENCRYPTION_KEY || '', 'base64').length !== 32) {
+      101 |         throw new Error('BOOT_AUTH_MFA_ENCRYPTION_KEY_INVALID');
+
+      at validateAuthenticationConfig (dist/apps/api/src/modules/identity/auth-security.js:98:15)
+      at bootstrap (dist/apps/api/src/main.js:17:54)
+      at Object.<anonymous> (dist/apps/api/src/main.js:54:1)
+      Node.js v22.23.5
+      /tmp/tco-phase2-reaudit/apps/api/dist/apps/api/src/modules/identity/auth-security.js:98
+              throw new Error('BOOT_AUTH_DATABASE_ROLE_INVALID');
+                    ^
+      Error: BOOT_AUTH_DATABASE_ROLE_INVALID
+      at validateAuthenticationConfig (dist/apps/api/src/modules/identity/auth-security.js:98:15)
+      at bootstrap (dist/apps/api/src/main.js:17:54)
+      at Object.<anonymous> (dist/apps/api/src/main.js:54:1)
+      Node.js v22.23.5
+      at ready (test/g01-two-api-http.spec.ts:99:14)
+          at async Promise.all (index 0)
+      at async /tmp/tco-phase2-reaudit/apps/api/test/g01-two-api-http.spec.ts:100:7
+      at async withDisposableDatabase (../../packages/db/test/helpers/disposable-database.ts:107:5)
+      at async Object.<anonymous> (test/g01-two-api-http.spec.ts:74:5)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 1 total
+Snapshots:   0 total
+Time:        41.944 s
+Ran all test suites matching /test\/g01-two-api-http.spec.ts/i.
+Error: ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL
+
+  × "pnpm recursive exec" failed in /tmp/tco-phase2-reaudit/apps/api
+
