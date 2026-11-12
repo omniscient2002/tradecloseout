@@ -156,7 +156,7 @@ describe('Commercial pricing is sourced from configured billing plans', () => {
       await admin.query(
         `INSERT INTO plans(id, code, name, limits_json, price_paise, interval, status)
          VALUES($1, 'HVAC-ACTUAL', 'Verified closeout plan',
-                '{"maxActiveProjects":3,"maxStorageBytes":21474836480}'::jsonb,
+                '{"maxActiveProjects":3,"maxSeats":5,"maxStorageBytes":21474836480,"maxPackageGenerationsPerMonth":10}'::jsonb,
                 1234500, 'MONTH', 'ACTIVE')`,
         [id],
       );
