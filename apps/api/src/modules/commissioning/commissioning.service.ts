@@ -664,14 +664,16 @@ export class CommissioningService {
       WAIVED: 'WAIVED',
       SCHEDULED: 'SCHEDULED',
     };
-    const targetStatus = statusMap[input?.status];
+    const targetStatus = typeof input?.status === 'string' &&
+      Object.prototype.hasOwnProperty.call(statusMap, input.status)
+      ? statusMap[input.status] : undefined;
     if (!targetStatus) {
       throw new BadRequestException({
         code: 'INVALID_SCHEDULE_STATUS',
         detail: 'Status must be one of: PERFORMED, DEFERRED, WAIVED, SCHEDULED',
       });
     }
-    const notes = input.notes?.trim();
+    const notes = typeof input.notes === 'string' ? input.notes.trim() : undefined;
     if (input.notes !== undefined && (typeof input.notes !== 'string' || !notes || notes.length > 1000)) {
       throw new BadRequestException({ code: 'SEASONAL_REASON_INVALID' });
     }
