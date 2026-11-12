@@ -484,8 +484,9 @@ export class DocumentsService {
         }
         // For both new and existing evidence, new associations must also be
         // entirely within the actor's currently allowed requirement set.
-        if (scope.requirementIds && (requestedRequirementIds.length === 0 ||
-            requestedRequirementIds.some(id => !scope.requirementIds!.includes(id)))) {
+        if (scope.requirementIds &&
+            ((!parentId && requestedRequirementIds.length === 0) ||
+             requestedRequirementIds.some(id => !scope.requirementIds!.includes(id)))) {
           throw new ForbiddenException('DOCUMENT_UPLOAD_OUTSIDE_SCOPE');
         }
       }
