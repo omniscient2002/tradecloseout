@@ -62,12 +62,12 @@ test('PH1-G26-008: forged sequence/hash/time cannot override trusted position, r
     // the runtime DB role; only the audited trigger may register a position.
     for (const sql of [
       'SELECT chain_seq FROM audit_chain_positions',
-      'INSERT INTO audit_chain_positions(chain_seq,event_id,event_created_at,prev_hash,event_hash) VALUES (1,gen_random_uuid(),now(),$1,$2)',
-      'UPDATE audit_chain_positions SET event_hash=$2',
+      "INSERT INTO audit_chain_positions(chain_seq,event_id,event_created_at,prev_hash,event_hash) VALUES (1,gen_random_uuid(),now(),'GENESIS','deadbeef')",
+      'UPDATE audit_chain_positions SET event_hash=event_hash',
       'DELETE FROM audit_chain_positions',
       'TRUNCATE audit_chain_positions',
     ]) {
-      await assert.rejects(app.query(sql, sql.includes('$1') ? [GENESIS, forge] : sql.includes('$2') ? [GENESIS, forge] : []),
+      await assert.rejects(app.query(sql),
         (err: any) => err.code === '42501');
     }
     await assert.rejects(app.query('SELECT * FROM public.phase1_audit_expected_head($1)', [a.orgId]),
