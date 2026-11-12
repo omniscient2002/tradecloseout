@@ -4,6 +4,9 @@ import { sha256BlobChunked } from './chunked-sha256';
 export interface OfflineQueuedUpload {
   queueId: string;
   actorPartition: string;
+  // Session-generation fence is not a credential. Legacy drafts with no
+  // generation cannot be silently uploaded after this migration.
+  actorEpoch?: string;
   projectId: string;
   requirementId: string;
   assetId: string | null;
@@ -34,6 +37,7 @@ export interface OfflineQueuedUpload {
 const DB_NAME = 'tradecloseout_field_pwa';
 const STORE_NAME = 'tc_offline_upload_outbox';
 const ACTOR_PARTITION_KEY = 'tc_offline_actor_partition';
+const ACTOR_EPOCH_KEY = 'tc_offline_actor_epoch';
 const DRAIN_LOCK_NAME = 'tradecloseout:field-upload-drain';
 // Multipart part URLs expire. One refresh/retry per failed part prevents an
 // unbounded permission-error loop, while preserving receipts already persisted.
@@ -78,9 +82,16 @@ export function assertOfflineDraftBudget(
 }
 
 
-function assertSameActor(item: Pick<OfflineQueuedUpload, 'actorPartition'>): void {
+function assertSameActorIdentity(item: Pick<OfflineQueuedUpload, 'actorPartition'>): void {
   if (typeof window === 'undefined' ||
       window.localStorage.getItem(ACTOR_PARTITION_KEY) !== item.actorPartition) {
+    throw new Error('UPLOAD_ACTOR_CONTEXT_CHANGED');
+  }
+}
+
+function assertSameActor(item: Pick<OfflineQueuedUpload, 'actorPartition' | 'actorEpoch'>): void {
+  assertSameActorIdentity(item);
+  if (!item.actorEpoch || window.localStorage.getItem(ACTOR_EPOCH_KEY) !== item.actorEpoch) {
     throw new Error('UPLOAD_ACTOR_CONTEXT_CHANGED');
   }
 }
@@ -163,9 +174,16 @@ export function getMemberOfflineActorPartition(userId: string, orgId: string): s
 
 export function setOfflineActorPartition(partition: string | null): void {
   if (typeof window === 'undefined') return;
+  const previous = window.localStorage.getItem(ACTOR_PARTITION_KEY);
   if (!partition) {
     window.localStorage.removeItem(ACTOR_PARTITION_KEY);
+    window.localStorage.setItem(ACTOR_EPOCH_KEY, crypto.randomUUID());
     return;
+  }
+  // Repeated render/refresh with the same authenticated identity must not
+  // invalidate a still-active upload. Any identity change MUST invalidate it.
+  if (previous !== partition || !window.localStorage.getItem(ACTOR_EPOCH_KEY)) {
+    window.localStorage.setItem(ACTOR_EPOCH_KEY, crypto.randomUUID());
   }
   window.localStorage.setItem(ACTOR_PARTITION_KEY, partition);
 }
@@ -190,6 +208,7 @@ export async function listOfflineUploadDrafts(): Promise<OfflineUploadDraftSumma
     if (window.localStorage.getItem(ACTOR_PARTITION_KEY) !== partition) {
       throw new Error('UPLOAD_ACTOR_CONTEXT_CHANGED');
     }
+    const activeEpoch = window.localStorage.getItem(ACTOR_EPOCH_KEY);
     return records
       .filter((item) => item.actorPartition === partition && item.status !== 'COMPLETED')
       .map((item) => ({
@@ -198,7 +217,7 @@ export async function listOfflineUploadDrafts(): Promise<OfflineUploadDraftSumma
         requirementId: item.requirementId,
         filename: item.filename,
         sizeBytes: item.sizeBytes,
-        status: item.status,
+        status: item.actorEpoch && item.actorEpoch === activeEpoch ? item.status : 'BLOCKED_SCOPE' as const,
         createdAt: item.createdAt,
         lastError: item.lastError,
         hasActiveIntent: Boolean(item.uploadIntent),
@@ -229,7 +248,9 @@ export async function discardOfflineUploadDraft(queueId: string): Promise<void> 
         req.onerror = () => reject(req.error);
       });
       if (!item) return; // repeat after a committed discard is harmless
-      assertSameActor(item);
+      // A returning original identity may deliberately delete its own old
+      // generation's local bytes; it may not automatically send them.
+      assertSameActorIdentity(item);
       if (item.completedUploadAt || item.status === 'PROCESSING') {
         throw new Error('UPLOAD_PROCESSING_CANNOT_DISCARD: Verify the server outcome first.');
       }
@@ -248,7 +269,7 @@ export async function discardOfflineUploadDraft(queueId: string): Promise<void> 
             throw error;
           }
         }
-        assertSameActor(item);
+        assertSameActorIdentity(item);
       }
       await deleteQueueItem(db, queueId);
     } finally {
@@ -366,15 +387,19 @@ export async function enqueueFieldUpload(params: {
     throw new Error('UPLOAD_ACTOR_CONTEXT_REQUIRED: Sign in or establish the guest grant before queueing evidence.');
   }
   const originalFile = params.file;
+  const actorEpoch = typeof window === 'undefined'
+    ? null : window.localStorage.getItem(ACTOR_EPOCH_KEY);
+  if (!actorEpoch) throw new Error('UPLOAD_ACTOR_CONTEXT_REQUIRED');
   assertOfflineDraftBudget(originalFile.size, [], actorPartition);
-  assertSameActor({ actorPartition });
+  assertSameActor({ actorPartition, actorEpoch });
   const checksumSha256 = await computeBrowserFileSha256(originalFile);
   // An account switch during the async hash must not persist the evidence
   // under an old actor's partition or trigger a stale-network upload.
-  assertSameActor({ actorPartition });
+  assertSameActor({ actorPartition, actorEpoch });
   const item: OfflineQueuedUpload = {
     queueId: crypto.randomUUID(),
     actorPartition,
+    actorEpoch,
     projectId: params.projectId,
     requirementId: params.requirementId,
     assetId: params.assetId ?? null,
