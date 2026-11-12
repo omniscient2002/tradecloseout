@@ -6,9 +6,9 @@ const PUBLIC_SHELL_ROUTES = ['/manifest.json'];
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
-  event.waitUntil(
-    caches.open(SHELL_CACHE_NAME).then((cache) => cache.addAll(PUBLIC_SHELL_ROUTES)),
-  );
+  // Do not prefetch even public routes during install: only actual fetch
+  // responses vetted for no-store/private are eligible for CacheStorage.
+  event.waitUntil(caches.open(SHELL_CACHE_NAME).then(() => undefined));
 });
 
 self.addEventListener('activate', (event) => {
