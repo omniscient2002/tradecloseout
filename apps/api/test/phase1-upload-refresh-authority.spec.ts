@@ -50,6 +50,8 @@ describe('PH1-G02-001/009: refresh multipart URL requires current scoped upload 
       release: jest.fn(),
     };
     const signer = {
+      finalizeUpload: jest.fn(async () => ({ observedSizeBytes: 65536, versionId: 'provider-version' })),
+      abortUpload: jest.fn(async () => undefined),
       refreshUploadUrls: jest.fn(async () => {
         expect(inTransaction).toBe(false);
         return { parts: [{ partNumber: 1, uploadUrl: 'signed-url', requiredHeaders: {} }], expiresInSeconds: 900 };
@@ -70,6 +72,24 @@ describe('PH1-G02-001/009: refresh multipart URL requires current scoped upload 
     expect(signer.refreshUploadUrls).toHaveBeenCalledTimes(1);
     expect(sql).toContain('COMMIT');
     expect(client.release).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['removed member', { memberActive: false }],
+    ['out-of-scope document', { scope: { documentIds: [randomUUID()] } }],
+    ['read-only project grant', { scope: { mode: 'READ_ONLY' } }],
+    ['malformed restrictive scope', { scope: { unsupported: true } }],
+    ['closed project', { projectStatus: 'CLOSED' }],
+  ] as const)('%s cannot complete or abort uploads after losing authority', async (_label, options) => {
+    const forComplete = setup(options);
+    await expect(forComplete.service.completeUpload(ctx, versionId)).rejects.toThrow();
+    expect(forComplete.signer.finalizeUpload).not.toHaveBeenCalled();
+    expect(forComplete.sql).toContain('ROLLBACK');
+
+    const forAbort = setup(options);
+    await expect(forAbort.service.abortUpload(ctx, versionId)).rejects.toThrow();
+    expect(forAbort.signer.abortUpload).not.toHaveBeenCalled();
+    expect(forAbort.sql).toContain('ROLLBACK');
   });
 
   it.each([
