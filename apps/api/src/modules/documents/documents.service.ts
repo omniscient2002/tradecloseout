@@ -405,7 +405,7 @@ export class DocumentsService {
           throw new ForbiddenException('GUEST_UPLOAD_SCOPE_REQUIRED');
         }
         const { rows: grants } = await client.query(
-          `SELECT g.scope_json, g.capabilities FROM guest_grants g
+          `SELECT scope_json, capabilities FROM guest_grants g
             JOIN parties party ON party.org_id = g.org_id AND party.id = g.party_id
               AND party.status = 'ACTIVE' AND party.deleted_at IS NULL
             WHERE g.org_id = $1 AND g.project_id = $2 AND g.id = $3
