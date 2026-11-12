@@ -135,7 +135,29 @@ describe('G02 live review decision authority — restricted PostgreSQL 16', () =
           [id, a.orgId, projectId, title, userId],
         );
       }
-      const service = new DocumentsService(new TenantDbService(app), {} as any);
+      const versions: string[] = [];
+      for (const [documentId, suffix] of [[allowedId, 'permitted'], [deniedId, 'forbidden']]) {
+        const objectId = randomUUID();
+        const versionId = randomUUID();
+        versions.push(versionId);
+        await admin.query(
+          `INSERT INTO storage_objects
+             (id,org_id,bucket,object_key,mime,size_bytes,sha256,status,observed_size_bytes,provider_version_id,created_by)
+           VALUES ($1,$2,'test-bucket',$3,'application/pdf',12,$4,'READY',12,$5,$6)`,
+          [objectId, a.orgId, `phase1/${suffix}/file.pdf`, 'a'.repeat(64), `s3-version-${suffix}`, userId],
+        );
+        await admin.query(
+          `INSERT INTO document_versions
+             (id,org_id,project_id,document_id,version_no,revision_code,object_id,file_status,issue_date)
+           VALUES ($1,$2,$3,$4,1,'R1',$5,'READY',CURRENT_DATE)`,
+          [versionId, a.orgId, projectId, documentId, objectId],
+        );
+      }
+      const storage = {
+        createSignedDownloadUrl: jest.fn().mockResolvedValue('signed-url'),
+        fetchObject: jest.fn(),
+      };
+      const service = new DocumentsService(new TenantDbService(app), storage as any);
       const ctx = { orgId: a.orgId, userId, actorType: 'USER' as const, requestId: 'document-read-scope' };
 
       const listed = await service.listDocuments(ctx, projectId);
@@ -144,6 +166,15 @@ describe('G02 live review decision authority — restricted PostgreSQL 16', () =
       await expect(service.getDocument(ctx, deniedId)).rejects.toMatchObject({
         response: { message: 'DOCUMENT_NOT_FOUND' },
       });
+      await expect(service.getDownloadUrl(ctx, versions[0])).resolves.toMatchObject({
+        downloadUrl: 'signed-url',
+      });
+      await expect(service.getDownloadUrl(ctx, versions[1])).rejects.toThrow('VERSION_NOT_FOUND');
+      await expect(service.getPreviewUrl(ctx, versions[1])).rejects.toThrow('VERSION_NOT_FOUND');
+      await expect(service.streamDocumentVersion(ctx, projectId, versions[1], {}, {}))
+        .rejects.toThrow('VERSION_NOT_FOUND');
+      expect(storage.createSignedDownloadUrl).toHaveBeenCalledTimes(1);
+      expect(storage.fetchObject).not.toHaveBeenCalled();
       await expect(service.deleteDocument(ctx, allowedId)).rejects.toThrow('REVIEW_AUTHORITY_CHANGED');
 
       await admin.query(
