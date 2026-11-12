@@ -43,6 +43,14 @@ export class HandoverService {
       excludedRequirementIds?: Array<{ requirementId: string; reason: string }>;
     },
   ) {
+    // Exclusions are not applied to the immutable manifest in this release.
+    // Silently ignoring them can disclose evidence the requester intended to omit.
+    if (input.excludedRequirementIds?.length) {
+      throw new UnprocessableEntityException({
+        code: 'PACKAGE_EXCLUSIONS_NOT_SUPPORTED',
+        detail: 'Partial-package exclusions are not supported. No evidence has been excluded or exported.',
+      });
+    }
     const readiness = await this.evaluateProjectReadiness(ctx, projectId);
     if (!readiness.readyWithoutOverride) {
       throw new UnprocessableEntityException({
