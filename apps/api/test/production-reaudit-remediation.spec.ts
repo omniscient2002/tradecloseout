@@ -280,7 +280,7 @@ describe('Production Re-Audit Remediation Suite (PROD-001..PROD-018)', () => {
                   project_id: projectId,
                   document_project_id: projectId,
                   file_status: 'READY',
-                  review_status: 'DRAFT',
+                  review_status: 'NOT_SUBMITTED',
                 },
               ],
             };
