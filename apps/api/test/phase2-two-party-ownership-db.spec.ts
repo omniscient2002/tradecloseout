@@ -21,7 +21,7 @@ describe('PH2-G03-007 real two-party ownership transaction',()=>{
    const [a,b,c]=contexts,s=new OwnershipTransfersService(app),input={targetUserId:recipient,rowVersion:1,requestKey:uuidv7()};
    await expect(s.request({...a,sessionId:undefined,authGeneration:undefined},input)).rejects.toMatchObject({response:expect.objectContaining({code:'OWNERSHIP_FRESH_MFA_REQUIRED'})});
    const first=await s.request(a,input);expect((await s.request(a,input)).intentId).toBe(first.intentId);
-   await expect(s.decide(c,first.intentId,'ACCEPT')).rejects.toMatchObject({response:expect.objectContaining({code:'OWNERSHIP_RECIPIENT_REQUIRED'})});
+   await expect(s.decide(c,first.intentId,'ACCEPT')).rejects.toThrow('OWNERSHIP_INTENT_NOT_FOUND');
    await admin.query("UPDATE sessions SET mfa_verified_at=now()-interval '1 hour' WHERE id=$1",[b.sessionId]);
    await expect(s.decide(b,first.intentId,'ACCEPT')).rejects.toMatchObject({response:expect.objectContaining({code:'OWNERSHIP_FRESH_MFA_REQUIRED'})});
    await admin.query('UPDATE sessions SET mfa_verified_at=now() WHERE id=$1',[b.sessionId]);

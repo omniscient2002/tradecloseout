@@ -1,3 +1,4 @@
+import {attachSyntheticEntitlementPolicy} from '../../../packages/db/test/helpers/synthetic-entitlement-policy';
 import { createHash } from 'node:crypto';
 import { Pool } from 'pg';
 import { uuidv7 } from 'uuidv7';
@@ -27,6 +28,7 @@ async function seedInvitation(admin: Pool) {
       maxPackageGenerationsPerMonth: 0,
     })],
   );
+      await attachSyntheticEntitlementPolicy(admin,planId);
   await admin.query(
     `INSERT INTO subscriptions(id,org_id,plan_id,status,current_period_start,current_period_end)
      VALUES($1,$2,$3,'ACTIVE',now()-interval '1 day',now()+interval '30 days')`,

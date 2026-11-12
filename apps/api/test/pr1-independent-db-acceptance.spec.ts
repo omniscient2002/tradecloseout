@@ -1,3 +1,4 @@
+import {attachSyntheticEntitlementPolicy} from '../../../packages/db/test/helpers/synthetic-entitlement-policy';
 import { ConflictException, UnprocessableEntityException } from '@nestjs/common';
 import { Pool } from 'pg';
 import { uuidv7 } from 'uuidv7';
@@ -190,6 +191,7 @@ describe('PR1 independent review — PostgreSQL acceptance', () => {
           maxPackageGenerationsPerMonth: 2,
         })],
       );
+      await attachSyntheticEntitlementPolicy(admin,reopenPlanId);
       await admin.query(
         `INSERT INTO subscriptions(id,org_id,plan_id,status,current_period_start,current_period_end)
          VALUES($1,$2,$3,'TRIAL',now()-interval '1 day',now()+interval '30 days')`,

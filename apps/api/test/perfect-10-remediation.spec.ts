@@ -1,3 +1,4 @@
+import {syntheticEntitlementQuery} from './helpers/synthetic-entitlement-query';
 // apps/api/test/perfect-10-remediation.spec.ts
 // Comprehensive Test Suite for the 5 Technical Bug Fixes & 5 Business/Domain Enhancements
 
@@ -187,7 +188,8 @@ describe('Perfect 10 Remediation & Hardening Test Suite', () => {
       const mockPool = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation((sql: string) => {
-            if (sql.includes("maxStorageBytes' AS max_storage_bytes")) {
+            const entitlementFixture=syntheticEntitlementQuery(sql,{storageBytes:1000000000});if(entitlementFixture)return entitlementFixture;
+          if (sql.includes("maxStorageBytes' AS max_storage_bytes")) {
               return Promise.resolve({ rows: [{ max_storage_bytes: '1000000000' }] });
             }
             if (sql.includes("metric='STORAGE_BYTES'") && sql.includes('FOR UPDATE')) {

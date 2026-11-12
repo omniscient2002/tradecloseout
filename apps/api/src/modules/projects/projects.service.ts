@@ -1,3 +1,4 @@
+import {resolveEffectiveEntitlements} from '@tradecloseout/db/entitlements';
 // apps/api/src/modules/projects/projects.service.ts
 // Projects, Contracts & Lifecycle State Machine Service (API-030..044, WF-03, WF-15, WF-18, WF-19, AUD-A-08, AUD-P-08, AUD-P-11)
 
@@ -1341,28 +1342,7 @@ export class ProjectsService {
   }
 
   private async getOrgMaxActiveProjectsLimit(client: any, orgId: string): Promise<number> {
-    const { rows } = await client.query(
-      `SELECT p.limits_json
-         FROM subscriptions s
-         JOIN plans p ON p.id = s.plan_id
-        WHERE s.org_id = $1 AND s.status IN ('TRIAL','ACTIVE')
-          AND s.current_period_start <= now() AND s.current_period_end > now()
-          AND (s.cancel_at IS NULL OR s.cancel_at > now())
-          AND p.status = 'ACTIVE'
-        FOR SHARE OF s, p`,
-      [orgId],
-    );
-    // PH2-G18-001: no subscription is no capacity, not an implicit starter plan.
-    // Past-due and cancelled accounts retain permitted read/export access, but
-    // cannot consume further active project capacity.
-    if (rows.length === 0) return 0;
-    const configured = rows[0].limits_json?.maxActiveProjects;
-    if (typeof configured !== 'number' || !Number.isSafeInteger(configured) || configured < 0) {
-      throw new ConflictException({
-        code: 'INVALID_PROJECT_ENTITLEMENT',
-        detail: 'The subscription has no valid active-project limit.',
-      });
-    }
-    return configured;
+    const effective=await resolveEffectiveEntitlements(client,orgId);
+    return effective.canConsume?effective.limits.maxActiveProjects:0;
   }
 }

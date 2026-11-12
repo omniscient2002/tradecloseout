@@ -1,3 +1,4 @@
+import {syntheticEntitlementQuery} from './helpers/synthetic-entitlement-query';
 // apps/api/test/production-review-remediation.spec.ts
 // Regression verification suite for Full Production Review Findings (NP01..NP06, NP09, NP10)
 
@@ -308,6 +309,7 @@ describe('Production Review Remediation Suite (NP01..NP06, NP09, NP10)', () => {
       const mockPool: any = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string) => {
+            const entitlementFixture=syntheticEntitlementQuery(sql,{noSubscription:true});if(entitlementFixture)return entitlementFixture;
             if (sql.includes('FROM subscriptions')) {
               return { rows: [] }; // no subscription
             }
@@ -334,6 +336,7 @@ describe('Production Review Remediation Suite (NP01..NP06, NP09, NP10)', () => {
       const mockPool: any = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string) => {
+            const entitlementFixture=syntheticEntitlementQuery(sql,{zero:true,subscriptionId:subId});if(entitlementFixture)return entitlementFixture;
             if (sql.includes('FROM subscriptions')) {
               return {
                 rows: [

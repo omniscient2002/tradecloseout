@@ -10,6 +10,10 @@ interface SubscriptionDto {
   planTier?: string;
   plan_tier?: string;
   status: string;
+  effectiveState?: string;
+  canConsume?: boolean;
+  policyVersion?: string | null;
+  usage?: {seats:string;projects:string;storage_bytes:string;reserved_storage_bytes:string};
   seatLimit?: number;
   seat_limit?: number;
   storageQuotaBytes?: number;
@@ -109,7 +113,7 @@ export default function BillingPage() {
         <div>
           <h1 className="text-xl font-bold text-slate-900">Subscription & Billing Management</h1>
           <p className="text-slate-500 mt-0.5">
-            Verified subscription limits and invoices. Unavailable information is shown as unavailable, not estimated.
+            Recorded subscription, current allowances and invoice history. Unavailable information is shown as unavailable.
           </p>
         </div>
 
@@ -132,13 +136,30 @@ export default function BillingPage() {
         </div>
       )}
 
+      {!loading && subscription && !subscription.canConsume && (
+        <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-950">
+          {subscription.effectiveState === 'BILLING_POLICY_UNAPPROVED'
+            ? 'Subscription approval is pending. New billable work is unavailable.'
+            : 'New billable work is restricted. Ask your billing owner to review the subscription.'}
+          {' '}Existing authorised records remain accessible.
+        </p>
+      )}
+      {subscription?.usage && (
+        <dl className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 sm:grid-cols-4">
+          <div><dt>Active seats</dt><dd>{subscription.usage.seats}</dd></div>
+          <div><dt>Projects using capacity</dt><dd>{subscription.usage.projects}</dd></div>
+          <div><dt>Storage in use</dt><dd>{subscription.usage.storage_bytes} bytes</dd></div>
+          <div><dt>Uploads awaiting verification</dt><dd>{subscription.usage.reserved_storage_bytes} bytes</dd></div>
+        </dl>
+      )}
+
       {/* Subscription Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-2xs space-y-3">
           <div className="flex items-center justify-between">
-            <span className="font-bold text-slate-800 text-sm">Active Plan</span>
-            <span className="rounded bg-emerald-50 border border-emerald-300 px-2 py-0.5 font-bold text-emerald-800 text-[10px] uppercase">
-              {planTier ? `${planTier} PLAN` : "PLAN UNVERIFIED"}
+            <span className="font-bold text-slate-800 text-sm">Recorded plan</span>
+            <span className={`rounded border px-2 py-0.5 font-bold text-[10px] uppercase ${subscription?.canConsume ? "bg-emerald-50 border-emerald-300 text-emerald-800" : "bg-amber-50 border-amber-300 text-amber-900"}`}>
+              {subscription?.canConsume ? "New work available" : "New work restricted"}
             </span>
           </div>
           <div className="text-2xl font-bold text-slate-900 font-mono">
@@ -148,7 +169,7 @@ export default function BillingPage() {
             <div>Plan: <strong>{planName ?? "Unavailable"}</strong></div>
             <div>Projects Limit: <strong>{maxProjects ?? "Unavailable"}</strong></div>
             <div>Seats Limit: <strong>{seatLimit ?? "Unavailable"}</strong></div>
-            <div>Storage Included: <strong>{storageGb == null ? "Unavailable" : `${storageGb} GiB`}</strong></div>
+            <div>Storage Included: <strong>{storageGb == null ? "Unavailable" : `${storageBytes?.toLocaleString("en-IN")} bytes`}</strong></div>
           </div>
         </div>
 

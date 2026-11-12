@@ -1,3 +1,4 @@
+import {resolveEffectiveEntitlements,currentCapacityUsage} from '@tradecloseout/db/entitlements';
 import {
   ConflictException,
   ForbiddenException,
@@ -553,81 +554,16 @@ export class WarrantyAndBillingService {
 
   async getSubscription(ctx: TenantActorContext) {
     return withTenantTransaction(this.pool, ctx, async (client) => {
-      const { rows } = await client.query(
-        `SELECT s.*, p.name AS plan_name, p.code AS plan_tier, p.limits_json, p.price_paise, p.interval, p.status AS plan_status
-           FROM subscriptions s
-           JOIN plans p ON p.id = s.plan_id
-          WHERE s.org_id = $1
-          ORDER BY s.updated_at DESC LIMIT 1`,
-        [ctx.orgId],
-      );
-      if (!rows.length) {
-        return {
-          id: null,
-          planName: 'No Subscription',
-          planTier: 'NONE',
-          status: 'INACTIVE',
-          seatLimit: 0,
-          storageQuotaBytes: 0,
-          pricePaise: null,
-          limitsJson: { maxActiveProjects: 0, maxSeats: 0, maxStorageBytes: 0, maxPackageGenerationsPerMonth: 0 },
-          plan_name: 'No Subscription',
-          plan_tier: 'NONE',
-          seat_limit: 0,
-          storage_quota_bytes: 0,
-          price_paise: null,
-        };
-      }
-      const sub = rows[0];
-      // PH2-G18-001: API capacity must agree with activation and package
-      // writes. Expired, inactive, cancelled or malformed policies grant no
-      // new consumption; a legacy missing field is not a free Starter plan.
-      const now = Date.now();
-      const start = new Date(sub.current_period_start).getTime();
-      const end = new Date(sub.current_period_end).getTime();
-      const cancelled = sub.cancel_at == null ? false : new Date(sub.cancel_at).getTime() <= now;
-      const eligible = ['TRIAL', 'ACTIVE'].includes(sub.status) && sub.plan_status === 'ACTIVE' &&
-        Number.isFinite(start) && Number.isFinite(end) && start <= now && now < end && !cancelled;
-      const configured = sub.limits_json && typeof sub.limits_json === 'object'
-        ? sub.limits_json : {};
-      const limit = (key: string): number => {
-        const raw = eligible ? configured[key] : 0;
-        return typeof raw === 'number' && Number.isSafeInteger(raw) && raw >= 0 ? raw : 0;
-      };
-      const seatLimit = limit('maxSeats');
-      const storageQuotaBytes = limit('maxStorageBytes');
-      const maxActiveProjects = limit('maxActiveProjects');
-      const limits = {
-        maxActiveProjects, maxSeats: seatLimit, maxStorageBytes: storageQuotaBytes,
-        maxPackageGenerationsPerMonth: limit('maxPackageGenerationsPerMonth'),
-      };
-      return {
-        id: sub.id,
-        orgId: sub.org_id,
-        planId: sub.plan_id,
-        status: sub.status,
-        provider: sub.provider,
-        providerRef: sub.provider_ref,
-        currentPeriodStart: sub.current_period_start,
-        currentPeriodEnd: sub.current_period_end,
-        cancelAt: sub.cancel_at,
-        rowVersion: sub.row_version,
-        updatedAt: sub.updated_at,
-        planName: sub.plan_name,
-        planTier: sub.plan_tier,
-        // PostgreSQL BIGINT must not be converted to an unsafe JS number.
-        pricePaise: String(sub.price_paise),
-        interval: sub.interval,
-        limitsJson: limits,
-        seatLimit,
-        storageQuotaBytes,
-        maxActiveProjects,
-        plan_name: sub.plan_name,
-        plan_tier: sub.plan_tier,
-        price_paise: String(sub.price_paise),
-        seat_limit: seatLimit,
-        storage_quota_bytes: storageQuotaBytes,
-      };
+      const effective=await resolveEffectiveEntitlements(client,ctx.orgId);
+      const usage=await currentCapacityUsage(client,ctx.orgId);
+      return {...effective,id:effective.subscriptionId,status:effective.subscriptionStatus||'INACTIVE',
+        planName:effective.planName||'No Subscription',planTier:effective.planCode||'NONE',limitsJson:effective.limits,
+        seatLimit:effective.limits.maxSeats,storageQuotaBytes:effective.limits.maxStorageBytes,
+        maxActiveProjects:effective.limits.maxActiveProjects,
+        plan_name:effective.planName||'No Subscription',plan_tier:effective.planCode||'NONE',
+        seat_limit:effective.limits.maxSeats,storage_quota_bytes:effective.limits.maxStorageBytes,
+        price_paise:effective.pricePaise,usage,liveFulfilmentAvailable:false,
+        recoveryActions:effective.canConsume?[]:['CONTACT_BILLING_OWNER']};
     });
   }
 

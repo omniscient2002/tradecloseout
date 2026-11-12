@@ -1,0 +1,10 @@
+PASS test/phase2-policy-upgrade-and-org-lock-db.spec.ts (6.528 s)
+  Phase2 legacy migration and authenticated profile concurrency
+    ✓ preserves old contract facts/checksums while unapproved or malformed offers grant no new capacity and records remain readable (1673 ms)
+    ✓ two authenticated profile writes serialize before shared authority locks and reject the stale version without a deadlock (1439 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       2 passed, 2 total
+Snapshots:   0 total
+Time:        6.608 s
+Ran all test suites matching /test\/phase2-policy-upgrade-and-org-lock-db.spec.ts/i.

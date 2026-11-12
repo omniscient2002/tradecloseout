@@ -1,3 +1,4 @@
+import {resolveEffectiveEntitlements} from '@tradecloseout/db/entitlements';
 // apps/api/src/modules/documents/documents.service.ts
 // Document upload intents, multipart refresh, virus scanning, versioning & bulk import
 // (RT-001, RT-006, RT-012, CB-003, AUD-P-04, FR-DOC-001..033, TC-DOC-01..03)
@@ -387,29 +388,9 @@ export class DocumentsService {
       // the org's STORAGE_BYTES counter. Include every unfinished PENDING
       // object in the prospective capacity (they become charged READY bytes
       // on finalization). Intent rows are committed in this same transaction.
-      const { rows: entitlement } = await client.query(
-        `SELECT p.limits_json ->> 'maxStorageBytes' AS max_storage_bytes
-           FROM subscriptions s
-           JOIN plans p ON p.id = s.plan_id
-          WHERE s.org_id = $1 AND s.status IN ('TRIAL','ACTIVE')
-            AND s.current_period_start <= now() AND s.current_period_end > now()
-            AND (s.cancel_at IS NULL OR s.cancel_at > now())
-            AND p.status = 'ACTIVE'
-          FOR SHARE OF s, p`,
-        [ctx.orgId],
-      );
-      const maxStorageText = entitlement[0]?.max_storage_bytes;
-      if (entitlement.length !== 1 || typeof maxStorageText !== 'string' ||
-          !/^\d+$/.test(maxStorageText)) {
-        throw new ConflictException({
-          code: 'STORAGE_ENTITLEMENT_UNAVAILABLE',
-          detail: 'An active subscription with a valid storage limit is required to upload.',
-        });
-      }
-      const storageCeiling = BigInt(maxStorageText);
-      if (storageCeiling > 9223372036854775807n) {
-        throw new ConflictException({ code: 'INVALID_STORAGE_ENTITLEMENT' });
-      }
+      const effective=await resolveEffectiveEntitlements(client,ctx.orgId);
+      if(!effective.canConsume)throw new ConflictException({code:'STORAGE_ENTITLEMENT_UNAVAILABLE'});
+      const storageCeiling=BigInt(effective.limits.maxStorageBytes);
       await client.query(
         `INSERT INTO usage_counters(id, org_id, metric, period, value)
          VALUES($1, $2, 'STORAGE_BYTES', 'ALL_TIME', 0)
@@ -424,7 +405,7 @@ export class DocumentsService {
       );
       const { rows: reserved } = await client.query(
         `SELECT COALESCE(SUM(size_bytes),0)::text AS reserved_bytes
-           FROM storage_objects WHERE org_id=$1 AND status='PENDING'`,
+           FROM storage_objects WHERE org_id=$1 AND status IN ('PENDING','PROCESSING')`,
         [ctx.orgId],
       );
       const occupied = BigInt(charged[0]?.value ?? '0') +
@@ -1091,7 +1072,7 @@ export class DocumentsService {
       if (freedBytes > 0n) {
         await client.query(
           `UPDATE usage_counters
-              SET value = GREATEST(0::numeric, value::numeric - $2)::text,
+              SET value = GREATEST(0::numeric, value::numeric - $2::numeric)::bigint,
                   updated_at = now()
             WHERE org_id = $1 AND metric = 'STORAGE_BYTES' AND period = 'ALL_TIME'`,
           [ctx.orgId, freedBytes.toString()],
@@ -1129,7 +1110,7 @@ export class DocumentsService {
       if (readdedBytes > 0n) {
         await client.query(
           `UPDATE usage_counters
-              SET value = (value::numeric + $2)::text,
+              SET value = (value::numeric + $2::numeric)::bigint,
                   updated_at = now()
             WHERE org_id = $1 AND metric = 'STORAGE_BYTES' AND period = 'ALL_TIME'`,
           [ctx.orgId, readdedBytes.toString()],

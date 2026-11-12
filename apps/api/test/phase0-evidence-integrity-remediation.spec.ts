@@ -1,3 +1,4 @@
+import {syntheticEntitlementQuery} from './helpers/synthetic-entitlement-query';
 // apps/api/test/phase0-evidence-integrity-remediation.spec.ts
 // Comprehensive Test Suite for Phase 0 & Phase 1 Invariants (TC2-001 to TC2-028)
 
@@ -486,6 +487,7 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
           if (sql.includes('SELECT id, doc_type_key FROM requirements')) {
             return { rows: [{ id: '0192e3a0-req-allowed-1', doc_type_key: 'DT-043' }] };
           }
+          const entitlementFixture=syntheticEntitlementQuery(sql,{});if(entitlementFixture)return entitlementFixture;
           if (sql.includes("maxStorageBytes' AS max_storage_bytes")) {
             return { rows: [{ max_storage_bytes: '1048576' }] };
           }

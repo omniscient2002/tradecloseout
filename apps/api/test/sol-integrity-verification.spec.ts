@@ -1,3 +1,4 @@
+import {syntheticEntitlementQuery} from './helpers/synthetic-entitlement-query';
 // apps/api/test/sol-integrity-verification.spec.ts
 // Invariant Verification for Sol Part A & Audit Findings:
 // 1. Revision allocation locks parent document FOR UPDATE (TC-F013)
@@ -26,6 +27,7 @@ describe('Sol Integrity & Audit Invariants Suite', () => {
       const mockClient = {
         query: jest.fn(async (sql: string) => {
           executedQueries.push(sql);
+          const entitlementFixture=syntheticEntitlementQuery(sql,{});if(entitlementFixture)return entitlementFixture;
           if (sql.includes("maxStorageBytes' AS max_storage_bytes")) {
             return { rows: [{ max_storage_bytes: '1048576' }] };
           }

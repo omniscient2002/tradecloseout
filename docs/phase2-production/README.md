@@ -23,3 +23,15 @@ These controls do not provide sole-owner account recovery, legal delegation revi
 ## Required final acceptance record
 
 For HVAC, billing/grace and provider acceptance record the exact final candidate SHA, immutable reviewed pack/policy version, accountable qualified reviewer identity, approval date, real acceptance evidence and explicit exceptions. Keep every field unapproved until supplied. Preserve real verified object bytes, current authority, tenant/resource isolation and approved baseline history throughout the remaining work.
+
+## Pass 2 candidate — policy pinning and entitlement consistency
+
+One effective resolver now supplies billing reads, seats, upload capacity, activation/reopening and package generation. It validates all four integer limits, subscription periods/status/cancellation, immutable subscribed values and explicit policy provenance. Existing `ACTIVE` labels do not become approval. No policy, price or allowance is invented. Grace requires both an explicit independently recorded policy allowance and an explicit bounded deadline; no duration is inferred. Application runtime cannot approve/edit policies; a narrow tenant-bound function provides the locking read.
+
+New migrations0048–0050 preserve older ledger checksums and old contract facts; legacy subscriptions receive mechanical snapshots with no retrospective approval and no new billable allowance. Earlier approved offer terms cannot be mutated in place or unlocked by retiring a plan. A new explicit version is required. Policy retirement cannot resurrect itself. Tests use clearly named synthetic approval records only in disposable databases; they are not genuine business approval.
+
+Storage reserves PENDING and PROCESSING bytes, preventing capacity from disappearing while scanning. The old duplicate delete/restore text-to-BIGINT SQL is corrected. Full storage recovery/expiry/restore enforcement remains work in Pass3. The single-project offer lacks a durable project binding, so new consumption is explicitly unavailable; this is an open product gap, not a silently accepted scope exclusion.
+
+The billing screen now shows recorded subscription information, effective restrictions, actual usage/reservations and exact byte limits, without calling unapproved data verified. Existing authorized records remain available when billing approval is absent. Suspended-organisation access and complete recovery journeys remain tracked separately.
+
+Local evidence: workspace suite passed API492/81, shared91/5, DB13, worker32, browser10 and PDF checks; targeted boundary suite44 passed, including two added real database upgrade/profile-concurrency cases. Those runs overlap and must not be added together. Source hashes and exact logs are in evidence. Final exact-head CI and independent per-item acceptance are still required; all original audit rows remain OPEN/BLOCKED_EXTERNAL.

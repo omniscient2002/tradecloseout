@@ -10,12 +10,15 @@
     {
       "number": 1,
       "work": "Integrated current PR21 and G03 baseline",
-      "state": "LOCAL_CHECKS_PASSED_CI_PENDING"
+      "state": "CI_VERIFIED_ENGINEERING_PASS",
+      "verifiedSha": "fb9f21acd18de08ffb618bb39588d7c5ddb98495",
+      "ci": "https://github.com/omniscient2002/tradecloseout/actions/runs/43216259006"
     },
     {
       "number": 2,
       "work": "Unified versioned entitlement policy",
-      "state": "PLANNED"
+      "state": "LOCAL_CHECKS_PASSED_CI_PENDING",
+      "notes": "Pinned immutable offers and explicit policy provenance; one resolver for current reads/seat/upload/project/package enforcement; no real policy approval or provider activation. Full workspace492 API plus separate44-boundary run includes2 new actual upgrade/concurrency tests. Overlapping results are not summed."
     },
     {
       "number": 3,
@@ -569,6 +572,19 @@
       "evidenceLevel": "SOURCE_CONFIRMED_RISK",
       "state": "CANDIDATE_FIX",
       "scope": "Server-selected organisationWrite lock mode; no current-authority check removed."
+    },
+    {
+      "id": "PH2-NEW-002",
+      "title": "Policy read locking must not require granting runtime policy-edit authority",
+      "state": "CANDIDATE_FIX_TESTED",
+      "evidenceLevel": "TARGETED_POSTGRESQL",
+      "notes": "SELECT FOR SHARE required UPDATE; replaced by tenant-bound narrow locking read function, keeping ordinary policy UPDATE denied."
+    },
+    {
+      "id": "PH2-NEW-003",
+      "title": "Single-project offers need durable project scope before new consumption",
+      "state": "OPEN_FAIL_CLOSED",
+      "notes": "ONE_TIME_PROJECT new consumption remains unavailable until a complete scoped offer model and approved policy exist. It is not automatically excluded from required product scope."
     }
   ],
   "candidateWork": [
@@ -576,6 +592,26 @@
       "id": "PH2-G03-007",
       "state": "IMPLEMENTED_SUBSET_TESTED_NOT_ACCEPTED",
       "notes": "Added explicit-config expiry/fresh-MFA request, recipient confirmation/cancellation, role/version/expiry/replay fences, session/invitation invalidation and attributable audit. Legacy one-sided transfer remains disabled. UI, recovery and independent acceptance remain open."
+    },
+    {
+      "id": "PH2-G18-001",
+      "state": "IMPLEMENTED_SUBSET_TESTED_NOT_ACCEPTED",
+      "notes": "Typed shared resolver, no implicit allowances, fail closed without reviewed policy provenance; all supported quota entry points use pinned subscription values."
+    },
+    {
+      "id": "PH2-G18-007",
+      "state": "IMPLEMENTED_SUBSET_TESTED_NOT_ACCEPTED",
+      "notes": "Immutable plan/policy and subscription snapshots; malformed JSON/legacy states fail closed. Finance/provider offer acceptance still absent."
+    },
+    {
+      "id": "PH2-G18-003",
+      "state": "PARTIAL_TESTED",
+      "notes": "PROCESSING keeps capacity reserved; duplicate document quota SQL repaired. Full expiration/restore/provider settlement remains open."
+    },
+    {
+      "id": "PH2-G18-009",
+      "state": "PARTIAL_TESTED",
+      "notes": "Billing UI distinguishes recorded data from effective approval/allowance and exposes current usage; full recovery/provider journey still open."
     }
   ]
 }

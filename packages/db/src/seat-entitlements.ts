@@ -1,3 +1,4 @@
+import {resolveEffectiveEntitlements} from './entitlements';
 import type { PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 
@@ -12,23 +13,9 @@ import { uuidv7 } from 'uuidv7';
 export async function reserveActiveSeatForMembership(
   client: PoolClient, orgId: string,
 ): Promise<'RESERVED' | 'SEAT_ENTITLEMENT_UNAVAILABLE' | 'SEAT_LIMIT_EXCEEDED'> {
-  const { rows: plans } = await client.query(
-    `SELECT p.limits_json ->> 'maxSeats' AS seat_limit
-       FROM subscriptions s
-       JOIN plans p ON p.id=s.plan_id
-      WHERE s.org_id=$1 AND s.status IN ('TRIAL','ACTIVE')
-        AND s.current_period_start<=now() AND s.current_period_end>now()
-        AND (s.cancel_at IS NULL OR s.cancel_at>now())
-        AND p.status='ACTIVE'
-      FOR SHARE OF s,p`,
-    [orgId],
-  );
-  const ceiling = plans[0]?.seat_limit;
-  if (plans.length!==1 || typeof ceiling!=='string' || !/^\d+$/.test(ceiling) ||
-      BigInt(ceiling)>9223372036854775807n) {
-    return 'SEAT_ENTITLEMENT_UNAVAILABLE';
-  }
-  const cap=BigInt(ceiling);
+  const effective=await resolveEffectiveEntitlements(client,orgId);
+  if(!effective.canConsume)return 'SEAT_ENTITLEMENT_UNAVAILABLE';
+  const cap=BigInt(effective.limits.maxSeats);
   await client.query(
     `INSERT INTO usage_counters(id,org_id,metric,period,value)
      VALUES($1,$2,'SEATS','ALL_TIME',0)

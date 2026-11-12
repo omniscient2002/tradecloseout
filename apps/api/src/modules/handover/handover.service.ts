@@ -1,3 +1,4 @@
+import {resolveEffectiveEntitlements} from '@tradecloseout/db/entitlements';
 import {
   ConflictException,
   ForbiddenException,
@@ -130,27 +131,9 @@ export class HandoverService {
       // PH2-G18-005: package capacity is an entitlement, not a shared hardcoded 50.
       // Hold both the subscription and plan against concurrent policy changes while
       // reserving the package in the same tenant transaction as its snapshot.
-      const { rows: entitlementRows } = await client.query(
-        `SELECT p.limits_json ->> 'maxPackageGenerationsPerMonth' AS monthly_limit
-           FROM subscriptions s
-           JOIN plans p ON p.id = s.plan_id
-          WHERE s.org_id = $1
-            AND s.status IN ('TRIAL', 'ACTIVE')
-            AND s.current_period_start <= now() AND s.current_period_end > now()
-            AND (s.cancel_at IS NULL OR s.cancel_at > now())
-            AND p.status = 'ACTIVE'
-          FOR SHARE OF s, p`,
-        [ctx.orgId],
-      );
-      if (entitlementRows.length !== 1 ||
-          typeof entitlementRows[0].monthly_limit !== 'string' ||
-          !/^\d+$/.test(entitlementRows[0].monthly_limit)) {
-        throw new ConflictException({
-          code: 'PACKAGE_ENTITLEMENT_UNAVAILABLE',
-          detail: 'An active subscription with a configured monthly package limit is required.',
-        });
-      }
-      const monthlyLimit = BigInt(entitlementRows[0].monthly_limit);
+      const effective=await resolveEffectiveEntitlements(client,ctx.orgId);
+      if(!effective.canConsume)throw new ConflictException({code:'PACKAGE_ENTITLEMENT_UNAVAILABLE'});
+      const monthlyLimit=BigInt(effective.limits.maxPackageGenerationsPerMonth);
       const currentMonth = quotaMonthIndia(); // YYYY-MM in Asia/Kolkata
       await consumePlanQuota(client, ctx.orgId, 'PACKAGE_GENERATIONS', currentMonth, 1n, monthlyLimit);
 

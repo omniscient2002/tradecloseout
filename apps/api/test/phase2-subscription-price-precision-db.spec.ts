@@ -1,3 +1,4 @@
+import {attachSyntheticEntitlementPolicy} from '../../../packages/db/test/helpers/synthetic-entitlement-policy';
 import { uuidv7 } from 'uuidv7';
 import { withDisposableDatabase } from '../../../packages/db/test/helpers/disposable-database';
 import { WarrantyAndBillingService } from '../src/modules/billing/warranty-and-billing.service';
@@ -36,6 +37,7 @@ describe('PH2-G18-009: subscribed prices are exact, unavailable prices stay unav
          VALUES($1,$2,'High value test plan',$3::jsonb,$4,'MONTH','ACTIVE')`,
         [planId,'PH2-BIG-'+planId,JSON.stringify(limits),price],
       );
+      await attachSyntheticEntitlementPolicy(admin,planId);
       await admin.query(
         `INSERT INTO subscriptions(id,org_id,plan_id,status,current_period_start,current_period_end)
          VALUES($1,$2,$3,'ACTIVE',now()-interval '1 day',now()+interval '30 days')`,

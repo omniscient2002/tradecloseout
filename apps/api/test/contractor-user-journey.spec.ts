@@ -1,3 +1,4 @@
+import {attachSyntheticEntitlementPolicy} from '../../../packages/db/test/helpers/synthetic-entitlement-policy';
 // apps/api/test/contractor-user-journey.spec.ts
 // End-to-End Application User Journey: Upload -> Scan -> Review -> Package -> Recipient Acceptance
 // (Guide §22 E2E-01 & E2E-03, TC-DOC, TC-REV, TC-PKG, TC-SEC)
@@ -101,6 +102,7 @@ describe('Complete Application User Journey & Real Storage/Scanner Integration (
             maxPackageGenerationsPerMonth: 3,
           })],
         );
+      await attachSyntheticEntitlementPolicy(admin,planId);
         await admin.query(
           `INSERT INTO subscriptions
              (id, org_id, plan_id, status, current_period_start, current_period_end)

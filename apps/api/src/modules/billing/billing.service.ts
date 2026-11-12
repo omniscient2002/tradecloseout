@@ -1,3 +1,4 @@
+import {parsePlanLimits,PlanLimits} from '@tradecloseout/db/entitlements';
 // apps/api/src/modules/billing/billing.service.ts
 // Rule 46 GST Invoicing, Section 194J TDS & Razorpay Webhooks (FR-BIL-001..012, RT-015, RT-030)
 
@@ -8,31 +9,9 @@ import { uuidv7 } from 'uuidv7';
 import { TenantDbService, ExecutionContext } from '../../database/tenant-db.service';
 
 /** PH2-G18-007: active offers must be complete, bounded and safe to represent. */
-export function publicPlanLimits(value: unknown): {
-  maxActiveProjects: number;
-  maxSeats: number;
-  maxStorageBytes: number;
-  maxPackageGenerationsPerMonth: number;
-} {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new ServiceUnavailableException({ code: 'ACTIVE_PLAN_CONFIGURATION_INVALID' });
-  }
-  const record = value as Record<string, unknown>;
-  const fields = ['maxActiveProjects','maxSeats','maxStorageBytes',
-    'maxPackageGenerationsPerMonth'] as const;
-  for (const field of fields) {
-    const amount = record[field];
-    if (typeof amount !== 'number' || !Number.isSafeInteger(amount) || amount < 0) {
-      // Never substitute a fabricated Starter/zero value for a malformed offer.
-      throw new ServiceUnavailableException({ code: 'ACTIVE_PLAN_CONFIGURATION_INVALID' });
-    }
-  }
-  return {
-    maxActiveProjects: record.maxActiveProjects as number,
-    maxSeats: record.maxSeats as number,
-    maxStorageBytes: record.maxStorageBytes as number,
-    maxPackageGenerationsPerMonth: record.maxPackageGenerationsPerMonth as number,
-  };
+export function publicPlanLimits(value:unknown):PlanLimits {
+  try{return parsePlanLimits(value);}
+  catch{throw new ServiceUnavailableException({code:'ACTIVE_PLAN_CONFIGURATION_INVALID'});}
 }
 
 @Injectable()
@@ -74,6 +53,7 @@ export class BillingService {
         maxProjects: limits.maxActiveProjects,
         storageGb: limits.maxStorageBytes / (1024 ** 3),
         limits,
+        checkoutAvailable: false,
       };
     });
   }

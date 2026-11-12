@@ -1492,12 +1492,43 @@ export const outboxEvents = pgTable('outbox_events', {
 /* 3.10 BILLING, GST, E-INVOICE & TDS (08-DATA-MODEL-AND-ERD.md §3.10)        */
 /* ========================================================================== */
 
+export const billingPolicyVersions = pgTable('billing_policy_versions', {
+  id: uuid('id').primaryKey(),
+  version: text('version').notNull().unique(),
+  schemaVersion: integer('schema_version').notNull(),
+  status: text('status').notNull(),
+  graceSeconds: integer('grace_seconds').notNull(),
+  createdByIdentity: text('created_by_identity').notNull(),
+  reviewerIdentity: text('reviewer_identity'),
+  approvedAt: timestamp('approved_at',{withTimezone:true}),
+  evidenceRef: text('evidence_ref'),
+});
+
+export const ownershipTransferIntents = pgTable('ownership_transfer_intents', {
+  id: uuid('id').primaryKey(),
+  orgId: uuid('org_id').notNull().references(()=>organisations.id),
+  requestedBy: uuid('requested_by').notNull().references(()=>users.id),
+  recipientUserId: uuid('recipient_user_id').notNull().references(()=>users.id),
+  requestKey: uuid('request_key').notNull(),
+  expectedOrgVersion: integer('expected_org_version').notNull(),
+  recipientMembershipVersion: integer('recipient_membership_version').notNull(),
+  status: text('status').notNull().default('PENDING'),
+  expiresAt: timestamp('expires_at',{withTimezone:true}).notNull(),
+  decidedAt: timestamp('decided_at',{withTimezone:true}),
+  createdAt: timestamp('created_at',{withTimezone:true}).notNull().defaultNow(),
+},t=>({
+  requestUq:uniqueIndex('ownership_transfer_org_request_uq').on(t.orgId,t.requestKey),
+  pendingUq:uniqueIndex('ownership_one_pending_intent').on(t.orgId).where(sql`${t.status}='PENDING'`),
+}));
+
 export const plans = pgTable(
   'plans',
   {
     id: uuid('id').primaryKey(),
     code: text('code').notNull(), // STARTER | GROWTH | SCALE
     name: text('name').notNull(),
+    publishedAt: timestamp('published_at', {withTimezone:true}),
+    policyVersionId: uuid('policy_version_id').references(()=>billingPolicyVersions.id),
     limitsJson: jsonb('limits_json').notNull(), // { maxActiveProjects, maxSeats, maxStorageBytes, maxPackageGenerationsPerMonth }
     pricePaise: bigint('price_paise', { mode: 'bigint' }).notNull(),
     interval: text('interval').notNull(), // MONTH | YEAR
@@ -1522,6 +1553,13 @@ export const subscriptions = pgTable('subscriptions', {
   currentPeriodStart: timestamp('current_period_start', { withTimezone: true }).notNull(),
   currentPeriodEnd: timestamp('current_period_end', { withTimezone: true }).notNull(),
   cancelAt: timestamp('cancel_at', { withTimezone: true }),
+  policyVersionId: uuid('policy_version_id').references(()=>billingPolicyVersions.id),
+  graceUntil: timestamp('grace_until', {withTimezone:true}),
+  limitsSnapshotJson: jsonb('limits_snapshot_json'),
+  priceSnapshotPaise: bigint('price_snapshot_paise',{mode:'bigint'}),
+  intervalSnapshot: text('interval_snapshot'),
+  planCodeSnapshot: text('plan_code_snapshot'),
+  snapshotVersion: integer('snapshot_version').notNull().default(1),
   rowVersion: integer('row_version').notNull().default(1),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
