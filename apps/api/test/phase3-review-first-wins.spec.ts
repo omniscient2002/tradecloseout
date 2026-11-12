@@ -201,6 +201,46 @@ describe('PH3-G11-001 — exactly one terminal review decision per document vers
         (row: any) => row.id === declined.requirementId && !row.hasApprovedEvidence,
       )).toBe(true);
 
+      // Failure after version, pointer and sibling updates but before audit:
+      // the whole transaction must roll back; no dangling terminal outcome
+      // may be visible to a competing reviewer or readiness consumer.
+      const interrupted = await createVersion('AUDIT-FAIL');
+      let failedOnce = false;
+      const faultingPool: any = {
+        connect: async () => {
+          const realClient = await app.connect();
+          return {
+            query: async (sql: string, params?: unknown[]) => {
+              if (!failedOnce && sql.includes('INSERT INTO audit_events')) {
+                failedOnce = true;
+                throw new Error('AUDIT_STORE_FAILED');
+              }
+              return realClient.query(sql, params);
+            },
+            release: () => realClient.release(),
+          };
+        },
+      };
+      const faultingService = new ReviewsService(new TenantDbService(faultingPool));
+      await expect(faultingService.decideReview(contexts[0], interrupted.reviewA, {
+        decision: 'APPROVE', expectedRowVersion: 1,
+      })).rejects.toThrow('AUDIT_STORE_FAILED');
+      const rolledBack = await state(interrupted);
+      expect(rolledBack.version.review_status).toBe('IN_REVIEW');
+      expect(rolledBack.version.row_version).toBe(1);
+      expect(rolledBack.document.current_approved_version_id).toBeNull();
+      expect(rolledBack.requirement.status).toBe('IN_REVIEW');
+      expect(rolledBack.reviews.map(row => row.status).sort()).toEqual(['IN_REVIEW', 'PENDING']);
+      expect(rolledBack.audits).toHaveLength(0);
+      await expect(service.decideReview(contexts[1], interrupted.reviewB, {
+        decision: 'REJECT', comment: 'Verified retry after interrupted audit',
+        expectedRowVersion: 1,
+      })).resolves.toMatchObject({ status: 'OK', decision: 'REJECT' });
+      const recovered = await state(interrupted);
+      expect(recovered.audits).toHaveLength(1);
+      expect(recovered.version.review_status).toBe('REJECTED');
+      expect(recovered.document.current_approved_version_id).toBeNull();
+
       // Commit-acknowledgement loss: PostgreSQL COMMIT succeeds, but the
       // application never receives a successful response. A different
       // terminal retry must fail without a second audit event or pointer
