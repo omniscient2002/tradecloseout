@@ -13,7 +13,7 @@ import {
   UnprocessableEntityException,
   UseGuards,
 } from '@nestjs/common';
-import { createHash, randomBytes, randomInt } from 'crypto';
+import { createHash, createHmac, randomBytes, randomInt } from 'crypto';
 import { Response } from 'express';
 import { Pool } from 'pg';
 import Redis from 'ioredis';
@@ -39,6 +39,14 @@ export class IdentityController {
     private readonly smsGateway: DltSmsGateway,
     private readonly mailGateway: TransactionalMailGateway,
   ) {}
+
+  private otpHmacKey(): string {
+    const secret = process.env.AUTH_OTP_HMAC_KEY;
+    if (typeof secret !== 'string' || secret.length < 32) {
+      throw new Error('AUTH_OTP_HMAC_KEY_NOT_CONFIGURED');
+    }
+    return secret;
+  }
 
   /**
    * API-001: POST /api/v1/auth/otp/request
@@ -91,8 +99,9 @@ export class IdentityController {
     const challengeId = uuidv7();
     const otp = String(randomInt(100000, 999999));
     const salt = randomBytes(16).toString('hex');
-    const otpHash = createHash('sha1').update(`${salt}:${otp}`).digest('hex');
-    const challengePayload = JSON.stringify({ id: challengeId, identifier: rawId, salt, otpHash, attempts: 0 });
+    const otpMac = createHmac('sha256', this.otpHmacKey())
+      .update(`tradecloseout:otp:v1:${challengeId}:${salt}:${otp}`).digest('hex');
+    const challengePayload = JSON.stringify({ id: challengeId, identifier: rawId, salt, otpMac, attempts: 0 });
 
     // Atomic issuance & supersession (V01, N02): Atomically delete old generation and register new challenge
     await this.redis.eval(
@@ -257,7 +266,27 @@ export class IdentityController {
       });
     }
 
-    const candidateHash = rawId ? createHash('sha256').update(`${rawId}:${candidateCode}`).digest('hex') : '';
+    // The challenge is still consumed atomically in Lua. This preliminary
+    // read only obtains the per-generation salt for server-keyed HMAC. A
+    // superseded or replaced generation cannot pass the later Lua check.
+    const resolvedId = challengeParam || (rawId ? await this.redis.get(`otp:alias:${rawId}`) : null);
+    let candidateMac = '';
+    if (resolvedId && /^[0-9a-f-]{36}$/i.test(resolvedId)) {
+      const challengeJson = await this.redis.get(`otp:challenge:${resolvedId}`);
+      if (challengeJson) {
+        try {
+          const stored = JSON.parse(challengeJson) as Record<string, unknown>;
+          if (stored.id === resolvedId &&
+              typeof stored.salt === 'string' && /^[0-9a-f]{32}$/i.test(stored.salt) &&
+              typeof stored.otpMac === 'string' && /^[a-f0-9]{64}$/i.test(stored.otpMac)) {
+            candidateMac = createHmac('sha256', this.otpHmacKey())
+              .update(`tradecloseout:otp:v1:${resolvedId}:${stored.salt}:${candidateCode}`).digest('hex');
+          }
+        } catch {
+          // Malformed or legacy unkeyed challenges cannot authorize a session.
+        }
+      }
+    }
 
     const rawResult = await this.redis.eval(
       `local raw = redis.call('GET', KEYS[1])
@@ -314,13 +343,12 @@ export class IdentityController {
          return 'MAX'
        end
 
-       -- Hash-only validation (V01): Compute SHA-1 over salt:candidateCode
-       if not challenge.salt or not challenge.otpHash then
+       -- HMAC comparison: only the server computes candidate MAC, never
+       -- expose the six-digit code or HMAC key to Redis scripts.
+       if type(challenge.otpMac) ~= 'string' or string.len(challenge.otpMac) ~= 64 then
          return 'EXPIRED'
        end
-
-       local computedHash = redis.sha1hex(challenge.salt .. ':' .. ARGV[1])
-       if challenge.otpHash ~= computedHash then
+       if challenge.otpMac ~= ARGV[1] then
          return 'INVALID'
        end
 
@@ -336,7 +364,7 @@ export class IdentityController {
       2,
       inputKey || aliasKey,
       aliasKey || inputKey,
-      candidateCode,
+      candidateMac,
     );
 
     let verifyOutcome = 'EXPIRED';
