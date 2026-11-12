@@ -1,6 +1,9 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { assertAssetInScope, validateAssetProjectScope } from '../src/modules/assets/asset-scope';
 import { AssetsService } from '../src/modules/assets/assets.service';
+import { uuidv7 } from 'uuidv7';
+import { withDisposableDatabase } from '../../../packages/db/test/helpers/disposable-database';
+import { seedTenants } from '../../../packages/db/test/helpers/fixtures';
 
 const orgId = '01991688-0e04-7a2d-b6ff-cfc3462a00a1';
 const userId = '01991688-0e04-7a2d-b6ff-cfc3462a00a2';
@@ -99,4 +102,55 @@ describe('PH3-G08-002 — live asset visibility and mutation scope', () => {
     expect(statements.filter((s) => s === 'ROLLBACK')).toHaveLength(1);
     expect(statements.filter((s) => s === 'COMMIT')).toHaveLength(1);
   });
+  it('PH3-G08-002: restricted PostgreSQL enforces live asset scope after narrowing', async () => {
+    await withDisposableDatabase(async ({ admin, app }) => {
+      const seeded = await seedTenants(admin);
+      const org = seeded.tenants[0].orgId;
+      const project = seeded.tenants[0].projectIds[0];
+      const actor = seeded.userId;
+      const allowed = uuidv7();
+      const hidden = uuidv7();
+      await admin.query(
+        `INSERT INTO memberships (id, org_id, user_id, role, status)
+          VALUES ($1, $2, $3, 'R-SITE', 'ACTIVE')`,
+        [uuidv7(), org, actor],
+      );
+      await admin.query(
+        `INSERT INTO project_members (id, org_id, project_id, user_id, role, scope_json, status, added_by)
+          VALUES ($1, $2, $3, $4, 'R-SITE', $5::jsonb, 'ACTIVE', $4)`,
+        [uuidv7(), org, project, actor, JSON.stringify({ assetIds: [allowed] })],
+      );
+      for (const [id, tag] of [[allowed, 'AHU-001'], [hidden, 'AHU-002']]) {
+        await admin.query(
+          `INSERT INTO assets (id, org_id, project_id, tag, name, category_key, created_by)
+            VALUES ($1, $2, $3, $4, 'AHU Equipment', 'AHU', $5)`,
+          [id, org, project, tag, actor],
+        );
+      }
+      const current: any = { ...ctx, orgId: org, userId: actor };
+      const service = new AssetsService(app);
+      const listed = await service.listAssets(current, project);
+      expect(listed.map((a: any) => a.id)).toEqual([allowed]);
+      await expect(service.getAsset(current, project, hidden)).rejects.toThrow(NotFoundException);
+      await expect(service.deleteOrRetireAsset(current, project, hidden)).rejects.toThrow(NotFoundException);
+      const hiddenRow = await admin.query(
+        'SELECT status, deleted_at FROM assets WHERE org_id = $1 AND id = $2',
+        [org, hidden],
+      );
+      expect(hiddenRow.rows[0].status).toBe('ACTIVE');
+      expect(hiddenRow.rows[0].deleted_at).toBeNull();
+
+      // A scope change after an earlier successful read must apply to the
+      // next transaction; previous guard/context snapshots are not authority.
+      await admin.query(
+        `UPDATE project_members SET scope_json = $4::jsonb
+          WHERE org_id = $1 AND project_id = $2 AND user_id = $3`,
+        [org, project, actor, JSON.stringify({ assetIds: [hidden] })],
+      );
+      await expect(service.deleteOrRetireAsset(current, project, allowed)).rejects.toThrow(NotFoundException);
+      const narrowed = await service.listAssets(current, project);
+      expect(narrowed.map((a: any) => a.id)).toEqual([hidden]);
+    });
+  });
+
 });
