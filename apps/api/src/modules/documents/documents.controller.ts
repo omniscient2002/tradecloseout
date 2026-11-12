@@ -51,6 +51,23 @@ export class DocumentsController {
     return this.documentsService.getDocument(req.userContext, id);
   }
 
+  /**
+   * Explicit member-only authority check before rebinding a browser-local
+   * original from a previous session generation. This does not create an
+   * upload intent or grant access to any document bytes.
+   */
+  @Get('projects/:projectId/documents/recover-upload-authority/:requirementId')
+  @RequirePermission('document.upload')
+  async validateDraftRecoveryAuthority(
+    @Req() req: any,
+    @Param('projectId') projectId: string,
+    @Param('requirementId') requirementId: string,
+  ) {
+    return this.documentsService.validateDraftRecoveryAuthority(
+      req.userContext, projectId, requirementId,
+    );
+  }
+
   @Post(['projects/:projectId/documents/upload-intents', 'projects/:projectId/upload-intents'])
   @RequirePermission('document.upload')
   @RequireIdempotency()
