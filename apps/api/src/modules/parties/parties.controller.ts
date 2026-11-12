@@ -240,13 +240,37 @@ export class PartiesController {
     'projects/:projectId/supplier-document-obligations/:id/intake',
   ])
   @UseGuards(SessionCsrfGuard, PermissionGuard)
-  @RequirePermission('document.upload')
+  @RequirePermission('party.manage')
   async intakeSupplierObligation(
     @Req() req: any,
     @Param('projectId') projectId: string,
     @Param('id') obligationId: string,
-    @Body() dto: { decision?: 'ACCEPT' | 'REJECT'; notes?: string; documentVersionId?: string },
+    @Body() dto: {
+      decision?: 'ACCEPT' | 'REJECT';
+      notes?: string;
+      documentVersionId?: string;
+      expectedRowVersion?: number;
+      commandId?: string;
+    },
   ) {
     return this.partiesService.intakeSupplierObligation(req.userContext, projectId, obligationId, dto);
   }
+  /**
+   * Returns only the current contractor's intake decisions, including saved
+   * rejection reasons. Never publish the decision ledger through guest links.
+   */
+  @Get([
+    'projects/:projectId/supplier-obligations/:id/intake-history',
+    'projects/:projectId/supplier-document-obligations/:id/intake-history',
+  ])
+  @UseGuards(SessionCsrfGuard, PermissionGuard)
+  @RequirePermission('party.manage')
+  async getSupplierIntakeHistory(
+    @Req() req: any,
+    @Param('projectId') projectId: string,
+    @Param('id') obligationId: string,
+  ) {
+    return this.partiesService.getSupplierIntakeHistory(req.userContext, projectId, obligationId);
+  }
+
 }
