@@ -20,23 +20,26 @@ describe('PH5-G28-001 least-privilege incident operator database contract', () =
     });
   });
 
-  it('limits writes to individual containment columns and append-only incident records', async () => {
+  it('has no direct content/session privileges, only the guarded incident function', async () => {
     const { rows: [p] } = await admin.query(
       `SELECT
-          has_table_privilege('tc_incident_operator', 'document_versions', 'UPDATE') AS mutate_document,
-          has_table_privilege('tc_incident_operator', 'storage_objects', 'DELETE') AS delete_storage,
+          has_table_privilege('tc_incident_operator', 'organisations', 'SELECT') AS read_orgs,
+          has_table_privilege('tc_incident_operator', 'sessions', 'SELECT') AS read_sessions,
+          has_table_privilege('tc_incident_operator', 'storage_objects', 'SELECT') AS read_storage,
           has_column_privilege('tc_incident_operator', 'storage_objects', 'status', 'UPDATE') AS quarantine_storage,
-          has_column_privilege('tc_incident_operator', 'storage_objects', 'object_key', 'UPDATE') AS mutate_key,
           has_column_privilege('tc_incident_operator', 'handover_packages', 'status', 'UPDATE') AS contain_package,
           has_column_privilege('tc_incident_operator', 'sessions', 'revoked_at', 'UPDATE') AS revoke_session,
-          has_table_privilege('tc_incident_operator', 'audit_events', 'INSERT') AS record_tenant_event,
-          has_table_privilege('tc_incident_operator', 'audit_events', 'DELETE') AS delete_event,
-          has_table_privilege('tc_incident_operator', 'admin_audit_events', 'INSERT') AS record_operator_event`,
+          has_table_privilege('tc_incident_operator', 'audit_events', 'INSERT') AS insert_event,
+          has_function_privilege('tc_incident_operator',
+             'claim_incident_runbook_approval(uuid,uuid,text,uuid,uuid,text)', 'EXECUTE') AS manual_claim,
+          has_function_privilege('tc_incident_operator',
+             'execute_approved_incident_runbook(uuid,uuid,text,uuid,uuid,text,boolean)',
+             'EXECUTE') AS guarded_execution`,
     );
     expect(p).toEqual({
-      mutate_document: false, delete_storage: false, quarantine_storage: true,
-      mutate_key: false, contain_package: true, revoke_session: true,
-      record_tenant_event: true, delete_event: false, record_operator_event: true,
+      read_orgs: false, read_sessions: false, read_storage: false,
+      quarantine_storage: false, contain_package: false, revoke_session: false,
+      insert_event: false, manual_claim: false, guarded_execution: true,
     });
   });
 
