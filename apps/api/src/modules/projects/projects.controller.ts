@@ -89,7 +89,7 @@ export class ProjectsController {
   }
 
   @Post(':id/close')
-  @RequirePermission('project.manage')
+  @RequirePermission('project.close')
   @RequireIdempotency()
   async closeProject(@Req() req: any, @Param('id') id: string, @Body() dto?: CloseProjectDto) {
     return this.projectsService.closeProject(req.userContext, id, undefined, {
@@ -119,7 +119,7 @@ export class ProjectsController {
   }
 
   @Post(':id/contracts')
-  @RequirePermission('project.manage')
+  @RequirePermission('contract.manage')
   async createContract(
     @Req() req: any,
     @Param('id') id: string,
@@ -129,7 +129,7 @@ export class ProjectsController {
   }
 
   @Post(':id/contracts/:contractId/variations')
-  @RequirePermission('project.manage')
+  @RequirePermission('contract.manage')
   async createVariation(
     @Req() req: any,
     @Param('id') id: string,
@@ -146,7 +146,7 @@ export class ProjectsController {
   }
 
   @Post(':id/specifications')
-  @RequirePermission('project.manage')
+  @RequirePermission('contract.manage')
   async createSpecification(
     @Req() req: any,
     @Param('id') id: string,
