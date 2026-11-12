@@ -23,12 +23,12 @@
 | PH5-G22-001 | CANDIDATE | Bounded URL refresh/retry, stable uploaded receipts, backend blocks refresh when intent is no longer PENDING_UPLOAD/PENDING; real provider acceptance pending |
 | PH5-G22-002 | CANDIDATE | Origin-wide Web Locks serialize drains; unsupported environments fail closed; tab crash/mobile coverage pending |
 | PH5-G22-003 | PARTIAL | Persist completion request before POST, interrogate server after lost response, only retry when server confirms PENDING_UPLOAD, status-only PROCESSING reconciliation; retry/cancellation policies pending |
-| PH5-G22-004 | PARTIAL | Stop silent blocked-draft revival; explicit same-identity recovery UI/current-authority challenge pending |
-| PH5-G22-005 | PARTIAL | Atomic 100 MiB API-aligned per-file limit, 300 MiB per-actor/500 MiB browser queue cap, 10-draft cap, actor-only inventory and abort-first user discard; TTL/eviction/real-device proof pending |
+| PH5-G22-004 | PARTIAL | Server-derived member/tenant queue partition, auth/tenant-boundary epoch rotation and strict no-auto-replay after same-user re-login; original actor can list/discard old generation; explicit authorized recovery UI remains open |
+| PH5-G22-005 | PARTIAL | Atomic 100 MiB file, 300 MiB actor, 500 MiB browser and 10-draft limits; actor-only inventory and abort-first discard, safe replay of already-committed abort, denial preserves original; TTL/eviction/real-device proof pending |
 | PH5-G22-006 | CANDIDATE | Incremental 1 MiB SHA-256 original-byte hashing matches known vectors/Node crypto across block boundaries; real 100 MiB mobile peak-memory and worker/cancellation evidence pending |
 | PH5-G22-007 | PARTIAL | No closed-tab provider writes; unsupported lock surfaces fail closed; upload modal explicitly distinguishes saved draft vs scanned/verified evidence; device/scope acceptance pending |
 | PH5-G22-008 | BLOCKED_EXTERNAL | Real provider, device and interruption acceptance |
-| PH5-G28-001 | PARTIAL (P0 OPEN) | New migration grants passwordless restricted incident role only narrow containment columns; DB role tests; RB09 backing-object quarantine, dependent package download denial and locked new-submission denial. Operator identity/approval binding, prior signed-URL and copied-archive revocation, accepted-recipient invalidation and real end-to-end runbook proof still open |
+| PH5-G28-001 | PARTIAL (P0 OPEN) | Passwordless restricted role migration + DB privilege tests; RB09 quarantine, source-package download denial, new submission denial under locks, and fail-closed upload URL refresh. Operator identity/approval binding, prior signed-URL/copied-archive revocation, accepted-recipient invalidation and real end-to-end runbook proof still open |
 | PH5-G28-002 | OPEN | Validated deployable infrastructure, privilege and network contract |
 | PH5-G28-003 | OPEN | Promoted image/DB migration/rollback pipeline |
 | PH5-G28-004 | PARTIAL | Isolated DB dump/restore drill uses its own consistent snapshot, cleanup trap, restricted file permissions and safe preflight; actual PITR, RPO/RTO, S3 bytes and KMS recovery unverified |
@@ -42,7 +42,7 @@
 
 The browser regression file `apps/web/e2e/offline-queue-phase5.spec.ts` executes the actual queue against a stubbed API client, real Chromium IndexedDB/Web Locks and loopback HTTP PUTs. It covers expired presigned URL refresh, concurrent drains, actor isolation, per-actor/global quota, scoped draft inventory/discard, missing completion responses and same-key retry when the server remains pending, plus injected browser-storage exhaustion. `apps/web/e2e/chunked-sha256.spec.ts` compares original-byte SHA-256 against known empty/abc vectors and Node crypto across padding/segment boundaries. `apps/web/e2e/csv-export.spec.ts` covers Unicode, #/%/CRLF, quoting, formula prefixes and malformed values. Backend regressions check restricted incident SQL privileges and deny refresh of quarantined upload intents. These are fixture/DB mechanics tests, **not** production provider or end-to-end acceptance.
 
-**Latest verified passing engineering head before this ledger edit:** `a5c8090e98c70bc853ce1734062348f7cae53f05`, GitHub `verify-and-test` and `group-register` successful. The prior `71ccd765` head included **17 passing** Chromium archive-project checks (incremental SHA-256 vectors, storage budgets, queue actor fencing, CSV) and **257 passing** API tests; the subsequent heads cover lost completion and backend refresh restrictions. Always check the exact latest head before claiming that its tests passed.
+**Latest verified passing engineering head before this ledger edit:** `98f5dfd810a4a11c2eac64bba3e3b8d41f11260c`, GitHub `verify-and-test` and `group-register` successful. The prior `71ccd765` head included **17 passing** Chromium archive-project checks and **257 passing** API tests. This confirmed head also includes lost-completion, backend URL-refresh and abort-replay regressions; later auth epoch changes require a fresh exact-head result. Always check the exact latest head before claiming that its tests passed.
 
 Useful commands on a clean Node 22/pnpm 12.4.1 checkout with isolated PG16/Redis and Chromium:
 ```sh
@@ -59,9 +59,13 @@ pnpm test:e2e
 
 ## Local evidence safety / memory caveats
 
-The browser queue enforces the API's current 100 MiB maximum per file, a 300 MiB per-actor cap, a 500 MiB total cap and 10 active drafts per actor; quota validation and persistence occur within the same IndexedDB readwrite transaction. The upload modal lists only the current actor's drafts; an explicit discard of an unfinished remote intent first asks the server to abort. Discard refuses a pending scan/processing receipt. These are **logical per-origin controls**, not disk encryption; use separate browser profiles for different people on shared devices. Browser storage may still be evicted. A device-level storage persistence contract, TTL and completed-intent cleanup remain required.
+The browser queue enforces the API's current 100 MiB maximum per file, a 300 MiB per-actor cap, a 500 MiB total cap and 10 active drafts per actor; quota validation and persistence occur within the same IndexedDB readwrite transaction. The upload modal lists only the current actor's drafts; an explicit discard of an unfinished remote intent first asks the server to abort. A lost abort response may be reconciled only against an authoritatively FAILED/QUARANTINED version; a 401/403 never implies permission to delete. Discard refuses a pending scan/processing receipt. These are **logical per-origin controls**, not disk encryption; use separate browser profiles for different people on shared devices. Browser storage may still be evicted. A device-level storage persistence contract, TTL and completed-intent cleanup remain required.
 
 The original-blob SHA-256 digest now uses a streaming incremental implementation reading 1 MiB slices rather than `file.arrayBuffer()`. Known vectors and segment boundaries match Node's SHA-256. Full mobile peak-memory profiling, background-worker offload and cancellation are unaccepted.
+
+## Actor-bound queue recovery contract
+
+On the contractor project screen, `GET /api/v1/auth/me` supplies `userId` and `activeOrgId`; these define the upload partition instead of stale browser-provided input. Session and organisation changes clear the partition and rotate a non-secret local generation value. Enqueued originals are tagged with their current generation; legacy drafts without one and pre-logout drafts are **not automatically replayed**, even if the same user signs back in. The returning original actor may inspect and deliberately discard drafts; restoring old bytes for upload would require an explicit server-verified authority check and user confirmation (still outstanding). Browser-local storage is **not** a security boundary against people sharing one OS/browser profile.
 
 ## Incident operation limitations (PH5-G28-001)
 
