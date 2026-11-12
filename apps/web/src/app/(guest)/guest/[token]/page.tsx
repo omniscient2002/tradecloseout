@@ -160,7 +160,7 @@ export default function StandaloneGuestPortalPage() {
 
     setError(null);
     try {
-      await enqueueFieldUpload({
+      const queued = await enqueueFieldUpload({
         actorPartition: `guest:${ctx.grantId}`,
         projectId: ctx.projectId,
         requirementId: selectedReqId,
@@ -170,7 +170,14 @@ export default function StandaloneGuestPortalPage() {
         title: selectedFile.name,
         externalComment: remarks,
       });
-      setUploadSuccess(`Uploaded. ${ctx.contractorName} will review it.`);
+      // Queuing locally is not delivery, scanner verification or submission.
+      // The background uploader can still fail, be blocked by a revoked grant,
+      // or remain offline indefinitely. Never tell the supplier it was uploaded.
+      setUploadSuccess(
+        queued.status === "QUEUED_OFFLINE"
+          ? "Saved on this device while offline. Not submitted — reconnect and verify delivery before leaving."
+          : "Added to your upload queue. Not yet submitted — check upload and scan status before relying on delivery.",
+      );
     } catch (err: any) {
       setError(err.message || "Upload failed.");
     }
@@ -296,8 +303,8 @@ export default function StandaloneGuestPortalPage() {
             /* Step 2A: Supplier Request Upload View (SCR-034) */
             <form onSubmit={handleSupplierUploadSubmit} className="space-y-4">
               {uploadSuccess && (
-                <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-4 text-emerald-950 font-semibold flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                <div role="status" className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-amber-950 font-semibold flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 text-amber-700" />
                   <span>{uploadSuccess}</span>
                 </div>
               )}
