@@ -303,7 +303,8 @@ async function bootWorker() {
               await client.query(
                 `UPDATE storage_objects
                     SET status = 'READY',
-                        sha256 = COALESCE($3, sha256),
+                        sha256 = $3,
+                        av_scanned_at = now(),
                         updated_at = now()
                   WHERE id = $1 AND org_id = $2 AND status = 'PROCESSING'
                     AND provider_version_id = $4`,
