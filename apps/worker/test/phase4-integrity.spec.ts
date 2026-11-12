@@ -115,6 +115,11 @@ test('PH4-G14-003: a stalled BullMQ delivery cannot publish under the previous a
           id: packageId, org_id: orgId, project_id: randomUUID(),
           status: 'GENERATING', error_code: 'PACKAGE_JOB:same-bullmq-job',
           package_purpose: 'FULL_HANDOVER', manifest_format_version: 2,
+          metadata_snapshot_json: {
+            orgName: 'Engineering Company', projectCode: 'P-4', projectName: 'Site',
+            contractRef: 'C-4', clientName: 'Customer',
+          },
+
           updated_at: new Date().toISOString(),
         }] };
       }
