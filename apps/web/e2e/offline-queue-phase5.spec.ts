@@ -657,3 +657,41 @@ test('lost upload-intent response cannot masquerade as an untouched offline draf
   expect(result.blocked).toContain('UPLOAD_REMOTE_INTENT_RECOVERY_UNSUPPORTED');
   expect(result.retained).toBe(1);
 });
+
+
+test('a changed requirement revision cannot silently absorb an old local original', async ({ page }) => {
+  await fixture(page, false);
+  const result = await page.evaluate(async () => {
+    const q = (window as any).__queue;
+    const orgId = '0192e000-0000-7000-8000-000000000001';
+    const userId = '0192e000-0000-7000-8000-000000000101';
+    const partition = q.getMemberOfflineActorPartition(userId, orgId);
+    q.setOfflineActorPartition(partition);
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    await q.enqueueFieldUpload({
+      actorPartition: partition, projectId: 'project-one', requirementId: 'requirement-one',
+      requirementRowVersion: 7,
+      file: new File(['original evidence'], 'original.pdf', { type: 'application/pdf' }),
+      revisionCode: 'A', issueDate: '2026-11-12', title: 'Old obligation original',
+    });
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+    q.setOfflineActorPartition(null);
+    q.setOfflineActorPartition(partition);
+    const base = (window as any).__apiFetch;
+    (window as any).__apiFetch = async (url: string, opts?: unknown) => {
+      if (url === '/api/v1/auth/me') return { userId, activeOrgId: orgId };
+      if (url.endsWith('/recover-upload-authority/requirement-one?rowVersion=7')) {
+        return { allowed: true, projectId: 'project-one', requirementId: 'requirement-one', rowVersion: 8 };
+      }
+      return base(url, opts);
+    };
+    const previous = (await q.listOfflineUploadDrafts())[0];
+    let blocked = '';
+    try { await q.recoverOfflineUploadDraft(previous.queueId); }
+    catch (error) { blocked = (error as Error).message; }
+    return { blocked, status: (await q.listOfflineUploadDrafts())[0].status };
+  });
+  expect(result).toEqual({
+    blocked: 'UPLOAD_RECOVERY_AUTHORITY_MISMATCH', status: 'BLOCKED_SCOPE',
+  });
+});
