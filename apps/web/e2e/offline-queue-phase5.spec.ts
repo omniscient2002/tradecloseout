@@ -6,14 +6,17 @@ import ts from 'typescript';
 // Actual production queue module, transpiled without its API-client import so
 // each browser fixture can inject deterministic, in-memory API responses.
 // This tests IndexedDB, navigator.locks and real fetch dispatch in Chromium.
+const hashSource = readFileSync(resolve(process.cwd(), 'src/lib/chunked-sha256.ts'), 'utf8')
+  .replace(/\bexport\s+/g, '');
 const queueSource = readFileSync(resolve(process.cwd(), 'src/lib/offline-upload-queue.ts'), 'utf8')
+  .replace("import { sha256BlobChunked } from './chunked-sha256';", '')
   .replace("import { apiFetch, ApiProblemError } from './api-client';", `
     class ApiProblemError extends Error {}
     const apiFetch = (...args) => window.__apiFetch(...args);
   `)
   .replace(/\bexport\s+/g, '');
 const queueScript = ts.transpileModule(
-  queueSource + '\nwindow.__queue = { enqueueFieldUpload, drainOfflineUploadQueue, setOfflineActorPartition, listOfflineUploadDrafts, discardOfflineUploadDraft, assertOfflineDraftBudget };',
+  hashSource + '\n' + queueSource + '\nwindow.__queue = { enqueueFieldUpload, drainOfflineUploadQueue, setOfflineActorPartition, listOfflineUploadDrafts, discardOfflineUploadDraft, assertOfflineDraftBudget };',
   { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } },
 ).outputText;
 
