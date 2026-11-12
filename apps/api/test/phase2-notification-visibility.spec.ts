@@ -17,7 +17,7 @@ describe('PH2-G20-002: notification recipient and project visibility', () => {
     expect(sql).not.toContain('recipient_user_id IS NULL');
     expect(sql).toContain("pm.status = 'ACTIVE'");
     expect(sql).toContain('p.purged_at IS NULL');
-    expect(params[2]).toBe(false);
+    expect(params?.[2]).toBe(false);
   });
 
   it('permits organisation administrators to see only addressed project notifications', async () => {
@@ -30,6 +30,6 @@ describe('PH2-G20-002: notification recipient and project visibility', () => {
       requestId: 'phase2-notification-admin',
       orgRole: 'R-ADMIN',
     });
-    expect(query.mock.calls[0][1][2]).toBe(true);
+    expect(query.mock.calls[0]?.[1]?.[2]).toBe(true);
   });
 });
