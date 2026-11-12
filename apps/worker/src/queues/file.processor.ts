@@ -121,7 +121,10 @@ export async function verifyAndScanUploadedFile(
     } else {
       // Infrastructure unavailability is retryable. The worker's bounded retry policy
       // persists the final FAILED state only after the last attempt is exhausted.
-      throw new Error(`SCAN_UNAVAILABLE: ${avVerdict.error || 'Antivirus scanner connection failed'}`);
+      // Scanner diagnostics can contain raw network addresses, file names, or
+      // provider response text. BullMQ persists thrown Error.message in Redis;
+      // never copy these untrusted details into durable job failure history.
+      throw new Error('SCAN_UNAVAILABLE: Antivirus scanner connection failed');
     }
   } else if (avVerdict.infected) {
     return {
