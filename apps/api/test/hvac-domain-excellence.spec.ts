@@ -135,83 +135,66 @@ describe('HVAC Domain Excellence Suite (XP11..XP18)', () => {
   // XP12: Daily Actionable Inbox & Work Items
   // ==========================================================================
   describe('XP12: Actionable Inbox & Work Item Projections', () => {
-    it('aggregates source-derived work items across reviews, waivers, defects, revalidations and obligations', async () => {
+    it('projects eligible work actions using live authority and one scoped response', async () => {
+      const reviewId = uuidv7();
+      const waiverId = uuidv7();
       const mockPool: any = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string) => {
-            if (sql.includes('COUNT(*) AS total')) {
-              return {
-                rows: [
+            if (sql.includes('FROM memberships')) return { rows: [{ role: 'R-OWNER' }] };
+            if (sql.includes('FROM project_members')) return { rows: [] };
+            if (sql.includes('SELECT id FROM projects')) return { rows: [{ id: projectId }] };
+            if (sql.includes('WITH access AS')) {
+              return { rows: [{
+                total: '2', reviews: '1', waivers: '1', defects: '0',
+                revalidations: '0', supplier_obligations: '0',
+                items: [
                   {
-                    total: '5',
-                    reviews: '1',
-                    waivers: '1',
-                    defects: '1',
-                    revalidations: '1',
-                    supplier_obligations: '1',
-                  },
-                ],
-              };
-            }
-            if (sql.includes('WITH all_items AS')) {
-              return {
-                rows: [
-                  {
-                    entity_id: uuidv7(),
-                    entity_version: 1,
+                    entity_id: reviewId, entity_version: 3,
                     title: 'Chiller O&M Manual Rev 0',
-                    project_id: projectId,
-                    project_code: 'PRJ-CHILLER',
+                    project_id: projectId, project_code: 'PRJ-CHILLER',
                     project_name: 'Metro HVAC Central Plant',
-                    created_at: new Date(),
-                    type: 'REVIEW_PENDING',
-                    priority: 'HIGH',
-                    waiting_on: 'Awaiting submittal review decision',
-                    entity_type: 'DOCUMENT_VERSION',
-                    next_path: `/projects/${projectId}/reviews/rev-1`,
-                    next_method: 'POST',
-                    next_action: 'DECIDE_REVIEW',
+                    created_at: new Date().toISOString(),
+                    type: 'REVIEW_PENDING', priority: 'HIGH',
+                    waiting_on: 'Awaiting review decision', entity_type: 'DOCUMENT_VERSION',
+                    next_path: '/api/v1/projects/' + projectId +
+                      '/document-versions/' + reviewId + '/decision',
+                    next_method: 'POST', next_action: 'DECIDE_REVIEW',
                   },
                   {
-                    entity_id: uuidv7(),
-                    entity_version: 1,
-                    title: 'Ductwork leakage test mandatory waiver',
-                    project_id: projectId,
-                    project_code: 'PRJ-CHILLER',
+                    entity_id: waiverId, entity_version: null,
+                    title: 'Mandatory waiver',
+                    project_id: projectId, project_code: 'PRJ-CHILLER',
                     project_name: 'Metro HVAC Central Plant',
-                    created_at: new Date(),
-                    type: 'WAIVER_PENDING_COUNTERSIGN',
-                    priority: 'CRITICAL',
-                    waiting_on: 'Awaiting PMC second approval / countersign',
-                    entity_type: 'WAIVER',
-                    next_path: `/projects/${projectId}/checklists/waivers/w-1/countersign`,
-                    next_method: 'POST',
-                    next_action: 'COUNTERSIGN_WAIVER',
+                    created_at: new Date().toISOString(),
+                    type: 'WAIVER_PENDING_COUNTERSIGN', priority: 'CRITICAL',
+                    waiting_on: 'Awaiting second approval', entity_type: 'WAIVER',
+                    next_path: '/api/v1/projects/' + projectId +
+                      '/checklists/waivers/' + waiverId + '/countersign',
+                    next_method: 'POST', next_action: 'COUNTERSIGN_WAIVER',
                   },
                 ],
-              };
+              }] };
             }
             return { rows: [] };
           }),
           release: jest.fn(),
         }),
       };
-
-      const workItemsService = new WorkItemsService(mockPool);
-      const result = await workItemsService.listWorkItems(mockCtx, { projectId });
-
-      expect(result.counts.total).toBe(5);
-      expect(result.counts.reviews).toBe(1);
-      expect(result.counts.waivers).toBe(1);
-      expect(result.counts.defects).toBe(1);
-      expect(result.counts.revalidations).toBe(1);
-      expect(result.counts.supplierObligations).toBe(1);
-
+      const result = await new WorkItemsService(mockPool).listWorkItems(mockCtx, { projectId });
+      expect(result.counts).toMatchObject({
+        total: 2, reviews: 1, waivers: 1,
+        defects: 0, revalidations: 0, supplierObligations: 0,
+      });
       expect(result.items).toHaveLength(2);
-      expect(result.items[0].type).toBe('REVIEW_PENDING');
-      expect(result.items[0].nextCommand.actionName).toBe('DECIDE_REVIEW');
-      expect(result.items[1].type).toBe('WAIVER_PENDING_COUNTERSIGN');
-      expect(result.items[1].priority).toBe('CRITICAL');
+      expect(result.items[0].nextCommand).toMatchObject({
+        actionName: 'DECIDE_REVIEW',
+        precondition: { field: 'expectedRowVersion', value: 3 },
+        idempotency: 'HEADER_KEY',
+      });
+      expect(result.items[1].nextCommand).toMatchObject({
+        actionName: 'COUNTERSIGN_WAIVER', precondition: null,
+      });
     });
   });
 
