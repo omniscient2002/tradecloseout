@@ -79,26 +79,13 @@ export async function compileAndPersistHandoverPackage(
       [orgId],
     );
     const { rows: packages } = await client.query(
-      `SELECT hp.id, hp.org_id, hp.project_id, hp.version_no, hp.status, hp.manifest_format_version,
-              hp.snapshot_id, hp.snapshot_checksum, hp.created_at, hp.updated_at, hp.requested_by,
-              hp.error_code, hp.pdf_object_id, hp.package_purpose,
-              p.code AS project_code, p.name AS project_name,
-              o.display_name AS org_name,
-              COALESCE(contract.contract_ref, contract.reference, '') AS contract_ref,
-              COALESCE(party.name, '') AS client_name
-         FROM handover_packages hp
-         JOIN projects p ON p.org_id = hp.org_id AND p.id = hp.project_id
-         JOIN organisations o ON o.id = hp.org_id
-         LEFT JOIN LATERAL (
-           SELECT c.contract_ref, c.reference, c.party_id
-             FROM contracts c
-            WHERE c.org_id = hp.org_id AND c.project_id = hp.project_id AND c.status = 'ACTIVE'
-            ORDER BY c.created_at DESC
-            LIMIT 1
-         ) contract ON true
-         LEFT JOIN parties party ON party.org_id = hp.org_id AND party.id = contract.party_id
-        WHERE hp.org_id = $1 AND hp.id = $2
-        FOR UPDATE OF hp`,
+      `SELECT hp.id, hp.org_id, hp.project_id, hp.version_no, hp.status,
+               hp.manifest_format_version, hp.snapshot_id, hp.snapshot_checksum,
+               hp.metadata_snapshot_json, hp.created_at, hp.updated_at, hp.requested_by,
+               hp.error_code, hp.pdf_object_id, hp.package_purpose
+          FROM handover_packages hp
+         WHERE hp.org_id = $1 AND hp.id = $2
+         FOR UPDATE OF hp`,
       [orgId, packageId],
     );
     packageMeta = packages[0];
@@ -110,6 +97,23 @@ export async function compileAndPersistHandoverPackage(
     if (packageMeta.manifest_format_version !== 2 || packageMeta.package_purpose !== 'FULL_HANDOVER') {
       throw new Error('PACKAGE_UNPINNED_MANIFEST_REQUIRES_REGENERATION');
     }
+    const cover = typeof packageMeta.metadata_snapshot_json === 'string'
+      ? JSON.parse(packageMeta.metadata_snapshot_json)
+      : packageMeta.metadata_snapshot_json;
+    if (!cover || typeof cover !== 'object' ||
+        typeof cover.orgName !== 'string' || !cover.orgName.trim() ||
+        typeof cover.projectCode !== 'string' || !cover.projectCode.trim() ||
+        typeof cover.projectName !== 'string' || !cover.projectName.trim() ||
+        typeof cover.clientName !== 'string' || typeof cover.contractRef !== 'string') {
+      throw new Error('PACKAGE_FROZEN_METADATA_INVALID');
+    }
+    // The PDF cover must describe the project and contractual counterparty at
+    // manifest selection time, not a later mutable name or active contract.
+    packageMeta.org_name = cover.orgName;
+    packageMeta.project_code = cover.projectCode;
+    packageMeta.project_name = cover.projectName;
+    packageMeta.client_name = cover.clientName;
+    packageMeta.contract_ref = cover.contractRef;
     // Advisory session ownership excludes a live competing attempt even when
     // BullMQ redelivers the same job ID. Reclaim a stalled GENERATING row only
     // after holding that lock; the former owner can no longer publish.
