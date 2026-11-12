@@ -27,6 +27,7 @@ interface UploadEvidenceModalProps {
     requirementKey: string;
     title: string;
     docTypeKey: string;
+    rowVersion: number;
     assetTag?: string | null;
   } | null;
   onUploadSuccess: () => void;
@@ -139,6 +140,7 @@ export function UploadEvidenceModal({
       await enqueueFieldUpload({
         projectId,
         requirementId: requirement.id,
+        requirementRowVersion: requirement.rowVersion,
         file,
         revisionCode: revisionCode.trim().toUpperCase(),
         issueDate,
