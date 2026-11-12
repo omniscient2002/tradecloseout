@@ -409,44 +409,31 @@ describe('Production Review Remediation Suite (NP01..NP06, NP09, NP10)', () => {
       expect(res.items[0].entityVersion).toBe(3);
     });
 
-    it('processes supplier obligation intake and updates status', async () => {
+    it('does not accept supplier intake based only on stale HTTP owner role', async () => {
       const obligationId = uuidv7();
-      let updatedStatus = '';
+      let wroteObligation = false;
       const mockClient: any = {
-        query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
-          if (sql.includes('FROM supplier_document_obligations')) {
-            return {
-              rows: [
-                {
-                  id: obligationId,
-                  org_id: orgId,
-                  project_id: projectId,
-                  status: 'UPLOADED',
-                  document_version_id: null,
-                },
-              ],
-            };
-          }
-          if (sql.includes('UPDATE supplier_document_obligations')) {
-            updatedStatus = params[3];
-            return { rows: [] };
-          }
+        query: jest.fn().mockImplementation(async (sql: string) => {
+          if (sql.includes('UPDATE supplier_document_obligations')) wroteObligation = true;
+          // A stale context claims owner, but the real org membership has gone
+          // away. No obligation, audit or outbox write is permitted.
           return { rows: [] };
         }),
       };
-
       const mockDb: any = {
         withTenantContext: jest.fn().mockImplementation((_, cb) => cb(mockClient)),
       };
-
       const partiesService = new PartiesService(mockDb, null as any, null as any);
-      const res = await partiesService.intakeSupplierObligation(ctx, projectId, obligationId, {
-        decision: 'ACCEPT',
-      });
-
-      expect(res.status).toBe('ACCEPTED');
-      expect(updatedStatus).toBe('ACCEPTED');
-    });
+      await expect(partiesService.intakeSupplierObligation(ctx, projectId, obligationId, {
+        decision: 'ACCEPT', documentVersionId: uuidv7(),
+      })).rejects.toThrow('ACTIVE_ORG_MEMBERSHIP_REQUIRED');
+      expect(wroteObligation).toBe(false);
+      expect(mockClient.query.mock.calls.some(([sql]: [string]) =>
+        sql.includes('INSERT INTO supplier_intake_decisions') ||
+        sql.includes('INSERT INTO audit_events') ||
+        sql.includes('INSERT INTO outbox_events'),
+      )).toBe(false);
+    });;
   });
 
   // --------------------------------------------------------------------------
