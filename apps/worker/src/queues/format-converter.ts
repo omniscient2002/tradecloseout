@@ -1,7 +1,7 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { readFile, writeFile, mkdtemp, rm, lstat, stat } from 'fs/promises';
+import { readFile, writeFile, mkdtemp, rm, lstat, stat, realpath } from 'fs/promises';
 import os from 'os';
 import path from 'path';
 
@@ -19,6 +19,39 @@ async function assertRegularBoundedInput(source: string, limit: number): Promise
   if (!info.isFile() || info.isSymbolicLink() ||
       !Number.isSafeInteger(info.size) || info.size < 1 || info.size > limit) {
     throw new Error('CONVERSION_SOURCE_RESOURCE_LIMIT');
+  }
+}
+
+/**
+ * Confine file-backed conversion to a designated workspace in deployed modes.
+ * Resolve real paths, not just string prefixes: ../ and parent-directory
+ * symlinks must never let a queued job read or overwrite arbitrary server files.
+ */
+export async function assertConverterWorkspace(
+  sourcePath: string, outputPdfPath: string, workspace: string,
+): Promise<void> {
+  if (!path.isAbsolute(sourcePath) || !path.isAbsolute(outputPdfPath) ||
+      !path.isAbsolute(workspace)) {
+    throw new Error('CONVERSION_WORKSPACE_PATH_INVALID');
+  }
+  const root = await realpath(workspace);
+  const input = await realpath(sourcePath);
+  const parent = await realpath(path.dirname(outputPdfPath));
+  const within = (file: string) => {
+    const relative = path.relative(root, file);
+    return relative !== '' && relative !== '..' &&
+      !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative);
+  };
+  if (!within(input) || !within(parent)) {
+    throw new Error('CONVERSION_WORKSPACE_ESCAPE');
+  }
+  try {
+    const candidate = await lstat(outputPdfPath);
+    if (!candidate.isFile() || candidate.isSymbolicLink()) {
+      throw new Error('CONVERSION_OUTPUT_TARGET_UNSAFE');
+    }
+  } catch (error: any) {
+    if (error?.code !== 'ENOENT') throw error;
   }
 }
 
@@ -50,6 +83,12 @@ export async function convertSupportingFormatToPdf(params: {
     throw new Error('CONVERSION_INPUT_INVALID');
   }
   const { sourcePath, detectedMime, outputPdfPath, headerStampText } = params;
+  if (['staging', 'production'].includes(process.env.NODE_ENV || '')) {
+    if (!process.env.CONVERSION_STAGING_ROOT) {
+      throw new Error('CONVERSION_STAGING_ROOT_REQUIRED');
+    }
+    await assertConverterWorkspace(sourcePath, outputPdfPath, process.env.CONVERSION_STAGING_ROOT);
+  }
 
   // 1. Native Image-to-A4-PDF Conversion (JPEG / PNG / WebP)
   if (
