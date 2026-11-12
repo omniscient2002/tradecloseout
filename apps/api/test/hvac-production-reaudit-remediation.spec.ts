@@ -204,8 +204,11 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
                     schema_version: '1.0',
                     status: 'COMPLETED',
                     archive_sha256: 'a'.repeat(64),
-                    total_objects: 5,
+                    // A valid archive with no source-document entries:
+                    // artifact signing is tested independently of source integrity.
+                    total_objects: 0,
                     total_bytes: '102400',
+                    manifest_json: { objects: [] },
                     verification_receipt_json: {
                       artifact: {
                         objectId: artifactObjectId,
