@@ -20,14 +20,17 @@ interface ProjectItem {
   code: string;
   name: string;
   status: "DRAFT" | "ACTIVE" | "SUSPENDED" | "HANDOVER" | "CLOSED";
-  clientName: string;
-  mcName: string;
-  pmcName: string;
-  targetHandoverDate: string;
-  contractValuePaise: string;
-  retentionAtRiskPaise: string;
-  approvedCount: number;
-  applicableCount: number;
+  clientName?: string | null;
+  client_name?: string | null;
+  mcName?: string | null;
+  pmcName?: string | null;
+  targetHandoverDate?: string | null;
+  target_handover_date?: string | null;
+  contractValuePaise?: string | null;
+  contract_value_paise?: string | null;
+  retentionAtRiskPaise?: string | null;
+  approvedCount?: number;
+  applicableCount?: number;
 }
 
 function formatInr(paise: string): string {
@@ -117,7 +120,7 @@ function ProjectsDirectoryContent() {
     const matchSearch =
       p.code.toLowerCase().includes(search.toLowerCase()) ||
       p.name.toLowerCase().includes(search.toLowerCase()) ||
-      p.clientName.toLowerCase().includes(search.toLowerCase());
+      (p.clientName ?? p.client_name ?? "").toLowerCase().includes(search.toLowerCase());
     const matchStatus = statusFilter === "ALL" || p.status === statusFilter;
     return matchSearch && matchStatus;
   });
@@ -128,7 +131,7 @@ function ProjectsDirectoryContent() {
         <div>
           <h1 className="text-xl font-bold text-slate-900">Projects Portfolio</h1>
           <p className="text-xs text-slate-500">
-            All commercial HVAC and MEP projects contracted under Deccan EnviroTech MEP Pvt Ltd.
+            Manage projects and track their current lifecycle status.
           </p>
         </div>
         <button
