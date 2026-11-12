@@ -1,4 +1,4 @@
-import { isIndiaQuietHour, sumPaise, parseInrToPaise } from '../src/business-rules';
+import { isIndiaQuietHour, sumPaise, parseInrToPaise, quotaMonthIndia } from '../src/business-rules';
 import { canonicalJson } from '../src/canonical-json';
 
 describe('Production money totals and India quiet-hour rules', () => {
@@ -45,6 +45,16 @@ describe('Production money totals and India quiet-hour rules', () => {
     ['2028-02-29T18:30:00Z', true],  // leap-day rollover to March
   ])('SHARED-06: quiet-hour boundary %s', (instant, expected) => {
     expect(isIndiaQuietHour(new Date(instant))).toBe(expected);
+  });
+  it.each([
+    ['2026-11-30T18:29:59Z', '2026-11'],
+    ['2026-11-30T18:30:00Z', '2026-12'],
+    ['2027-12-31T18:30:00Z', '2028-01'],
+  ])('PH2-G18-005: IST monthly boundary %s', (iso, expected) => {
+    expect(quotaMonthIndia(new Date(iso))).toBe(expected);
+  });
+  it('PH2-G18-005: invalid date never creates a quota period', () => {
+    expect(() => quotaMonthIndia(new Date(NaN))).toThrow('INVALID_QUOTA_DATE');
   });
   it('ARC-03: canonical manifest digest input survives JSONB key reordering', () => {
     expect(canonicalJson({ b: [{ z: 2, a: 1 }], a: '<script>' }))
