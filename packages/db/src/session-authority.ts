@@ -19,6 +19,8 @@ export interface LiveSessionFenceContext {
   actorType: 'USER' | 'MEMBER' | 'GUEST' | 'SYSTEM' | 'ADMIN';
   sessionId?: string;
   sessionTokenHash?: string;
+  /** MFA result resolved by the HTTP guard, never accepted from a DTO. */
+  mfaVerified?: boolean;
   orgRole?: string;
   guestGrantId?: string;
 }
@@ -53,7 +55,7 @@ export async function assertLiveSessionEligibleInTransaction(
       !/^[0-9a-f]{64}$/.test(ctx.sessionTokenHash)) changed();
 
   const user = await client.query(
-    "SELECT id FROM users WHERE id=$1 AND status='ACTIVE' FOR SHARE",
+    "SELECT id,mfa_enabled_at FROM users WHERE id=$1 AND status='ACTIVE' FOR SHARE",
     [ctx.userId],
   );
   if (user.rows.length !== 1) changed();
@@ -65,7 +67,7 @@ export async function assertLiveSessionEligibleInTransaction(
   if (org.rows.length !== 1) changed();
 
   const session = await client.query(
-    `SELECT guest_grant_id FROM sessions
+    `SELECT guest_grant_id,mfa_verified FROM sessions
       WHERE id=$1 AND user_id=$2 AND active_org_id=$3
         AND token_hash=$4
         AND revoked_at IS NULL AND expires_at>now()
@@ -73,6 +75,14 @@ export async function assertLiveSessionEligibleInTransaction(
     [ctx.sessionId, ctx.userId, ctx.orgId, ctx.sessionTokenHash],
   );
   if (session.rows.length !== 1) changed();
+
+  // A factor reset can happen after the HTTP guard admitted a request but
+  // before a transaction acquired its connection. A request authenticated at
+  // MFA strength must not keep that strength if the live factor or the
+  // session's verification state has since been removed. The account/session
+  // share locks make these checks stable until the transaction commits.
+  if (ctx.mfaVerified === true &&
+      (!user.rows[0].mfa_enabled_at || session.rows[0].mfa_verified !== true)) changed();
 
   if (ctx.actorType === 'GUEST') {
     if (!ctx.guestGrantId ||
