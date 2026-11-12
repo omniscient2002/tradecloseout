@@ -20,6 +20,7 @@ import { compileAndPersistHandoverPackage, markHandoverPackageFailed } from './q
 import { compileAndPersistPortableArchive } from './queues/portable-archive.processor';
 import { BoundedByteStream } from './queues/bounded-stream';
 import { OUTBOX_EVENT_REGISTRY } from './event-registry';
+import { authorizeOutboxDispatch } from './outbox-identity';
 import { jobFingerprint, reportWorkerFailure, protectQueueJob } from './safe-worker-errors';
 
 const execFileAsync = promisify(execFile);
@@ -458,13 +459,10 @@ async function bootWorker() {
 
           for (const row of rows) {
             try {
-              const payload = typeof row.payload_json === 'string' ? JSON.parse(row.payload_json) : row.payload_json;
-              const fullPayload = {
-                ...payload,
-                orgId: row.org_id,
-                projectId: payload.projectId || row.project_id,
-                eventId: row.id,
-              };
+              // Parse legacy/V1 envelopes and prove durable resource identity
+              // under the current tenant transaction before queue admission.
+              // No job can derive tenant/project/actor from user domain fields.
+              const fullPayload = await authorizeOutboxDispatch(client, row);
 
               const reg = OUTBOX_EVENT_REGISTRY[row.event_type];
               if (!reg) {
