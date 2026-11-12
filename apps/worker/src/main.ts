@@ -1,4 +1,4 @@
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import Redis from 'ioredis';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
@@ -342,8 +342,11 @@ async function bootWorker() {
     const failureCode = String(err?.message || '').startsWith('SCAN_UNAVAILABLE:')
       ? 'SCAN_UNAVAILABLE'
       : 'PROCESSING_RETRIES_EXHAUSTED';
-    const client = await pool.connect();
+    // EventEmitter does not await async listeners: connection acquisition must
+    // be inside the catch boundary as well as the SQL writes.
+    let client: PoolClient | undefined;
     try {
+      client = await pool.connect();
       await client.query('BEGIN');
       await client.query(
         `SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`,
@@ -379,16 +382,17 @@ async function bootWorker() {
       }
       await client.query('COMMIT');
     } catch (persistError) {
-      await client.query('ROLLBACK').catch(() => {});
+      if (client) await client.query('ROLLBACK').catch(() => {});
       reportWorkerFailure('FILE_FAILURE_PERSIST_FAILED', persistError, job.id);
     } finally {
-      client.release();
+      client?.release();
     }
   });
   pdfWorker.on('failed', (job, err) => {
     reportWorkerFailure('PDF_JOB_FAILED', err, job?.id);
     if (job && job.attemptsMade >= Number(job.opts.attempts || 1)) {
-      void markHandoverPackageFailed(pool, job.data, String(job.id), err);
+      void markHandoverPackageFailed(pool, job.data, String(job.id), err)
+        .catch(persistError => reportWorkerFailure('PACKAGE_FAILURE_PERSIST_FAILED', persistError, job.id));
     }
   });
   formatWorker.on('failed', (job, err) => reportWorkerFailure('FORMAT_JOB_FAILED', err, job?.id));
