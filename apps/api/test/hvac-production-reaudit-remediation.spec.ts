@@ -534,7 +534,7 @@ describe('HVAC Production Re-Audit Remediation Suite (Findings N02..N23)', () =>
                     size_bytes: 512,
                     observed_size_bytes: 512,
                     linked_in_project: true,
-                    linked_in_other_project: false,
+                    linked_to_defect_asset: true,
                   },
                 ],
               };
