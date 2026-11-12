@@ -39,7 +39,7 @@ describe('G01 secret-bearing idempotency contract', () => {
       IdentityController.prototype.verifyOtp, IdentityController,
     ])).toBe(true);
     expect(reflector.getAllAndOverride(OMIT_GENERIC_IDEMPOTENCY_RECEIPT, [
-      IdentityController.prototype.switchOrg, IdentityController,
+      IdentityController.prototype.switchActiveOrg, IdentityController,
     ])).toBe(true);
   });
 
