@@ -9,6 +9,7 @@ import {
 import { Pool } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { withTenantTransaction, TenantActorContext } from '@tradecloseout/db/tenant-tx';
+import { isImmutableStorageVersion } from '@tradecloseout/shared';
 
 @Injectable()
 export class WarrantyAndBillingService {
@@ -199,7 +200,8 @@ export class WarrantyAndBillingService {
 
       // 2. Validate remedy evidence exists, is in READY status, and is positively project/asset-qualified
       const { rows: soRows } = await client.query(
-        `SELECT so.id, so.status, so.object_key,
+        `SELECT so.id, so.status, so.object_key, so.sha256,
+                so.provider_version_id, so.size_bytes, so.observed_size_bytes,
                 EXISTS (
                   SELECT 1 FROM document_versions dv
                    WHERE dv.org_id = so.org_id AND dv.project_id = $2 AND dv.object_id = so.id
@@ -228,6 +230,15 @@ export class WarrantyAndBillingService {
       }
 
       const so = soRows[0];
+      if (!isImmutableStorageVersion(so.provider_version_id) ||
+          !/^[a-f0-9]{64}$/i.test(String(so.sha256 || '')) ||
+          !Number.isSafeInteger(Number(so.size_bytes)) || Number(so.size_bytes) <= 0 ||
+          Number(so.observed_size_bytes) !== Number(so.size_bytes)) {
+        throw new UnprocessableEntityException({
+          code: 'DEFECT_EVIDENCE_NOT_VERIFIED',
+          detail: 'Remedy and closure evidence must reference immutable, size-checked and SHA-256 verified bytes.',
+        });
+      }
       const isProjectKey = Boolean(so.object_key && so.object_key.includes(`/projects/${targetProjectId}`));
       const isOtherProjectInKey = Boolean(so.object_key && so.object_key.includes('/projects/') && !isProjectKey);
 
@@ -379,7 +390,8 @@ export class WarrantyAndBillingService {
       }
 
       const { rows: soRows } = await client.query(
-        `SELECT so.id, so.status, so.object_key,
+        `SELECT so.id, so.status, so.object_key, so.sha256,
+                so.provider_version_id, so.size_bytes, so.observed_size_bytes,
                 EXISTS (
                   SELECT 1 FROM document_versions dv
                    WHERE dv.org_id = so.org_id AND dv.project_id = $2 AND dv.object_id = so.id
@@ -408,6 +420,15 @@ export class WarrantyAndBillingService {
       }
 
       const so = soRows[0];
+      if (!isImmutableStorageVersion(so.provider_version_id) ||
+          !/^[a-f0-9]{64}$/i.test(String(so.sha256 || '')) ||
+          !Number.isSafeInteger(Number(so.size_bytes)) || Number(so.size_bytes) <= 0 ||
+          Number(so.observed_size_bytes) !== Number(so.size_bytes)) {
+        throw new UnprocessableEntityException({
+          code: 'DEFECT_EVIDENCE_NOT_VERIFIED',
+          detail: 'Remedy and closure evidence must reference immutable, size-checked and SHA-256 verified bytes.',
+        });
+      }
       const isProjectKey = Boolean(so.object_key && so.object_key.includes(`/projects/${targetProjectId}`));
       const isOtherProjectInKey = Boolean(so.object_key && so.object_key.includes('/projects/') && !isProjectKey);
 
