@@ -134,10 +134,29 @@ void test('Isolated worker DB/Redis and storage HTTP contract regressions', asyn
           ['missing source', { object_key: 'missing.pdf' }, /Unknown|NoSuch|404/],
           ['wrong digest', { sha256: '0'.repeat(64) }, /DIGEST_MISMATCH/],
           ['unversioned source', { provider_version_id: null }, /SOURCE_IDENTITY/],
+          ['mutable null version', { provider_version_id: 'null' }, /SOURCE_IDENTITY/],
+          ['mutable padded null version', { provider_version_id: ' Null ' }, /SOURCE_IDENTITY/],
+          ['missing version ID', { provider_version_id: '' }, /SOURCE_IDENTITY/],
           ['unsafe path', { archive_path: '../escape' }, /SOURCE_IDENTITY/],
         ] as const) await t.test(`ARC-03/04: ${label} prevents completion`, async () => {
           const job = await fixture(override); await assert.rejects(compileAndPersistPortableArchive(app, storage.s3, job), error);
           assert.notEqual((await admin.query('SELECT status FROM archive_exports WHERE id = $1', [job.exportId])).rows[0].status, 'COMPLETED');
+        });
+        await t.test('PH3-G10-002: a suspended archive bucket cannot publish READY', async () => {
+          const job = await fixture();
+          const before = storage.uploads.length;
+          storage.versioningStatus('Suspended');
+          try {
+            await assert.rejects(
+              compileAndPersistPortableArchive(app, storage.s3, job),
+              /ARCHIVE_VERSIONING_REQUIRED/,
+            );
+          } finally {
+            storage.versioningStatus('Enabled');
+          }
+          assert.equal(storage.uploads.length, before);
+          const state = await admin.query('SELECT status FROM archive_exports WHERE id = $1', [job.exportId]);
+          assert.equal(state.rows[0].status, 'FAILED');
         });
         await t.test('PKG-05: failed output upload and missing storage configuration cannot complete', async () => {
           storage.wrongVersion(true);
