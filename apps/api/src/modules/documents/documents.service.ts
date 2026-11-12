@@ -202,6 +202,26 @@ export class DocumentsService {
       }
       const doc = docRes.rows[0];
 
+      // A route-level permission check cannot authorize individual documents:
+      // re-evaluate live account, tenant and project membership and validate
+      // the stored per-document scope in this same read transaction.
+      try {
+        const authority = await resolveLiveProjectCommandAuthority(
+          client, ctx, doc.project_id, 'document.read',
+        );
+        await assertReviewDocumentScope(client, authority, ctx, doc.project_id, {
+          id: doc.id,
+          doc_type_key: doc.doc_type_key,
+          category_key: doc.category_key,
+          created_at: doc.created_at,
+        });
+      } catch (error) {
+        if (error instanceof ForbiddenException) {
+          throw new NotFoundException('DOCUMENT_NOT_FOUND');
+        }
+        throw error;
+      }
+
       // Fetch all versions
       const verRes = await client.query(
         `SELECT dv.*, so.object_key, so.size_bytes, so.mime
