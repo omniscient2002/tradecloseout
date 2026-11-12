@@ -61,7 +61,7 @@ describe('review authority and expiry', () => {
           reviewer_subject_id: actor.userId, document_version_id: 'version-1' }] };
       }
       if (sql.includes('SELECT * FROM document_versions')) {
-        return { rows: [{ id: 'version-1', file_status: 'READY', object_id: 'object-1' }] };
+        return { rows: [{ id: 'version-1', file_status: 'READY', review_status: 'IN_REVIEW', object_id: 'object-1' }] };
       }
       return { rows: [] };
     });
