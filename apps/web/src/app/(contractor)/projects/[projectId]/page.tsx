@@ -57,6 +57,7 @@ export type RequirementStatus =
   | "REQUESTED"
   | "UPLOADED"
   | "IN_REVIEW"
+  | "UNDER_REVIEW"
   | "CHANGES_REQUESTED"
   | "REJECTED"
   | "APPROVED"
@@ -66,7 +67,8 @@ export type RequirementStatus =
   | "NOT_APPLICABLE"
   | "EXPIRED"
   | "MISSING"
-  | "HANDED_OVER";
+  | "HANDED_OVER"
+  | "SUPERSEDED";
 
 export interface ProjectSummaryDto {
   id: string;
@@ -132,6 +134,11 @@ const STATUS_BADGE_MAP: Record<
     className: "bg-amber-50 border-amber-300 text-amber-900",
     icon: Clock,
   },
+  UNDER_REVIEW: {
+    label: "Under review",
+    className: "bg-amber-50 border-amber-300 text-amber-900",
+    icon: Eye,
+  },
   CHANGES_REQUESTED: {
     label: "Changes requested",
     className: "bg-orange-50 border-orange-300 text-orange-900",
@@ -181,6 +188,11 @@ const STATUS_BADGE_MAP: Record<
     label: "Handed over",
     className: "bg-teal-50 border-teal-300 text-teal-900",
     icon: PackageCheck,
+  },
+  SUPERSEDED: {
+    label: "Superseded (historical)",
+    className: "bg-slate-50 border-slate-300 text-slate-500",
+    icon: MinusCircle,
   },
 };
 
@@ -346,33 +358,52 @@ export default function ProjectWorkspacePage() {
         ? payload
         : Array.isArray(payload?.data)
         ? payload.data
-        : [];
-      const mappedList: RequirementItemDto[] = rawList.map((r: any) => ({
-        id: r.id,
-        requirementKey: r.requirementKey || r.requirement_key || "REQ",
-        groupKey: r.groupKey || r.group_key || "CORE",
-        title: r.title,
-        docTypeKey: r.docTypeKey || r.doc_type_key || "DOC",
-        mandatory: r.mandatory ?? true,
-        milestoneKey: r.milestoneKey || r.milestone_key || "HANDOVER",
-        assetTag:
-          r.assetTag ||
-          r.asset_tag ||
-          (r.scope_key?.startsWith("asset:") ? r.scope_key.slice(6, 14).toUpperCase() : null),
-        status: r.status || "NOT_STARTED",
-        ownerName: r.ownerName || r.owner_name || null,
-        reviewerRole: r.reviewerRole || r.reviewer_role || null,
-        dueAt: r.dueAt || r.due_at || null,
-        revisionCode: r.revisionCode || r.revision_code || null,
-        latestVersionId: r.latestVersionId || r.latest_version_id || null,
-        waiverId: r.waiverId || r.waiver_id || null,
-        rowVersion: r.rowVersion || r.row_version || 1,
-      }));
+        : null;
+      if (!rawList) {
+        throw new Error("CHECKLIST_RESPONSE_INVALID: The server did not return a requirement list.");
+      }
+      const mappedList: RequirementItemDto[] = rawList.map((r: any) => {
+        const requirementKey = r?.requirementKey ?? r?.requirement_key;
+        const groupKey = r?.groupKey ?? r?.group_key;
+        const docTypeKey = r?.docTypeKey ?? r?.doc_type_key;
+        const milestoneKey = r?.milestoneKey ?? r?.milestone_key;
+        const rowVersion = r?.rowVersion ?? r?.row_version;
+        if (!r || typeof r.id !== "string" || typeof r.title !== "string" ||
+            typeof requirementKey !== "string" || typeof groupKey !== "string" ||
+            typeof docTypeKey !== "string" || typeof milestoneKey !== "string" ||
+            typeof r.mandatory !== "boolean" ||
+            !Number.isSafeInteger(rowVersion) || rowVersion < 1 ||
+            !Object.prototype.hasOwnProperty.call(STATUS_BADGE_MAP, r.status)) {
+          throw new Error("CHECKLIST_ROW_INVALID: Required status, ownership or revision metadata is missing.");
+        }
+        return {
+          id: r.id,
+          requirementKey,
+          groupKey,
+          title: r.title,
+          docTypeKey,
+          mandatory: r.mandatory,
+          milestoneKey,
+          assetTag: r.assetTag || r.asset_tag ||
+            (typeof r.scope_key === "string" && r.scope_key.startsWith("asset:")
+              ? r.scope_key.slice(6, 14).toUpperCase() : null),
+          status: r.status as RequirementStatus,
+          ownerName: r.ownerName || r.owner_name || null,
+          reviewerRole: r.reviewerRole || r.reviewer_role || null,
+          dueAt: r.dueAt || r.due_at || null,
+          revisionCode: r.revisionCode || r.revision_code || null,
+          latestVersionId: r.latestVersionId || r.latest_version_id || null,
+          waiverId: r.waiverId || r.waiver_id || null,
+          rowVersion,
+        };
+      });
       setRequirements(mappedList);
     } catch (err: any) {
+      // Never render a previous project's checklist after a failed refresh.
+      setRequirements([]);
       setErrorReqs({
-        message: err.message || "Network error loading checklist.",
-        requestId: err.requestId,
+        message: err?.message || "Network error loading checklist.",
+        requestId: err?.requestId,
       });
     } finally {
       setLoadingReqs(false);
