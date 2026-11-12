@@ -149,6 +149,16 @@ function ProjectsDirectoryContent() {
         </button>
       </div>
 
+      {error && !createModalOpen && (
+        <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800">
+          <span>{error}</span>
+          <button type="button" onClick={fetchProjects}
+            className="inline-flex items-center gap-1 rounded border border-red-300 px-3 py-1.5 font-semibold hover:bg-red-100">
+            <RefreshCw className="h-3.5 w-3.5" /> Retry
+          </button>
+        </div>
+      )}
+
       {/* Filter and Search Bar */}
       <div className="flex flex-col sm:flex-row items-center gap-3 bg-white p-3 rounded-lg border border-slate-200">
         <div className="relative flex-1 w-full">
