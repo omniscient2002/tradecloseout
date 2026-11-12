@@ -152,15 +152,18 @@ type VerifiedUploadState = 'READY' | 'REJECTED' | 'PROCESSING' | 'PENDING_UPLOAD
 async function checkDocumentProcessingState(item: OfflineQueuedUpload): Promise<VerifiedUploadState> {
   if (!item.uploadIntent) throw new Error('UPLOAD_INTENT_MISSING');
   assertSameActor(item);
-  const doc = await apiFetch<{ versions?: Array<{ id: string; file_status: string }> }>(
-    `/api/v1/documents/${encodeURIComponent(item.uploadIntent.documentId)}`,
-  );
+  const status = await apiFetch<{
+    versionId: string;
+    fileStatus: string;
+    storageStatus: string;
+  }>(`/api/v1/document-versions/${encodeURIComponent(item.uploadIntent.versionId)}/upload-state`);
   assertSameActor(item);
-  const current = doc.versions?.find((v) => v.id === item.uploadIntent?.versionId);
-  if (current?.file_status === 'READY') return 'READY';
-  if (current?.file_status === 'FAILED' || current?.file_status === 'QUARANTINED') return 'REJECTED';
-  if (current?.file_status === 'PROCESSING') return 'PROCESSING';
-  if (current?.file_status === 'PENDING_UPLOAD') return 'PENDING_UPLOAD';
+  if (status.versionId !== item.uploadIntent.versionId) throw new Error('UPLOAD_STATUS_VERSION_MISMATCH');
+  if (['QUARANTINED', 'FAILED', 'DELETED', 'ABORTED'].includes(status.storageStatus) ||
+      ['QUARANTINED', 'FAILED'].includes(status.fileStatus)) return 'REJECTED';
+  if (status.fileStatus === 'READY' && status.storageStatus === 'READY') return 'READY';
+  if (status.fileStatus === 'PROCESSING' || status.storageStatus === 'PROCESSING') return 'PROCESSING';
+  if (status.fileStatus === 'PENDING_UPLOAD' && status.storageStatus === 'PENDING') return 'PENDING_UPLOAD';
   return 'UNKNOWN';
 }
 
