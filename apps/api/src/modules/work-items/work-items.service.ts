@@ -26,6 +26,10 @@ export interface WorkItem {
     method: 'POST' | 'PATCH';
     path: string;
     actionName: string;
+    /** Null means the backing command has no row-version precondition. */
+    precondition: { field: 'expectedRowVersion'; value: number } | null;
+    requiredFields: string[];
+    idempotency: 'HEADER_KEY' | 'BODY_COMMAND_ID' | 'NONE';
   };
   createdAt: string;
 }
@@ -424,6 +428,20 @@ export class WorkItemsService {
           method: r.next_method,
           path: r.next_path,
           actionName: r.next_action,
+          precondition:
+            r.entity_version == null || r.next_action === 'COUNTERSIGN_WAIVER'
+              ? null
+              : { field: 'expectedRowVersion', value: r.entity_version },
+          requiredFields: ({
+            DECIDE_REVIEW: ['decision', 'expectedRowVersion'],
+            COUNTERSIGN_WAIVER: [],
+            SUBMIT_REMEDY: ['remedyEvidenceObjectId', 'expectedRowVersion'],
+            VERIFY_CLOSE: ['closureEvidenceObjectId', 'expectedRowVersion'],
+            CONFIRM_REVALIDATION: ['status', 'expectedRowVersion'],
+            INTAKE_OBLIGATION: ['decision', 'documentVersionId'],
+          } as Record<string, string[]>)[r.next_action] ?? [],
+          idempotency: r.next_action === 'DECIDE_REVIEW' ? 'HEADER_KEY'
+            : r.next_action === 'INTAKE_OBLIGATION' ? 'BODY_COMMAND_ID' : 'NONE',
         },
         createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at,
       }));
