@@ -18,6 +18,15 @@ test.describe('TradeCloseout v0.2.1 Critical User Flows (SCR-002 -> SCR-010 -> S
     expect(api.headers()['cache-control']).toContain('no-store');
     expect(api.headers()['x-content-type-options']).toBe('nosniff');
     expect(api.headers()['referrer-policy']).toBe('no-referrer');
+
+    // A lookalike URL is an application page, not the /api or /_next
+    // infrastructure namespace. It must not bypass login or page headers.
+    for (const path of ['/api-private', '/icons-private', '/_next-private']) {
+      const spoof = await request.get(`http://localhost:3002${path}`, { maxRedirects: 0 });
+      expect([307, 308]).toContain(spoof.status());
+      expect(spoof.headers().location).toContain('/login');
+      expect(spoof.headers()['x-frame-options']).toBe('DENY');
+    }
   });
 
   test('E2E-01: Unauthenticated visitor to / is redirected to /login by middleware', async ({ page }) => {
