@@ -1017,7 +1017,7 @@ export class DocumentsService {
       if (freedBytes > 0n) {
         await client.query(
           `UPDATE usage_counters
-              SET value = GREATEST(0::numeric, value::numeric - $2)::text,
+              SET value = GREATEST(0::numeric, value::numeric - $2::numeric)::bigint,
                   updated_at = now()
             WHERE org_id = $1 AND metric = 'STORAGE_BYTES' AND period = 'ALL_TIME'`,
           [ctx.orgId, freedBytes.toString()],
@@ -1055,7 +1055,7 @@ export class DocumentsService {
       if (readdedBytes > 0n) {
         await client.query(
           `UPDATE usage_counters
-              SET value = (value::numeric + $2)::text,
+              SET value = (value::numeric + $2::numeric)::bigint,
                   updated_at = now()
             WHERE org_id = $1 AND metric = 'STORAGE_BYTES' AND period = 'ALL_TIME'`,
           [ctx.orgId, readdedBytes.toString()],
