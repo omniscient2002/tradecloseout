@@ -49,6 +49,11 @@ describe('PH4-G17-003/G17-004 Pass 1 project lifecycle and current defect author
             remedy_document_version_id: versionId,
             closure_evidence_object_id: objectId,
             remedied_by: assigneeId,
+            remedy_sha256: 'a'.repeat(64),
+            remedy_provider_version_id: 'provider-version-1',
+            remedy_size_bytes: 1024,
+            remedy_scanned_at: '2026-11-12T10:00:00.000Z',
+            remedy_asset_scope_ids: [assetId],
           }]};
         }
         if (sql.includes('FROM handover_packages') &&
@@ -63,14 +68,15 @@ describe('PH4-G17-003/G17-004 Pass 1 project lifecycle and current defect author
             id: objectId, status: 'READY', sha256: 'a'.repeat(64),
             provider_version_id: 'provider-version-1',
             size_bytes: 1024, observed_size_bytes: 1024,
+            av_scanned_at: '2026-11-12T10:00:00.000Z',
             linked_in_project: true, linked_to_defect_asset: true,
           }]};
         }
         if (sql.includes('FROM document_versions dv')) {
           return {rows: [{id: versionId, document_id: randomUUID()}]};
         }
-        if (sql.includes('SELECT id FROM document_assets')) {
-          return {rows: [{id: randomUUID()}]};
+        if (sql.includes('FROM document_assets da')) {
+          return {rows: [{asset_id: assetId, status: 'ACTIVE', deleted_at: null}]};
         }
         if (sql.includes('UPDATE defects')) return {rowCount: 1, rows: []};
         return {rows: [], rowCount: 1};
