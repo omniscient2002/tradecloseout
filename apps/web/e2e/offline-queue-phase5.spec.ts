@@ -740,3 +740,55 @@ test('a changed requirement revision cannot silently absorb an old local origina
     blocked: 'UPLOAD_RECOVERY_AUTHORITY_MISMATCH', status: 'BLOCKED_SCOPE',
   });
 });
+
+
+test('legacy drafts predating pre-network checkpoints cannot claim offline-only recovery', async ({ page }) => {
+  await fixture(page, false);
+  const result = await page.evaluate(async () => {
+    const q = (window as any).__queue;
+    const orgId = '0192e000-0000-7000-8000-000000000001';
+    const userId = '0192e000-0000-7000-8000-000000000101';
+    const partition = q.getMemberOfflineActorPartition(userId, orgId);
+    q.setOfflineActorPartition(partition);
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    const item = await q.enqueueFieldUpload({
+      actorPartition: partition, projectId: 'project-one',
+      requirementId: 'requirement-one', requirementRowVersion: 7,
+      file: new File(['legacy original'], 'legacy.pdf', { type: 'application/pdf' }),
+      revisionCode: 'A', issueDate: '2026-11-12', title: 'Older queue record',
+    });
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const req = indexedDB.open('tradecloseout_field_pwa', 1);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction('tc_offline_upload_outbox', 'readwrite');
+        const store = tx.objectStore('tc_offline_upload_outbox');
+        const get = store.get(item.queueId);
+        get.onsuccess = () => {
+          const legacy = get.result;
+          delete legacy.recoveryContractVersion;
+          store.put(legacy);
+        };
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    } finally {
+      db.close();
+    }
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+    q.setOfflineActorPartition(null);
+    q.setOfflineActorPartition(partition);
+    const draft = (await q.listOfflineUploadDrafts()).find((d: any) => d.filename === 'legacy.pdf');
+    let denied = '';
+    try { await q.recoverOfflineUploadDraft(draft.queueId); }
+    catch (error) { denied = (error as Error).message; }
+    return { canRecoverLocalOnly: draft.canRecoverLocalOnly, denied };
+  });
+  expect(result).toEqual({
+    canRecoverLocalOnly: false,
+    denied: 'UPLOAD_REMOTE_INTENT_RECOVERY_UNSUPPORTED: Inspect or discard the remote intent first.',
+  });
+});
