@@ -16,6 +16,7 @@ import {
 } from '@tradecloseout/db';
 import { hasPermission, ProjectCodeSchema } from '@tradecloseout/shared';
 import { evaluateReadinessInTransaction } from '../handover/closeout-readiness';
+import { getProjectCommercialSummary } from './project-commercial-summary';
 
 const POSTGRES_BIGINT_MAX = 9223372036854775807n;
 const POSTGRES_BIGINT_MIN = -9223372036854775808n;
@@ -843,23 +844,10 @@ export class ProjectsService {
       );
       const c = countsRes.rows[0] || {};
 
-      // Estimate retention at risk from all active contracts (RQ01)
-      const contractRes = await client.query(
-        `SELECT COALESCE(SUM(value_paise), 0) AS total_contract_value_paise,
-                COALESCE(SUM(ROUND((value_paise * COALESCE(retention_bps, 500)) / 10000)), 0) AS total_retention_at_risk_paise,
-                COUNT(*)::int AS active_contract_count
-           FROM contracts
-          WHERE org_id = $1 AND project_id = $2 AND status = 'ACTIVE'`,
-        [ctx.orgId, projectId],
-      );
-      let retentionPaise = '0';
-      if (contractRes.rows.length > 0 && Number(contractRes.rows[0].active_contract_count) > 0) {
-        retentionPaise = contractRes.rows[0].total_retention_at_risk_paise.toString();
-      } else if (p.contract_value_paise) {
-        const val = BigInt(p.contract_value_paise);
-        const bps = p.retention_bps !== null && p.retention_bps !== undefined ? BigInt(p.retention_bps) : 500n;
-        retentionPaise = ((val * bps) / 10000n).toString();
-      }
+      // A contract register supersedes the provisional project estimate.
+      // Never report unknown or partly unpriced commercial exposure as zero.
+      const commercial = await getProjectCommercialSummary(client, ctx.orgId, projectId, p);
+      const retentionPaise = commercial.informationalRetentionExposurePaise;
 
       return {
         id: p.id,
@@ -869,6 +857,9 @@ export class ProjectsService {
         clientName: p.client_name || null,
         targetHandoverDate: p.target_handover_date,
         retentionAtRiskPaise: retentionPaise,
+        informationalRetentionExposurePaise: retentionPaise,
+        contractValuePaise: commercial.contractValuePaise,
+        financialSummaryBasis: commercial.basis,
         counts: {
           applicableTotal: Number(c.applicable_total) || 0,
           approvedCount: Number(c.approved) || 0,
