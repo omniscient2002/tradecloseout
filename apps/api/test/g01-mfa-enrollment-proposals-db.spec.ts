@@ -1,4 +1,4 @@
-import { randomUUID, createHmac } from 'node:crypto';
+import { randomUUID, createHmac, createHash } from 'node:crypto';
 import { TenantDbService } from '../src/database/tenant-db.service';
 import { MfaEnrollmentStore } from '../src/modules/identity/mfa-enrollment-store';
 import { withDisposableDatabase } from '../../../packages/db/test/helpers/disposable-database';
@@ -78,10 +78,30 @@ describe('PH1-G01-003: MFA enrollment proposal is expiring and bound to exact se
       expect(enrolled.confirmed).toBe(true);
       expect(new Set(enrolled.recoveryCodes).size).toBe(8);
       expect(enrolled.recoveryCodes).toHaveLength(8);
+      expect(enrolled.newSessionToken).toMatch(/^[0-9a-f]{64}$/);
+      expect(enrolled.csrfToken).toMatch(/^[0-9a-f]{48}$/);
+      const freshCtx = {
+        ...firstCtx,
+        sessionTokenHash: createHash('sha256').update(enrolled.newSessionToken).digest('hex'),
+      };
       await expect(store.confirm(firstCtx, active.proposalId, totp(active.manualSetupKey)))
+        .rejects.toMatchObject({ response: { code: 'SESSION_CONTEXT_CHANGED' } });
+      await expect(store.confirm(freshCtx, active.proposalId, totp(active.manualSetupKey)))
         .rejects.toMatchObject({ response: { code: 'MFA_ALREADY_ENROLLED' } });
-      await expect(store.begin(firstCtx))
+      await expect(store.begin(freshCtx))
         .rejects.toMatchObject({ response: { code: 'MFA_ALREADY_ENROLLED' } });
+      const { rows: sessionsAfterConfirm } = await admin.query(
+        "SELECT id,token_hash,csrf_token_hash,mfa_verified,revoked_at FROM sessions WHERE id=ANY($1::uuid[])",
+        [[firstSessionId, secondSessionId]],
+      );
+      const current = sessionsAfterConfirm.find(x => x.id === firstSessionId);
+      const secondary = sessionsAfterConfirm.find(x => x.id === secondSessionId);
+      expect(current).toMatchObject({
+        token_hash: freshCtx.sessionTokenHash,
+        csrf_token_hash: createHash('sha256').update(enrolled.csrfToken).digest('hex'),
+        mfa_verified: true, revoked_at: null,
+      });
+      expect(secondary.revoked_at).toBeTruthy();
       const { rows: result } = await admin.query(
         `SELECT p.status,p.encrypted_secret,u.mfa_totp_secret,u.mfa_enabled_at,
              (SELECT count(*)::int FROM mfa_recovery_codes WHERE user_id=$2) AS recovery_count
