@@ -19,6 +19,20 @@ describe('PH2-G05-008: exact capabilities on project/contract write routes', () 
     expect(hasPermission({ orgRole:'R-OWNER' }, 'project.close').allowed).toBe(true);
   });
 
+  it('uses billing.read for read-only subscription/invoice routes, but manage for tax writes', () => {
+    expect(Reflect.getMetadata(REQUIRE_PERMISSION_KEY,
+      BillingController.prototype.listInvoices)).toBe('billing.read');
+    expect(Reflect.getMetadata(REQUIRE_PERMISSION_KEY,
+      BillingController.prototype.getCurrentSubscription)).toBe('billing.read');
+    expect(Reflect.getMetadata(REQUIRE_PERMISSION_KEY,
+      BillingController.prototype.createInvoice)).toBe('billing.manage');
+    expect(Reflect.getMetadata(REQUIRE_PERMISSION_KEY,
+      BillingController.prototype.recordTds)).toBe('billing.manage');
+    expect(hasPermission({orgRole:'R-ADMIN'}, 'billing.read').allowed).toBe(true);
+    expect(hasPermission({orgRole:'R-ADMIN'}, 'billing.manage').allowed).toBe(false);
+    expect(hasPermission({orgRole:'R-SITE'}, 'billing.read').allowed).toBe(false);
+  });
+
   it('does not expose financial commercial readiness via document.read', () => {
     const handler = BillingController.prototype.getCommercialReadiness;
     expect(Reflect.getMetadata(REQUIRE_PERMISSION_KEY, handler)).toBe('contract.manage');
