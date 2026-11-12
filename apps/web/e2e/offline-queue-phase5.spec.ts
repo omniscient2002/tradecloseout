@@ -16,7 +16,7 @@ const queueSource = readFileSync(resolve(process.cwd(), 'src/lib/offline-upload-
   `)
   .replace(/\bexport\s+/g, '');
 const queueScript = ts.transpileModule(
-  hashSource + '\n' + queueSource + '\nwindow.__queue = { enqueueFieldUpload, drainOfflineUploadQueue, setOfflineActorPartition, listOfflineUploadDrafts, discardOfflineUploadDraft, assertOfflineDraftBudget, getMemberOfflineActorPartition, nextUploadRetryDelay, isTransientUploadFailure, ApiProblemError };',
+  hashSource + '\n' + queueSource + '\nwindow.__queue = { enqueueFieldUpload, drainOfflineUploadQueue, setOfflineActorPartition, listOfflineUploadDrafts, discardOfflineUploadDraft, recoverOfflineUploadDraft, assertOfflineDraftBudget, getMemberOfflineActorPartition, nextUploadRetryDelay, isTransientUploadFailure, ApiProblemError };',
   { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } },
 ).outputText;
 
@@ -507,4 +507,85 @@ test('network error persists retry checkpoint and prevents immediate second prov
   expect(result.first).toBe('FAILED');
   expect(result.second).toBe('FAILED');
   expect(result.error).toContain('attempt 1/6');
+});
+
+
+test('same authenticated member can deliberately recover only local-only previous-epoch evidence', async ({ page }) => {
+  const puts = await fixture(page, false);
+  const result = await page.evaluate(async () => {
+    const q = (window as any).__queue;
+    const orgId = '0192e000-0000-7000-8000-000000000001';
+    const userId = '0192e000-0000-7000-8000-000000000101';
+    const member = q.getMemberOfflineActorPartition(userId, orgId);
+    q.setOfflineActorPartition(member);
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    await q.enqueueFieldUpload({
+      actorPartition: member, projectId: 'project-one', requirementId: 'requirement-one',
+      file: new File(['original bytes'], 'saved.pdf', { type: 'application/pdf' }),
+      revisionCode: 'A', issueDate: '2026-11-12', title: 'Saved original',
+    });
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+    q.setOfflineActorPartition(null);
+    q.setOfflineActorPartition(member);
+    const before = await q.listOfflineUploadDrafts();
+    const baseline = (window as any).__apiFetch;
+    const requests: string[] = [];
+    (window as any).__apiFetch = async (url: string, opts?: unknown) => {
+      requests.push(url);
+      if (url === '/api/v1/auth/me') return { userId, activeOrgId: orgId };
+      if (url.endsWith('/documents/recover-upload-authority/requirement-one')) {
+        return { allowed: true, projectId: 'project-one', requirementId: 'requirement-one' };
+      }
+      return baseline(url, opts);
+    };
+    await q.recoverOfflineUploadDraft(before[0].queueId);
+    const after = await q.listOfflineUploadDrafts();
+    return { before: before[0].status, after: after[0].status, requests };
+  });
+  expect(puts).toHaveLength(0);
+  expect(result.before).toBe('BLOCKED_SCOPE');
+  expect(result.after).toBe('QUEUED_OFFLINE');
+  expect(result.requests).toEqual([
+    '/api/v1/auth/me',
+    '/api/v1/projects/project-one/documents/recover-upload-authority/requirement-one',
+  ]);
+});
+
+test('changed member identity cannot recover a previous actor original', async ({ page }) => {
+  await fixture(page, false);
+  const result = await page.evaluate(async () => {
+    const q = (window as any).__queue;
+    const orgId = '0192e000-0000-7000-8000-000000000001';
+    const userId = '0192e000-0000-7000-8000-000000000101';
+    const member = q.getMemberOfflineActorPartition(userId, orgId);
+    q.setOfflineActorPartition(member);
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    await q.enqueueFieldUpload({
+      actorPartition: member, projectId: 'project-one', requirementId: 'requirement-one',
+      file: new File(['original'], 'saved.pdf', { type: 'application/pdf' }),
+      revisionCode: 'A', issueDate: '2026-11-12', title: 'Original',
+    });
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+    q.setOfflineActorPartition(null);
+    q.setOfflineActorPartition(member);
+    const baseline = (window as any).__apiFetch;
+    let attempts = 0;
+    (window as any).__apiFetch = async (url: string, opts?: unknown) => {
+      attempts++;
+      if (url === '/api/v1/auth/me') {
+        return { userId: '0192e000-0000-7000-8000-000000000102', activeOrgId: orgId };
+      }
+      return baseline(url, opts);
+    };
+    const draft = (await q.listOfflineUploadDrafts())[0];
+    let blocked = '';
+    try { await q.recoverOfflineUploadDraft(draft.queueId); }
+    catch (error) { blocked = (error as Error).message; }
+    return {
+      blocked, attempts, status: (await q.listOfflineUploadDrafts())[0].status,
+    };
+  });
+  expect(result).toEqual({
+    blocked: 'UPLOAD_ACTOR_CONTEXT_CHANGED', attempts: 1, status: 'BLOCKED_SCOPE',
+  });
 });
