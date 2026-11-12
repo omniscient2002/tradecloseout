@@ -93,3 +93,26 @@ test('PH4-G25-003: deployed converter rejects traversal, symlink parents and uns
     await rm(outsider, { recursive: true, force: true });
   }
 });
+
+test('PH4-G25-003: compressed PNG pixel bomb is rejected before attempting decode', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'ph4-png-pixels-'));
+  try {
+    const image = path.join(dir, 'huge.png');
+    const header = Buffer.alloc(33);
+    Buffer.from([137,80,78,71,13,10,26,10]).copy(header, 0);
+    header.writeUInt32BE(13, 8);
+    header.write('IHDR', 12, 'ascii');
+    header.writeUInt32BE(100_000, 16);
+    header.writeUInt32BE(100_000, 20);
+    await writeFile(image, header);
+    await assert.rejects(
+      convertSupportingFormatToPdf({
+        sourcePath: image, detectedMime: 'image/png',
+        outputPdfPath: path.join(dir, 'out.pdf'), headerStampText: 'Inspection',
+      }),
+      /CONVERSION_IMAGE_PIXELS_EXCEEDED/,
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
