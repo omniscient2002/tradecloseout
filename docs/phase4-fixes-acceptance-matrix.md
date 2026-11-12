@@ -103,3 +103,5 @@ This Phase 4 branch is stacked on the audited Phase 1 candidate. Its preferred r
 - G17-002 persistence: migration 0047 adds scoped `defects.remedy_document_version_id`. Submission pins a single approved version; independent closure rejects changed/legacy-unpinned version identity. Integration migration and concurrent link-revocation tests remain required.
 
 - G25-003 follow-up: local image/Office converter rejects generic ZIP and enforces bounded source files, embedded image dimensions, generated output size/page count. Image/Office processor isolation, malicious decompression adversarial tests, and end-to-end conversion provenance remain outstanding; this is not full closure.
+
+- G25-003 additional containment: deployed modes now require a realpath-verified `CONVERSION_STAGING_ROOT` for input/output and reject symlink/path traversal escapes. PNG IHDR dimensions are bounded *before* decompression; WebP command includes memory/map/disk/area limits. Full LibreOffice process isolation, hostile-office fork limits and external format acceptance remain open.
