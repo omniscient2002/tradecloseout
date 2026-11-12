@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, truncate, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, truncate, rm, symlink } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { convertSupportingFormatToPdf } from '../src/queues/format-converter';
+import { convertSupportingFormatToPdf, assertConverterWorkspace } from '../src/queues/format-converter';
 
 test('PH4-G25-003: converter fails closed on unbounded image and Office input before reading bytes', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'ph4-converter-'));
@@ -66,5 +66,30 @@ test('PH4-G25-003: reject invalid paths and empty sources', async () => {
     }), /CONVERSION_INPUT_INVALID/);
   } finally {
     await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('PH4-G25-003: deployed converter rejects traversal, symlink parents and unsafe output targets', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'ph4-converter-root-'));
+  const outsider = await mkdtemp(path.join(os.tmpdir(), 'ph4-converter-other-'));
+  try {
+    const source = path.join(root, 'fixture.png');
+    const out = path.join(root, 'converted.pdf');
+    const external = path.join(outsider, 'secret.png');
+    await writeFile(source, 'src');
+    await writeFile(external, 'secret');
+    await assert.doesNotReject(assertConverterWorkspace(source, out, root));
+    await assert.rejects(assertConverterWorkspace(external, out, root), /CONVERSION_WORKSPACE_ESCAPE/);
+    await assert.rejects(assertConverterWorkspace(source, path.join(outsider, 'out.pdf'), root),
+      /CONVERSION_WORKSPACE_ESCAPE/);
+    const alias = path.join(root, 'escape-dir');
+    await symlink(outsider, alias);
+    await assert.rejects(assertConverterWorkspace(source, path.join(alias, 'out.pdf'), root),
+      /CONVERSION_WORKSPACE_ESCAPE/);
+    await symlink(external, out);
+    await assert.rejects(assertConverterWorkspace(source, out, root), /CONVERSION_OUTPUT_TARGET_UNSAFE/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+    await rm(outsider, { recursive: true, force: true });
   }
 });
