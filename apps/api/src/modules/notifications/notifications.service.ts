@@ -77,14 +77,29 @@ export class NotificationsService {
           [ctx.orgId, dto.projectId],
         );
         if (!projects.length) throw new NotFoundException('PROJECT_NOT_FOUND');
-        if (ctx.orgRole !== 'R-OWNER' && ctx.orgRole !== 'R-ADMIN') {
-          const { rows: members } = await client.query(
-            `SELECT 1 FROM project_members
-              WHERE org_id = $1 AND project_id = $2 AND user_id = $3
-                AND status = 'ACTIVE' FOR SHARE`,
-            [ctx.orgId, dto.projectId, ctx.userId],
+        // PH2-G20-002: orgRole from the session is NOT authorization.
+        // An offboarded or demoted ex-owner must not write project-associated
+        // notifications using their stale R-OWNER claim. Internal system
+        // producers are a separate trusted path and do not impersonate users.
+        if (ctx.actorType !== 'SYSTEM') {
+          const { rows: activeMembers } = await client.query(
+            `SELECT m.role FROM memberships m
+               JOIN users u ON u.id = m.user_id AND u.status='ACTIVE'
+              WHERE m.org_id=$1 AND m.user_id=$2 AND m.status='ACTIVE'
+              FOR SHARE OF m,u`,
+            [ctx.orgId, ctx.userId],
           );
-          if (!members.length) throw new NotFoundException('PROJECT_NOT_FOUND');
+          if (!activeMembers.length) throw new NotFoundException('PROJECT_NOT_FOUND');
+          const liveOrgRole = activeMembers[0].role;
+          if (liveOrgRole !== 'R-OWNER' && liveOrgRole !== 'R-ADMIN') {
+            const { rows: members } = await client.query(
+              `SELECT 1 FROM project_members
+                WHERE org_id = $1 AND project_id = $2 AND user_id = $3
+                  AND status = 'ACTIVE' FOR SHARE`,
+              [ctx.orgId, dto.projectId, ctx.userId],
+            );
+            if (!members.length) throw new NotFoundException('PROJECT_NOT_FOUND');
+          }
         }
       }
 
