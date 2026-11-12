@@ -562,6 +562,7 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
       const mockPool = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string) => {
+            if (sql.includes('FROM memberships')) return { rows: [{ role: 'R-OWNER' }] };
             if (sql.includes('SELECT * FROM assets')) {
               return {
                 rows: [
