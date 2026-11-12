@@ -162,9 +162,11 @@ export class HandoverService {
               AND dv.review_status = 'APPROVED' AND dv.file_status = 'READY'
              JOIN storage_objects so
                ON so.org_id = dv.org_id AND so.id = dv.object_id
-              AND so.status = 'READY' AND so.sha256 IS NOT NULL
-              AND so.observed_size_bytes = so.size_bytes
+              AND so.status = 'READY'
+              AND so.sha256 ~ '^[a-fA-F0-9]{64}$'
+              AND so.size_bytes > 0 AND so.observed_size_bytes = so.size_bytes
               AND so.provider_version_id IS NOT NULL
+              AND btrim(lower(so.provider_version_id)) NOT IN ('', 'null', 'undefined', 'none', 'unversioned')
              WHERE dr.org_id = r.org_id AND dr.project_id = r.project_id
                AND dr.requirement_id = r.id
                AND NOT EXISTS (
@@ -181,6 +183,17 @@ export class HandoverService {
           ORDER BY r.group_key, r.requirement_key`,
         [ctx.orgId, projectId],
       );
+
+      // Canonical readiness and manifest selection MUST agree under
+      // the same repeatable-read snapshot. Missing evidence cannot silently
+      // yield a complete dossier even if its cached status says APPROVED.
+      if (!reqRows.length || reqRows.some((r: any) =>
+        r.mandatory && !r.valid_waiver_type && r.has_valid_evidence !== true)) {
+        throw new UnprocessableEntityException({
+          code: 'PACKAGE_MANIFEST_READINESS_MISMATCH',
+          detail: 'Mandatory evidence or a valid decision is missing from the frozen manifest.',
+        });
+      }
 
       const exclusionMap = new Map(
         (input.excludedRequirementIds ?? []).map((e) => [e.requirementId, e.reason]),
@@ -577,9 +590,11 @@ export class HandoverService {
             AND dv.deleted_at IS NULL AND dv.superseded_at IS NULL
            JOIN storage_objects so
              ON so.org_id = dv.org_id AND so.id = dv.object_id
-            AND so.status = 'READY' AND so.sha256 IS NOT NULL
-            AND so.observed_size_bytes = so.size_bytes
-            AND so.provider_version_id IS NOT NULL
+            AND so.status = 'READY'
+              AND so.sha256 ~ '^[a-fA-F0-9]{64}$'
+              AND so.size_bytes > 0 AND so.observed_size_bytes = so.size_bytes
+              AND so.provider_version_id IS NOT NULL
+              AND btrim(lower(so.provider_version_id)) NOT IN ('', 'null', 'undefined', 'none', 'unversioned')
            LEFT JOIN assets a
              ON r.scope_key = ('asset:' || a.id::text) AND a.org_id = r.org_id AND a.project_id = r.project_id
           WHERE r.org_id = $1 AND r.project_id = $2
