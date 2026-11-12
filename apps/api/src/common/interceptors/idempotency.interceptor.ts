@@ -14,6 +14,7 @@ import { uuidv7 } from 'uuidv7';
 import { AuthenticatedRequest } from '../guards/session-csrf.guard';
 import { hashRequestPayload } from '@tradecloseout/db';
 import { REQUIRE_IDEMPOTENCY_KEY } from '../decorators/idempotency.decorator';
+import { OMIT_GENERIC_IDEMPOTENCY_RECEIPT } from '../decorators/no-generic-idempotency-receipt.decorator';
 
 @Injectable()
 export class IdempotencyInterceptor implements NestInterceptor {
@@ -35,6 +36,22 @@ export class IdempotencyInterceptor implements NestInterceptor {
       REQUIRE_IDEMPOTENCY_KEY,
       [context.getHandler(), context.getClass()],
     );
+
+    // Generic receipts are readable by receipt-replay consumers and must
+    // never become an at-rest store for OTP, session, MFA or recovery material.
+    const omitGenericReceipt = this.reflector.getAllAndOverride<boolean>(
+      OMIT_GENERIC_IDEMPOTENCY_RECEIPT,
+      [context.getHandler(), context.getClass()],
+    );
+    if (omitGenericReceipt) {
+      if (requiresIdempotency) {
+        throw new ConflictException({
+          code: 'AUTH_RECEIPT_CONTRACT_REQUIRED',
+          detail: 'This operation requires a dedicated protected retry contract.',
+        });
+      }
+      return next.handle();
+    }
 
     const idempotencyKey = req.headers['idempotency-key'];
     if (!idempotencyKey) {
