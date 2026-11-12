@@ -165,6 +165,52 @@ describe('PH3-G08-002 — live asset visibility and mutation scope', () => {
       expect(hiddenRow.rows[0].status).toBe('ACTIVE');
       expect(hiddenRow.rows[0].deleted_at).toBeNull();
 
+      // Deterministic real-PG TOCTOU: the service has started its tenant
+      // transaction and locked the org membership, but has not yet fetched
+      // the project resource scope. Narrow it from a second connection.
+      let scopeQueryReached!: () => void;
+      const atScopeQuery = new Promise<void>((resolve) => { scopeQueryReached = resolve; });
+      let continueScopeQuery!: () => void;
+      const scopeQueryReleased = new Promise<void>((resolve) => { continueScopeQuery = resolve; });
+      let paused = false;
+      const interceptedPool = {
+        connect: async () => {
+          const realClient = await app.connect();
+          return {
+            query: async (statement: string, values?: unknown[]) => {
+              if (!paused && statement.includes('SELECT role, scope_json FROM project_members')) {
+                paused = true;
+                scopeQueryReached();
+                await scopeQueryReleased;
+              }
+              return realClient.query(statement, values);
+            },
+            release: () => realClient.release(),
+          };
+        },
+      } as any;
+      const inFlightRetire = new AssetsService(interceptedPool)
+        .deleteOrRetireAsset(current, project, allowed);
+      // Attach a handler immediately to avoid an unhandled-rejection window.
+      void inFlightRetire.catch(() => undefined);
+      try {
+        await atScopeQuery;
+        await admin.query(
+          `UPDATE project_members SET scope_json = $4::jsonb
+            WHERE org_id = $1 AND project_id = $2 AND user_id = $3`,
+          [org, project, actor, JSON.stringify({ assetIds: [hidden] })],
+        );
+      } finally {
+        continueScopeQuery();
+      }
+      await expect(inFlightRetire).rejects.toThrow(NotFoundException);
+      const preservedAllowed = await admin.query(
+        'SELECT status, deleted_at FROM assets WHERE org_id = $1 AND id = $2',
+        [org, allowed],
+      );
+      expect(preservedAllowed.rows[0].status).toBe('ACTIVE');
+      expect(preservedAllowed.rows[0].deleted_at).toBeNull();
+
       // A scope change after an earlier successful read must apply to the
       // next transaction; previous guard/context snapshots are not authority.
       await admin.query(
