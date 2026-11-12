@@ -75,6 +75,37 @@ describe('PH1-G02-001: live document detail read scope', () => {
     }
   });
 
+  it('pushes every restrictive member dimension into document list SQL before records return', async () => {
+    const requirementId = randomUUID();
+    const scope = {
+      documentIds: [documentId],
+      documentTypes: ['DT-001'],
+      requirementIds: [requirementId],
+      startDate: '2026-01-01',
+      endDate: '2026-12-31',
+      mode: 'READ_ONLY',
+    };
+    const { service, client } = create({ scope });
+    await service.listDocuments(ctx, projectId);
+    const queries = client.query.mock.calls as unknown as Array<[string, unknown[]]>;
+    const documentList = queries.find(([sql]) => sql.includes('FROM documents d') && sql.includes('ORDER BY d.created_at'));
+    expect(documentList).toBeDefined();
+    const [sql, params] = documentList!;
+    expect(sql).toContain('d.id = ANY(');
+    expect(sql).toContain('d.doc_type_key = ANY(');
+    expect(sql).toContain('d.created_at >=');
+    expect(sql).toContain("d.created_at < (");
+    expect(sql).toContain('NOT EXISTS (');
+    expect(sql).toContain('dr.requirement_id = ANY(');
+    expect(params).toEqual([orgId, projectId, scope.documentIds, scope.documentTypes, scope.startDate, scope.endDate, scope.requirementIds]);
+  });
+
+  it('rejects a document list when scope has an unknown restrictive key', async () => {
+    const { service, seen } = create({ scope: { unapprovedDimension: true } });
+    await expect(service.listDocuments(ctx, projectId)).rejects.toBeDefined();
+    expect(seen.some(sql => sql.includes('FROM documents d'))).toBe(false);
+  });
+
   it('allows a current owner to read retained CLOSED project evidence without a project role', async () => {
     const { service, seen } = create({ orgRole: 'R-OWNER', projectStatus: 'CLOSED' });
     await expect(service.getDocument(ctx, documentId)).resolves.toMatchObject({
