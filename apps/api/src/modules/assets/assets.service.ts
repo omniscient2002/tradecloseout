@@ -12,8 +12,8 @@ import { createHash } from 'node:crypto';
 import { Pool, PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { withTenantTransaction, TenantActorContext, DomainOutboxEvent } from '@tradecloseout/db';
-import { AssetTagSchema } from '@tradecloseout/shared';
-import { assertAssetInScope, validateAssetProjectScope, AssetScopeTarget } from './asset-scope';
+import { AssetTagSchema, hasPermission } from '@tradecloseout/shared';
+import { assertAssetInScope, assetScopeSqlPredicate, validateAssetProjectScope, AssetScopeTarget } from './asset-scope';
 import { ResolvedRequirementSpec } from '../checklists/checklists.service';
 
 export interface CreateAssetInput {
@@ -45,6 +45,7 @@ export class AssetsService {
    */
   private async getCurrentAssetScope(
     client: PoolClient, ctx: TenantActorContext, projectId: string,
+    write = false,
   ): Promise<Record<string, unknown>> {
     if (ctx.actorType === 'SYSTEM') return {};
     if (ctx.actorType === 'GUEST' || ctx.guestGrantId) {
@@ -58,12 +59,22 @@ export class AssetsService {
     if (!membership.rows.length) throw new NotFoundException('PROJECT_NOT_FOUND');
     if (membership.rows[0].role === 'R-OWNER' || membership.rows[0].role === 'R-ADMIN') return {};
     const { rows } = await client.query(
-      `SELECT scope_json FROM project_members
+      `SELECT role, scope_json FROM project_members
         WHERE org_id = $1 AND project_id = $2 AND user_id = $3
           AND status = 'ACTIVE' FOR SHARE`,
       [ctx.orgId, projectId, ctx.userId],
     );
     if (!rows.length) throw new NotFoundException('PROJECT_NOT_FOUND');
+    // HTTP permissions were evaluated before the transaction. Re-evaluate the
+    // live org AND project roles under share locks: role revocation/demotion
+    // must not leave an in-flight request with a stale asset.manage grant.
+    const permission = write ? 'asset.manage' : 'asset.read';
+    if (!hasPermission({
+      orgRole: membership.rows[0].role,
+      projectRole: rows[0].role,
+    }, permission).allowed) {
+      throw new ForbiddenException('ASSET_PERMISSION_REVOKED');
+    }
     return validateAssetProjectScope(rows[0].scope_json);
   }
 
@@ -71,7 +82,7 @@ export class AssetsService {
     client: PoolClient, ctx: TenantActorContext, projectId: string,
     assetId: string, write: boolean,
   ): Promise<AssetScopeTarget> {
-    const scope = await this.getCurrentAssetScope(client, ctx, projectId);
+    const scope = await this.getCurrentAssetScope(client, ctx, projectId, write);
     const { rows } = await client.query(
       `SELECT id, category_key, created_at FROM assets
         WHERE org_id = $1 AND project_id = $2 AND id = $3
@@ -128,7 +139,7 @@ export class AssetsService {
       throw new ConflictException('PROJECT_NOT_EDITABLE');
     }
 
-      const scope = await this.getCurrentAssetScope(client, ctx, projectId);
+      const scope = await this.getCurrentAssetScope(client, ctx, projectId, true);
       assertAssetInScope(scope, null, true, input.categoryKey);
       const normalizedTag = tagParse.data;
 
@@ -284,13 +295,15 @@ export class AssetsService {
    */
   async listAssets(ctx: TenantActorContext, projectId: string) {
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+      const scope = await this.getCurrentAssetScope(client, ctx, projectId);
+      const filtered = assetScopeSqlPredicate(scope, 3);
       const res = await client.query(
         `SELECT * FROM assets
          WHERE org_id = $1 AND project_id = $2 AND deleted_at IS NULL
+           ${filtered.sql}
          ORDER BY tag ASC`,
-        [ctx.orgId, projectId],
+        [ctx.orgId, projectId, ...filtered.values],
       );
-      const scope = await this.getCurrentAssetScope(client, ctx, projectId);
       return res.rows.filter((asset: any) => {
         try {
           assertAssetInScope(scope, {
@@ -352,7 +365,7 @@ export class AssetsService {
     }
     const normalizedUpdateTag = tagUpdate?.data;
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
-      const currentScope = await this.getCurrentAssetScope(client, ctx, projectId);
+      const currentScope = await this.getCurrentAssetScope(client, ctx, projectId, true);
       // 1. Fetch current asset
       const curRes = await client.query(
         `SELECT * FROM assets WHERE org_id = $1 AND project_id = $2 AND id = $3 AND deleted_at IS NULL FOR UPDATE`,
@@ -706,11 +719,24 @@ export class AssetsService {
     }
     const isAtomic = options.atomic !== false;
 
-    // 1. Fetch existing tags in project to detect collisions
+    // 1. Validate live write access before even previewing existing tags.
+    // A dry-run must not reveal the identities of out-of-scope equipment.
     const existingTags = await withTenantTransaction(this.pool, ctx, async (client) => {
+      const scope = await this.getCurrentAssetScope(client, ctx, projectId, true);
+      if (scope.assetIds !== undefined) {
+        // Creating any new asset cannot satisfy an existing-ID allowlist.
+        throw new NotFoundException('ASSET_NOT_FOUND');
+      }
+      for (const item of items) {
+        if (typeof item?.categoryKey === 'string') {
+          assertAssetInScope(scope, null, true, item.categoryKey);
+        }
+      }
+      const filtered = assetScopeSqlPredicate(scope, 3);
       const { rows } = await client.query(
-        `SELECT upper(tag) AS tag FROM assets WHERE org_id = $1 AND project_id = $2 AND deleted_at IS NULL`,
-        [ctx.orgId, projectId],
+        `SELECT upper(tag) AS tag FROM assets WHERE org_id = $1 AND project_id = $2 AND deleted_at IS NULL
+           ${filtered.sql}`,
+        [ctx.orgId, projectId, ...filtered.values],
       );
       return new Set(rows.map((r) => r.tag));
     });
@@ -1212,11 +1238,13 @@ export class AssetsService {
   ) {
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
       const scope = await this.getCurrentAssetScope(client, ctx, projectId);
+      const filtered = assetScopeSqlPredicate(scope, 3);
       const { rows: assetList } = await client.query(
         `SELECT id, tag, name, category_key, created_at, make, model, serial_no, location
          FROM assets
-         WHERE org_id = $1 AND project_id = $2 AND deleted_at IS NULL`,
-        [ctx.orgId, projectId],
+         WHERE org_id = $1 AND project_id = $2 AND deleted_at IS NULL
+           ${filtered.sql}`,
+        [ctx.orgId, projectId, ...filtered.values],
       );
 
       const targetText = [query.filename, query.text, query.tagCandidate]
