@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { Modal } from "../ui/modal";
 import {
   UploadCloud,
@@ -39,7 +39,6 @@ export function UploadEvidenceModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [queuedLocally, setQueuedLocally] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (open) {
@@ -117,16 +116,17 @@ export function UploadEvidenceModal({
         </div>
 
         {/* File Dropzone */}
-        <div
-          onClick={() => fileInputRef.current?.click()}
-          className="border-2 border-dashed border-[#CBD5E1] rounded-xl p-5 text-center hover:border-[#3157D5] hover:bg-[#F8FAFC] transition-all cursor-pointer group"
+        <label
+          htmlFor="evidence-upload-file"
+          className="block border-2 border-dashed border-[#CBD5E1] rounded-xl p-5 text-center hover:border-[#3157D5] hover:bg-[#F8FAFC] focus-within:ring-2 focus-within:ring-blue-500 transition-all cursor-pointer group"
         >
           <input
-            ref={fileInputRef}
+            id="evidence-upload-file"
             type="file"
             accept=".pdf,.jpg,.jpeg,.png,.webp,.docx,.xlsx,.dwg,.zip"
             onChange={handleFileSelect}
-            className="hidden"
+            className="sr-only"
+            aria-label="Select evidence file"
           />
           <div className="flex flex-col items-center justify-center gap-1.5">
             <div className="w-9 h-9 rounded-full bg-[#EEF2FF] flex items-center justify-center text-[#3157D5] group-hover:scale-105 transition-transform">
@@ -141,7 +141,7 @@ export function UploadEvidenceModal({
               </p>
             </div>
           </div>
-        </div>
+        </label>
 
         {queuedLocally && (
           <div role="status" aria-live="polite" className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
