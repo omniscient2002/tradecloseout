@@ -70,6 +70,14 @@ export const ConfigSchemaRegistry: Record<string, Record<string, FieldSchema>> =
       overridePolicy: 'MERGE_MAP',
       mergeKey: 'key',
     },
+    // Legacy checklist import/snapshot payloads use the flat requirements key.
+    // It remains an explicit schema entry pending a versioned migration; any
+    // mixed legacy/registered payload is an error (see below).
+    requirements: {
+      path: 'requirements',
+      type: 'unkeyed_array',
+      overridePolicy: 'REPLACE',
+    },
   },
 };
 
@@ -84,6 +92,64 @@ export interface ConfigConflict {
   path: string;
   level: ConfigLevel;
   message: string;
+}
+
+/**
+ * PH2-G06-003: explicit, bounded schema validation before configuration can
+ * alter any consumer-facing safety policy. Parsed JSON must be an ordinary
+ * record; arbitrary objects/functions/prototype keys never enter resolution.
+ */
+function isConfigRecord(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+function safeConfigData(value: unknown, depth = 0): boolean {
+  if (depth > 8) return false;
+  if (value === null || typeof value === 'boolean') return true;
+  if (typeof value === 'string') return value.length <= 2048;
+  if (typeof value === 'number') return Number.isSafeInteger(value);
+  if (Array.isArray(value)) {
+    return value.length <= 1000 && value.every(item => safeConfigData(item, depth + 1));
+  }
+  if (!isConfigRecord(value)) return false;
+  const keys = Object.keys(value);
+  return keys.length <= 64 && keys.every(key =>
+    key.length <= 128 && !['__proto__','constructor','prototype'].includes(key) &&
+    safeConfigData(value[key], depth + 1));
+}
+
+function validateConfigValue(schema: FieldSchema, value: unknown): boolean {
+  if (!safeConfigData(value)) return false;
+  if (schema.type === 'keyed_array') {
+    return Array.isArray(value) && value.every(item => isConfigRecord(item) &&
+      typeof item[schema.mergeKey ?? 'key'] === 'string' &&
+      (item[schema.mergeKey ?? 'key'] as string).trim().length > 0);
+  }
+  if (schema.type === 'unkeyed_array') {
+    if (!Array.isArray(value)) return false;
+    if (schema.path === 'notifications.extra_recipients') {
+      return value.every(recipient => typeof recipient === 'string' &&
+        /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(recipient) &&
+        recipient.length <= 254);
+    }
+    return true;
+  }
+  if (schema.type === 'map') return isConfigRecord(value);
+  if (schema.path === 'security.max_file_size_bytes') {
+    return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+  }
+  if (schema.path === 'security.retention_days') {
+    return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+  }
+  if (schema.path === 'branding.primary_color') {
+    return typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value);
+  }
+  if (schema.path === 'naming.pattern') {
+    return typeof value === 'string' && value.length > 0 && value.length <= 200;
+  }
+  return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean';
 }
 
 export function resolveConfigV021(
@@ -103,7 +169,8 @@ export function resolveConfigV021(
     const cfg = layersByLevel[level];
     if (!cfg) continue;
 
-    const registry = ConfigSchemaRegistry[cfg.schemaVersion];
+    const registry = Object.hasOwn(ConfigSchemaRegistry, cfg.schemaVersion)
+      ? ConfigSchemaRegistry[cfg.schemaVersion] : undefined;
     if (!registry) {
       conflicts.push({ path: '$schemaVersion', level, message: 'Unsupported configuration schema version.' });
       continue;
@@ -113,14 +180,37 @@ export function resolveConfigV021(
       continue;
     }
 
-    for (const [path, rawVal] of Object.entries(cfg.payload)) {
-      if (rawVal === undefined || rawVal === null) continue;
+    if (!isConfigRecord(cfg.payload) || Object.keys(cfg.payload).length > 64) {
+      conflicts.push({ path: '$payload', level, message: 'Invalid or excessive configuration fields.' });
+      continue;
+    }
 
-      const schema: FieldSchema = registry[path] ?? {
-        path,
-        type: 'scalar',
-        overridePolicy: 'REPLACE',
-      };
+    for (const [path, rawVal] of Object.entries(cfg.payload)) {
+      const schema: FieldSchema | undefined =
+        Object.hasOwn(registry, path) ? registry[path] : undefined;
+      if (!schema) {
+        conflicts.push({ path, level, message: 'Field is not registered in this configuration schema.' });
+        continue;
+      }
+      if (rawVal === undefined || rawVal === null) {
+        // A null/absent child is NOT an authorization to clear a locked field.
+        if (rawVal === null) conflicts.push({ path, level, message: 'Explicit null configuration is not supported.' });
+        continue;
+      }
+      if (!validateConfigValue(schema, rawVal)) {
+        conflicts.push({ path, level, message: 'Configuration value has invalid type, size or structure.' });
+        continue;
+      }
+      // Flat and registered requirement arrays describe the same obligation
+      // family. Never permit either form to bypass the other's item locks.
+      const otherPath = path === 'requirements' ? 'checklist.requirements'
+        : path === 'checklist.requirements' ? 'requirements' : null;
+      if (otherPath && (
+        Object.hasOwn(cfg.payload, otherPath) || Object.hasOwn(result, otherPath)
+      )) {
+        conflicts.push({ path: 'requirements', level, message: 'Mixed checklist requirement schemas require explicit migration.' });
+        continue;
+      }
 
       // 1. LOCKED fields require their authoritative owner, even when
       // the owner omitted a value. Missing platform policy is not permission
