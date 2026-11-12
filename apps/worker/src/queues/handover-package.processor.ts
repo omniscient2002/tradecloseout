@@ -44,12 +44,30 @@ export async function compileAndPersistHandoverPackage(
   job: PackageJob,
   jobId: string,
   qpdfAvailable: boolean,
+  attemptOwner: string = `PACKAGE_ATTEMPT:${uuidv7()}`,
 ): Promise<Record<string, unknown>> {
   const packageId = job.packageId || (job.entityId && job.entityType === 'HANDOVER_PACKAGE' ? job.entityId : undefined);
   const orgId = job.orgId;
   if (!packageId || !orgId) throw new Error('PACKAGE_IDENTITY_REQUIRED');
 
-  const owner = `PACKAGE_JOB:${jobId}`;
+  // A BullMQ job ID identifies the logical command, not a worker attempt.
+  // Hold an exclusive PostgreSQL session lock across read, file compilation,
+  // S3 upload, and publication. Session death releases the lock on crashes.
+  // This also allows a subsequent attempt to reclaim stale GENERATING rows.
+  const owner = attemptOwner;
+  if (!/^PACKAGE_ATTEMPT:[0-9a-f-]{36}$/i.test(owner)) {
+    throw new Error('PACKAGE_ATTEMPT_OWNER_INVALID');
+  }
+  const lockClient = await pool.connect();
+  let locked = false;
+  try {
+    const lock = await lockClient.query(
+      `SELECT pg_try_advisory_lock(hashtext($1::text), hashtext($2::text)) AS acquired`,
+      [orgId, packageId],
+    );
+    locked = lock.rows[0]?.acquired === true;
+    if (!locked) throw new Error('PACKAGE_BUILD_ALREADY_RUNNING');
+
   const client = await pool.connect();
   let packageMeta: any;
   let packageRequirements: any[] = [];
@@ -89,11 +107,10 @@ export async function compileAndPersistHandoverPackage(
       await client.query('COMMIT');
       return { packageId, status: 'READY', replayed: true };
     }
-    if (packageMeta.status === 'GENERATING' && packageMeta.error_code !== owner &&
-        new Date(packageMeta.updated_at).getTime() > Date.now() - 30 * 60 * 1000) {
-      await client.query('COMMIT');
-      return { packageId, status: 'GENERATING', skipped: 'Another worker owns this package build.' };
-    }
+    // Advisory session ownership excludes a live competing attempt even when
+    // BullMQ redelivers the same job ID. Reclaim a stalled GENERATING row only
+    // after holding that lock; the former owner can no longer publish.
+    // A truly active attempt causes PACKAGE_BUILD_ALREADY_RUNNING above.
     const claimed = await client.query(
       `UPDATE handover_packages
           SET status = 'GENERATING', error_code = $3, error_detail = NULL,
@@ -354,6 +371,19 @@ export async function compileAndPersistHandoverPackage(
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
+  } finally {
+    if (locked) {
+      try {
+        await lockClient.query(
+          `SELECT pg_advisory_unlock(hashtext($1::text), hashtext($2::text))`,
+          [orgId, packageId],
+        );
+      } catch {
+        // A disconnected PostgreSQL session has already lost its advisory lock.
+      }
+    }
+    lockClient.release();
+  }
 }
 
 export async function markHandoverPackageFailed(
@@ -361,9 +391,10 @@ export async function markHandoverPackageFailed(
   job: PackageJob,
   jobId: string,
   error: unknown,
+  attemptOwner: string,
 ): Promise<void> {
   const packageId = job.packageId || (job.entityId && job.entityType === 'HANDOVER_PACKAGE' ? job.entityId : undefined);
-  if (!packageId || !job.orgId) return;
+  if (!packageId || !job.orgId || !/^PACKAGE_ATTEMPT:[0-9a-f-]{36}$/i.test(attemptOwner)) return;
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -376,7 +407,7 @@ export async function markHandoverPackageFailed(
           SET status = 'FAILED', error_code = 'PACKAGE_BUILD_FAILED',
               error_detail = $4, row_version = row_version + 1, updated_at = now()
         WHERE org_id = $1 AND id = $2 AND status = 'GENERATING' AND error_code = $3`,
-      [job.orgId, packageId, `PACKAGE_JOB:${jobId}`,
+      [job.orgId, packageId, attemptOwner,
         String((error as Error)?.message || 'Package build failed').slice(0, 1000)],
     );
     await client.query('COMMIT');
