@@ -625,6 +625,30 @@ export class ChecklistsService {
       const projectId = target.rows[0].project_id as string;
       const req = await this.lockCurrentWaiverRequirement(client, ctx, projectId, requirementId);
       await this.assertLiveWaiverAuthority(client, ctx, projectId, 'requirement.waive');
+      // A lost response may be retried after the original intent was
+      // independently rejected, withdrawn or superseded. Return the saved
+      // final outcome rather than inserting a new waiver under the same key.
+      if (options.commandId) {
+        const { rows: historic } = await client.query(
+          `SELECT id, requirement_id, type, reason, requested_by, status
+             FROM waivers WHERE org_id=$1 AND command_id=$2 LIMIT 1`,
+          [ctx.orgId, options.commandId],
+        );
+        if (historic.length) {
+          const prior = historic[0];
+          if (prior.requirement_id !== requirementId || prior.type !== type ||
+              prior.reason !== reason.trim() || prior.requested_by !== ctx.userId) {
+            throw new ConflictException('WAIVER_COMMAND_REPLAY_MISMATCH');
+          }
+          if (!['ACTIVE', 'PENDING_SECOND_APPROVAL'].includes(prior.status)) {
+            return {
+              waiverId: prior.id, requirementId, status: prior.status,
+              requirementStatus: req.status, rowVersion: req.row_version,
+              currentEffective: false, idempotentReplay: true,
+            };
+          }
+        }
+      }
       const { rows: intents } = await client.query(
         `SELECT * FROM waivers
           WHERE org_id = $1 AND project_id = $2 AND requirement_id = $3
