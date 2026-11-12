@@ -229,6 +229,7 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
                       org_id: orgId,
                       document_id: 'doc-1',
                       file_status: 'READY',
+                      review_status: 'IN_REVIEW',
                       object_id: 'object-1',
                       uploaded_by: 'other-user',
                     },
