@@ -65,8 +65,9 @@ export function UploadEvidenceModal({
 
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    const form = e.currentTarget;
     if (!file) {
       setError("Please select a document or test record file.");
       return;
@@ -92,7 +93,7 @@ export function UploadEvidenceModal({
       setExternalComment("");
       // Clear the native file input as well, so selecting the same file later
       // fires onChange and the user can deliberately queue a new revision.
-      e.currentTarget?.reset();
+      form.reset();
       try {
         onUploadSuccess(); // Re-query authoritative server state, if available.
       } catch {
