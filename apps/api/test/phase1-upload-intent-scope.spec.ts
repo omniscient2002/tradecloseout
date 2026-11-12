@@ -58,6 +58,56 @@ describe('PH1-G02-001/009: upload intent is authorised inside the write transact
     expect(statements).toContain('COMMIT');
   });
 
+  it.each(['ACTIVE', 'CLOSED', 'SUSPENDED'] as const)(
+    'guest upload intent requires live project status (%s)',
+    async status => {
+      const requirementId = randomUUID();
+      const grantId = randomUUID();
+      const statements: string[] = [];
+      const client = {
+        query: jest.fn(async (sql: string) => {
+          statements.push(sql);
+          if (sql.includes('SELECT scope_json, capabilities FROM guest_grants')) {
+            return { rows: [{
+              scope_json: { requirementIds: [requirementId] },
+              capabilities: ['document.upload'],
+            }] };
+          }
+          if (sql.includes('SELECT id, doc_type_key FROM requirements')) {
+            return { rows: [{ id: requirementId, doc_type_key: 'DT-001' }] };
+          }
+          if (sql.includes('SELECT status FROM projects')) return { rows: [{ status }] };
+          if (sql.includes('SELECT uc.value AS current_storage')) return { rows: [] };
+          if (sql.includes('MAX(version_no)')) return { rows: [{ max_v: 0 }] };
+          return { rows: [], rowCount: 1 };
+        }),
+        release: jest.fn(),
+      };
+      const storage = {
+        createUploadUrls: jest.fn(async () => ({
+          uploadId: null, partSizeBytes: dto.sizeBytes, parts: [],
+        })),
+      };
+      const service = new DocumentsService(
+        new TenantDbService({ connect: async () => client }),
+        storage as any,
+      );
+      const guestCtx = { ...ctx, actorType: 'GUEST' as const, guestGrantId: grantId };
+      const command = service.createUploadIntent(guestCtx, projectId, {
+        ...dto, requirementId,
+      });
+      if (status === 'ACTIVE') {
+        await expect(command).resolves.toMatchObject({ linkedRequirementCount: 1 });
+        expect(storage.createUploadUrls).toHaveBeenCalledTimes(1);
+      } else {
+        await expect(command).rejects.toThrow('PROJECT_UPLOAD_DISABLED');
+        expect(storage.createUploadUrls).not.toHaveBeenCalled();
+        expect(statements).not.toContainEqual(expect.stringContaining('INSERT INTO storage_objects'));
+        expect(statements).toContain('ROLLBACK');
+      }
+    },
+  );
+
   it.each([
     ['document ID allowlist', { scope: { documentIds: [randomUUID()] } }],
     ['read only', { scope: { mode: 'READ_ONLY' } }],
