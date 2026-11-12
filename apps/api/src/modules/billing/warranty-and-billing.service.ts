@@ -577,8 +577,9 @@ export class WarrantyAndBillingService {
 
       // 2. Validate remedy evidence exists, is in READY status, and is positively project/asset-qualified
       const { rows: soRows } = await client.query(
-        `SELECT so.id, so.status, so.sha256,
+        `SELECT so.id, so.status, so.sha256, so.expected_sha256,
                 so.provider_version_id, so.size_bytes, so.observed_size_bytes,
+                so.av_scanned_at,
                 EXISTS (
                   SELECT 1
                     FROM document_versions dv
@@ -623,7 +624,11 @@ export class WarrantyAndBillingService {
       const so = soRows[0];
       if (!isImmutableStorageVersion(so.provider_version_id) ||
           !/^[a-f0-9]{64}$/i.test(String(so.sha256 || '')) ||
+          !so.av_scanned_at || Number.isNaN(new Date(so.av_scanned_at).getTime()) ||
+          (so.expected_sha256 != null &&
+            String(so.expected_sha256).toLowerCase() !== String(so.sha256).toLowerCase()) ||
           !Number.isSafeInteger(Number(so.size_bytes)) || Number(so.size_bytes) <= 0 ||
+          !Number.isSafeInteger(Number(so.observed_size_bytes)) ||
           Number(so.observed_size_bytes) !== Number(so.size_bytes)) {
         throw new UnprocessableEntityException({
           code: 'DEFECT_EVIDENCE_NOT_VERIFIED',
@@ -646,19 +651,30 @@ export class WarrantyAndBillingService {
         });
       }
 
-      const remedyVersionId = await this.resolveRemedyVersion(
-        client, ctx.orgId, targetProjectId, remedyEvidenceObjectId, defect.asset_id || null,
+      const qualified = await this.resolveRemedyVersion(
+        client, ctx.orgId, targetProjectId, remedyEvidenceObjectId,
+        defect.asset_id || null, defect.requirement_id || null, defectId,
       );
+      const remedyVersionId = qualified.versionId;
+      const scannedAt = new Date(so.av_scanned_at);
       const updateRes = await client.query(
         `UPDATE defects
             SET status = 'RECTIFIED',
                 closure_evidence_object_id = $4,
                 remedy_document_version_id = $7,
+                remedy_sha256 = $8,
+                remedy_provider_version_id = $9,
+                remedy_size_bytes = $10,
+                remedy_scanned_at = $11,
+                remedy_asset_scope_ids = $12,
                 remedied_by = $5,
                 remedied_at = now(),
                 row_version = row_version + 1
           WHERE org_id = $1 AND project_id = $2 AND id = $3 AND row_version = $6`,
-        [ctx.orgId, targetProjectId, defectId, remedyEvidenceObjectId, ctx.userId, defect.row_version, remedyVersionId],
+        [ctx.orgId, targetProjectId, defectId, remedyEvidenceObjectId, ctx.userId,
+          defect.row_version, remedyVersionId, String(so.sha256).toLowerCase(),
+          so.provider_version_id, Number(so.size_bytes), scannedAt,
+          qualified.assetIds],
       );
 
       if (updateRes.rowCount === 0) {
@@ -670,7 +686,12 @@ export class WarrantyAndBillingService {
 
       const transitionId = await this.appendDefectTransition(
         client, ctx, defect, 'REMEDY_SUBMITTED', 'RECTIFIED',
-        { evidenceObjectId: remedyEvidenceObjectId, remedyVersionId },
+        { evidenceObjectId: remedyEvidenceObjectId, remedyVersionId,
+          receipt: {sha256: String(so.sha256).toLowerCase(),
+            providerVersionId: so.provider_version_id,
+            sizeBytes: Number(so.size_bytes), scannedAt,
+            assetIds: qualified.assetIds},
+        },
       );
 
       emit({
@@ -773,8 +794,9 @@ export class WarrantyAndBillingService {
       }
 
       const { rows: soRows } = await client.query(
-        `SELECT so.id, so.status, so.sha256,
+        `SELECT so.id, so.status, so.sha256, so.expected_sha256,
                 so.provider_version_id, so.size_bytes, so.observed_size_bytes,
+                so.av_scanned_at,
                 EXISTS (
                   SELECT 1
                     FROM document_versions dv
@@ -819,7 +841,11 @@ export class WarrantyAndBillingService {
       const so = soRows[0];
       if (!isImmutableStorageVersion(so.provider_version_id) ||
           !/^[a-f0-9]{64}$/i.test(String(so.sha256 || '')) ||
+          !so.av_scanned_at || Number.isNaN(new Date(so.av_scanned_at).getTime()) ||
+          (so.expected_sha256 != null &&
+            String(so.expected_sha256).toLowerCase() !== String(so.sha256).toLowerCase()) ||
           !Number.isSafeInteger(Number(so.size_bytes)) || Number(so.size_bytes) <= 0 ||
+          !Number.isSafeInteger(Number(so.observed_size_bytes)) ||
           Number(so.observed_size_bytes) !== Number(so.size_bytes)) {
         throw new UnprocessableEntityException({
           code: 'DEFECT_EVIDENCE_NOT_VERIFIED',
@@ -848,13 +874,38 @@ export class WarrantyAndBillingService {
           detail: 'Legacy remedy must be independently requalified before closure.',
         });
       }
-      const currentRemedyVersionId = await this.resolveRemedyVersion(
-        client, ctx.orgId, targetProjectId, closureEvidenceObjectId, defect.asset_id || null,
+      if (!defect.remedy_sha256 || !defect.remedy_scanned_at ||
+          !defect.remedy_provider_version_id ||
+          defect.remedy_size_bytes == null ||
+          !Array.isArray(defect.remedy_asset_scope_ids)) {
+        throw new ConflictException({
+          code: 'DEFECT_LEGACY_REMEDY_RECEIPT_UNPINNED',
+          detail: 'A historical remedy without a scanned immutable-byte receipt cannot be closed.',
+        });
+      }
+      const current = await this.resolveRemedyVersion(
+        client, ctx.orgId, targetProjectId, closureEvidenceObjectId,
+        defect.asset_id || null, defect.requirement_id || null, defectId,
       );
-      if (currentRemedyVersionId !== defect.remedy_document_version_id) {
+      if (current.versionId !== defect.remedy_document_version_id) {
         throw new ConflictException({
           code: 'DEFECT_REMEDY_VERSION_CHANGED',
           detail: 'The document version originally reviewed for the remedy is no longer current.',
+        });
+      }
+      const oldAssetIds = [...defect.remedy_asset_scope_ids].map(String).sort();
+      const currentAssetIds = current.assetIds;
+      const preservedScan = new Date(defect.remedy_scanned_at).getTime();
+      if (!Number.isFinite(preservedScan) ||
+          String(so.sha256).toLowerCase() !== String(defect.remedy_sha256).toLowerCase() ||
+          so.provider_version_id !== defect.remedy_provider_version_id ||
+          Number(so.size_bytes) !== Number(defect.remedy_size_bytes) ||
+          new Date(so.av_scanned_at).getTime() !== preservedScan ||
+          currentAssetIds.length !== oldAssetIds.length ||
+          currentAssetIds.some((id, ix) => id !== oldAssetIds[ix])) {
+        throw new ConflictException({
+          code: 'DEFECT_REMEDY_IMMUTABLE_RECEIPT_CHANGED',
+          detail: 'Verified bytes, scan receipt or complete asset target set changed after remedy submission.',
         });
       }
       const updateRes = await client.query(
@@ -878,7 +929,12 @@ export class WarrantyAndBillingService {
       const transitionId = await this.appendDefectTransition(
         client, ctx, defect, 'INDEPENDENTLY_CLOSED', 'CLOSED',
         { evidenceObjectId: closureEvidenceObjectId,
-          remedyVersionId: defect.remedy_document_version_id },
+          remedyVersionId: defect.remedy_document_version_id,
+          receipt: {sha256: String(so.sha256).toLowerCase(),
+            providerVersionId: so.provider_version_id,
+            sizeBytes: Number(so.size_bytes), scannedAt: new Date(so.av_scanned_at),
+            assetIds: current.assetIds},
+        },
       );
 
       emit({
