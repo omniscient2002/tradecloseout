@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { hasPermission } from '@tradecloseout/shared';
 import { REQUIRE_PERMISSION_KEY } from '../src/common/guards/permission.guard';
 import { ProjectsController } from '../src/modules/projects/projects.controller';
+import { BillingController } from '../src/modules/billing/billing.controller';
 
 function routePermission(method: keyof ProjectsController): string | undefined {
   return Reflect.getMetadata(REQUIRE_PERMISSION_KEY, ProjectsController.prototype[method]);
@@ -16,6 +17,14 @@ describe('PH2-G05-008: exact capabilities on project/contract write routes', () 
     expect(hasPermission({ projectRole:'R-PM' }, 'project.manage').allowed).toBe(true);
     expect(hasPermission({ projectRole:'R-PM' }, 'project.close').allowed).toBe(false);
     expect(hasPermission({ orgRole:'R-OWNER' }, 'project.close').allowed).toBe(true);
+  });
+
+  it('does not expose financial commercial readiness via document.read', () => {
+    const handler = BillingController.prototype.getCommercialReadiness;
+    expect(Reflect.getMetadata(REQUIRE_PERMISSION_KEY, handler)).toBe('contract.manage');
+    expect(hasPermission({ orgRole:'R-SITE' }, 'document.read').allowed).toBe(true);
+    expect(hasPermission({ orgRole:'R-SITE' }, 'contract.manage').allowed).toBe(false);
+    expect(hasPermission({ orgRole:'R-OWNER' }, 'contract.manage').allowed).toBe(true);
   });
 
   it('requires commercial authority to list contractual values', () => {
