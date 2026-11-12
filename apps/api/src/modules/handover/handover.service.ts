@@ -299,9 +299,8 @@ export class HandoverService {
         }
       }
 
-      // Pin the EXACT immutable source receipt in the same MVCC snapshot as
-      // the requirement and waiver decisions. The worker must not re-resolve a
-      // later version, title, object key or storage receipt from live tables.
+      // Freeze exact evidence storage receipts at the same snapshot as decisions.
+      // No later worker may re-resolve a different source version or object.
       const selectedVersionIds = [...packageEvidence.keys()];
       const { rows: pinnedSourceRows } = selectedVersionIds.length
         ? await client.query(
@@ -320,8 +319,39 @@ export class HandoverService {
               AND (dv.expiry_date IS NULL OR dv.expiry_date >= CURRENT_DATE)
               AND so.status = 'READY' AND so.size_bytes > 0
               AND so.observed_size_bytes = so.size_bytes
-              AND so.sha256 ~ '^[a-fA-F0-9]{64}
-        const exclusionReason = item.included ? null : [...item.reasons].join('; ') || 'No included requirement references this evidence.';
+              AND so.sha256 ~ '^[a-fA-F0-9]{64}$'
+              AND so.provider_version_id IS NOT NULL
+              AND btrim(lower(so.provider_version_id))
+                  NOT IN ('', 'null', 'undefined', 'none', 'unversioned')`,
+          [ctx.orgId, projectId, selectedVersionIds],
+        )
+        : { rows: [] as any[] };
+      const pinnedSources = new Map<string, any>(
+        pinnedSourceRows.map((source: any) => [String(source.document_version_id), source]),
+      );
+      if (pinnedSources.size !== selectedVersionIds.length) {
+        throw new UnprocessableEntityException({
+          code: 'PACKAGE_MANIFEST_SOURCE_NOT_PINNED',
+          detail: 'A selected evidence version could not be pinned to approved immutable bytes.',
+        });
+      }
+
+      let sortOrder = 1;
+      for (const [documentVersionId, item] of packageEvidence) {
+        const pinned = pinnedSources.get(documentVersionId);
+        if (!pinned || !isImmutableStorageVersion(pinned.provider_version_id) ||
+            !/^[a-fA-F0-9]{64}$/.test(String(pinned.sha256)) ||
+            !Number.isSafeInteger(Number(pinned.size_bytes)) || Number(pinned.size_bytes) <= 0) {
+          throw new UnprocessableEntityException({ code: 'PACKAGE_MANIFEST_SOURCE_NOT_VERIFIED' });
+        }
+        if (pinned.mime !== 'application/pdf') {
+          throw new UnprocessableEntityException({
+            code: 'PACKAGE_SOURCE_FORMAT_UNSUPPORTED',
+            detail: 'Only verified PDF sources are supported until approved conversion is enabled.',
+          });
+        }
+        const exclusionReason = item.included ? null : [...item.reasons].join('; ') ||
+          'No included requirement references this evidence.';
         await client.query(
           `INSERT INTO package_items
               (id, org_id, project_id, package_id, document_version_id,
@@ -332,25 +362,11 @@ export class HandoverService {
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
                      $12, $13, $14, $15, $16, $17, $18, $19)`,
           [
-            uuidv7(),
-            ctx.orgId,
-            projectId,
-            packageId,
-            documentVersionId,
-            item.sectionKey,
-            sortOrder++,
-            item.included,
-            exclusionReason,
-            pinned.document_id,
-            pinned.object_id,
-            pinned.title,
-            pinned.revision_code,
-            pinned.bucket,
-            pinned.object_key,
-            pinned.mime,
-            pinned.size_bytes,
-            pinned.sha256,
-            pinned.provider_version_id,
+            uuidv7(), ctx.orgId, projectId, packageId, documentVersionId,
+            item.sectionKey, sortOrder++, item.included, exclusionReason,
+            pinned.document_id, pinned.object_id, pinned.title, pinned.revision_code,
+            pinned.bucket, pinned.object_key, pinned.mime, pinned.size_bytes,
+            pinned.sha256, pinned.provider_version_id,
           ],
         );
       }
