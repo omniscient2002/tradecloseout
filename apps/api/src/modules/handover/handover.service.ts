@@ -1277,7 +1277,7 @@ export class HandoverService {
           });
         }
         const ids = sources.map((entry: any) => entry?.version_id);
-        const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         if (ids.some((id: unknown) => typeof id !== 'string' || !uuid.test(id)) ||
             new Set(ids).size !== ids.length) {
           throw new ConflictException({
