@@ -23,3 +23,26 @@
 PH3-G11-001 stays `PARTIAL_VERIFY` until exact-head full CI, independent reviewer acceptance, authenticated HTTP routes and aliases with real G01/G02 permission checks, integration with Phase 1/2 authority and Phase 4/5 review consumers, interprocess fault-injection/commit ambiguity cases, provider/domain approval acceptance and consistency across all stage configurations. Tests of the first-wins implementation do not certify the full review lifecycle (G11-002..008) or externally supplied identity.
 
 Production signing, delivery, provider configuration, deployment, merge and full production certification are explicitly excluded. Advanced multistage override approval requires a separately reviewed lifecycle and cannot silently revive a terminal version.
+
+## Focused closure recheck (November 12, 2026)
+
+The user requested **one finding at a time until independently accepted**; work remains scoped to PH3-G11-001, not PH3-G12-001. The earlier `ae025b8` green CI alone was insufficient for G11-001 acceptance. Subsequent targeted code and test changes add:
+
+- Real authenticated Nest HTTP route coverage in `apps/api/test/phase3-review-http-first-wins.spec.ts` using **actual** `SessionCsrfGuard` + `PermissionGuard`, SHA-256 bearer session tokens, CSRF protection, active project memberships and the restricted PostgreSQL role. Two independently authenticated reviewers compete through assignment and version aliases. All four legacy/version decision entry points are replayed after the winner; no second terminal event is permitted. The test also verifies 401/403 auth rejection and live permission/membership revocation.
+- In `apps/api/test/phase3-review-first-wins.spec.ts`, a real transaction commits the winning terminal decision but intentionally loses its `COMMIT` acknowledgement. Repeat conflicting and same-outcome requests cannot change the stored terminal outcome or insert a second audit event. An injected audit-insert failure after version/pointer/sibling writes must roll back the entire transaction; a different reviewer can then retry safely. Verified package/closeout readiness is positive for a lone approved mandatory requirement and negative for a rejected mandatory requirement.
+- `apps/api/src/modules/reviews/reviews.service.ts` now refuses recorded external approvals of versions not in the currently submitted `IN_REVIEW` state. It does not permit NOT_SUBMITTED or WITHDRAWN to bypass the first-wins invariant, even if an external proof is presented. The unit regression covers unsubmitted and terminal external responses.
+- A pre-existing stale-version If-Match unit test fixture now declares the valid `IN_REVIEW` state so the asserted 412 tests the intended row-version race, not a logically earlier 409 review-state rejection. No production validation is bypassed for a test.
+
+### Independent reviewer acceptance checklist (PH3-G11-001 only)
+
+| Gate | Evidence / required decision |
+| --- | --- |
+| First terminal winner across both reviewers | Restricted PostgreSQL two-user, two-stage serial and competing-race tests; independent reviewer must inspect actual SQL transaction ordering |
+| All public and legacy aliases | Authenticated HTTP guards + real authorization/CSRF, version and assignment aliases and negative replay tests; reviewer to verify all live routing/interceptor variants |
+| Atomic side effects | Approval pointer, requirements, sibling cancellation, audit event, DB rollback on audit failure, committed-result replay after lost acknowledgement |
+| Package eligibility | `evaluateReadinessInTransaction` against real approved/rejected current document-version and storage-object rows |
+| Stage correction policy | Generic override is deliberately disabled; later audited correction must be a separately scoped approved workflow, not an implicit retry |
+| Independent verdict | **NOT RECORDED.** GitHub PR #22 had no independent approval when this follow-up began. A reviewer must record acceptance/rejection against exact integrated SHA and any residual exceptions. |
+| Cross-phase certification | G01/G02 live session and membership behavior, Phase 1/2 integration and Phase 4/5 overlaps remain release-wide acceptance dependencies, not fabricated Pass 03 results |
+
+**Do not mark PH3-G11-001 CLOSED or the product production-certified based solely on the tests listed here.** The code-only acceptance record requires final exact-head green CI *and an independent review verdict*. Any actual external-party/identity proof needed for related PH3-G11-008 is deferred rather than represented as a real provider-backed certification.
