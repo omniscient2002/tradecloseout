@@ -53,6 +53,77 @@ export class WarrantyAndBillingService {
   }
 
   /**
+   * Lock the project before the defect, matching project-closure's lock order.
+   * A standalone /defects/:id route is resolved to its actual project, and
+   * both project and defect membership are checked under one transaction.
+   * AFTERCARE is the only legitimate mutation of a CLOSED project's defects;
+   * the accepted full-handover snapshot is never re-opened or rewritten.
+   */
+  private async lockDefectForMutation(
+    client: PoolClient, ctx: TenantActorContext,
+    routeProjectId: string, defectId: string,
+  ): Promise<{ defect: Record<string, any>; targetProjectId: string }> {
+    let targetProjectId = routeProjectId || ctx.projectId || '';
+    if (!targetProjectId) {
+      const { rows } = await client.query(
+        `SELECT project_id FROM defects WHERE org_id = $1 AND id = $2`,
+        [ctx.orgId, defectId],
+      );
+      if (!rows.length) {
+        throw new NotFoundException({ code: 'DEFECT_NOT_FOUND' });
+      }
+      targetProjectId = rows[0].project_id;
+    }
+    if (ctx.projectId && ctx.projectId !== targetProjectId) {
+      throw new NotFoundException({ code: 'DEFECT_PROJECT_MISMATCH' });
+    }
+    const { rows: projects } = await client.query(
+      `SELECT id, status, closed_at, purged_at FROM projects
+        WHERE org_id = $1 AND id = $2 FOR UPDATE`,
+      [ctx.orgId, targetProjectId],
+    );
+    if (projects.length !== 1 || projects[0].purged_at) {
+      throw new NotFoundException({ code: 'PROJECT_NOT_FOUND' });
+    }
+    const { rows: defectRows } = await client.query(
+      `SELECT d.* FROM defects d
+        WHERE d.org_id = $1 AND d.id = $2 FOR UPDATE OF d`,
+      [ctx.orgId, defectId],
+    );
+    if (!defectRows.length) {
+      throw new NotFoundException({ code: 'DEFECT_NOT_FOUND' });
+    }
+    const defect = defectRows[0];
+    if (defect.project_id !== targetProjectId) {
+      throw new ConflictException({ code: 'DEFECT_PROJECT_MISMATCH' });
+    }
+    const state = String(projects[0].status);
+    if (defect.defect_context === 'AFTERCARE') {
+      if (state !== 'CLOSED' || !projects[0].closed_at || !defect.accepted_package_id) {
+        throw new ConflictException({ code: 'AFTERCARE_MUTATION_LIFECYCLE_BLOCKED' });
+      }
+      // Preserve the same current accepted dossier qualification as creation.
+      const { rows: latest } = await client.query(
+        `SELECT id, status FROM handover_packages
+          WHERE org_id = $1 AND project_id = $2
+            AND package_purpose = 'FULL_HANDOVER'
+          ORDER BY version_no DESC, id DESC LIMIT 1 FOR SHARE`,
+        [ctx.orgId, targetProjectId],
+      );
+      if (latest.length !== 1 || latest[0].status !== 'ACCEPTED' ||
+          latest[0].id !== defect.accepted_package_id) {
+        throw new ConflictException({ code: 'AFTERCARE_ACCEPTED_PACKAGE_CHANGED' });
+      }
+    } else if (!['ACTIVE', 'HANDOVER'].includes(state)) {
+      throw new ConflictException({
+        code: 'CLOSEOUT_DEFECT_PROJECT_LIFECYCLE_BLOCKED',
+        detail: 'Closeout defect mutations require an ACTIVE or HANDOVER project.',
+      });
+    }
+    return { defect, targetProjectId };
+  }
+
+  /**
    * Resolve and lock one exact current, approved, asset-qualified document
    * version for this remedy. Two different documents sharing the same storage
    * object are ambiguous and require explicit manual evidence selection.
@@ -247,31 +318,9 @@ export class WarrantyAndBillingService {
     }
 
     return withTenantTransaction(this.pool, ctx, async (client, emit) => {
-      // 1. Lock defect FOR UPDATE under tenant and verify project association
-      const { rows: defectRows } = await client.query(
-        `SELECT d.*
-           FROM defects d
-          WHERE d.org_id = $1 AND d.id = $2
-          FOR UPDATE OF d`,
-        [ctx.orgId, defectId],
+      const { defect, targetProjectId } = await this.lockDefectForMutation(
+        client, ctx, projectId, defectId,
       );
-
-      if (!defectRows.length) {
-        throw new NotFoundException({
-          code: 'DEFECT_NOT_FOUND',
-          detail: `Defect ${defectId} not found.`,
-        });
-      }
-
-      const defect = defectRows[0];
-      const targetProjectId = defect.project_id;
-
-      if (projectId && targetProjectId !== projectId) {
-        throw new ConflictException({
-          code: 'DEFECT_PROJECT_MISMATCH',
-          detail: `Defect ${defectId} does not belong to project ${projectId}.`,
-        });
-      }
 
       if (ctx.actorType === 'GUEST' || ctx.guestGrantId) {
         const grant = await this.supplierDefectGrant(client, ctx, targetProjectId);
@@ -431,31 +480,9 @@ export class WarrantyAndBillingService {
     }
 
     return withTenantTransaction(this.pool, ctx, async (client, emit) => {
-      // 1. Lock defect FOR UPDATE under tenant
-      const { rows: defectRows } = await client.query(
-        `SELECT d.*
-           FROM defects d
-          WHERE d.org_id = $1 AND d.id = $2
-          FOR UPDATE OF d`,
-        [ctx.orgId, defectId],
+      const { defect, targetProjectId } = await this.lockDefectForMutation(
+        client, ctx, projectId, defectId,
       );
-
-      if (!defectRows.length) {
-        throw new NotFoundException({
-          code: 'DEFECT_NOT_FOUND',
-          detail: `Defect ${defectId} not found in project or is already closed.`,
-        });
-      }
-
-      const defect = defectRows[0];
-      const targetProjectId = defect.project_id;
-
-      if (projectId && targetProjectId !== projectId) {
-        throw new ConflictException({
-          code: 'DEFECT_PROJECT_MISMATCH',
-          detail: `Defect ${defectId} does not belong to project ${projectId}.`,
-        });
-      }
 
       if (defect.status === 'CLOSED') {
         throw new ConflictException({
