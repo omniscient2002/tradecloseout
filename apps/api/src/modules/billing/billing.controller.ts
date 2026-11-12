@@ -123,7 +123,8 @@ export class BillingController {
 
   @Get('projects/:id/commercial-readiness')
   @UseGuards(SessionCsrfGuard, PermissionGuard)
-  @RequirePermission('document.read')
+  // Contains contract and retention money: document.read is not finance access.
+  @RequirePermission('contract.manage')
   async getCommercialReadiness(@Req() req: any, @Param('id') projectId: string) {
     return this.warrantyAndBillingService.getCommercialReadiness(req.userContext, projectId);
   }
