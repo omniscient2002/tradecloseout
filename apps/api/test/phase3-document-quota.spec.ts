@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { uuidv7 } from 'uuidv7';
 import { DocumentsService } from '../src/modules/documents/documents.service';
 import { withDisposableDatabase } from '../../../packages/db/test/helpers/disposable-database';
@@ -51,12 +51,37 @@ describe('PH3-G09-001: typed document quota arithmetic on restricted PostgreSQL'
       };
 
       expect(await readCounter()).toBe(1024n);
+      // The same row locks must refuse destructive edits of a closed project.
+      await admin.query(
+        `UPDATE projects SET status = 'CLOSED', closed_at = now()
+          WHERE org_id = $1 AND id = $2`,
+        [orgId, projectId],
+      );
+      await expect(service.deleteDocument(ctx, documentId)).rejects.toThrow(ConflictException);
+      expect(await readCounter()).toBe(1024n);
+      await admin.query(
+        `UPDATE projects SET status = 'ACTIVE', closed_at = NULL
+          WHERE org_id = $1 AND id = $2`,
+        [orgId, projectId],
+      );
       const deleted = await service.deleteDocument(ctx, documentId);
       expect(deleted.deleted).toBe(true);
       expect(await readCounter()).toBe(0n);
       await expect(service.deleteDocument(ctx, documentId)).rejects.toThrow(NotFoundException);
       expect(await readCounter()).toBe(0n);
 
+      await admin.query(
+        `UPDATE projects SET status = 'CLOSED', closed_at = now()
+          WHERE org_id = $1 AND id = $2`,
+        [orgId, projectId],
+      );
+      await expect(service.restoreDocument(ctx, documentId)).rejects.toThrow(ConflictException);
+      expect(await readCounter()).toBe(0n);
+      await admin.query(
+        `UPDATE projects SET status = 'ACTIVE', closed_at = NULL
+          WHERE org_id = $1 AND id = $2`,
+        [orgId, projectId],
+      );
       const restored = await service.restoreDocument(ctx, documentId);
       expect(restored.restored).toBe(true);
       expect(await readCounter()).toBe(1024n);
