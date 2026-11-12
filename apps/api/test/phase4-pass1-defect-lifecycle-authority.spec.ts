@@ -137,6 +137,15 @@ describe('PH4-G17-003/G17-004 Pass 1 project lifecycle and current defect author
     expect(calls.some(q => q.sql.includes('UPDATE defects'))).toBe(false);
   });
 
+  it('does not let an unassigned Site contributor seize any closeout remedy', async () => {
+    const {service, calls} = fixture({assignee: null});
+    await expect(service.submitDefectRemedy(
+      {...base(reviewerId), orgRole: 'R-SITE', projectRole: 'R-SITE'},
+      projectId, defectId, objectId, 1,
+    )).rejects.toMatchObject({response: {code: 'DEFECT_ASSIGNMENT_REQUIRED'}});
+    expect(calls.some(q => q.sql.includes('UPDATE defects'))).toBe(false);
+  });
+
   it('denies member remedy for narrowed asset, category and READ_ONLY resource scopes', async () => {
     for (const projectScope of [
       {assetIds: [randomUUID()]},
