@@ -176,6 +176,7 @@ export class WorkItemsService {
                p.code AS project_code,
                p.name AS project_name,
                dv.created_at AS created_at,
+               rv.due_at AS due_at,
                'REVIEW_PENDING' AS type,
                'HIGH' AS priority,
                'Awaiting submittal review decision' AS waiting_on,
@@ -186,10 +187,17 @@ export class WorkItemsService {
           FROM document_versions dv
           JOIN documents d ON d.id = dv.document_id AND d.org_id = dv.org_id
           JOIN projects p ON p.id = dv.project_id AND p.org_id = dv.org_id
+          JOIN access ap ON ap.project_id = p.id AND ap.can_review
+          JOIN reviews rv ON rv.org_id = dv.org_id AND rv.project_id = dv.project_id
+            AND rv.document_version_id = dv.id AND rv.reviewer_subject_type = 'USER'
+            AND rv.reviewer_subject_id = $2 AND (rv.reviewer_user_id IS NULL OR rv.reviewer_user_id = $2)
+            AND rv.status IN ('PENDING','IN_REVIEW')
          WHERE dv.org_id = $1
            AND dv.file_status = 'READY'
            AND dv.review_status = 'IN_REVIEW'
-           AND dv.deleted_at IS NULL
+           AND dv.deleted_at IS NULL AND dv.superseded_at IS NULL
+           AND d.status = 'ACTIVE' AND d.deleted_at IS NULL
+           ${documentVisible}
            ${scopeClause}
            ${projectFilterClause}
       `;
@@ -197,12 +205,13 @@ export class WorkItemsService {
       // 2. Pending Mandatory Waivers needing Countersign
       const waiversSql = `
         SELECT w.id AS entity_id,
-               1 AS entity_version,
+               NULL::integer AS entity_version,
                COALESCE(w.reason, 'Mandatory requirement waiver pending PMC countersignature') AS title,
                p.id AS project_id,
                p.code AS project_code,
                p.name AS project_name,
                w.created_at AS created_at,
+               r.due_at AS due_at,
                'WAIVER_PENDING_COUNTERSIGN' AS type,
                'CRITICAL' AS priority,
                'Awaiting PMC second approval / countersign' AS waiting_on,
@@ -213,10 +222,16 @@ export class WorkItemsService {
           FROM waivers w
           JOIN requirements r ON r.id = w.requirement_id AND r.org_id = w.org_id
           JOIN projects p ON p.id = w.project_id AND p.org_id = w.org_id
+          JOIN access ap ON ap.project_id = p.id AND ap.can_waiver
+          LEFT JOIN assets a ON a.org_id = r.org_id AND a.project_id = r.project_id
+            AND a.id = r.asset_id AND a.deleted_at IS NULL
          WHERE w.org_id = $1
-           AND w.status IN ('PENDING', 'PENDING_SECOND_APPROVAL')
+           AND w.status = 'PENDING_SECOND_APPROVAL'
+           AND w.approved_by <> $2 AND w.requested_by <> $2
            AND r.mandatory = true
-           AND w.second_approved_by IS NULL
+           AND w.second_approved_by IS NULL AND r.superseded_at IS NULL
+           ${requirementVisible('r')}
+           ${assetVisible('a')}
            ${scopeClause}
            ${projectFilterClause}
       `;
@@ -230,6 +245,7 @@ export class WorkItemsService {
                p.code AS project_code,
                p.name AS project_name,
                d.raised_at AS created_at,
+               d.due_at AS due_at,
                'DEFECT_ACTION' AS type,
                CASE WHEN d.severity IN ('CRITICAL', 'HIGH') THEN 'CRITICAL'
                     WHEN d.severity = 'MAJOR' THEN 'HIGH'
@@ -244,8 +260,23 @@ export class WorkItemsService {
                CASE WHEN d.status = 'OPEN' THEN 'SUBMIT_REMEDY' ELSE 'VERIFY_CLOSE' END AS next_action
           FROM defects d
           JOIN projects p ON p.id = d.project_id AND p.org_id = d.org_id
+          JOIN access ap ON ap.project_id = p.id AND ap.can_defect
+          LEFT JOIN assets a ON a.org_id = d.org_id AND a.project_id = d.project_id
+            AND a.id = d.asset_id AND a.deleted_at IS NULL
+          LEFT JOIN requirements r ON r.org_id = d.org_id AND r.project_id = d.project_id
+            AND r.id = d.requirement_id AND r.superseded_at IS NULL
          WHERE d.org_id = $1
            AND d.status IN ('OPEN', 'RECTIFIED')
+           AND (d.status <> 'OPEN' OR d.assigned_user_id = $2 OR ap.is_manager)
+           AND (d.status <> 'RECTIFIED' OR
+             (d.assigned_user_id IS DISTINCT FROM $2 AND d.remedied_by IS DISTINCT FROM $2))
+           AND (NOT (ap.scope ? 'requirementIds') OR
+             (r.id IS NOT NULL AND (ap.scope->'requirementIds' ? r.id::text)))
+           AND (NOT (ap.scope ? 'requirementGroups') OR
+             (r.id IS NOT NULL AND (ap.scope->'requirementGroups' ? r.group_key)))
+           AND (NOT (ap.scope ? 'documentTypes') OR
+             (r.id IS NOT NULL AND (ap.scope->'documentTypes' ? r.doc_type_key)))
+           ${assetVisible('a')}
            ${scopeClause}
            ${projectFilterClause}
       `;
@@ -259,6 +290,7 @@ export class WorkItemsService {
                p.code AS project_code,
                p.name AS project_name,
                er.created_at AS created_at,
+               NULL::timestamptz AS due_at,
                'EVIDENCE_REVALIDATION_DUE' AS type,
                'HIGH' AS priority,
                'Awaiting field serial verification' AS waiting_on,
@@ -269,8 +301,13 @@ export class WorkItemsService {
           FROM evidence_revalidations er
           JOIN assets a ON a.id = er.asset_id AND a.org_id = er.org_id
           JOIN projects p ON p.id = er.project_id AND p.org_id = er.org_id
+          JOIN access ap ON ap.project_id = p.id AND ap.can_revalidate
+          LEFT JOIN document_versions dv ON dv.org_id = er.org_id
+             AND dv.project_id = er.project_id AND dv.id = er.document_version_id
          WHERE er.org_id = $1
-           AND er.status = 'PENDING'
+           AND er.status = 'PENDING' AND a.deleted_at IS NULL
+           AND dv.uploaded_by IS DISTINCT FROM $2
+           ${assetVisible('a')}
            ${scopeClause}
            ${projectFilterClause}
       `;
@@ -278,12 +315,13 @@ export class WorkItemsService {
       // 5. Supplier Document Obligations Pending Intake
       const obligationsSql = `
         SELECT sdo.id AS entity_id,
-               1 AS entity_version,
+               sdo.row_version AS entity_version,
                sdo.title AS title,
                p.id AS project_id,
                p.code AS project_code,
                p.name AS project_name,
                sdo.created_at AS created_at,
+               sdo.due_date::timestamptz AS due_at,
                'SUPPLIER_OBLIGATION_PENDING' AS type,
                'MEDIUM' AS priority,
                'Awaiting contractor intake verification' AS waiting_on,
@@ -293,8 +331,22 @@ export class WorkItemsService {
                'INTAKE_OBLIGATION' AS next_action
           FROM supplier_document_obligations sdo
           JOIN projects p ON p.id = sdo.project_id AND p.org_id = sdo.org_id
+          JOIN access ap ON ap.project_id = p.id AND ap.can_intake
+          JOIN procurement_order_lines pol ON pol.org_id = sdo.org_id
+            AND pol.project_id = sdo.project_id AND pol.id = sdo.po_line_id
+          LEFT JOIN assets a ON a.org_id = pol.org_id AND a.project_id = pol.project_id
+            AND a.id = pol.asset_id AND a.deleted_at IS NULL
+          LEFT JOIN requirements r ON r.org_id = sdo.org_id AND r.project_id = sdo.project_id
+            AND r.id = sdo.requirement_id AND r.superseded_at IS NULL
          WHERE sdo.org_id = $1
            AND sdo.status = 'UPLOADED'
+           AND (NOT (ap.scope ? 'requirementIds') OR
+             (r.id IS NOT NULL AND (ap.scope->'requirementIds' ? r.id::text)))
+           AND (NOT (ap.scope ? 'requirementGroups') OR
+             (r.id IS NOT NULL AND (ap.scope->'requirementGroups' ? r.group_key)))
+           AND (NOT (ap.scope ? 'documentTypes') OR
+             (ap.scope->'documentTypes' ? sdo.doc_type_key))
+           ${assetVisible('a')}
            ${scopeClause}
            ${projectFilterClause}
       `;
