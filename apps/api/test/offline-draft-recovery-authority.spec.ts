@@ -1,7 +1,7 @@
 import { DocumentsService } from '../src/modules/documents/documents.service';
 
 function makeService(rows: unknown[]) {
-  const query = jest.fn(async () => ({ rows }));
+  const query = jest.fn(async (_sql: string, _params?: unknown[]) => ({ rows }));
   const service = Object.create(DocumentsService.prototype) as DocumentsService;
   (service as any).db = {
     withTenantContext: async (_ctx: unknown, action: (client: unknown) => Promise<unknown>) =>
