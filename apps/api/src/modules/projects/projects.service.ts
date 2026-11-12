@@ -966,8 +966,6 @@ export class ProjectsService {
       throw new UnprocessableEntityException({ code: 'INVALID_PROJECT_MEMBER' });
     }
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
-      await this.lockEditableCommercialProject(client, ctx.orgId, projectId);
-
       // PH2-G05-004: read the *current* tenant membership and user status.
       // An arbitrary UUID, suspended member or external guest cannot become
       // an ACTIVE project member merely by referencing an ID.
@@ -985,6 +983,9 @@ export class ProjectsService {
       if (!['R-OWNER','R-ADMIN'].includes(orgRole) && dto.role !== orgRole) {
         throw new UnprocessableEntityException({ code: 'PROJECT_ROLE_EXCEEDS_MEMBERSHIP' });
       }
+      // Match org offboarding's membership-then-project lock ordering. The
+      // FOR SHARE locks above preserve eligibility while awaiting the project.
+      await this.lockEditableCommercialProject(client, ctx.orgId, projectId);
 
       const { rows: existing } = await client.query(
         `SELECT id,role,status FROM project_members
