@@ -36,6 +36,18 @@ describe('PH1-G01-004 / PH1-G26-004: session eligibility inside real tenant tran
       });
       await expect(permitted()).resolves.toBe(1);
       expect(entered).toBe(1);
+      // Positive domain transaction: the fence must not block a legitimate
+      // actor whose session and current membership are still eligible.
+      await expect(withTenantTransaction(app, {
+        ...ctx, actorType: 'MEMBER', ip: '127.0.0.1', userAgent: 'test',
+      }, async () => 42)).resolves.toBe(42);
+
+      await expect(service.withTenantContext({
+        ...ctx, sessionId: randomUUID(),
+      }, async () => {
+        entered += 1;
+      })).rejects.toThrow('AUTH_SESSION_CONTEXT_CHANGED');
+      expect(entered).toBe(1);
 
       await admin.query(
         "UPDATE memberships SET status='SUSPENDED' WHERE org_id=$1 AND user_id=$2",
@@ -172,6 +184,10 @@ describe('PH1-G01-004 / PH1-G26-004: session eligibility inside real tenant tran
       };
       await expect(service.withTenantContext(ctx, async () => 'guest-authorized'))
         .resolves.toBe('guest-authorized');
+      await expect(service.withTenantContext({
+        ...ctx, guestGrantId: randomUUID(),
+      }, async () => 'must-not-run'))
+        .rejects.toThrow('AUTH_SESSION_CONTEXT_CHANGED');
       await admin.query("UPDATE guest_grants SET status='REVOKED' WHERE id=$1", [grantId]);
       await expect(service.withTenantContext(ctx, async () => 'guest-authorized'))
         .rejects.toThrow('AUTH_SESSION_CONTEXT_CHANGED');
