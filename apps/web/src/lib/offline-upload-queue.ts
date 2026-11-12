@@ -9,6 +9,8 @@ export interface OfflineQueuedUpload {
   actorEpoch?: string;
   projectId: string;
   requirementId: string;
+  /** Captured canonical obligation version; absence forbids old-session rebind. */
+  requirementRowVersion?: number;
   assetId: string | null;
   filename: string;
   mimeType: string;
@@ -357,11 +359,17 @@ export async function recoverOfflineUploadDraft(queueId: string): Promise<void> 
       }
       assertSameActorIdentity(item);
 
+      if (!Number.isSafeInteger(item.requirementRowVersion) ||
+          (item.requirementRowVersion as number) < 1) {
+        throw new Error('UPLOAD_DRAFT_MISSING_BASELINE_REVISION');
+      }
+      const capturedVersion = item.requirementRowVersion as number;
       const response = await apiFetch<{
-        projectId: string; requirementId: string; allowed: boolean;
-      }>(`/api/v1/projects/${encodeURIComponent(item.projectId)}/documents/recover-upload-authority/${encodeURIComponent(item.requirementId)}`);
+        projectId: string; requirementId: string; rowVersion: number; allowed: boolean;
+      }>(`/api/v1/projects/${encodeURIComponent(item.projectId)}/documents/recover-upload-authority/${encodeURIComponent(item.requirementId)}?rowVersion=${capturedVersion}`);
       if (!response?.allowed || response.projectId !== item.projectId ||
-          response.requirementId !== item.requirementId) {
+          response.requirementId !== item.requirementId ||
+          response.rowVersion !== capturedVersion) {
         throw new Error('UPLOAD_RECOVERY_AUTHORITY_MISMATCH');
       }
       assertSameActorIdentity(item);
@@ -477,6 +485,7 @@ export async function enqueueFieldUpload(params: {
   actorPartition?: string;
   projectId: string;
   requirementId: string;
+  requirementRowVersion?: number;
   assetId?: string | null;
   file: File;
   revisionCode: string;
@@ -505,6 +514,7 @@ export async function enqueueFieldUpload(params: {
     actorEpoch,
     projectId: params.projectId,
     requirementId: params.requirementId,
+    requirementRowVersion: params.requirementRowVersion,
     assetId: params.assetId ?? null,
     filename: originalFile.name,
     mimeType: originalFile.type || 'application/octet-stream',
