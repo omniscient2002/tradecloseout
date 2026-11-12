@@ -1,6 +1,7 @@
 import {attachSyntheticEntitlementPolicy} from '../../../packages/db/test/helpers/synthetic-entitlement-policy';
 // apps/api/test/contractor-user-journey.spec.ts
-// End-to-End Application User Journey: Upload -> Scan -> Review -> Package -> Recipient Acceptance
+// Service integration journey with programmable storage/scanner fixtures.
+// This does not certify real providers, engineering approval or a browser journey.
 // (Guide §22 E2E-01 & E2E-03, TC-DOC, TC-REV, TC-PKG, TC-SEC)
 
 import { Pool } from 'pg';
@@ -30,10 +31,10 @@ async function generateSamplePdf(title: string, pages = 2): Promise<Buffer> {
   return Buffer.from(await doc.save());
 }
 
-describe('Complete Application User Journey & Real Storage/Scanner Integration (E2E-01 & E2E-03)', () => {
-  it('executes full journey: upload -> real scan -> review -> package -> recipient acceptance with ClamAV and versioned S3', async () => {
+describe('Actual service journey with programmable storage/scanner fixtures (E2E-01 & E2E-03 references)', () => {
+  it('executes upload -> fixture scan -> review -> generated package -> fixture recipient decision', async () => {
     await withDisposableDatabase(async ({ admin, app }) => {
-      // 1. Start real programmable services
+      // 1. Start programmable HTTP/wire-protocol fixture servers
       const storage = await storageServer();
       const clamav = await createClamAvServer();
 

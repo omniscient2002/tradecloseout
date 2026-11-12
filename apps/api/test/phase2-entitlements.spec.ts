@@ -17,6 +17,12 @@ describe('PH2 G18 effective entitlements',()=>{
   [{current_period_end:now},'EXPIRED',false], [{current_period_start:'2026-11-13'},'PERIOD_NOT_STARTED',false],
   [{cancel_at:now},'CANCELLED',false], [{org_status:'SUSPENDED'},'ORGANISATION_INACTIVE',false],
  ] as const)('evaluates status and exact temporal boundary %#',(p,state,can)=>{const e=evaluateEntitlements(row(p),now);expect(e.effectiveState).toBe(state);expect(e.canConsume).toBe(can);expect(e.limits).toEqual(can?limits:{maxSeats:0,maxActiveProjects:0,maxStorageBytes:0,maxPackageGenerationsPerMonth:0});});
+ test.each([{snapshot_version:0},{snapshot_version:null},{price_snapshot_paise:null},{price_snapshot_paise:'-1'},{plan_code_snapshot:''}])('denies incomplete pinned offer facts %#',p=>{
+  const effective=evaluateEntitlements(row(p),now);expect(effective.canConsume).toBe(false);expect(effective.effectiveState).toBe('PLAN_CONFIGURATION_INVALID');expect(effective.limits.maxSeats).toBe(0);
+ });
+ test('does not treat a nonfinite stored cancellation date as no cancellation',()=>{
+  expect(evaluateEntitlements(row({cancel_at:'infinity'}),now).canConsume).toBe(false);
+ });
  test('pinning, publication immutability, RLS and final-seat serialization use actual PostgreSQL',async()=>{
   await withDisposableDatabase(async({admin,app})=>{
    const org=randomUUID(),otherOrg=randomUUID(),plan=randomUUID(),policy=randomUUID();

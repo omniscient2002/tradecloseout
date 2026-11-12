@@ -57,3 +57,12 @@ Inherited mandatory obligations cannot be removed or made optional by a child la
 Resolution records per-item/per-field origins and removal tombstones alongside the existing field winners. A no-op/failed child patch cannot take provenance credit, and conflicts identify the protecting item's actual level. These extra origins still require persistence and usable preview in Pass5/11. Parser tests do not certify persisted layer identity or an HVAC mapping.
 
 Targeted checks passed51 across3 suites, including existing real checklist/readiness/isolated database regressions. Typecheck passed. Original findings remain OPEN; exact-head CI and independent acceptance remain required.
+
+
+## Pass 3 continuation — compiler artifact reservation
+
+The actual package compiler now reserves its known output bytes before any provider PUT. Unchanged unpublished retries reuse their reservation; a changed build retains an aborted object with unconfirmed cleanup state. Publication checks the current project, effective entitlement, storage occupancy, build owner and exact reservation before recording immutable verified version identity. Existing READY replay performs no extra upload. The separate `build_object_id` has a same-organisation composite foreign key and cannot be mistaken for the published PDF pointer. Uncertain transaction rollback destroys the affected pooled connection.
+
+The real compiler/PG test verifies denial before PUT, a successful reserved publication, stored SHA/version equality, replay and lost-owner rejection through a programmable S3 server. The existing service integration journey still passes with generated artifacts; its misleading real-provider/scanner wording is now explicitly labelled fixture-based. The40-test final boundary run includes6 quota/recovery database cases and the compiler case, plus entitlement-state checks; these overlap earlier runs and are not summed. Typecheck/build passed. Nonfinite cancellation dates and incomplete snapshot facts also fail closed. No provider, scanner or HVAC business acceptance is implied.
+
+The earlier b187d41 checkpoint passed full exact-head GitHub application/protocol CI. The latest artifact/configuration continuation needs its own exact-head CI. Distinct build-attempt leases and abandoned-lease recovery remain tracked in Pass10; physical provider cleanup remains unconfirmed and scheduled for final provider integration. Authorized existing record reads/exports remain distinct from new billable package creation.

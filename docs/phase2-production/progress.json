@@ -25,8 +25,14 @@
     {
       "number": 3,
       "work": "Atomic quota enforcement and recovery",
-      "state": "IN_PROGRESS",
-      "notes": "Canonical object accounting; restore and scan/upload lock order; final-seat production OTP rollback/retry; RA package route now shares monthly and lifecycle gates. Full regression and exact-head CI pending; physical provider cleanup still requires integration acceptance."
+      "state": "LOCAL_CHECKS_PASSED_CI_PENDING",
+      "notes": "Expanded canonical storage reservation to actual compiler artifacts before provider PUT, with unpublished retry reuse, stale-owner rejection, quota downgrade checks and independently verified bytes in programmable S3 fixture. Exact new-head CI pending; full provider cleanup/lease recovery and new lifecycle/reactivation features remain in their respective passes.",
+      "verifiedCheckpoints": [
+        {
+          "sha": "b187d41d31adec392dbb08f7e3a5da0581c8a385",
+          "ci": "https://github.com/omniscient2002/tradecloseout/actions/runs/43227078567"
+        }
+      ]
     },
     {
       "number": 4,
@@ -610,6 +616,13 @@
       "state": "CANDIDATE_FIX_TESTED",
       "evidenceLevel": "TARGETED_POSTGRESQL",
       "notes": "Both package routes share project and capacity gates; RA route requires transport idempotency. Tests deny absent/zero/month-exhausted/closed cases and verify failed creation rolls back reservation."
+    },
+    {
+      "id": "PH2-NEW-007",
+      "title": "Package build owners need distinct attempt fencing and abandoned-lease recovery",
+      "state": "OPEN",
+      "evidenceLevel": "SOURCE_CONFIRMED_RISK",
+      "notes": "Current owner derives from job id; distinct worker attempts can share it. Package READY compare-and-set prevents stale second publication, but attempt/recovery lifecycle still needs hardening in Pass10."
     }
   ],
   "candidateWork": [
@@ -631,7 +644,7 @@
     {
       "id": "PH2-G18-003",
       "state": "PARTIAL_TESTED",
-      "notes": "PROCESSING keeps capacity reserved; duplicate document quota SQL repaired. Full expiration/restore/provider settlement remains open."
+      "notes": "Canonical object accounting and mutex across uploads, scan finalization, restore and generated package artifacts. Retained expiry tombstones and explicit unconfirmed physical cleanup. Actual compiler/PG/programmable SDK checks passed; real provider settlement remains external."
     },
     {
       "id": "PH2-G18-009",

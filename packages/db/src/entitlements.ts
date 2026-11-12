@@ -44,15 +44,20 @@ export function evaluateEntitlements(row: EntitlementRecord, now:Date=new Date()
   else if(!row.policy_version||row.policy_status!=='APPROVED'||!row.policy_approved_at||!Number.isFinite(new Date(row.policy_approved_at).getTime())||new Date(row.policy_approved_at).getTime()>now.getTime())reason='BILLING_POLICY_UNAPPROVED';
   else if(row.interval_snapshot==='ONE_TIME_PROJECT')reason='PROJECT_OFFER_SCOPE_NOT_CONFIGURED';
   else if(!['MONTH','YEAR','MONTHLY','ANNUAL'].includes(row.interval_snapshot||''))reason='PLAN_CONFIGURATION_INVALID';
-  else if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start)reason='PERIOD_INVALID';
+  else if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start||(row.cancel_at!==null&&!Number.isFinite(cancel)))reason='PERIOD_INVALID';
   else if(start>now.getTime())reason='PERIOD_NOT_STARTED';
   else if(cancel<=now.getTime())reason='CANCELLED';
   else if(['TRIAL','ACTIVE'].includes(row.status||'')&&end>now.getTime())reason=row.status!;
   else if(row.status==='PAST_DUE'&&Number.isSafeInteger(row.policy_grace_seconds)&&Number(row.policy_grace_seconds)>0&&Number.isFinite(grace)&&grace>now.getTime()&&grace>=end&&grace<=end+Number(row.policy_grace_seconds)*1000)reason='PAST_DUE_GRACE';
   else reason=['CANCELLED','SUSPENDED','PAST_DUE'].includes(row.status||'')?row.status!:'EXPIRED';
   let configurationValid=true;
-  try {const parsed=parsePlanLimits(row.limits_snapshot_json);if(['TRIAL','ACTIVE','PAST_DUE_GRACE'].includes(reason))limits=parsed;}
-  catch {configurationValid=false;if(row.id)reason='PLAN_CONFIGURATION_INVALID';}
+  try {
+    const parsed=parsePlanLimits(row.limits_snapshot_json);
+    if(row.id&&(!Number.isSafeInteger(row.snapshot_version)||Number(row.snapshot_version)<1||
+      typeof row.price_snapshot_paise!=='string'||!/^(0|[1-9][0-9]*)$/.test(row.price_snapshot_paise)||
+      typeof row.plan_code_snapshot!=='string'||!row.plan_code_snapshot.trim()))throw new PlanEntitlementError('PLAN_CONFIGURATION_INVALID');
+    if(['TRIAL','ACTIVE','PAST_DUE_GRACE'].includes(reason))limits=parsed;
+  } catch {configurationValid=false;limits={...ZERO_PLAN_LIMITS};if(row.id)reason='PLAN_CONFIGURATION_INVALID';}
   return {subscriptionId:row.id,planId:row.plan_id,planName:row.plan_name,planCode:row.plan_code_snapshot,
     subscriptionStatus:row.status,effectiveState:reason,canConsume:['TRIAL','ACTIVE','PAST_DUE_GRACE'].includes(reason),
     limits,configurationValid,policySchemaVersion:1,policyVersion:row.policy_version||null,snapshotVersion:row.snapshot_version,

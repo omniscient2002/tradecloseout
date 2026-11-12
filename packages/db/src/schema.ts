@@ -1153,6 +1153,7 @@ export const handoverPackages = pgTable(
       .references(() => checklistSnapshots.id),
     snapshotChecksum: text('snapshot_checksum').notNull(), // Required per FR-HND-021 / 08 §8 Rule 17
     overrideReason: text('override_reason'),
+    buildObjectId: uuid('build_object_id').references(() => storageObjects.id),
     pdfObjectId: uuid('pdf_object_id').references(() => storageObjects.id),
     zipObjectId: uuid('zip_object_id').references(() => storageObjects.id),
     manifestObjectId: uuid('manifest_object_id').references(() => storageObjects.id),

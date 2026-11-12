@@ -1,0 +1,9 @@
+PASS test/phase2-package-artifact-publication-db.spec.ts (6.807 s)
+  Phase2 generated artifact admission through the actual compiler
+    ✓ reserves before provider PUT, publishes only a verified reservation, replays once and fences a lost build owner (1858 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       1 passed, 1 total
+Snapshots:   0 total
+Time:        6.879 s, estimated 7 s
+Ran all test suites matching /test\/phase2-package-artifact-publication-db.spec.ts/i.

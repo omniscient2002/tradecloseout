@@ -1,0 +1,9 @@
+PASS test/contractor-user-journey.spec.ts (5.562 s)
+  Actual service journey with programmable storage/scanner fixtures (E2E-01 & E2E-03 references)
+    ✓ executes upload -> fixture scan -> review -> generated package -> fixture recipient decision (1857 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       1 passed, 1 total
+Snapshots:   0 total
+Time:        5.621 s, estimated 12 s
+Ran all test suites matching /test\/contractor-user-journey.spec.ts/i.

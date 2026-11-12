@@ -7,6 +7,7 @@ import { InMemoryRedis } from '../src/modules/identity/identity.module';
 import { DocumentsService } from '../src/modules/documents/documents.service';
 import { TenantDbService } from '../src/database/tenant-db.service';
 import {HandoverService} from '../src/modules/handover/handover.service';
+import {reservePackageArtifact} from '../../worker/src/queues/package-artifact-capacity';
 import {quotaMonthIndia} from '@tradecloseout/shared';
 import {TradeCloseoutScheduler} from '../../worker/src/scheduler';
 
@@ -194,6 +195,33 @@ describe('Phase 2 real quota boundary and recovery transactions',()=>{
         {filename:'guest-quota.pdf',mimeType:'application/pdf',sizeBytes:400,requirementId:requirement})));
       expect(outcomes.map(x=>x.status)).toEqual(['fulfilled','fulfilled']);
       expect((await admin.query("SELECT sum(size_bytes)::text AS n FROM storage_objects WHERE org_id=$1 AND status='PENDING'",[t.orgId])).rows[0].n).toBe('800');
+    });
+  });
+
+  it('reserves generated artifact bytes before provider work and reuses a matching unpublished retry',async()=>{
+    await withDisposableDatabase(async({admin,app})=>{
+      const t=await tenant(admin),limits={maxSeats:1,maxActiveProjects:1,maxStorageBytes:1000,maxPackageGenerationsPerMonth:1};
+      await syntheticOffer(admin,t.orgId,limits);
+      const inputs=[];
+      for(let n=0;n<2;n++) {
+        const id=uuidv7();
+        await admin.query(`INSERT INTO handover_packages(id,org_id,project_id,version_no,status,snapshot_checksum,requested_by,error_code)
+          VALUES($1,$2,$3,$4,'GENERATING','synthetic-quota-only',$5,$6)`,[id,t.orgId,t.projectId,n+1,t.userId,'SYNTHETIC-BUILD-'+n]);
+        inputs.push({orgId:t.orgId,projectId:t.projectId,packageId:id,owner:'SYNTHETIC-BUILD-'+n,
+          bucket:'synthetic-provider-not-integrated',filename:'synthetic-'+n+'.pdf',sizeBytes:600,sha256:'0'.repeat(64)});
+      }
+      const result=await Promise.allSettled(inputs.map(input=>reservePackageArtifact(app,input)));
+      expect(result.filter(x=>x.status==='fulfilled')).toHaveLength(1);
+      const winner=result.findIndex(x=>x.status==='fulfilled');
+      const first=(result[winner] as PromiseFulfilledResult<{id:string;objectKey:string;reused:boolean}>).value;
+      const retried=await reservePackageArtifact(app,inputs[winner]);
+      expect(retried).toEqual({...first,reused:true});
+      expect((await admin.query("SELECT count(*)::int AS n FROM storage_objects WHERE org_id=$1 AND status='PENDING'",[t.orgId])).rows[0].n).toBe(1);
+      expect((await admin.query('SELECT pdf_object_id FROM handover_packages WHERE id=$1',[inputs[winner].packageId])).rows[0].pdf_object_id).toBeNull();
+      await expect(reservePackageArtifact(app,{...inputs[winner],owner:'STALE-BUILD'})).rejects.toThrow('PACKAGE_BUILD_LEASE_LOST');
+      // A reservation is not a license to consume after an explicit downgrade.
+      await syntheticOffer(admin,t.orgId,{...limits,maxStorageBytes:500});
+      await expect(reservePackageArtifact(app,inputs[winner])).rejects.toThrow('STORAGE_QUOTA_EXCEEDED');
     });
   });
 
