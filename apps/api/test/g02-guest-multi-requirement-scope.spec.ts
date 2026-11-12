@@ -64,7 +64,8 @@ describe('PH1-G02-006 — guest version and detail scope (restricted PostgreSQL 
           `INSERT INTO storage_objects
             (id,org_id,bucket,object_key,mime,size_bytes,status,sha256,observed_size_bytes,provider_version_id,s3_upload_id,created_by)
            VALUES ($1,$2,'test-bucket',$3,'application/pdf',1024,$4,$5,$6,$7,$8,$9)`,
-          [objectId, a.orgId, `guest/${versionId}/source`, status,
+          [objectId, a.orgId, `guest/${versionId}/source`,
+            status === 'READY' ? 'READY' : 'PENDING',
             status === 'READY' ? 'b'.repeat(64) : null,
             status === 'READY' ? 1024 : null,
             status === 'READY' ? 'stored-version' : null,
@@ -110,7 +111,7 @@ describe('PH1-G02-006 — guest version and detail scope (restricted PostgreSQL 
         [JSON.stringify({ requirementIds: [allowedRequirementId, otherRequirementId] }), grantId],
       );
       await expect(service.getDocument(ctx, documentId)).resolves.toMatchObject({
-        id: documentId, versions: expect.arrayContaining([{ id: readyVersionId }]),
+        id: documentId, versions: expect.arrayContaining([expect.objectContaining({ id: readyVersionId })]),
       });
       await expect(service.getDownloadUrl(ctx, readyVersionId))
         .resolves.toMatchObject({ downloadUrl: 'https://signed.example.test/file' });
