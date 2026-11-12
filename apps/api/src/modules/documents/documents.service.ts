@@ -554,6 +554,32 @@ export class DocumentsService {
   }
 
   /**
+   * Upload-only issuer view: return just the two authoritative processing
+   * states. A guest must own the version under an active document.upload grant.
+   * This prevents a document.read requirement from blocking scan convergence,
+   * and never marks READY if an incident quarantined the backing object.
+   */
+  async getUploadState(ctx: ExecutionContext, versionId: string) {
+    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+      const { rows } = await client.query(
+        `SELECT dv.id, dv.file_status, so.status AS storage_status
+           FROM document_versions dv
+           JOIN storage_objects so
+             ON so.org_id = dv.org_id AND so.id = dv.object_id
+          WHERE dv.org_id = $1 AND dv.id = $2 AND dv.deleted_at IS NULL`,
+        [ctx.orgId, versionId],
+      );
+      if (rows.length !== 1) throw new NotFoundException('UPLOAD_VERSION_NOT_FOUND');
+      await this.assertGuestVersionScope(client, ctx, versionId, 'document.upload');
+      return {
+        versionId: rows[0].id,
+        fileStatus: rows[0].file_status,
+        storageStatus: rows[0].storage_status,
+      };
+    });
+  }
+
+  /**
    * API-082A POST /document-versions/:id/refresh-upload-urls (RT-012, CB-003 join fix)
    */
   async refreshUploadUrls(ctx: ExecutionContext, versionId: string) {
