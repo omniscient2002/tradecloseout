@@ -12,8 +12,8 @@ interface AuditEventDto {
   entity_id: string;
   actor_name: string | null;
   actor_type: string;
-  prev_hash: string | null;
-  hash: string;
+  prev_hash?: string | null;
+  hash?: string | null;
   created_at: string;
   request_id?: string;
 }
@@ -27,9 +27,22 @@ export default function AuditTrailPage() {
     setLoading(true);
     setError(null);
     try {
-      const data = await apiFetch<any[]>("/api/v1/orgs/current/audit");
-      const list = Array.isArray(data) ? data : (data as any)?.data || [];
-      setEvents(list);
+      const data = await apiFetch<unknown>("/api/v1/orgs/current/audit");
+      const list = Array.isArray(data)
+        ? data
+        : (data && typeof data === "object" && "data" in data ? (data as { data: unknown }).data : null);
+      if (!Array.isArray(list)) {
+        throw new Error("Audit response does not match the expected event list.");
+      }
+      // Metadata-only audit DTOs intentionally omit integrity hashes. Never
+      // infer verification or reintroduce privileged hash material in the UI.
+      setEvents(list.filter((entry): entry is AuditEventDto =>
+        entry !== null && typeof entry === "object" &&
+        typeof entry.id === "string" &&
+        typeof entry.action === "string" &&
+        typeof entry.entity_type === "string" &&
+        typeof entry.created_at === "string"
+      ));
 
     } catch (err: any) {
       setError(err?.message || "Failed to load cryptographic audit log.");
@@ -93,7 +106,7 @@ export default function AuditTrailPage() {
             Latest audit events (up to 100)
           </div>
           <div className="font-mono text-[11px] text-slate-500">
-            Latest event hash (unverified): <span className="font-bold text-slate-800">{events[0]?.hash.slice(0, 16) || "none"}...</span>
+            Latest event hash (not independently verified): <span className="font-bold text-slate-800">{typeof events[0]?.hash === "string" ? `${events[0].hash.slice(0, 16)}...` : "unavailable"}</span>
           </div>
         </div>
 
@@ -128,12 +141,14 @@ export default function AuditTrailPage() {
 
                 <div className="text-left md:text-right space-y-0.5 font-mono text-[11px]">
                   <div className="text-slate-500 font-medium">{formatDateIst(e.created_at)}</div>
-                  <div className="text-slate-500 flex items-center md:justify-end gap-1">
-                    <Hash className="h-3 w-3 text-slate-400" />
-                    <span title={`Full Hash: ${e.hash}`}>{e.hash.slice(0, 24)}...</span>
-                  </div>
-                  {e.prev_hash && (
-                    <div className="text-[10px] text-slate-400" title={`Prev Hash: ${e.prev_hash}`}>
+                  {typeof e.hash === "string" && (
+                    <div className="text-slate-500 flex items-center md:justify-end gap-1">
+                      <Hash className="h-3 w-3 text-slate-400" />
+                      <span title="Unverified audit-event hash">{e.hash.slice(0, 24)}...</span>
+                    </div>
+                  )}
+                  {typeof e.prev_hash === "string" && (
+                    <div className="text-[10px] text-slate-400" title="Unverified previous-event hash">
                       prev: {e.prev_hash.slice(0, 16)}...
                     </div>
                   )}

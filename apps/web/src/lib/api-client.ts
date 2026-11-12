@@ -44,6 +44,23 @@ export function setCsrfToken(token: string | null) {
   }
 }
 
+/**
+ * A session boundary invalidates local upload authority. The encrypted/auth
+ * credential is never put into IndexedDB; the queue only stores a partition
+ * label. Already-blocked drafts need explicit recovery after reauthentication.
+ */
+function clearLocalUploadAuthority(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem('tc_offline_actor_partition');
+    // Even re-login as the same person must not revive an earlier session's
+    // queued writes without explicit current-authority recovery.
+    window.localStorage.setItem('tc_offline_actor_epoch', crypto.randomUUID());
+  } catch {
+    // The caller still receives the authoritative authentication result.
+  }
+}
+
 export async function apiFetch<T>(
   path: string,
   options: RequestInit & { rowVersion?: number; idempotencyKey?: string } = {},
@@ -79,12 +96,19 @@ export async function apiFetch<T>(
     credentials: 'include',
   });
 
+  const authBoundary = method === 'POST' && [
+    '/api/v1/auth/otp/verify',
+    '/api/v1/auth/logout',
+    '/api/v1/auth/switch-org',
+  ].includes(path.split('?')[0]);
   if (res.status === 204) {
+    if (authBoundary) clearLocalUploadAuthority();
     return undefined as unknown as T;
   }
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
+    if (res.status === 401) clearLocalUploadAuthority();
     if (
       res.status === 401 &&
       typeof window !== 'undefined' &&
@@ -93,9 +117,21 @@ export async function apiFetch<T>(
     ) {
       window.location.href = '/login';
     }
-    throw new ApiProblemError(data);
+    // HTTP status is authoritative even when the server sends an incomplete
+    // Problem+JSON envelope; this matters for offline actor/permission fences.
+    const problem = data && typeof data === 'object' && !Array.isArray(data)
+      ? data as Record<string, unknown> : {};
+    throw new ApiProblemError({
+      title: typeof problem.title === 'string' ? problem.title : undefined,
+      detail: typeof problem.detail === 'string' ? problem.detail : undefined,
+      code: typeof problem.code === 'string' ? problem.code : undefined,
+      requestId: typeof problem.requestId === 'string' ? problem.requestId : undefined,
+      fieldErrors: Array.isArray(problem.fieldErrors) ? problem.fieldErrors : undefined,
+      status: res.status,
+    });
   }
 
+  if (authBoundary) clearLocalUploadAuthority();
   return data as T;
 }
 

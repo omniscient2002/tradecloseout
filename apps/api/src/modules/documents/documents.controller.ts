@@ -51,6 +51,24 @@ export class DocumentsController {
     return this.documentsService.getDocument(req.userContext, id);
   }
 
+  /**
+   * Explicit member-only authority check before rebinding a browser-local
+   * original from a previous session generation. This does not create an
+   * upload intent or grant access to any document bytes.
+   */
+  @Get('projects/:projectId/documents/recover-upload-authority/:requirementId')
+  @RequirePermission('document.upload')
+  async validateDraftRecoveryAuthority(
+    @Req() req: any,
+    @Param('projectId') projectId: string,
+    @Param('requirementId') requirementId: string,
+    @Query('rowVersion') rowVersion: string,
+  ) {
+    return this.documentsService.validateDraftRecoveryAuthority(
+      req.userContext, projectId, requirementId, Number(rowVersion),
+    );
+  }
+
   @Post(['projects/:projectId/documents/upload-intents', 'projects/:projectId/upload-intents'])
   @RequirePermission('document.upload')
   @RequireIdempotency()
@@ -60,6 +78,16 @@ export class DocumentsController {
     @Body() dto: CreateUploadIntentDto,
   ) {
     return this.documentsService.createUploadIntent(req.userContext, projectId, dto);
+  }
+
+  /**
+   * Minimal issuer-scoped progress for upload-only guests. Never require
+   * document.read to inspect the status of the version this grant uploaded.
+   */
+  @Get('document-versions/:id/upload-state')
+  @RequirePermission('document.upload')
+  async getUploadState(@Req() req: any, @Param('id') id: string) {
+    return this.documentsService.getUploadState(req.userContext, id);
   }
 
   @Post('document-versions/:id/refresh-upload-urls')

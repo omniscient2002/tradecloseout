@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
@@ -45,66 +45,22 @@ import { RequestWaiverModal } from "@/components/modals/request-waiver-modal";
 import { AddRequirementModal } from "@/components/modals/add-requirement-modal";
 import { ExternalApprovalModal } from "@/components/modals/external-approval-modal";
 import { apiFetch, ApiProblemError } from "@/lib/api-client";
+import { downloadCsv } from "@/lib/csv-export";
+import { getMemberOfflineActorPartition, setOfflineActorPartition } from "@/lib/offline-upload-queue";
+import { parseProjectRequirementResponse, type ProjectRequirementRow, type RequirementStatus } from "@/lib/project-requirements";
+import { formatInrPaiseExact } from "@/lib/format-money";
+import { requireApiList } from "@/lib/api-list";
+import { parseProjectSummaryResponse, type ProjectSummaryDto } from "@/lib/project-summary";
 
 /* -------------------------------------------------------------------------- */
 /* TYPES & CONSTANTS                                                          */
 /* -------------------------------------------------------------------------- */
 
-export type RequirementStatus =
-  | "NOT_STARTED"
-  | "REQUESTED"
-  | "UPLOADED"
-  | "IN_REVIEW"
-  | "CHANGES_REQUESTED"
-  | "REJECTED"
-  | "APPROVED"
-  | "APPROVED_EXTERNAL"
-  | "PENDING_WAIVER"
-  | "WAIVED"
-  | "NOT_APPLICABLE"
-  | "EXPIRED"
-  | "MISSING"
-  | "HANDED_OVER";
+export type { RequirementStatus } from "@/lib/project-requirements";
 
-export interface ProjectSummaryDto {
-  id: string;
-  code: string;
-  name: string;
-  status: "DRAFT" | "ACTIVE" | "SUSPENDED" | "HANDOVER" | "CLOSED" | "CANCELLED" | "ARCHIVED";
-  clientName: string | null;
-  targetHandoverDate: string | null;
-  retentionAtRiskPaise: string;
-  contractValuePaise?: string;
-  counts: {
-    applicableTotal: number;
-    approvedCount: number;
-    approvedExternalCount: number;
-    waivedCount: number;
-    inReviewCount: number;
-    missingOrExpiredCount: number;
-    expiringSoonCount: number;
-  };
-  rowVersion: number;
-}
+export type { ProjectSummaryDto } from "@/lib/project-summary";
 
-export interface RequirementItemDto {
-  id: string;
-  requirementKey: string;
-  groupKey: string;
-  title: string;
-  docTypeKey: string;
-  mandatory: boolean;
-  milestoneKey: string;
-  assetTag: string | null;
-  status: RequirementStatus;
-  ownerName: string | null;
-  reviewerRole: string | null;
-  dueAt: string | null;
-  revisionCode: string | null;
-  latestVersionId: string | null;
-  waiverId?: string | null;
-  rowVersion: number;
-}
+export interface RequirementItemDto extends ProjectRequirementRow {}
 
 const STATUS_BADGE_MAP: Record<
   RequirementStatus,
@@ -129,6 +85,11 @@ const STATUS_BADGE_MAP: Record<
     label: "Waiting for review",
     className: "bg-amber-50 border-amber-300 text-amber-900",
     icon: Clock,
+  },
+  UNDER_REVIEW: {
+    label: "Under review",
+    className: "bg-amber-50 border-amber-300 text-amber-900",
+    icon: Eye,
   },
   CHANGES_REQUESTED: {
     label: "Changes requested",
@@ -180,15 +141,15 @@ const STATUS_BADGE_MAP: Record<
     className: "bg-teal-50 border-teal-300 text-teal-900",
     icon: PackageCheck,
   },
+  SUPERSEDED: {
+    label: "Superseded (historical)",
+    className: "bg-slate-50 border-slate-300 text-slate-500",
+    icon: MinusCircle,
+  },
 };
 
 function formatInrPaise(paiseStr: string): string {
-  const rupees = Number(BigInt(paiseStr || "0")) / 100;
-  return new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 0,
-  }).format(rupees);
+  return formatInrPaiseExact(paiseStr);
 }
 
 function formatDateIst(isoDate: string | null): string {
@@ -241,9 +202,18 @@ export default function ProjectWorkspacePage() {
   const [loadingReviews, setLoadingReviews] = useState(false);
   const [packages, setPackages] = useState<any[]>([]);
   const [loadingPackages, setLoadingPackages] = useState(false);
+  const [errorAssets, setErrorAssets] = useState<string | null>(null);
+  const [errorReviews, setErrorReviews] = useState<string | null>(null);
+  const [errorPackages, setErrorPackages] = useState<string | null>(null);
+  const requestGeneration = useRef({ summary: 0, reqs: 0, assets: 0, reviews: 0, packages: 0 });
+  const viewedProjectRef = useRef(projectId);
+  viewedProjectRef.current = projectId;
   const [warranties, setWarranties] = useState<any[]>([]);
   const [defects, setDefects] = useState<any[]>([]);
   const [loadingWarranties, setLoadingWarranties] = useState(false);
+  const [warrantyLoadError, setWarrantyLoadError] = useState<string | null>(null);
+  const [defectsLoadError, setDefectsLoadError] = useState<string | null>(null);
+  const warrantyRequestGeneration = useRef(0);
 
   // Filter & Modals State
   const [statusFilter, setStatusFilter] = useState<string>("");
@@ -281,8 +251,22 @@ export default function ProjectWorkspacePage() {
   // Detect connectivity
   useEffect(() => {
     apiFetch<any>("/api/v1/auth/me")
-      .then((u: any) => u && setCurrentUser(u))
-      .catch(() => {});
+      .then((user: any) => {
+        if (!user?.userId || !user?.activeOrgId) {
+          setCurrentUser(null);
+          setOfflineActorPartition(null);
+          return;
+        }
+        setCurrentUser(user);
+        // Actor and tenant come from the authenticated server session, not
+        // a form field or stale browser preference. An org change re-partitions
+        // queued drafts rather than replaying them under another authority.
+        setOfflineActorPartition(getMemberOfflineActorPartition(user.userId, user.activeOrgId));
+      })
+      .catch(() => {
+        setCurrentUser(null);
+        setOfflineActorPartition(null);
+      });
 
     const onOnline = () => setIsOffline(false);
     const onOffline = () => setIsOffline(true);
@@ -297,25 +281,33 @@ export default function ProjectWorkspacePage() {
 
   const fetchProjectSummary = useCallback(async () => {
     if (!projectId) return;
+    const generation = ++requestGeneration.current.summary;
     setLoadingSummary(true);
     setErrorSummary(null);
+    setSummary(null);
     try {
       const data = await apiFetch<ProjectSummaryDto>(`/api/v1/projects/${encodeURIComponent(projectId)}/dashboard`);
-      setSummary(data);
+      if (generation !== requestGeneration.current.summary || viewedProjectRef.current !== projectId) return;
+      setSummary(parseProjectSummaryResponse(data, projectId));
     } catch (err: any) {
+      if (generation !== requestGeneration.current.summary || viewedProjectRef.current !== projectId) return;
       setErrorSummary({
-        message: err.message || "Network error loading project overview.",
-        requestId: err.requestId,
+        message: err?.message || "Network error loading project overview.",
+        requestId: err?.requestId,
       });
     } finally {
-      setLoadingSummary(false);
+      if (generation === requestGeneration.current.summary && viewedProjectRef.current === projectId) {
+        setLoadingSummary(false);
+      }
     }
   }, [projectId]);
 
   const fetchRequirements = useCallback(async () => {
     if (!projectId) return;
+    const generation = ++requestGeneration.current.reqs;
     setLoadingReqs(true);
     setErrorReqs(null);
+    setRequirements([]);
     try {
       const qs = new URLSearchParams();
       if (statusFilter) qs.set("status", statusFilter);
@@ -323,96 +315,125 @@ export default function ProjectWorkspacePage() {
       qs.set("limit", "100");
 
       const payload = await apiFetch<any>(`/api/v1/projects/${encodeURIComponent(projectId)}/requirements?${qs.toString()}`);
-      const rawList = Array.isArray(payload)
-        ? payload
-        : Array.isArray(payload?.data)
-        ? payload.data
-        : [];
-      const mappedList: RequirementItemDto[] = rawList.map((r: any) => ({
-        id: r.id,
-        requirementKey: r.requirementKey || r.requirement_key || "REQ",
-        groupKey: r.groupKey || r.group_key || "CORE",
-        title: r.title,
-        docTypeKey: r.docTypeKey || r.doc_type_key || "DOC",
-        mandatory: r.mandatory ?? true,
-        milestoneKey: r.milestoneKey || r.milestone_key || "HANDOVER",
-        assetTag:
-          r.assetTag ||
-          r.asset_tag ||
-          (r.scope_key?.startsWith("asset:") ? r.scope_key.slice(6, 14).toUpperCase() : null),
-        status: r.status || "NOT_STARTED",
-        ownerName: r.ownerName || r.owner_name || null,
-        reviewerRole: r.reviewerRole || r.reviewer_role || null,
-        dueAt: r.dueAt || r.due_at || null,
-        revisionCode: r.revisionCode || r.revision_code || null,
-        latestVersionId: r.latestVersionId || r.latest_version_id || null,
-        waiverId: r.waiverId || r.waiver_id || null,
-        rowVersion: r.rowVersion || r.row_version || 1,
-      }));
+      if (generation !== requestGeneration.current.reqs || viewedProjectRef.current !== projectId) return;
+      const mappedList: RequirementItemDto[] = parseProjectRequirementResponse(payload);
       setRequirements(mappedList);
     } catch (err: any) {
+      if (generation !== requestGeneration.current.reqs || viewedProjectRef.current !== projectId) return;
+      setRequirements([]);
       setErrorReqs({
-        message: err.message || "Network error loading checklist.",
-        requestId: err.requestId,
+        message: err?.message || "Network error loading checklist.",
+        requestId: err?.requestId,
       });
     } finally {
-      setLoadingReqs(false);
+      if (generation === requestGeneration.current.reqs && viewedProjectRef.current === projectId) {
+        setLoadingReqs(false);
+      }
     }
   }, [projectId, statusFilter, searchQuery]);
 
   const fetchAssets = useCallback(async () => {
     if (!projectId) return;
+    const generation = ++requestGeneration.current.assets;
     setLoadingAssets(true);
+    setAssets([]);
+    setErrorAssets(null);
     try {
-      const data = await apiFetch<any>(`/api/v1/projects/${encodeURIComponent(projectId)}/assets`);
-      setAssets(Array.isArray(data) ? data : data?.data || []);
+      const data = await apiFetch<unknown>(`/api/v1/projects/${encodeURIComponent(projectId)}/assets`);
+      if (generation !== requestGeneration.current.assets || viewedProjectRef.current !== projectId) return;
+      setAssets(requireApiList(data, "ASSET"));
     } catch (err) {
-      console.error("Error loading assets", err);
+      if (generation !== requestGeneration.current.assets || viewedProjectRef.current !== projectId) return;
+      setErrorAssets(err instanceof Error ? err.message : "Equipment list unavailable.");
     } finally {
-      setLoadingAssets(false);
+      if (generation === requestGeneration.current.assets && viewedProjectRef.current === projectId) {
+        setLoadingAssets(false);
+      }
     }
   }, [projectId]);
 
   const fetchReviews = useCallback(async () => {
     if (!projectId) return;
+    const generation = ++requestGeneration.current.reviews;
     setLoadingReviews(true);
+    setReviews([]);
+    setErrorReviews(null);
     try {
-      const data = await apiFetch<any>(`/api/v1/projects/${encodeURIComponent(projectId)}/reviews`);
-      setReviews(Array.isArray(data) ? data : data?.data || []);
+      const data = await apiFetch<unknown>(`/api/v1/projects/${encodeURIComponent(projectId)}/reviews`);
+      if (generation !== requestGeneration.current.reviews || viewedProjectRef.current !== projectId) return;
+      setReviews(requireApiList(data, "REVIEW"));
     } catch (err) {
-      console.error("Error loading reviews", err);
+      if (generation !== requestGeneration.current.reviews || viewedProjectRef.current !== projectId) return;
+      setErrorReviews(err instanceof Error ? err.message : "Review list unavailable.");
     } finally {
-      setLoadingReviews(false);
+      if (generation === requestGeneration.current.reviews && viewedProjectRef.current === projectId) {
+        setLoadingReviews(false);
+      }
     }
   }, [projectId]);
 
   const fetchPackages = useCallback(async () => {
     if (!projectId) return;
+    const generation = ++requestGeneration.current.packages;
     setLoadingPackages(true);
+    setPackages([]);
+    setErrorPackages(null);
     try {
-      const data = await apiFetch<any>(`/api/v1/projects/${encodeURIComponent(projectId)}/packages`);
-      setPackages(Array.isArray(data) ? data : data?.data || []);
+      const data = await apiFetch<unknown>(`/api/v1/projects/${encodeURIComponent(projectId)}/packages`);
+      if (generation !== requestGeneration.current.packages || viewedProjectRef.current !== projectId) return;
+      setPackages(requireApiList(data, "PACKAGE"));
     } catch (err) {
-      console.error("Error loading packages", err);
+      if (generation !== requestGeneration.current.packages || viewedProjectRef.current !== projectId) return;
+      setErrorPackages(err instanceof Error ? err.message : "Handover dossiers unavailable.");
     } finally {
-      setLoadingPackages(false);
+      if (generation === requestGeneration.current.packages && viewedProjectRef.current === projectId) {
+        setLoadingPackages(false);
+      }
     }
   }, [projectId]);
 
   const fetchWarranties = useCallback(async () => {
     if (!projectId) return;
+    const generation = ++warrantyRequestGeneration.current;
+    // Do not leave another project's old records on screen after a context
+    // change, or convert denied/failed requests into fictitious empty data.
+    setWarranties([]);
+    setDefects([]);
+    setWarrantyLoadError(null);
+    setDefectsLoadError(null);
     setLoadingWarranties(true);
+    const parseRows = (data: unknown): any[] => {
+      if (Array.isArray(data)) return data;
+      if (data && typeof data === "object" && "data" in data &&
+          Array.isArray((data as { data: unknown }).data)) {
+        return (data as { data: any[] }).data;
+      }
+      throw new Error("Unexpected response format.");
+    };
     try {
-      const [wData, dData] = await Promise.all([
-        apiFetch<any>(`/api/v1/projects/${encodeURIComponent(projectId)}/warranty-events`).catch(() => []),
-        apiFetch<any>(`/api/v1/projects/${encodeURIComponent(projectId)}/defects`).catch(() => []),
+      const [warrantyResult, defectResult] = await Promise.allSettled([
+        apiFetch<unknown>(`/api/v1/projects/${encodeURIComponent(projectId)}/warranty-events`),
+        apiFetch<unknown>(`/api/v1/projects/${encodeURIComponent(projectId)}/defects`),
       ]);
-      setWarranties(Array.isArray(wData) ? wData : wData?.data || []);
-      setDefects(Array.isArray(dData) ? dData : dData?.data || []);
-    } catch (err) {
-      console.error("Error loading warranties", err);
+      // A late response from a previous project or a slower retry must never
+      // repopulate this view with an old project's privileged records.
+      if (generation !== warrantyRequestGeneration.current) return;
+      try {
+        if (warrantyResult.status === "rejected") throw warrantyResult.reason;
+        setWarranties(parseRows(warrantyResult.value));
+      } catch (error) {
+        setWarrantyLoadError(error instanceof Error ? error.message : "Unable to load warranties.");
+      }
+      try {
+        if (defectResult.status === "rejected") throw defectResult.reason;
+        setDefects(parseRows(defectResult.value));
+      } catch (error) {
+        setDefectsLoadError(error instanceof Error ? error.message : "Unable to load defects.");
+      }
     } finally {
-      setLoadingWarranties(false);
+      if (generation === warrantyRequestGeneration.current) {
+        setLoadingWarranties(false);
+      }
     }
   }, [projectId]);
 
@@ -545,19 +566,9 @@ export default function ProjectWorkspacePage() {
     }
   };
 
-  // Export CSV Helper
-  const exportCsv = (filename: string, headers: string[], rows: (string | number)[][]) => {
-    const csvContent =
-      "data:text/csv;charset=utf-8," +
-      [headers.join(","), ...rows.map((e) => e.map((val) => `"${String(val).replace(/"/g, '""')}"`).join(","))].join("\n");
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", filename);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
+  // Export only the rows already authorized for this project; the serializer
+  // also neutralizes spreadsheet formulas without corrupting CSV delimiters.
+  const exportCsv = downloadCsv;
 
   const progressPercent = summary && summary.counts.applicableTotal > 0
     ? Math.round(
@@ -1193,6 +1204,14 @@ export default function ProjectWorkspacePage() {
                     <div key={i} className="h-10 w-full animate-pulse rounded bg-slate-100" />
                   ))}
                 </div>
+              ) : errorAssets ? (
+                <div role="alert" className="p-8 space-y-3 text-sm text-red-800">
+                  <p>Equipment could not be loaded: {errorAssets}</p>
+                  <button type="button" onClick={() => void fetchAssets()}
+                    className="rounded-md border border-red-300 px-3 py-2 font-semibold hover:bg-red-50">
+                    Retry equipment
+                  </button>
+                </div>
               ) : assets.length === 0 ? (
                 <div className="p-12 text-center text-xs text-slate-500 space-y-3">
                   <p>No equipment assets catalogued for this project yet.</p>
@@ -1255,6 +1274,14 @@ export default function ProjectWorkspacePage() {
                   {[1, 2, 3].map((i) => (
                     <div key={i} className="h-10 w-full animate-pulse rounded bg-slate-100" />
                   ))}
+                </div>
+              ) : errorReviews ? (
+                <div role="alert" className="p-8 space-y-3 text-sm text-red-800">
+                  <p>Reviews could not be loaded: {errorReviews}</p>
+                  <button type="button" onClick={() => void fetchReviews()}
+                    className="rounded-md border border-red-300 px-3 py-2 font-semibold hover:bg-red-50">
+                    Retry reviews
+                  </button>
                 </div>
               ) : reviews.length === 0 ? (
                 <div className="p-12 text-center text-xs text-slate-500">
@@ -1347,6 +1374,14 @@ export default function ProjectWorkspacePage() {
                     <div key={i} className="h-12 w-full animate-pulse rounded bg-slate-100" />
                   ))}
                 </div>
+              ) : errorPackages ? (
+                <div role="alert" className="p-8 space-y-3 text-sm text-red-800">
+                  <p>Handover dossiers could not be loaded: {errorPackages}</p>
+                  <button type="button" onClick={() => void fetchPackages()}
+                    className="rounded-md border border-red-300 px-3 py-2 font-semibold hover:bg-red-50">
+                    Retry dossiers
+                  </button>
+                </div>
               ) : packages.length === 0 ? (
                 <div className="p-12 text-center text-xs text-slate-500">
                   <p>No handover dossiers compiled yet for this project.</p>
@@ -1419,9 +1454,15 @@ export default function ProjectWorkspacePage() {
                 OEM Warranty Registrations
               </div>
               {loadingWarranties ? (
-                <div className="p-6 space-y-2">
+                <div className="p-6 space-y-2" role="status" aria-label="Loading warranty registrations">
                   <div className="h-8 w-full animate-pulse rounded bg-slate-100" />
                   <div className="h-8 w-full animate-pulse rounded bg-slate-100" />
+                </div>
+              ) : warrantyLoadError ? (
+                <div className="p-6 text-red-800 text-xs" role="alert">
+                  Warranty records could not be loaded: {warrantyLoadError}. The list below is not a verified empty result.
+                  <button type="button" onClick={() => void fetchWarranties()}
+                    className="ml-3 font-semibold underline">Retry</button>
                 </div>
               ) : warranties.length === 0 ? (
                 <div className="p-8 text-center text-xs text-slate-500">
@@ -1443,14 +1484,14 @@ export default function ProjectWorkspacePage() {
                     <tbody className="divide-y divide-slate-100">
                       {warranties.map((w) => (
                         <tr key={w.id} className="hover:bg-slate-50/80">
-                          <td className="py-3 px-4 font-mono font-bold text-slate-900">{w.asset_tag || w.tag || "CHLR-01"}</td>
+                          <td className="py-3 px-4 font-mono font-bold text-slate-900">{w.asset_tag || w.tag || "—"}</td>
                           <td className="py-3 px-4 font-mono text-slate-700">{w.oem_reference || "—"}</td>
-                          <td className="py-3 px-4 font-medium text-slate-600">{w.basis || "HANDOVER"}</td>
+                          <td className="py-3 px-4 font-medium text-slate-600">{w.basis || "—"}</td>
                           <td className="py-3 px-4 font-mono text-slate-600">{formatDateIst(w.warranty_start)}</td>
                           <td className="py-3 px-4 font-mono text-slate-600">{formatDateIst(w.warranty_end)}</td>
                           <td className="py-3 px-4">
                             <span className="rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
-                              {w.status || "CONFIRMED"}
+                              {w.status || "Not recorded"}
                             </span>
                           </td>
                         </tr>
@@ -1466,9 +1507,17 @@ export default function ProjectWorkspacePage() {
               <div className="px-5 py-4 border-b border-slate-200 font-bold text-sm text-slate-900">
                 Defect Liability & Rectification Register
               </div>
-              {defects.length === 0 ? (
+              {loadingWarranties ? (
+                <div role="status" className="p-6 text-slate-500 text-xs">Loading defect records…</div>
+              ) : defectsLoadError ? (
+                <div className="p-6 text-red-800 text-xs" role="alert">
+                  Defect records could not be loaded: {defectsLoadError}. No zero-defects claim can be made.
+                  <button type="button" onClick={() => void fetchWarranties()}
+                    className="ml-3 font-semibold underline">Retry</button>
+                </div>
+              ) : defects.length === 0 ? (
                 <div className="p-8 text-center text-xs text-slate-500">
-                  Zero defects recorded for this project.
+                  No defects returned for this project.
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -1502,7 +1551,7 @@ export default function ProjectWorkspacePage() {
                             <div className="font-semibold text-slate-900">{d.title}</div>
                             <div className="text-slate-500 text-[11px] mt-0.5">{d.description}</div>
                           </td>
-                          <td className="py-3 px-4 font-mono text-slate-700">{d.asset_tag || "HVAC Unit"}</td>
+                          <td className="py-3 px-4 font-mono text-slate-700">{d.asset_tag || "—"}</td>
                           <td className="py-3 px-4">
                             <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
                               d.status === "CLOSED"

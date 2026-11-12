@@ -763,7 +763,10 @@ export class HandoverService {
   }
 
   async getPackageDownloadUrl(ctx: TenantActorContext, projectId: string, packageId: string) {
-    const artifact = await withTenantTransaction(this.pool, ctx, async (client) => {
+    // Hold row locks across the signing call: a concurrent RB09/RB12 update
+    // must not make the source untrusted in the gap between validation and
+    // issuing a fresh provider URL.
+    return withTenantTransaction(this.pool, ctx, async (client) => {
       const { rows } = await client.query(
         `SELECT hp.status, hp.version_no, hp.checksum,
                 so.object_key, so.original_filename, so.mime, so.size_bytes,
@@ -772,35 +775,78 @@ export class HandoverService {
            FROM handover_packages hp
            JOIN storage_objects so
              ON so.org_id = hp.org_id AND so.id = hp.pdf_object_id
-          WHERE hp.org_id = $1 AND hp.project_id = $2 AND hp.id = $3`,
+          WHERE hp.org_id = $1 AND hp.project_id = $2 AND hp.id = $3
+          FOR SHARE OF hp, so`,
         [ctx.orgId, projectId, packageId],
       );
-      if (!rows.length) throw new NotFoundException({ code: 'PACKAGE_NOT_FOUND', detail: 'Handover package not found.' });
-      const row = rows[0];
-      if (row.status !== 'READY' || row.object_status !== 'READY' ||
-          !row.provider_version_id || !row.sha256 || row.sha256 !== row.checksum ||
-          Number(row.observed_size_bytes) !== Number(row.size_bytes)) {
+      if (!rows.length) {
+        throw new NotFoundException({
+          code: 'PACKAGE_NOT_FOUND', detail: 'Handover package not found.',
+        });
+      }
+      const artifact = rows[0];
+      if (artifact.status !== 'READY' || artifact.object_status !== 'READY' ||
+          !artifact.provider_version_id || !artifact.sha256 ||
+          artifact.sha256 !== artifact.checksum ||
+          Number(artifact.observed_size_bytes) !== Number(artifact.size_bytes)) {
         throw new UnprocessableEntityException({
           code: 'PACKAGE_ARTIFACT_NOT_VERIFIED',
           detail: 'The handover package does not have a verified, ready artifact available for download.',
         });
       }
-      return row;
+
+      // Lock included manifest entries first, then the matching versions
+      // and backing objects. Compare counts to reject missing source rows;
+      // PostgreSQL disallows FOR SHARE against nullable outer-join tables.
+      const parameters = [ctx.orgId, projectId, packageId];
+      const { rows: includedItems } = await client.query(
+        `SELECT pi.id FROM package_items pi
+          WHERE pi.org_id = $1 AND pi.project_id = $2
+            AND pi.package_id = $3 AND pi.included = true
+          ORDER BY pi.id FOR SHARE OF pi`,
+        parameters,
+      );
+      const { rows: included } = await client.query(
+        `SELECT pi.id AS item_id, dv.id AS version_id, dv.file_status,
+                dv.review_status, dv.deleted_at AS version_deleted_at,
+                evidence.id AS storage_id, evidence.status AS storage_status
+           FROM package_items pi
+           JOIN document_versions dv
+             ON dv.org_id = pi.org_id AND dv.project_id = pi.project_id
+            AND dv.id = pi.document_version_id
+           JOIN storage_objects evidence
+             ON evidence.org_id = dv.org_id AND evidence.id = dv.object_id
+          WHERE pi.org_id = $1 AND pi.project_id = $2
+            AND pi.package_id = $3 AND pi.included = true
+          ORDER BY pi.id
+          FOR SHARE OF dv, evidence`,
+        parameters,
+      );
+      if (included.length !== includedItems.length || included.some((row) =>
+        !row.version_id || !row.storage_id || row.version_deleted_at ||
+        row.file_status !== 'READY' || row.review_status !== 'APPROVED' ||
+        row.storage_status !== 'READY'
+      )) {
+        throw new UnprocessableEntityException({
+          code: 'PACKAGE_EVIDENCE_QUARANTINED',
+          detail: 'Package contains evidence that is no longer authorized for distribution.',
+        });
+      }
+      const downloadUrl = await this.storage.createSignedDownloadUrl({
+        objectKey: artifact.object_key,
+        versionId: artifact.provider_version_id,
+        filename: `handover-v${artifact.version_no}.pdf`,
+      });
+      return {
+        packageId,
+        status: 'READY',
+        downloadUrl,
+        expiresInSeconds: 900,
+        checksum: artifact.checksum,
+        sizeBytes: artifact.size_bytes,
+        mime: artifact.mime,
+      };
     });
-    const downloadUrl = await this.storage.createSignedDownloadUrl({
-      objectKey: artifact.object_key,
-      versionId: artifact.provider_version_id,
-      filename: `handover-v${artifact.version_no}.pdf`,
-    });
-    return {
-      packageId,
-      status: 'READY',
-      downloadUrl,
-      expiresInSeconds: 900,
-      checksum: artifact.checksum,
-      sizeBytes: artifact.size_bytes,
-      mime: artifact.mime,
-    };
   }
 
   async createSubmission(
@@ -867,6 +913,32 @@ export class HandoverService {
         });
       }
       const packageId = latest.id;
+      // An emergency quarantine may occur after package generation without
+      // rewriting historical review decisions. Re-check the included evidence
+      // under row locks before dispatching any new customer acceptance request.
+      // FOR SHARE serializes this decision with RB-09's storage-object update.
+      const { rows: includedEvidence } = await client.query(
+        `SELECT pi.id, dv.file_status, dv.review_status,
+                so.status AS storage_status, so.provider_version_id, so.sha256
+           FROM package_items pi
+           JOIN document_versions dv
+             ON dv.org_id = pi.org_id AND dv.project_id = pi.project_id
+            AND dv.id = pi.document_version_id
+           JOIN storage_objects so
+             ON so.org_id = dv.org_id AND so.id = dv.object_id
+          WHERE pi.org_id = $1 AND pi.project_id = $2 AND pi.package_id = $3
+            AND pi.included = true
+          FOR SHARE OF dv, so`,
+        [ctx.orgId, targetProjectId, packageId],
+      );
+      if (includedEvidence.some((row) =>
+          row.file_status !== 'READY' || row.review_status !== 'APPROVED' ||
+          row.storage_status !== 'READY' || !row.provider_version_id || !row.sha256)) {
+        throw new ConflictException({
+          code: 'HANDOVER_PACKAGE_EVIDENCE_NO_LONGER_QUALIFIED',
+          detail: 'A source document has been quarantined or is no longer approved; regenerate the package before submitting.',
+        });
+      }
       const submissionId = uuidv7();
       await client.query(
         `INSERT INTO submissions (id, org_id, project_id, package_id, status, submitted_by, submitted_at, cover_note)
@@ -1219,6 +1291,50 @@ export class HandoverService {
       const record = rows[0];
       let downloadUrl: string | null = null;
       if (record.status === 'COMPLETED' && this.storage) {
+        // An archive contains its own immutable snapshot, but incident
+        // containment must revoke FUTURE app-issued URLs whenever any pinned
+        // source is no longer safe. Never equate a prior archive receipt with
+        // ongoing authority to redistribute quarantined evidence.
+        const sources = record.manifest_json?.objects;
+        if (!Array.isArray(sources) || sources.length !== Number(record.total_objects)) {
+          throw new ConflictException({
+            code: 'ARCHIVE_SOURCE_MANIFEST_INVALID',
+            detail: 'Archive source manifest is missing or inconsistent; download is blocked.',
+          });
+        }
+        const ids = sources.map((entry: any) => entry?.version_id);
+        const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (ids.some((id: unknown) => typeof id !== 'string' || !uuid.test(id)) ||
+            new Set(ids).size !== ids.length) {
+          throw new ConflictException({
+            code: 'ARCHIVE_SOURCE_MANIFEST_INVALID',
+            detail: 'Archive references malformed or repeated source version identifiers.',
+          });
+        }
+        const { rows: liveEvidence } = await client.query(
+          `SELECT dv.id AS version_id, dv.file_status, so.id AS object_id,
+                  so.status AS storage_status, so.provider_version_id, so.sha256
+             FROM document_versions dv
+             JOIN storage_objects so ON so.org_id = dv.org_id AND so.id = dv.object_id
+            WHERE dv.org_id = $1 AND dv.project_id = $2 AND dv.id = ANY($3::uuid[])
+            FOR SHARE OF dv, so`,
+          [ctx.orgId, projectId, ids],
+        );
+        const liveByVersion = new Map(liveEvidence.map((row) => [String(row.version_id), row]));
+        const isInvalidated = liveEvidence.length !== sources.length || sources.some((expected: any) => {
+          const current = liveByVersion.get(String(expected.version_id));
+          return !current || current.file_status !== 'READY' ||
+            current.storage_status !== 'READY' ||
+            String(current.object_id) !== String(expected.object_id) ||
+            String(current.provider_version_id) !== String(expected.provider_version_id) ||
+            String(current.sha256) !== String(expected.sha256);
+        });
+        if (isInvalidated) {
+          throw new ConflictException({
+            code: 'ARCHIVE_SOURCE_INVALIDATED',
+            detail: 'An archived evidence version is no longer verified or distributable.',
+          });
+        }
         const artifact = record.verification_receipt_json?.artifact;
         // Security Invariant (V06 / F06): Require verified immutable artifact identity; forbid unversioned fallback
         if (!artifact?.objectId || !artifact?.objectKey || !artifact?.providerVersionId) {

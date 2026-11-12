@@ -554,15 +554,89 @@ export class DocumentsService {
   }
 
   /**
+   * Recovery reauthorization for a local original that never reached a
+   * provider. The route has document.upload and project membership guards;
+   * this second database check verifies the live requirement and project
+   * lifecycle. Explicit guest rebind is unsupported (grant issuer/session
+   * identity cannot be safely inferred from browser-local records).
+   */
+  async validateDraftRecoveryAuthority(
+    ctx: ExecutionContext,
+    projectId: string,
+    requirementId: string,
+    capturedRowVersion: number,
+  ) {
+    if (!Number.isSafeInteger(capturedRowVersion) || capturedRowVersion < 1) {
+      throw new BadRequestException('DRAFT_RECOVERY_ROW_VERSION_REQUIRED');
+    }
+    if (ctx.actorType === 'GUEST' || ctx.guestGrantId) {
+      throw new ForbiddenException('GUEST_DRAFT_RECOVERY_NOT_SUPPORTED');
+    }
+    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+      const { rows } = await client.query(
+        `SELECT p.id AS project_id, r.id AS requirement_id, r.row_version
+           FROM projects p
+           JOIN requirements r
+             ON r.org_id = p.org_id AND r.project_id = p.id
+          WHERE p.org_id = $1 AND p.id = $2 AND r.id = $3
+            AND p.status IN ('DRAFT', 'ACTIVE', 'HANDOVER')
+            AND p.purged_at IS NULL
+            AND r.superseded_at IS NULL
+            AND r.status NOT IN ('SUPERSEDED', 'NOT_APPLICABLE', 'HANDED_OVER')
+            AND r.row_version = $4
+          LIMIT 1`,
+        [ctx.orgId, projectId, requirementId, capturedRowVersion],
+      );
+      if (rows.length !== 1) {
+        throw new NotFoundException('DRAFT_RECOVERY_TARGET_NO_LONGER_ELIGIBLE');
+      }
+      return {
+        projectId: rows[0].project_id,
+        requirementId: rows[0].requirement_id,
+        rowVersion: rows[0].row_version,
+        allowed: true,
+      };
+    });
+  }
+
+  /**
+   * Upload-only issuer view: return just the two authoritative processing
+   * states. A guest must own the version under an active document.upload grant.
+   * This prevents a document.read requirement from blocking scan convergence,
+   * and never marks READY if an incident quarantined the backing object.
+   */
+  async getUploadState(ctx: ExecutionContext, versionId: string) {
+    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+      const { rows } = await client.query(
+        `SELECT dv.id, dv.file_status, so.status AS storage_status
+           FROM document_versions dv
+           JOIN storage_objects so
+             ON so.org_id = dv.org_id AND so.id = dv.object_id
+          WHERE dv.org_id = $1 AND dv.id = $2 AND dv.deleted_at IS NULL`,
+        [ctx.orgId, versionId],
+      );
+      if (rows.length !== 1) throw new NotFoundException('UPLOAD_VERSION_NOT_FOUND');
+      await this.assertGuestVersionScope(client, ctx, versionId, 'document.upload');
+      return {
+        versionId: rows[0].id,
+        fileStatus: rows[0].file_status,
+        storageStatus: rows[0].storage_status,
+      };
+    });
+  }
+
+  /**
    * API-082A POST /document-versions/:id/refresh-upload-urls (RT-012, CB-003 join fix)
    */
   async refreshUploadUrls(ctx: ExecutionContext, versionId: string) {
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
       const verRes = await client.query(
-        `SELECT dv.*, so.object_key, so.s3_upload_id, so.size_bytes
+        `SELECT dv.*, so.object_key, so.s3_upload_id, so.size_bytes,
+                so.status AS storage_status
          FROM document_versions dv
-         JOIN storage_objects so ON so.id = dv.object_id
-         WHERE dv.org_id = $1 AND dv.id = $2`,
+         JOIN storage_objects so ON so.org_id = dv.org_id AND so.id = dv.object_id
+         WHERE dv.org_id = $1 AND dv.id = $2
+         FOR UPDATE OF dv, so`,
         [ctx.orgId, versionId],
       );
 
@@ -573,6 +647,12 @@ export class DocumentsService {
       await this.assertGuestVersionScope(client, ctx, versionId, 'document.upload');
 
       const ver = verRes.rows[0];
+      // A revoked, quarantined or already-finalized intent must never mint
+      // additional provider write URLs. Lock both records against incident
+      // quarantine while checking this invariant.
+      if (ver.file_status !== 'PENDING_UPLOAD' || ver.storage_status !== 'PENDING') {
+        throw new GoneException('UPLOAD_INTENT_NOT_ACTIVE');
+      }
       if (!ver.s3_upload_id) {
         throw new BadRequestException('NOT_A_MULTIPART_UPLOAD');
       }
@@ -762,7 +842,8 @@ export class DocumentsService {
            FROM document_versions dv
            JOIN storage_objects so ON so.org_id = dv.org_id AND so.id = dv.object_id
            JOIN documents d ON d.org_id = dv.org_id AND d.project_id = dv.project_id AND d.id = dv.document_id
-          WHERE dv.org_id = $1 AND dv.id = $2 AND dv.deleted_at IS NULL AND d.deleted_at IS NULL`,
+          WHERE dv.org_id = $1 AND dv.id = $2 AND dv.deleted_at IS NULL AND d.deleted_at IS NULL
+          FOR SHARE OF dv, so`,
         [ctx.orgId, versionId],
       );
       if (!verRes.rows.length) {
@@ -808,7 +889,8 @@ export class DocumentsService {
            FROM document_versions dv
            JOIN storage_objects so ON so.org_id = dv.org_id AND so.id = dv.object_id
            JOIN documents d ON d.org_id = dv.org_id AND d.project_id = dv.project_id AND d.id = dv.document_id
-          WHERE dv.org_id = $1 AND dv.id = $2 AND dv.deleted_at IS NULL AND d.deleted_at IS NULL`,
+          WHERE dv.org_id = $1 AND dv.id = $2 AND dv.deleted_at IS NULL AND d.deleted_at IS NULL
+          FOR SHARE OF dv, so`,
         [ctx.orgId, versionId],
       );
       if (!verRes.rows.length) {

@@ -1,67 +1,66 @@
-const SHELL_CACHE_NAME = 'tc-shell-v021';
-const STATIC_SHELL_ROUTES = ['/login', '/manifest.json'];
+// MVP transient-loss support: this worker NEVER uploads in a closed tab,
+// stores private HTML, API responses, guest identity or presigned object URLs.
+const SHELL_CACHE_PREFIX = 'tc-shell-';
+const SHELL_CACHE_NAME = 'tc-shell-v022';
+const PUBLIC_SHELL_ROUTES = ['/manifest.json'];
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
-  event.waitUntil(
-    caches.open(SHELL_CACHE_NAME).then((cache) => cache.addAll(STATIC_SHELL_ROUTES)),
-  );
+  // Do not prefetch even public routes during install: only actual fetch
+  // responses vetted for no-store/private are eligible for CacheStorage.
+  event.waitUntil(caches.open(SHELL_CACHE_NAME).then(() => undefined));
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches
-      .keys()
-      .then((keys) =>
-        Promise.all(
-          keys
-            .filter((key) => key !== SHELL_CACHE_NAME)
-            .map((oldKey) => caches.delete(oldKey)),
-        ),
-      )
+    caches.keys()
+      .then((keys) => Promise.all(keys
+        // Never erase other applications' or unrelated origin caches.
+        .filter((key) => key.startsWith(SHELL_CACHE_PREFIX) && key !== SHELL_CACHE_NAME)
+        .map((oldKey) => caches.delete(oldKey))))
       .then(() => self.clients.claim()),
   );
 });
 
-// Never cache /api/v1/* or presigned S3 URLs to enforce strict tenant isolation (05 §10)
+// Authenticated navigations, API payloads and provider URLs must not enter
+// CacheStorage, including URL-encoded/alternate-case presigned parameters.
 self.addEventListener('fetch', (event) => {
-  const { request } = event;
+  const request = event.request;
+  if (request.method !== 'GET' || request.mode === 'navigate') return;
   const url = new URL(request.url);
+  if (url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return;
 
-  if (
-    request.method !== 'GET' ||
-    url.pathname.startsWith('/api/') ||
-    url.searchParams.has('X-Amz-Signature')
-  ) {
-    return;
-  }
+  // Next's hashed public assets are immutable. Do not cache route HTML or
+  // arbitrary same-origin content, even if the response status is successful.
+  if (!url.pathname.startsWith('/_next/static/') &&
+      !PUBLIC_SHELL_ROUTES.includes(url.pathname)) return;
+  if (url.search || request.headers.has('Authorization')) return;
 
-  if (url.pathname.startsWith('/_next/static/') || STATIC_SHELL_ROUTES.includes(url.pathname)) {
-    event.respondWith(
-      caches.match(request).then(
-        (cached) =>
-          cached ||
-          fetch(request).then((networkRes) => {
-            const clone = networkRes.clone();
-            caches.open(SHELL_CACHE_NAME).then((cache) => cache.put(request, clone));
-            return networkRes;
-          }),
-      ),
-    );
-  }
+  event.respondWith((async () => {
+    const cache = await caches.open(SHELL_CACHE_NAME);
+    const cached = await cache.match(request);
+    if (cached) return cached;
+    const response = await fetch(request);
+    const directive = response.headers.get('Cache-Control') || '';
+    if (response.ok && response.type === 'basic' &&
+        !/(?:private|no-store)/i.test(directive)) {
+      // A browser quota error must not make a successful network fetch fail.
+      try { await cache.put(request, response.clone()); } catch { /* best effort shell cache */ }
+    }
+    return response;
+  })());
 });
 
-// Background Sync trigger when Android phone regains 4G signal after leaving basement
+// This is merely a foreground notification. It cannot drain when no app
+// window exists, and never receives credentials or original evidence bytes.
 self.addEventListener('sync', (event) => {
-  if (event.tag === 'tc-drain-offline-uploads') {
-    event.waitUntil(
-      self.clients
-        .matchAll({ type: 'window', includeUncontrolled: true })
-        .then((clientList) => {
-          for (const client of clientList) {
-            client.postMessage({ type: 'TC_TRIGGER_OFFLINE_QUEUE_DRAIN' });
-          }
-        }),
-    );
-  }
+  if (event.tag !== 'tc-drain-offline-uploads') return;
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+      .then((windows) => {
+        for (const client of windows) {
+          client.postMessage({ type: 'TC_TRIGGER_OFFLINE_QUEUE_DRAIN' });
+        }
+      }),
+  );
 });

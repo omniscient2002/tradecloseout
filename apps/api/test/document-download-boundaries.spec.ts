@@ -12,7 +12,9 @@ describe('document download boundaries', () => {
   };
 
   function setup(version: Record<string, unknown>, guestScopeAllowed = false) {
+    const lifecycle: string[] = [];
     const query = jest.fn(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') lifecycle.push(sql);
       if (sql.includes('SELECT dv.*') || sql.includes('SELECT dv.id')) return { rows: [version] };
       if (sql.includes('FROM guest_grants g')) return { rows: guestScopeAllowed ? [{}] : [] };
       return { rows: [] };
@@ -20,11 +22,14 @@ describe('document download boundaries', () => {
     const client = { query, release: jest.fn() };
     const db = new TenantDbService({ connect: jest.fn().mockResolvedValue(client) });
     const storage = {
-      createSignedDownloadUrl: jest.fn().mockResolvedValue('signed-url'),
+      createSignedDownloadUrl: jest.fn(async () => {
+        lifecycle.push('SIGN');
+        return 'signed-url';
+      }),
       finalizeUpload: jest.fn(), refreshUploadUrls: jest.fn(), abortUpload: jest.fn(),
       fetchObject: jest.fn().mockResolvedValue(Buffer.from('hello world!')),
     };
-    return { service: new DocumentsService(db, storage as any), storage };
+    return { service: new DocumentsService(db, storage as any), storage, query, lifecycle };
   }
 
   function createMockResponse() {
@@ -59,6 +64,17 @@ describe('document download boundaries', () => {
     await service.getDownloadUrl(actor, 'version-1');
     expect(storage.createSignedDownloadUrl).toHaveBeenCalledWith(expect.objectContaining({ versionId: 'provider-version' }));
   });
+
+  it.each(['getDownloadUrl', 'getPreviewUrl'] as const)(
+    '%s holds version and storage locks until after signed URL issuance',
+    async (method) => {
+      const { service, query, lifecycle } = setup(verifiedVersion);
+      await service[method](actor, 'version-1');
+      expect(query.mock.calls.some(([sql]) => sql.includes('FOR SHARE OF dv, so'))).toBe(true);
+      expect(lifecycle.indexOf('SIGN')).toBeGreaterThan(lifecycle.indexOf('BEGIN'));
+      expect(lifecycle.indexOf('SIGN')).toBeLessThan(lifecycle.indexOf('COMMIT'));
+    },
+  );
 
   it('prevents a guest from completing another grant’s upload', async () => {
     const { service, storage } = setup({ ...verifiedVersion, file_status: 'PENDING_UPLOAD' });
