@@ -1,6 +1,7 @@
 import {
   GetBucketVersioningCommand, HeadObjectCommand, ListPartsCommand,
-  CompleteMultipartUploadCommand, GetObjectCommand,
+  CompleteMultipartUploadCommand, GetObjectCommand, AbortMultipartUploadCommand,
+  DeleteObjectCommand,
 } from '@aws-sdk/client-s3';
 import { ConflictException, ServiceUnavailableException, UnprocessableEntityException } from '@nestjs/common';
 import { HandoverService } from '../src/modules/handover/handover.service';
@@ -279,5 +280,59 @@ describe('PH3-G10-002 — immutable provider receipt contract', () => {
       expect(storage.createSignedDownloadUrl).not.toHaveBeenCalled();
     },
   );
+
+
+  it('never inspects or deletes the latest object when aborting single-part uploads', async () => {
+    const send = jest.fn(async () => {
+      throw new Error('UNOWNED_VERSION_MUST_NOT_BE_TOUCHED');
+    });
+    await expect(storage(send).abortUpload({
+      objectKey: 'test/presigned-single-part', uploadId: null,
+    })).resolves.toBeUndefined();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('aborts only the actual multipart upload ID, without deleting any object version', async () => {
+    const send = jest.fn(async (command: any) => {
+      if (command instanceof AbortMultipartUploadCommand) return {};
+      throw new Error('UNRELATED_STORAGE_ACTION');
+    });
+    await storage(send).abortUpload({ objectKey: 'test/multipart', uploadId: 'original-upload-id' });
+    expect(send).toHaveBeenCalledTimes(1);
+    const command = send.mock.calls[0][0];
+    expect(command).toBeInstanceOf(AbortMultipartUploadCommand);
+    expect(command.input).toMatchObject({ Key: 'test/multipart', UploadId: 'original-upload-id' });
+  });
+
+  it('does not delete a newer overwritten object after multipart upload expiry', async () => {
+    const send = jest.fn(async (command: any) => {
+      if (command instanceof AbortMultipartUploadCommand) {
+        throw Object.assign(new Error('NoSuchUpload'), {
+          name: 'NoSuchUpload', $metadata: { httpStatusCode: 404 },
+        });
+      }
+      throw new Error('MUST_NOT_HEAD_OR_DELETE_AN_UNOWNED_VERSION');
+    });
+    await expect(storage(send).abortUpload({
+      objectKey: 'test/overwritten', uploadId: 'expired-upload',
+    })).resolves.toBeUndefined();
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls.some(([command]) =>
+      command instanceof HeadObjectCommand || command instanceof DeleteObjectCommand,
+    )).toBe(false);
+  });
+
+  it('propagates unexpected provider abort failure without touching a current key', async () => {
+    const send = jest.fn(async (command: any) => {
+      if (command instanceof AbortMultipartUploadCommand) {
+        throw Object.assign(new Error('S3_ACCESS_DENIED'), { name: 'AccessDenied' });
+      }
+      throw new Error('NO_CURRENT_KEY_FALLBACK');
+    });
+    await expect(storage(send).abortUpload({
+      objectKey: 'test/abort-fails', uploadId: 'upload-1',
+    })).rejects.toThrow('S3_ACCESS_DENIED');
+    expect(send).toHaveBeenCalledTimes(1);
+  });
 
 });
