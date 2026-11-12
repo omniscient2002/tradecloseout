@@ -1233,6 +1233,14 @@ export default function ProjectWorkspacePage() {
                     <div key={i} className="h-10 w-full animate-pulse rounded bg-slate-100" />
                   ))}
                 </div>
+              ) : errorAssets ? (
+                <div role="alert" className="p-8 space-y-3 text-sm text-red-800">
+                  <p>Equipment could not be loaded: {errorAssets}</p>
+                  <button type="button" onClick={() => void fetchAssets()}
+                    className="rounded-md border border-red-300 px-3 py-2 font-semibold hover:bg-red-50">
+                    Retry equipment
+                  </button>
+                </div>
               ) : assets.length === 0 ? (
                 <div className="p-12 text-center text-xs text-slate-500 space-y-3">
                   <p>No equipment assets catalogued for this project yet.</p>
@@ -1295,6 +1303,14 @@ export default function ProjectWorkspacePage() {
                   {[1, 2, 3].map((i) => (
                     <div key={i} className="h-10 w-full animate-pulse rounded bg-slate-100" />
                   ))}
+                </div>
+              ) : errorReviews ? (
+                <div role="alert" className="p-8 space-y-3 text-sm text-red-800">
+                  <p>Reviews could not be loaded: {errorReviews}</p>
+                  <button type="button" onClick={() => void fetchReviews()}
+                    className="rounded-md border border-red-300 px-3 py-2 font-semibold hover:bg-red-50">
+                    Retry reviews
+                  </button>
                 </div>
               ) : reviews.length === 0 ? (
                 <div className="p-12 text-center text-xs text-slate-500">
@@ -1386,6 +1402,14 @@ export default function ProjectWorkspacePage() {
                   {[1, 2].map((i) => (
                     <div key={i} className="h-12 w-full animate-pulse rounded bg-slate-100" />
                   ))}
+                </div>
+              ) : errorPackages ? (
+                <div role="alert" className="p-8 space-y-3 text-sm text-red-800">
+                  <p>Handover dossiers could not be loaded: {errorPackages}</p>
+                  <button type="button" onClick={() => void fetchPackages()}
+                    className="rounded-md border border-red-300 px-3 py-2 font-semibold hover:bg-red-50">
+                    Retry dossiers
+                  </button>
                 </div>
               ) : packages.length === 0 ? (
                 <div className="p-12 text-center text-xs text-slate-500">
