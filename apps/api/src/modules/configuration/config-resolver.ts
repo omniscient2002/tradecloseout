@@ -131,7 +131,7 @@ function validateConfigValue(schema: FieldSchema, value: unknown): boolean {
     if (!Array.isArray(value)) return false;
     if (schema.path === 'notifications.extra_recipients') {
       return value.every(recipient => typeof recipient === 'string' &&
-        /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(recipient.trim()) &&
+        /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient.trim()) &&
         recipient.trim().length <= 254);
     }
     return true;
