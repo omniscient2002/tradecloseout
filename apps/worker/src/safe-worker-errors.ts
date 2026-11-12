@@ -64,3 +64,37 @@ export function reportWorkerFailure(
     ...(fingerprint ? { jobFingerprint: fingerprint } : {}),
   }));
 }
+
+/**
+ * BullMQ stores thrown processor Error.message and stack on each failed job,
+ * including across retries and after the request has completed. Only freshly
+ * constructed, low-cardinality errors may cross that persistence boundary.
+ */
+export type WorkerQueueName = 'file' | 'pdf' | 'format' | 'archive';
+
+export function safeQueueFailure(error: unknown, queue: WorkerQueueName): Error {
+  // Preserve the one classification used by file-worker terminal state logic,
+  // without retaining the potentially sensitive scanner response suffix.
+  if (queue === 'file' && error !== null && typeof error === 'object') {
+    try {
+      const descriptor = Object.getOwnPropertyDescriptor(error, 'message');
+      if (typeof descriptor?.value === 'string' &&
+          descriptor.value.startsWith('SCAN_UNAVAILABLE:')) {
+        return new Error('SCAN_UNAVAILABLE: Antivirus scanner connection failed');
+      }
+    } catch {
+      // Untrusted proxies/getters must not affect the safe failure contract.
+    }
+  }
+
+  return new Error(`WORKER_${queue.toUpperCase()}_FAILED:${safeWorkerErrorCategory(error)}`);
+}
+
+/** Keep error sanitization at the outermost callback boundary of every BullMQ worker. */
+export async function protectQueueJob<T>(queue: WorkerQueueName, work: () => Promise<T>): Promise<T> {
+  try {
+    return await work();
+  } catch (error) {
+    throw safeQueueFailure(error, queue);
+  }
+}
