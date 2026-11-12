@@ -691,7 +691,12 @@ export class ProjectsService {
         throw new NotFoundException({ code: 'NOT_FOUND', detail: 'Project not found.' });
       }
       const proj = rows[0];
-      if (proj.status !== 'ACTIVE' && proj.status !== 'HANDOVER') {
+      // PH2-G05-006: an at-least-once HTTP retry of a completed handover
+      // must not silently advance row_version or emit another lifecycle event.
+      if (proj.status === 'HANDOVER') {
+        return { projectId, status: 'HANDOVER' };
+      }
+      if (proj.status !== 'ACTIVE') {
         throw new ConflictException({
           code: 'INVALID_STATE_TRANSITION',
           detail: 'Only ACTIVE projects can transition to HANDOVER.',
