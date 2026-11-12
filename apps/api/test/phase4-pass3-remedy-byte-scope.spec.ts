@@ -18,6 +18,7 @@ describe('PH4-G17-001/002 Pass 03: immutable scanner bytes and full target-set q
     scope?: string[];
     inactiveAsset?: string;
     scannerTime?: string | null;
+    storageStatus?: string;
     sha256?: string;
     expectedSha256?: string | null;
     providerVersion?: string;
@@ -38,7 +39,7 @@ describe('PH4-G17-001/002 Pass 03: immutable scanner bytes and full target-set q
       remedy_document_version_id: null,
     };
     const object: any = {
-      id: evidenceId, status: 'READY',
+      id: evidenceId, status: options.storageStatus ?? 'READY',
       sha256: options.sha256 ?? 'a'.repeat(64),
       expected_sha256: options.expectedSha256 ?? null,
       provider_version_id: options.providerVersion ?? 'immutable-v123',
@@ -142,6 +143,19 @@ describe('PH4-G17-001/002 Pass 03: immutable scanner bytes and full target-set q
     )).rejects.toMatchObject({response: {code: 'DEFECT_EVIDENCE_NOT_VERIFIED'}});
     expect(calls.some(x => x.sql.includes('UPDATE defects'))).toBe(false);
   });
+
+  it.each(['QUARANTINED','DELETED','FAILED','PROCESSING'])(
+    'refuses storage status %s even when a digest and scan date are present',
+    async status => {
+      const {service, calls} = fixture({storageStatus: status});
+      await expect(service.submitDefectRemedy(
+        ctx(submitter), projectId, defectId, evidenceId, 1,
+      )).rejects.toMatchObject({
+        response: {code: 'CLOSURE_EVIDENCE_NOT_FOUND_OR_NOT_READY'},
+      });
+      expect(calls.some(q => q.sql.includes('UPDATE defects'))).toBe(false);
+    },
+  );
 
   it('rejects a shared document with a retired asset even when the defect asset is active', async () => {
     const {service, calls} = fixture({inactiveAsset: assetB});
