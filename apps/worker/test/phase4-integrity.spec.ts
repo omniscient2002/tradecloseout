@@ -186,11 +186,14 @@ test('PH4-G14-002: a legacy unpinned manifest cannot be silently rebuilt from cu
       release: () => undefined,
     };
   } };
-  await assert.rejects(compileAndPersistHandoverPackage(pool, {} as any,
-    { orgId, packageId }, 'logical-job', true, `PACKAGE_ATTEMPT:${randomUUID()}`),
-    /PACKAGE_UNPINNED_MANIFEST_REQUIRES_REGENERATION/);
-  assert.equal(n, 2, 'must not allocate the upload/publish transaction');
-  assert.equal(queries.filter(q => q.includes('UPDATE handover_packages')).length, 0);
-  assert(queries.some(q => q.includes('ROLLBACK')));
+  const outcome = await compileAndPersistHandoverPackage(pool, {} as any,
+    { orgId, packageId }, 'logical-job', true, `PACKAGE_ATTEMPT:${randomUUID()}`);
+  assert.equal(outcome.status, 'FAILED');
+  assert.equal(outcome.manualRegenerationRequired, true);
+  assert.equal(n, 2, 'must not allocate an upload/publish transaction');
+  assert.equal(queries.filter(q => q.includes('UPDATE handover_packages') &&
+    q.includes('PACKAGE_LEGACY_MANIFEST_UNPINNED')).length, 1);
+  assert(queries.some(q => q === 'COMMIT'));
+  assert(!queries.some(q => q === 'ROLLBACK'));
   assert(queries.some(q => q.includes('pg_advisory_unlock')));
 });
