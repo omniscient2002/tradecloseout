@@ -186,6 +186,27 @@ describe('Phase 2 configuration fail-closed boundaries', () => {
     ]));
   });
 
+  it('rejects invalid layer records and unknown or inapplicable level keys', () => {
+    const malformed = resolveConfigV021({ PROJECT: null as any });
+    expect(malformed.conflicts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: '$layer', level: 'PROJECT' }),
+    ]));
+    const unknown = resolveConfigV021({
+      PROJECT: layer('PROJECT', { 'naming.pattern': 'safe' }),
+      UNSUPPORTED: layer('PROJECT', { 'naming.pattern': 'hidden' }),
+    } as any);
+    expect(unknown.conflicts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: '$level' }),
+    ]));
+    expect(unknown.payload['naming.pattern']).toBe('safe');
+    const preview = resolveConfigV021({
+      ORG: layer('ORG', { 'naming.pattern': 'not-in-preview' }),
+    }, true);
+    expect(preview.conflicts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: '$level' }),
+    ]));
+  });
+
   it('refuses unregistered policy, malformed type, forged registry prototypes and explicit null', () => {
     const result = resolveConfigV021({
       PLATFORM: layer('PLATFORM', {
