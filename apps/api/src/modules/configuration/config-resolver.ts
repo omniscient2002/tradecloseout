@@ -169,9 +169,25 @@ export function resolveConfigV021(
     ? ['PLATFORM', 'TRADE']
     : ['PLATFORM', 'ORG', 'CLIENT_CONTRACT', 'PROJECT'];
 
+  const suppliedLayers = isConfigRecord(layersByLevel) ? layersByLevel : {};
+  if (!isConfigRecord(layersByLevel)) {
+    conflicts.push({ path: '$layers', level: 'PLATFORM',
+      message: 'Configuration layers must be a level-keyed record.' });
+  }
+  for (const rawLevel of Object.keys(suppliedLayers)) {
+    if (!orderedLevels.includes(rawLevel as ConfigLevel)) {
+      conflicts.push({ path: '$level', level: 'PROJECT',
+        message: 'Unknown or inapplicable configuration level.' });
+    }
+  }
+
   for (const level of orderedLevels) {
-    const cfg = layersByLevel[level];
-    if (!cfg) continue;
+    const cfg = suppliedLayers[level] as ConfigLayerRecord | undefined;
+    if (cfg === undefined) continue;
+    if (!isConfigRecord(cfg)) {
+      conflicts.push({ path: '$layer', level, message: 'Configuration layer must be a record.' });
+      continue;
+    }
 
     const registry = Object.hasOwn(ConfigSchemaRegistry, cfg.schemaVersion)
       ? ConfigSchemaRegistry[cfg.schemaVersion] : undefined;
