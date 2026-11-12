@@ -529,8 +529,8 @@ export class ProjectsService {
   async reopenProject(
     ctx: TenantActorContext,
     projectId: string,
-    expectedRowVersion: number,
-    reason: string,
+    expectedRowVersion: number | undefined,
+    reason: string | undefined,
   ) {
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
       const { rows } = await client.query(
@@ -557,7 +557,7 @@ export class ProjectsService {
           detail: 'Only CLOSED projects can be reopened.',
         });
       }
-      if (!Number.isSafeInteger(expectedRowVersion) || expectedRowVersion <= 0 ||
+      if (typeof expectedRowVersion !== 'number' || !Number.isSafeInteger(expectedRowVersion) || expectedRowVersion <= 0 ||
           Number(proj.row_version) !== expectedRowVersion) {
         throw new ConflictException({ code: 'PRECONDITION_FAILED', detail: 'Current rowVersion is required.' });
       }
