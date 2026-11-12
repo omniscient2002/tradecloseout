@@ -242,8 +242,12 @@ export class HandoverService {
           `INSERT INTO package_requirements
             (id, org_id, project_id, package_id, requirement_id, requirement_key,
              scope_key, title, doc_type_key, mandatory, status_at_generation,
-             due_at_at_generation, asset_tag)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+             due_at_at_generation, asset_tag, revision_code_at_generation,
+             decision, decided_by, decided_at, decision_method,
+             waiver_id_at_generation, waiver_reason_at_generation,
+             second_approved_by_at_generation)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+                   $14, $15, $16, $17, $18, $19, $20, $21)`,
           [
             uuidv7(),
             ctx.orgId,
@@ -258,6 +262,14 @@ export class HandoverService {
             effectiveStatus,
             req.due_at,
             req.asset_tag ?? null,
+            req.revision_code ?? null,
+            req.valid_waiver_type ?? null,
+            req.valid_waiver_approved_by?.toString() ?? null,
+            req.valid_waiver_approved_at ?? null,
+            req.valid_waiver_type ? 'WAIVED' : null,
+            req.valid_waiver_id ?? null,
+            req.valid_waiver_reason ?? null,
+            req.valid_waiver_second_approved_by ?? null,
           ],
         );
 
