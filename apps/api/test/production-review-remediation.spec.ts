@@ -40,6 +40,7 @@ describe('Production Review Remediation Suite (NP01..NP06, NP09, NP10)', () => {
       const mockPool: any = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
+            if (sql.includes('SELECT id, status FROM projects')) return { rows: [{ id: projectId, status: 'ACTIVE' }] };
             if (sql.includes('SELECT * FROM quality_inspections')) {
               return {
                 rows: [
@@ -107,6 +108,7 @@ describe('Production Review Remediation Suite (NP01..NP06, NP09, NP10)', () => {
       const mockPool: any = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string) => {
+            if (sql.includes('SELECT id, status FROM projects')) return { rows: [{ id: projectId, status: 'ACTIVE' }] };
             if (sql.includes('SELECT * FROM seasonal_commissioning_schedules')) {
               return {
                 rows: [
@@ -140,6 +142,7 @@ describe('Production Review Remediation Suite (NP01..NP06, NP09, NP10)', () => {
       const mockPool: any = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
+            if (sql.includes('SELECT id, status FROM projects')) return { rows: [{ id: projectId, status: 'ACTIVE' }] };
             if (sql.includes('SELECT * FROM seasonal_commissioning_schedules')) {
               return {
                 rows: [
@@ -179,6 +182,7 @@ describe('Production Review Remediation Suite (NP01..NP06, NP09, NP10)', () => {
       const mockPool: any = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string) => {
+            if (sql.includes('SELECT id, status FROM projects')) return { rows: [{ id: projectId, status: 'ACTIVE' }] };
             if (sql.includes('SELECT * FROM seasonal_commissioning_schedules')) {
               return {
                 rows: [
