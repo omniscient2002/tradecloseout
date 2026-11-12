@@ -1,6 +1,31 @@
 import { PoolClient } from 'pg';
 
 /**
+ * PH3-G07-002: One qualification predicate for every consumer.
+ * A recorded exception only relieves the EXACT current obligation revision.
+ * Legacy rows lacking revision binding remain historic but cannot establish
+ * closeout readiness or qualify a generated package.
+ *
+ * Requires the caller's r = requirements, w = waivers SQL aliases.
+ */
+export const QUALIFIED_WAIVER_PREDICATE = `
+  w.status = 'ACTIVE'
+  AND w.type IN ('WAIVE', 'NOT_APPLICABLE')
+  AND w.is_mandatory_item = r.mandatory
+  AND w.obligation_row_version IS NOT NULL
+  AND r.row_version = w.obligation_row_version + CASE WHEN r.mandatory THEN 2 ELSE 1 END
+  AND r.status = CASE WHEN w.type = 'WAIVE' THEN 'WAIVED' ELSE 'NOT_APPLICABLE' END
+  AND r.superseded_at IS NULL
+  AND EXISTS (
+    SELECT 1 FROM checklist_snapshots cs
+    WHERE cs.org_id = r.org_id AND cs.project_id = r.project_id
+      AND cs.id = r.current_snapshot_id AND cs.status = 'ACTIVE'
+  )
+  AND (NOT r.mandatory OR
+    (w.second_approved_by IS NOT NULL AND w.second_approved_by <> w.approved_by))
+`;
+
+/**
  * Authoritative mandatory-closeout qualification over the caller's tenant-bound
  * PostgreSQL transaction. Used by readiness GET and final project closure so
  * evidence expiry, revoked waivers and added obligations cannot be ignored.
@@ -20,9 +45,8 @@ export async function evaluateReadinessInTransaction(
                 EXISTS (
                   SELECT 1 FROM waivers w
                    WHERE w.org_id = r.org_id AND w.project_id = r.project_id
-                     AND w.requirement_id = r.id AND w.status = 'ACTIVE'
-                     AND w.type IN ('WAIVE', 'NOT_APPLICABLE')
-                     AND (NOT r.mandatory OR (w.second_approved_by IS NOT NULL AND w.second_approved_by <> w.approved_by))
+                     AND w.requirement_id = r.id
+                     AND ${QUALIFIED_WAIVER_PREDICATE}
                 ) AS has_valid_waiver
            FROM requirements r
            LEFT JOIN LATERAL (
