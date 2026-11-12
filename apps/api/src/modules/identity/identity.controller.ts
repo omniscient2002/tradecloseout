@@ -616,7 +616,10 @@ export class IdentityController {
         if (!existing.length) {
           const allocation=await reserveActiveSeatForMembership(client,invitation.org_id);
           if (allocation!=='RESERVED') {
-            throw new UnauthorizedException({code:allocation});
+            throw new ConflictException({
+              code: allocation,
+              detail: 'Your identity was verified, but the organisation cannot allocate a seat. Ask its administrator to resolve capacity, then retry this unexpired proof.',
+            });
           }
           await client.query(
             `INSERT INTO memberships(id,org_id,user_id,role,status,joined_at)

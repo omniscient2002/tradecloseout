@@ -27,7 +27,10 @@ describe('Sol Integrity & Audit Invariants Suite', () => {
       const mockClient = {
         query: jest.fn(async (sql: string) => {
           executedQueries.push(sql);
+          if(sql.includes('SELECT project_id FROM document_versions'))return {rows:[{project_id:projectId}]};
+          if(sql.includes('SELECT id,status,purged_at FROM projects'))return {rows:[{id:projectId,status:'ACTIVE',purged_at:null}]};
           const entitlementFixture=syntheticEntitlementQuery(sql,{});if(entitlementFixture)return entitlementFixture;
+          if(sql.includes('SELECT id,status,purged_at FROM projects'))return {rows:[{id:projectId,status:'ACTIVE',purged_at:null}]};
           if (sql.includes("maxStorageBytes' AS max_storage_bytes")) {
             return { rows: [{ max_storage_bytes: '1048576' }] };
           }
@@ -81,7 +84,7 @@ describe('Sol Integrity & Audit Invariants Suite', () => {
 
       expect(res.versionId).toBeDefined();
       // Verify parent document was locked FOR UPDATE before MAX(version_no) query
-      const lockIndex = executedQueries.findIndex((q) => q.includes('SELECT id, doc_type_key FROM documents WHERE org_id = $1 AND project_id = $2 AND id = $3 FOR UPDATE'));
+      const lockIndex = executedQueries.findIndex((q) => q.includes('SELECT id, doc_type_key FROM documents WHERE org_id = $1 AND project_id = $2 AND id = $3 AND deleted_at IS NULL FOR UPDATE'));
       const maxIndex = executedQueries.findIndex((q) => q.includes('SELECT COALESCE(MAX(version_no), 0)'));
       expect(lockIndex).toBeGreaterThanOrEqual(0);
       expect(maxIndex).toBeGreaterThan(lockIndex);
@@ -94,6 +97,8 @@ describe('Sol Integrity & Audit Invariants Suite', () => {
       const mockClient = {
         query: jest.fn(async (sql: string) => {
           executedQueries.push(sql);
+          if(sql.includes('SELECT project_id FROM document_versions'))return {rows:[{project_id:projectId}]};
+          if(sql.includes('SELECT id,status,purged_at FROM projects'))return {rows:[{id:projectId,status:'ACTIVE',purged_at:null}]};
           if (sql.includes('SELECT dv.*, so.id AS storage_id') || sql.includes('FROM document_versions dv')) {
             return {
               rows: [{

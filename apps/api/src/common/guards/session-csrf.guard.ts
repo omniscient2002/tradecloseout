@@ -447,6 +447,7 @@ export class SessionCsrfGuard implements CanActivate {
       sessionId: session.session_id,
       authGeneration: String(session.auth_generation),
       actorType: session.guest_grant_id ? 'GUEST' : 'USER',
+      projectWrite: UNSAFE_METHODS.has(method),
       requestId: authData.requestId,
       orgRole,
       projectRole,

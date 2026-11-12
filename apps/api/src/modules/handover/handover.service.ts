@@ -8,7 +8,7 @@ import {
   UnprocessableEntityException,
   GoneException,
 } from '@nestjs/common';
-import { Pool } from 'pg';
+import { Pool,PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { createHash } from 'crypto';
 import { withTenantTransaction, consumePlanQuota, TenantActorContext } from '@tradecloseout/db/tenant-tx';
@@ -22,6 +22,20 @@ export class HandoverService {
     private readonly pool: Pool,
     private readonly storage: S3StorageService,
   ) {}
+
+  private async reservePackageGeneration(client:PoolClient,ctx:TenantActorContext,projectId:string) {
+    const {rows}=await client.query(`SELECT id,status,purged_at FROM projects
+      WHERE org_id=$1 AND id=$2 FOR UPDATE`,[ctx.orgId,projectId]);
+    if(!rows.length)throw new NotFoundException('PROJECT_NOT_FOUND');
+    if(rows[0].purged_at||!['ACTIVE','HANDOVER'].includes(rows[0].status)) {
+      throw new ConflictException({code:rows[0].status==='CLOSED'
+        ?'CLOSED_PROJECT_REQUIRES_FORMAL_REOPEN':'PROJECT_PACKAGE_GENERATION_NOT_ALLOWED'});
+    }
+    const effective=await resolveEffectiveEntitlements(client,ctx.orgId);
+    if(!effective.canConsume)throw new ConflictException({code:'PACKAGE_ENTITLEMENT_UNAVAILABLE'});
+    await consumePlanQuota(client,ctx.orgId,'PACKAGE_GENERATIONS',quotaMonthIndia(),1n,
+      BigInt(effective.limits.maxPackageGenerationsPerMonth));
+  }
 
   /**
    * API-118: GET /api/v1/projects/:id/readiness
@@ -54,6 +68,7 @@ export class HandoverService {
     }
 
     return withTenantTransaction(this.pool, ctx, async (client, emit) => {
+      await this.reservePackageGeneration(client,ctx,projectId);
       // Recheck in the package-creation transaction so a concurrent review or evidence
       // change cannot invalidate the readiness result calculated immediately above.
       const { rows: configuredRows } = await client.query(
@@ -127,15 +142,6 @@ export class HandoverService {
           detail: 'Mandatory evidence changed while the package request was being created. Refresh readiness and resolve the current blockers.',
         });
       }
-
-      // PH2-G18-005: package capacity is an entitlement, not a shared hardcoded 50.
-      // Hold both the subscription and plan against concurrent policy changes while
-      // reserving the package in the same tenant transaction as its snapshot.
-      const effective=await resolveEffectiveEntitlements(client,ctx.orgId);
-      if(!effective.canConsume)throw new ConflictException({code:'PACKAGE_ENTITLEMENT_UNAVAILABLE'});
-      const monthlyLimit=BigInt(effective.limits.maxPackageGenerationsPerMonth);
-      const currentMonth = quotaMonthIndia(); // YYYY-MM in Asia/Kolkata
-      await consumePlanQuota(client, ctx.orgId, 'PACKAGE_GENERATIONS', currentMonth, 1n, monthlyLimit);
 
       const { rows: snapRows } = await client.query(
         `SELECT id, checksum FROM checklist_snapshots
@@ -609,6 +615,7 @@ export class HandoverService {
     },
   ) {
     return withTenantTransaction(this.pool, ctx, async (client, emit) => {
+      await this.reservePackageGeneration(client,ctx,projectId);
       // 1. Fetch requirements scoped to this milestone
       const { rows: milestoneReqs } = await client.query(
         `SELECT r.id, r.requirement_key, r.scope_key, r.title, r.doc_type_key,

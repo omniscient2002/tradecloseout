@@ -189,6 +189,8 @@ describe('Perfect 10 Remediation & Hardening Test Suite', () => {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation((sql: string) => {
             const entitlementFixture=syntheticEntitlementQuery(sql,{storageBytes:1000000000});if(entitlementFixture)return entitlementFixture;
+            if(sql.includes('SELECT id,status,purged_at FROM projects'))return {rows:[{id:projectId,status:'ACTIVE',purged_at:null}]};
+            if(sql.includes('AS ready_bytes'))return {rows:[{ready_bytes:'950000000',reserved_bytes:'0'}]};
           if (sql.includes("maxStorageBytes' AS max_storage_bytes")) {
               return Promise.resolve({ rows: [{ max_storage_bytes: '1000000000' }] });
             }
@@ -230,15 +232,19 @@ describe('Perfect 10 Remediation & Hardening Test Suite', () => {
     it('deleteDocument refunds storage bytes of ready files', async () => {
       const docId = uuidv7();
       let quotaDeducted = false;
+      let documentDeleted = false;
 
       const mockPool = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation((sql: string, params: any[]) => {
-            if (sql.includes('UPDATE documents') && sql.includes('deleted_at = now()')) {
+            if(sql.startsWith('SELECT project_id FROM documents'))return Promise.resolve({rows:[{project_id:projectId}]});
+            if(sql.includes('SELECT id,status,purged_at FROM projects'))return Promise.resolve({rows:[{id:projectId,status:'ACTIVE',purged_at:null}]});
+            if (sql.includes('UPDATE documents') && sql.includes('deleted_at=now()')) {
+              documentDeleted=true;
               return Promise.resolve({ rows: [{ id: docId }] });
             }
-            if (sql.includes('SELECT COALESCE(SUM(so.size_bytes), 0) AS total_bytes')) {
-              return Promise.resolve({ rows: [{ total_bytes: '52428800' }] }); // 50 MB
+            if (sql.includes('AS ready_bytes')) {
+              return Promise.resolve({ rows: [{ ready_bytes: documentDeleted?'0':'52428800',reserved_bytes:'0' }] });
             }
             if (sql.includes('UPDATE usage_counters') && sql.includes('STORAGE_BYTES')) {
               quotaDeducted = true;
@@ -488,6 +494,8 @@ describe('Perfect 10 Remediation & Hardening Test Suite', () => {
       const mockPool = {
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation((sql: string) => {
+            const offer=syntheticEntitlementQuery(sql);if(offer)return offer;
+            if(sql.includes('SELECT id,status,purged_at FROM projects'))return {rows:[{id:projectId,status:'ACTIVE',purged_at:null}]};
             if (sql.includes('SELECT r.id, r.requirement_key') && sql.includes('r.milestone_key = $3')) {
               return Promise.resolve({
                 rows: [

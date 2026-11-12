@@ -849,41 +849,21 @@ describe('Discovery & Lifecycle Foundations Test Suite', () => {
   // 8. Storage Lifecycle Cleanup (Top 25 Item 25)
   // ==========================================================================
   describe('Storage Lifecycle Cleanup', () => {
-    it('safely deletes stale abandoned upload intents older than 24h without touching verified READY files', async () => {
-      let versionsDeleteSql = '';
-      let objectsDeleteSql = '';
-
-      const mockClient = {
-        query: jest.fn().mockImplementation(async (sql: string) => {
-          if (sql.includes('SELECT id FROM organisations WHERE status = \'ACTIVE\'')) {
-            return { rows: [{ id: orgId }] };
-          }
-          if (sql.includes('DELETE FROM document_versions')) {
-            versionsDeleteSql = sql;
-            return { rowCount: 4 };
-          }
-          if (sql.includes('DELETE FROM storage_objects')) {
-            objectsDeleteSql = sql;
-            return { rowCount: 2 };
-          }
-          return { rows: [] };
-        }),
-        release: jest.fn(),
-      };
-
-      const mockPool = { connect: jest.fn().mockResolvedValue(mockClient) } as any;
-      const mockRedis = {} as any;
-
-      const scheduler = new TradeCloseoutScheduler(mockPool, mockRedis);
-
-      const res = await scheduler.runStorageLifecycleCleanup();
-
-      expect(res.purgedPendingVersions).toBe(4);
-      expect(res.purgedPendingObjects).toBe(2);
-      expect(versionsDeleteSql).toContain("file_status = 'PENDING_UPLOAD'");
-      expect(versionsDeleteSql).toContain("interval '24 hours'");
-      expect(objectsDeleteSql).toContain("status = 'PENDING'");
-      expect(objectsDeleteSql).toContain("NOT EXISTS (");
+    it('retains expired upload identities and records that physical provider cleanup is unconfirmed',async()=>{
+      const executed:string[]=[];
+      const mockClient={query:jest.fn(async(sql:string)=>{
+        executed.push(sql);
+        if(sql.includes('SELECT id FROM organisations'))return {rows:[{id:orgId}]};
+        if(sql.includes('SELECT DISTINCT project_id'))return {rows:[{project_id:projectId}]};
+        if(sql.includes('SELECT dv.id,dv.object_id'))return {rows:[{id:uuidv7(),object_id:uuidv7(),project_id:projectId}]};
+        if(sql.includes('UPDATE storage_objects so'))return {rows:[],rowCount:1};
+        return {rows:[]};
+      }),release:jest.fn()};
+      const scheduler=new TradeCloseoutScheduler({connect:async()=>mockClient} as any,{} as any);
+      expect(await scheduler.runStorageLifecycleCleanup()).toEqual({expiredVersions:1,expiredObjects:1});
+      expect(executed.some(sql=>/^DELETE FROM (document_versions|storage_objects)/.test(sql.trim()))).toBe(false);
+      expect(executed.some(sql=>sql.includes('upload_cleanup_requested_at'))).toBe(true);
+      expect(executed.some(sql=>sql.includes('upload_cleanup_completed_at='))).toBe(false);
     });
   });
 });

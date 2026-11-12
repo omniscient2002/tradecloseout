@@ -4,7 +4,7 @@ import { createHash } from 'crypto';
 import { uuidv7 } from 'uuidv7';
 import { dispatchDueNotifications } from './notification-dispatch';
 import { isIndiaQuietHour } from '@tradecloseout/shared';
-import { AuthDeliveryLedger } from '@tradecloseout/db';
+import { AuthDeliveryLedger,lockStorageCapacity,reconcileStorageCapacity } from '@tradecloseout/db';
 
 export class TradeCloseoutScheduler {
   constructor(
@@ -437,59 +437,53 @@ export class TradeCloseoutScheduler {
     return res.verifiedEvents;
   }
 
-  /**
-   * Top 25 Item 25: Storage & Temporary Artifacts Lifecycle Cleanup
-   * Safely purges abandoned upload intents (file_status = 'PENDING_UPLOAD' older than 24h)
-   * and unattached storage objects in status 'PENDING' older than 24h, preventing storage quota leaks
-   * without ever modifying or deleting verified original evidence objects.
-   */
-  async runStorageLifecycleCleanup(): Promise<{ purgedPendingVersions: number; purgedPendingObjects: number }> {
-    const client = await this.pool.connect();
+  /** Preserve the existing 24h intent deadline, but retain attributable
+   * tombstones. Logical expiry is NOT confirmed multipart/object deletion.
+   * Physical cleanup remains visible until a provider receipt is reconciled. */
+  async runStorageLifecycleCleanup(): Promise<{expiredVersions:number;expiredObjects:number}> {
+    const client=await this.pool.connect();
+    let expiredVersions=0,expiredObjects=0,destroy=false;
     try {
-      const { rows: orgs } = await client.query(`SELECT id FROM organisations WHERE status = 'ACTIVE'`);
-      let purgedPendingVersions = 0;
-      let purgedPendingObjects = 0;
-
-      for (const org of orgs) {
+      const {rows:orgs}=await client.query(`SELECT id FROM organisations WHERE status<>'DELETED' ORDER BY id`);
+      for(const org of orgs) {
         await client.query('BEGIN');
-        await client.query(
-          `SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`,
-          [org.id],
-        );
-
-        // 1. Purge stale uncompleted upload intents older than 24 hours
-        const { rowCount: vCount } = await client.query(
-          `DELETE FROM document_versions
-           WHERE org_id = $1
-             AND file_status = 'PENDING_UPLOAD'
-             AND created_at < now() - interval '24 hours'`,
-          [org.id],
-        );
-        purgedPendingVersions += vCount ?? 0;
-
-        // 2. Purge unattached storage objects in PENDING status older than 24 hours
-        const { rowCount: oCount } = await client.query(
-          `DELETE FROM storage_objects so
-           WHERE so.org_id = $1
-             AND so.status = 'PENDING'
-             AND so.created_at < now() - interval '24 hours'
-             AND NOT EXISTS (
-               SELECT 1 FROM document_versions dv WHERE dv.object_id = so.id
-             )`,
-          [org.id],
-        );
-        purgedPendingObjects += oCount ?? 0;
-
+        await client.query(`SELECT set_config('app.current_org',$1,true),set_config('app.current_org_id',$1,true)`,[org.id]);
+        await client.query("SET LOCAL lock_timeout='15s'");
+        // Stable shared lock order with upload, delete, restore and scan commit.
+        const {rows:projects}=await client.query(`SELECT DISTINCT project_id FROM document_versions
+          WHERE org_id=$1 AND file_status='PENDING_UPLOAD' AND created_at<now()-interval '24 hours'
+          ORDER BY project_id`,[org.id]);
+        for(const project of projects)await client.query(`SELECT id FROM projects
+          WHERE org_id=$1 AND id=$2 FOR UPDATE`,[org.id,project.project_id]);
+        await lockStorageCapacity(client,org.id);
+        const {rows:versions}=await client.query(`SELECT dv.id,dv.object_id,dv.project_id FROM document_versions dv
+          JOIN storage_objects so ON so.org_id=dv.org_id AND so.id=dv.object_id
+          WHERE dv.org_id=$1 AND dv.file_status='PENDING_UPLOAD' AND so.status='PENDING'
+            AND dv.created_at<now()-interval '24 hours' ORDER BY dv.id FOR UPDATE OF dv,so`,[org.id]);
+        for(const version of versions) {
+          await client.query(`UPDATE document_versions SET file_status='FAILED',updated_at=now()
+            WHERE org_id=$1 AND id=$2 AND file_status='PENDING_UPLOAD'`,[org.id,version.id]);
+          await client.query(`INSERT INTO outbox_events(id,org_id,project_id,event_type,payload_json)
+            VALUES($1,$2,$3,'UPLOAD_INTENT_EXPIRED',$4)`,[uuidv7(),org.id,version.project_id,
+              JSON.stringify({versionId:version.id,storageObjectId:version.object_id,providerCleanupConfirmed:false})]);
+          expiredVersions++;
+        }
+        // Never alter PROCESSING/READY objects or delete latest_version_id
+        // targets. A concurrent completion wins before this lock or is denied
+        // afterwards by the terminal version state.
+        const {rowCount}=await client.query(`UPDATE storage_objects so SET status='ABORTED',
+            upload_failure_code='UPLOAD_INTENT_EXPIRED',
+            upload_cleanup_requested_at=COALESCE(upload_cleanup_requested_at,now()),updated_at=now()
+          WHERE so.org_id=$1 AND so.status='PENDING' AND so.created_at<now()-interval '24 hours'
+            AND NOT EXISTS(SELECT 1 FROM document_versions dv WHERE dv.org_id=so.org_id AND dv.object_id=so.id
+              AND dv.file_status<>'FAILED')`,[org.id]);
+        expiredObjects+=rowCount??0;
+        await reconcileStorageCapacity(client,org.id);
         await client.query('COMMIT');
       }
-
-      return { purgedPendingVersions, purgedPendingObjects };
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
+      return {expiredVersions,expiredObjects};
+    }catch(error){try{await client.query('ROLLBACK');}catch{destroy=true;}throw error;}
+    finally{client.release(destroy);}
   }
 
   /**

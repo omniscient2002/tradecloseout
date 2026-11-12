@@ -91,6 +91,8 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
       const mockClient = {
         query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
           executedQueries.push({ sql, params });
+          if(sql.includes('SELECT project_id FROM document_versions'))return {rows:[{project_id:projectId}]};
+          if(sql.includes('SELECT id,status,purged_at FROM projects'))return {rows:[{id:projectId,status:'ACTIVE',purged_at:null}]};
           if (sql.includes('SELECT dv.*, so.id AS storage_id')) {
             return {
               rows: [
@@ -215,6 +217,8 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
           const client = {
             query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
               executedQueries.push({ sql, params });
+          if(sql.includes('SELECT project_id FROM document_versions'))return {rows:[{project_id:projectId}]};
+          if(sql.includes('SELECT id,status,purged_at FROM projects'))return {rows:[{id:projectId,status:'ACTIVE',purged_at:null}]};
               if (sql.includes('SELECT project_id FROM reviews')) {
                 return { rows: [{ project_id: projectId }] };
               }
@@ -322,6 +326,8 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
             executedQueries.push({ sql, params });
+          if(sql.includes('SELECT project_id FROM document_versions'))return {rows:[{project_id:projectId}]};
+          if(sql.includes('SELECT id,status,purged_at FROM projects'))return {rows:[{id:projectId,status:'ACTIVE',purged_at:null}]};
             if (sql.includes('FROM submissions')) {
               return {
                 rows: [{ id: 'sub-1', project_id: projectId, status: 'SUBMITTED', package_id: 'pkg-1', package_purpose: 'FULL_HANDOVER' }],
@@ -399,6 +405,8 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
             executedQueries.push({ sql, params });
+          if(sql.includes('SELECT project_id FROM document_versions'))return {rows:[{project_id:projectId}]};
+          if(sql.includes('SELECT id,status,purged_at FROM projects'))return {rows:[{id:projectId,status:'ACTIVE',purged_at:null}]};
             if (sql.includes('SELECT d.*, a.tag AS asset_tag')) {
               return { rows: [{ id: 'def-1', title: 'Damper stuck', raised_at: new Date() }] };
             }
@@ -481,6 +489,8 @@ describe('TradeCloseout 2.0 — Evidence Integrity & Transformation Suite', () =
       const mockClient = {
         query: jest.fn().mockImplementation(async (sql: string, params: any[]) => {
           executedQueries.push({ sql, params });
+          if(sql.includes('SELECT project_id FROM document_versions'))return {rows:[{project_id:projectId}]};
+          if(sql.includes('SELECT id,status,purged_at FROM projects'))return {rows:[{id:projectId,status:'ACTIVE',purged_at:null}]};
           if (sql.includes('SELECT scope_json, capabilities FROM guest_grants')) {
             return { rows: [{ scope_json: { requirementIds: ['0192e3a0-req-allowed-1'] }, capabilities: ['document.upload'] }] };
           }

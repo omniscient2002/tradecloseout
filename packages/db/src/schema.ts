@@ -684,6 +684,9 @@ export const storageObjects = pgTable(
     retentionClass: text('retention_class').notNull().default('PROJECT_PLUS_8Y'),
     createdBy: uuid('created_by').references(() => users.id),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    uploadCleanupRequestedAt: timestamp('upload_cleanup_requested_at', { withTimezone: true }),
+    uploadCleanupCompletedAt: timestamp('upload_cleanup_completed_at', { withTimezone: true }),
+    uploadFailureCode: text('upload_failure_code'),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({

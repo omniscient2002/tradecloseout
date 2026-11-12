@@ -1,4 +1,5 @@
 import type { PoolClient } from 'pg';
+import {readStorageCapacity} from './storage-capacity';
 
 export const PLAN_LIMIT_KEYS = ['maxActiveProjects', 'maxSeats', 'maxStorageBytes', 'maxPackageGenerationsPerMonth'] as const;
 export type PlanLimits = Record<typeof PLAN_LIMIT_KEYS[number], number>;
@@ -85,12 +86,8 @@ export async function currentCapacityUsage(client:PoolClient,orgId:string){
   const {rows}=await client.query<{seats:string;projects:string;storage_bytes:string;reserved_storage_bytes:string}>(`SELECT
     (SELECT count(*) FROM memberships WHERE org_id=$1 AND status='ACTIVE')::text AS seats,
     (SELECT count(*) FROM projects WHERE org_id=$1 AND status IN ('ACTIVE','HANDOVER','SUSPENDED') AND purged_at IS NULL)::text AS projects,
-    (SELECT COALESCE(sum(so.size_bytes),0) FROM storage_objects so
-      WHERE so.org_id=$1 AND so.status IN ('PENDING','PROCESSING','READY')
-        AND (NOT EXISTS(SELECT 1 FROM document_versions dv WHERE dv.org_id=so.org_id AND dv.object_id=so.id)
-          OR EXISTS(SELECT 1 FROM document_versions dv JOIN documents d ON d.org_id=dv.org_id AND d.id=dv.document_id
-            WHERE dv.org_id=so.org_id AND dv.object_id=so.id AND d.deleted_at IS NULL)))::text AS storage_bytes,
-    (SELECT COALESCE(sum(size_bytes),0) FROM storage_objects WHERE org_id=$1 AND status IN ('PENDING','PROCESSING'))::text AS reserved_storage_bytes`,[orgId]);
-  return rows[0];
+    '0'::text AS storage_bytes, '0'::text AS reserved_storage_bytes`,[orgId]);
+  const storage=await readStorageCapacity(client,orgId);
+  return {...rows[0],storage_bytes:storage.totalBytes.toString(),reserved_storage_bytes:storage.reservedBytes.toString()};
 }
 

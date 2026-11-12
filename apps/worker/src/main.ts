@@ -10,7 +10,7 @@ import os from 'os';
 import path from 'path';
 import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
-import { reconcileStorageQuotaOnFileStatusChange } from '@tradecloseout/db/tenant-tx';
+import { lockStorageCapacity, reconcileStorageCapacity } from '@tradecloseout/db';
 import { TradeCloseoutScheduler } from './scheduler';
 import { verifyAndScanUploadedFile } from './queues/file.processor';
 import { convertSupportingFormatToPdf } from './queues/format-converter';
@@ -139,10 +139,10 @@ async function bootWorker() {
         300,
         2 * 60 * 60,
         async () => {
-          const { purgedPendingVersions, purgedPendingObjects } = await scheduler.runStorageLifecycleCleanup();
-          if (purgedPendingVersions > 0 || purgedPendingObjects > 0) {
+          const { expiredVersions, expiredObjects } = await scheduler.runStorageLifecycleCleanup();
+          if (expiredVersions > 0 || expiredObjects > 0) {
             console.log(
-              `[Scheduler] Cleaned up ${purgedPendingVersions} stale pending versions and ${purgedPendingObjects} unattached pending objects.`,
+              `[Scheduler] Expired ${expiredVersions} stale upload versions and ${expiredObjects} pending objects; provider cleanup requires confirmation.`,
             );
           }
         },
@@ -275,6 +275,11 @@ async function bootWorker() {
         try {
           await client.query('BEGIN');
           await client.query(`SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`, [orgId]);
+          const {rows:scope}=await client.query(`SELECT project_id FROM document_versions
+            WHERE org_id=$1 AND id=$2 AND object_id=$3`,[orgId,versionId,storageObjectId]);
+          if(scope[0]?.project_id)await client.query(`SELECT id FROM projects
+            WHERE org_id=$1 AND id=$2 FOR UPDATE`,[orgId,scope[0].project_id]);
+          await lockStorageCapacity(client,orgId);
           const { rows: currentRows } = await client.query(
             `SELECT dv.file_status, so.status AS storage_status, so.provider_version_id
                FROM document_versions dv
@@ -290,7 +295,7 @@ async function bootWorker() {
             return { ...result, finalStatus: 'IGNORED_STALE_RECEIPT' };
           }
           if (result.finalStatus === 'READY') {
-            const updRes = await client.query(
+            await client.query(
               `UPDATE document_versions
                   SET file_status = 'READY',
                       updated_at = now()
@@ -309,17 +314,9 @@ async function bootWorker() {
                 [storageObjectId, orgId, result.sha256, providerVersionId],
               );
             }
-            // Idempotent storage quota accounting (TC2-024)
-            if (updRes.rows.length > 0 && storageObjectId) {
-              const { rows: soRows } = await client.query(
-                `SELECT size_bytes FROM storage_objects WHERE id = $1 AND org_id = $2`,
-                [storageObjectId, orgId],
-              );
-              if (soRows.length > 0 && soRows[0].size_bytes) {
-                const sizeBytes = BigInt(soRows[0].size_bytes);
-                await reconcileStorageQuotaOnFileStatusChange(client, orgId, sizeBytes, 'MARKED_READY');
-              }
-            }
+            // The mutex prevents a reservation from seeing the transitional
+            // state; canonical rows prevent retry/dedup/shared-object overcharge.
+            await reconcileStorageCapacity(client,orgId);
           } else if (result.finalStatus === 'QUARANTINED') {
             await client.query(
               `UPDATE document_versions

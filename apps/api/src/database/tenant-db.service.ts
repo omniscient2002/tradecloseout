@@ -21,6 +21,8 @@ export interface ExecutionContext {
   guestCapabilities?: string[];
   sessionId?: string;
   authGeneration?: string;
+  /** Server-selected initial project lock mode; never read from request JSON. */
+  projectWrite?: boolean;
 }
 
 @Injectable()

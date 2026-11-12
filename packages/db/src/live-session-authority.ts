@@ -16,6 +16,8 @@ export async function assertCurrentSessionEligibility(client: PoolClient, ctx: {
   actorType: 'MEMBER' | 'USER' | 'GUEST' | 'SYSTEM' | 'ADMIN';
   sessionId?: string;
   authGeneration?: string;
+  /** Server-selected initial project lock mode; never read from request JSON. */
+  projectWrite?: boolean;
   orgRole?: string;
   guestGrantId?: string;
   projectId?: string;
@@ -50,7 +52,7 @@ export async function assertCurrentSessionEligibility(client: PoolClient, ctx: {
         WHERE g.org_id=$1 AND g.id=$2 AND g.principal_user_id=$3
           AND g.status='ACTIVE' AND g.expires_at>now()
           AND p.status NOT IN ('CANCELLED','ARCHIVED') AND pt.status='ACTIVE'
-        FOR SHARE OF g,p,pt`,
+        FOR SHARE OF g,pt ${ctx.projectWrite?'FOR UPDATE':'FOR SHARE'} OF p`,
       [ctx.orgId,ctx.guestGrantId,ctx.userId],
     );
     const grant=rows[0];

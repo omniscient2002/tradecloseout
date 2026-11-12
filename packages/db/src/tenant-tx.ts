@@ -25,6 +25,8 @@ export interface TenantActorContext {
   // Optional for controlled migrations, background jobs and offline fixtures.
   sessionId?: string;
   authGeneration?: string;
+  /** Server-selected initial project lock mode; never read from request JSON. */
+  projectWrite?: boolean;
   /** Server-selected stronger initial lock for organisation administration. */
   organisationWrite?: boolean;
 }

@@ -80,6 +80,7 @@ export type ProjectAuthorityContext = {
   guestGrantId?: string;
   guestScope?: Record<string, unknown>;
   permission?: string;
+  projectWrite?: boolean;
   docControllerOrgWideDownload?: boolean;
 };
 
@@ -87,6 +88,10 @@ export async function assertCurrentProjectAuthority(
   client: PoolClient, ctx: ProjectAuthorityContext,
 ): Promise<void> {
   if (!ctx.projectId || ctx.actorType === 'SYSTEM') return;
+  // Acquire the lifecycle lock before project-member locks. Mutations must
+  // not upgrade a shared project lock acquired by live guest revalidation.
+  await client.query(`SELECT id FROM projects WHERE org_id=$1 AND id=$2
+    FOR ${ctx.projectWrite?'UPDATE':'SHARE'}`,[ctx.orgId,ctx.projectId]);
   if (ctx.actorType === 'GUEST' || ctx.guestGrantId) {
     if (!ctx.guestGrantId) throw new Error('G02_GUEST_GRANT_REQUIRED');
     const { rows } = await client.query(

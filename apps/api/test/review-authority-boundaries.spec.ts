@@ -18,7 +18,7 @@ describe('review authority and expiry', () => {
     });
     const service = new ReviewsService({ withTenantContext: async (_ctx: unknown, work: any) => work({ query }) } as any);
     await expect(service.decideReview(actor, 'review-1', { decision: 'APPROVE' })).rejects.toThrow('REVIEW_ASSIGNMENT_REQUIRED');
-    expect(query).toHaveBeenCalledTimes(2);
+    expect(query.mock.calls.some(([sql]) => /^(?:INSERT|UPDATE|DELETE)\s/i.test(sql.trim()))).toBe(false);
   });
 
   it('does not create an assignment as a side effect of deciding', async () => {

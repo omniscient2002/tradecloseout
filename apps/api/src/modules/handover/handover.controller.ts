@@ -135,6 +135,7 @@ export class HandoverController {
    * API-112: POST /api/v1/projects/:projectId/handover/ra-bill-pack
    */
   @Post('projects/:projectId/handover/ra-bill-pack')
+  @RequireIdempotency()
   @UseGuards(SessionCsrfGuard, PermissionGuard)
   @RequirePermission('package.generate')
   async compileRaBillEvidencePack(

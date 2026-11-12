@@ -17,13 +17,16 @@
     {
       "number": 2,
       "work": "Unified versioned entitlement policy",
-      "state": "LOCAL_CHECKS_PASSED_CI_PENDING",
-      "notes": "Pinned immutable offers and explicit policy provenance; one resolver for current reads/seat/upload/project/package enforcement; no real policy approval or provider activation. Full workspace492 API plus separate44-boundary run includes2 new actual upgrade/concurrency tests. Overlapping results are not summed."
+      "state": "CI_VERIFIED_ENGINEERING_PASS",
+      "notes": "Pinned immutable offers and explicit policy provenance; one resolver for current reads/seat/upload/project/package enforcement; no real policy approval or provider activation. Full workspace492 API plus separate44-boundary run includes2 new actual upgrade/concurrency tests. Overlapping results are not summed.",
+      "verifiedSha": "a00ac57f5b680ebca8a977b6c18326d333a0e7d7",
+      "ci": "https://github.com/omniscient2002/tradecloseout/actions/runs/43223651422"
     },
     {
       "number": 3,
       "work": "Atomic quota enforcement and recovery",
-      "state": "PLANNED"
+      "state": "IN_PROGRESS",
+      "notes": "Canonical object accounting; restore and scan/upload lock order; final-seat production OTP rollback/retry; RA package route now shares monthly and lifecycle gates. Full regression and exact-head CI pending; physical provider cleanup still requires integration acceptance."
     },
     {
       "number": 4,
@@ -569,8 +572,8 @@
     {
       "id": "PH2-NEW-001",
       "title": "Authenticated organisation profile writes must acquire the stronger initial org lock, avoiding shared-to-exclusive upgrades",
-      "evidenceLevel": "SOURCE_CONFIRMED_RISK",
-      "state": "CANDIDATE_FIX",
+      "evidenceLevel": "TARGETED_POSTGRESQL",
+      "state": "CANDIDATE_FIX_TESTED",
       "scope": "Server-selected organisationWrite lock mode; no current-authority check removed."
     },
     {
@@ -585,6 +588,27 @@
       "title": "Single-project offers need durable project scope before new consumption",
       "state": "OPEN_FAIL_CLOSED",
       "notes": "ONE_TIME_PROJECT new consumption remains unavailable until a complete scoped offer model and approved policy exist. It is not automatically excluded from required product scope."
+    },
+    {
+      "id": "PH2-NEW-004",
+      "title": "Scheduled upload expiry deletes retained version identities and does not distinguish provider cleanup",
+      "state": "CANDIDATE_FIX_TESTED",
+      "evidenceLevel": "TARGETED_POSTGRESQL",
+      "notes": "Expiry now retains FAILED/ABORTED tombstones, existing latest-version references and explicit unconfirmed cleanup state. Physical provider cleanup is not claimed."
+    },
+    {
+      "id": "PH2-NEW-005",
+      "title": "Authenticated guest mutations can upgrade a shared project lock during live authority revalidation",
+      "state": "CANDIDATE_FIX_TESTED",
+      "evidenceLevel": "TARGETED_POSTGRESQL",
+      "notes": "Server selects initial write lock mode before live authority checks. Two independently authenticated guest upload-intent transactions complete without shared-lock upgrade."
+    },
+    {
+      "id": "PH2-NEW-006",
+      "title": "RA evidence-pack generation bypasses monthly entitlement and lifecycle gates",
+      "state": "CANDIDATE_FIX_TESTED",
+      "evidenceLevel": "TARGETED_POSTGRESQL",
+      "notes": "Both package routes share project and capacity gates; RA route requires transport idempotency. Tests deny absent/zero/month-exhausted/closed cases and verify failed creation rolls back reservation."
     }
   ],
   "candidateWork": [
@@ -612,6 +636,16 @@
       "id": "PH2-G18-009",
       "state": "PARTIAL_TESTED",
       "notes": "Billing UI distinguishes recorded data from effective approval/allowance and exposes current usage; full recovery/provider journey still open."
+    },
+    {
+      "id": "PH2-G18-002",
+      "state": "IMPLEMENTED_SUBSET_TESTED_NOT_ACCEPTED",
+      "notes": "Actual production-mode PostgreSQL OTP invitation race grants one final seat; rejected invitation/proof remains unconsumed and works once capacity is explicitly recovered. Delivery is a test-only adapter, not provider approval."
+    },
+    {
+      "id": "PH2-G18-005",
+      "state": "IMPLEMENTED_SUBSET_TESTED_NOT_ACCEPTED",
+      "notes": "All known full/RA package generation routes use the same IST-month quota and project lock, with failure rollback and endpoint idempotency. Full provider artifacts and business acceptance remain open."
     }
   ]
 }

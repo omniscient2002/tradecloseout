@@ -1,4 +1,5 @@
 import {resolveEffectiveEntitlements} from '@tradecloseout/db/entitlements';
+import {lockStorageCapacity,reconcileStorageCapacity} from '@tradecloseout/db';
 // apps/api/src/modules/documents/documents.service.ts
 // Document upload intents, multipart refresh, virus scanning, versioning & bulk import
 // (RT-001, RT-006, RT-012, CB-003, AUD-P-04, FR-DOC-001..033, TC-DOC-01..03)
@@ -77,6 +78,28 @@ export class DocumentsService {
       this.db = new TenantDbService();
     }
     this.storageAdapter = storageAdapter || new S3StorageService();
+  }
+
+  private async lockStorageProject(client:PoolClient,ctx:ExecutionContext,projectId:string,editable:boolean) {
+    const {rows}=await client.query(`SELECT id,status,purged_at FROM projects
+      WHERE org_id=$1 AND id=$2 FOR UPDATE`,[ctx.orgId,projectId]);
+    const project=rows[0];
+    if(!project)throw new NotFoundException('PROJECT_NOT_FOUND');
+    if(project.purged_at)throw new ConflictException({code:'PROJECT_PURGED'});
+    if(editable&&!['DRAFT','ACTIVE','HANDOVER'].includes(project.status)) {
+      throw new ConflictException({code:project.status==='CLOSED'
+        ?'CLOSED_PROJECT_REQUIRES_FORMAL_REOPEN':'PROJECT_DOCUMENTS_NOT_EDITABLE'});
+    }
+  }
+
+  private async lockDocumentStorage(client:PoolClient,ctx:ExecutionContext,id:string,version:boolean,editable:boolean) {
+    const {rows}=await client.query(version
+      ?'SELECT project_id FROM document_versions WHERE org_id=$1 AND id=$2'
+      :'SELECT project_id FROM documents WHERE org_id=$1 AND id=$2',[ctx.orgId,id]);
+    if(!rows.length)throw new NotFoundException(version?'VERSION_NOT_FOUND':'DOCUMENT_NOT_FOUND');
+    if(ctx.projectId&&ctx.projectId!==rows[0].project_id)throw new NotFoundException('DOCUMENT_NOT_FOUND');
+    await this.lockStorageProject(client,ctx,rows[0].project_id,editable);
+    return lockStorageCapacity(client,ctx.orgId);
   }
 
   private async assertGuestVersionScope(
@@ -319,7 +342,7 @@ export class DocumentsService {
       ...(dto.assetIds || []),
     ]));
 
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+    return this.db.withTenantContext({...ctx,projectWrite:true}, async (client: PoolClient) => {
       if (isGuest) {
         if (!guestGrantId || requestedRequirementIds.length === 0) {
           throw new ForbiddenException('GUEST_UPLOAD_SCOPE_REQUIRED');
@@ -383,33 +406,14 @@ export class DocumentsService {
         }
       }
 
-      // PH2-G18-003: zero capacity is a real limit. Acquire subscription
-      // and plan locks, then serialize all upload-intent reservations through
-      // the org's STORAGE_BYTES counter. Include every unfinished PENDING
-      // object in the prospective capacity (they become charged READY bytes
-      // on finalization). Intent rows are committed in this same transaction.
+      // Every writer takes project -> capacity -> document locks. Derive usage
+      // from objects, repairing counters separately rather than trusting drift.
+      await this.lockStorageProject(client,ctx,projectId,true);
       const effective=await resolveEffectiveEntitlements(client,ctx.orgId);
       if(!effective.canConsume)throw new ConflictException({code:'STORAGE_ENTITLEMENT_UNAVAILABLE'});
       const storageCeiling=BigInt(effective.limits.maxStorageBytes);
-      await client.query(
-        `INSERT INTO usage_counters(id, org_id, metric, period, value)
-         VALUES($1, $2, 'STORAGE_BYTES', 'ALL_TIME', 0)
-         ON CONFLICT(org_id, metric, period) DO NOTHING`,
-        [uuidv7(), ctx.orgId],
-      );
-      const { rows: charged } = await client.query(
-        `SELECT value FROM usage_counters
-           WHERE org_id=$1 AND metric='STORAGE_BYTES' AND period='ALL_TIME'
-           FOR UPDATE`,
-        [ctx.orgId],
-      );
-      const { rows: reserved } = await client.query(
-        `SELECT COALESCE(SUM(size_bytes),0)::text AS reserved_bytes
-           FROM storage_objects WHERE org_id=$1 AND status IN ('PENDING','PROCESSING')`,
-        [ctx.orgId],
-      );
-      const occupied = BigInt(charged[0]?.value ?? '0') +
-        BigInt(reserved[0]?.reserved_bytes ?? '0');
+      const usage=await lockStorageCapacity(client,ctx.orgId);
+      const occupied=usage.totalBytes;
       if (occupied + BigInt(dto.sizeBytes) > storageCeiling) {
         throw new ConflictException({
           code: 'STORAGE_QUOTA_EXCEEDED',
@@ -423,7 +427,7 @@ export class DocumentsService {
       // If documentId specified, enforce AUD-P-04 revision code uniqueness
       if (documentId) {
         const parentDocument = await client.query(
-          `SELECT id, doc_type_key FROM documents WHERE org_id = $1 AND project_id = $2 AND id = $3 FOR UPDATE`,
+          `SELECT id, doc_type_key FROM documents WHERE org_id = $1 AND project_id = $2 AND id = $3 AND deleted_at IS NULL FOR UPDATE`,
           [ctx.orgId, projectId, documentId],
         );
         if (!parentDocument.rows.length) throw new NotFoundException('DOCUMENT_NOT_FOUND_IN_PROJECT');
@@ -605,7 +609,8 @@ export class DocumentsService {
    * API-082A POST /document-versions/:id/refresh-upload-urls (RT-012, CB-003 join fix)
    */
   async refreshUploadUrls(ctx: ExecutionContext, versionId: string) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+    return this.db.withTenantContext({...ctx,projectWrite:true}, async (client: PoolClient) => {
+      await this.lockDocumentStorage(client,ctx,versionId,true,true);
       const verRes = await client.query(
         `SELECT dv.*, so.object_key, so.s3_upload_id, so.size_bytes
          FROM document_versions dv
@@ -655,7 +660,8 @@ export class DocumentsService {
     const dto =
       typeof maybeVersionIdOrDto === 'object' ? maybeVersionIdOrDto : maybeDto;
 
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+    return this.db.withTenantContext({...ctx,projectWrite:true}, async (client: PoolClient) => {
+      await this.lockDocumentStorage(client,ctx,versionId,true,true);
       const verRes = await client.query(
         `SELECT dv.*, so.id AS storage_id, so.object_key, so.bucket, so.s3_upload_id,
                 so.expected_sha256, so.size_bytes AS storage_size_bytes,
@@ -773,11 +779,12 @@ export class DocumentsService {
    * API-084 POST /document-versions/:id/abort-upload
    */
   async abortUpload(ctx: ExecutionContext, versionId: string) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+    return this.db.withTenantContext({...ctx,projectWrite:true}, async (client: PoolClient) => {
+      await this.lockDocumentStorage(client,ctx,versionId,true,true);
       const verRes = await client.query(
         `SELECT dv.*, so.id AS storage_id, so.object_key, so.s3_upload_id FROM document_versions dv
            JOIN storage_objects so ON so.id = dv.object_id
-          WHERE dv.org_id = $1 AND dv.id = $2`,
+          WHERE dv.org_id = $1 AND dv.id = $2 FOR UPDATE OF dv,so`,
         [ctx.orgId, versionId],
       );
       if (!verRes.rows.length) {
@@ -793,7 +800,8 @@ export class DocumentsService {
       await this.storageAdapter.abortUpload({ objectKey: version.object_key, uploadId: version.s3_upload_id });
 
       await client.query(
-        `UPDATE storage_objects SET status = 'ABORTED' WHERE org_id = $1 AND id = $2`,
+        `UPDATE storage_objects SET status = 'ABORTED',upload_cleanup_requested_at=now(),
+            upload_failure_code='UPLOAD_ABORTED',updated_at=now() WHERE org_id = $1 AND id = $2`,
         [ctx.orgId, version.storage_id],
       );
       await client.query(
@@ -1044,80 +1052,36 @@ export class DocumentsService {
     await pipeWithCancellation(body);
   }
 
-  /**
-   * API-090 DELETE /documents/:id (Soft-delete)
-   * Refunds STORAGE_BYTES quota on soft-delete (Bug 2: 10.0/10)
-   */
+  /** Soft deletion releases only logical READY bytes, once per object.
+   * Evidence bytes and immutable version identities are retained. */
   async deleteDocument(ctx: ExecutionContext, documentId: string) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
-      const res = await client.query(
-        `UPDATE documents
-            SET deleted_at = now(), row_version = row_version + 1
-          WHERE org_id = $1 AND id = $2 AND deleted_at IS NULL
-          RETURNING id`,
-        [ctx.orgId, documentId],
-      );
-      if (!res.rows.length) {
-        throw new NotFoundException('DOCUMENT_NOT_FOUND_OR_DELETED');
-      }
-
-      const { rows: sizeRows } = await client.query(
-        `SELECT COALESCE(SUM(so.size_bytes), 0) AS total_bytes
-           FROM document_versions dv
-           JOIN storage_objects so ON so.id = dv.object_id
-          WHERE dv.org_id = $1 AND dv.document_id = $2 AND dv.file_status = 'READY'`,
-        [ctx.orgId, documentId],
-      );
-      const freedBytes = BigInt(sizeRows[0]?.total_bytes || 0);
-      if (freedBytes > 0n) {
-        await client.query(
-          `UPDATE usage_counters
-              SET value = GREATEST(0::numeric, value::numeric - $2::numeric)::bigint,
-                  updated_at = now()
-            WHERE org_id = $1 AND metric = 'STORAGE_BYTES' AND period = 'ALL_TIME'`,
-          [ctx.orgId, freedBytes.toString()],
-        );
-      }
-
-      return { documentId, deleted: true, refundedBytes: Number(freedBytes) };
+    return this.db.withTenantContext({...ctx,projectWrite:true}, async (client: PoolClient) => {
+      const before=await this.lockDocumentStorage(client,ctx,documentId,false,true);
+      const {rows}=await client.query(`UPDATE documents
+        SET deleted_at=now(),row_version=row_version+1
+        WHERE org_id=$1 AND id=$2 AND deleted_at IS NULL RETURNING id`,[ctx.orgId,documentId]);
+      if(!rows.length)throw new NotFoundException('DOCUMENT_NOT_FOUND_OR_DELETED');
+      const after=await reconcileStorageCapacity(client,ctx.orgId);
+      return {documentId,deleted:true,refundedBytes:Number(before.readyBytes-after.readyBytes)};
     });
   }
 
-  /**
-   * API-091 POST /documents/:id/restore
-   */
+  /** Restoring retained evidence consumes logical capacity atomically, without
+   * changing any verified bytes or bypassing an unavailable entitlement. */
   async restoreDocument(ctx: ExecutionContext, documentId: string) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
-      const res = await client.query(
-        `UPDATE documents
-            SET deleted_at = NULL, row_version = row_version + 1
-          WHERE org_id = $1 AND id = $2 AND deleted_at IS NOT NULL
-          RETURNING id`,
-        [ctx.orgId, documentId],
-      );
-      if (!res.rows.length) {
-        throw new NotFoundException('DOCUMENT_NOT_FOUND_OR_NOT_DELETED');
+    return this.db.withTenantContext({...ctx,projectWrite:true}, async (client: PoolClient) => {
+      const before=await this.lockDocumentStorage(client,ctx,documentId,false,true);
+      const effective=await resolveEffectiveEntitlements(client,ctx.orgId);
+      if(!effective.canConsume)throw new ConflictException({code:'STORAGE_ENTITLEMENT_UNAVAILABLE'});
+      const {rows}=await client.query(`UPDATE documents
+        SET deleted_at=NULL,row_version=row_version+1
+        WHERE org_id=$1 AND id=$2 AND deleted_at IS NOT NULL RETURNING id`,[ctx.orgId,documentId]);
+      if(!rows.length)throw new NotFoundException('DOCUMENT_NOT_FOUND_OR_NOT_DELETED');
+      const after=await reconcileStorageCapacity(client,ctx.orgId);
+      if(after.totalBytes>BigInt(effective.limits.maxStorageBytes)) {
+        throw new ConflictException({code:'STORAGE_QUOTA_EXCEEDED',detail:'Restore requires available storage capacity.'});
       }
-
-      const { rows: sizeRows } = await client.query(
-        `SELECT COALESCE(SUM(so.size_bytes), 0) AS total_bytes
-           FROM document_versions dv
-           JOIN storage_objects so ON so.id = dv.object_id
-          WHERE dv.org_id = $1 AND dv.document_id = $2 AND dv.file_status = 'READY'`,
-        [ctx.orgId, documentId],
-      );
-      const readdedBytes = BigInt(sizeRows[0]?.total_bytes || 0);
-      if (readdedBytes > 0n) {
-        await client.query(
-          `UPDATE usage_counters
-              SET value = (value::numeric + $2::numeric)::bigint,
-                  updated_at = now()
-            WHERE org_id = $1 AND metric = 'STORAGE_BYTES' AND period = 'ALL_TIME'`,
-          [ctx.orgId, readdedBytes.toString()],
-        );
-      }
-
-      return { documentId, restored: true, readdedBytes: Number(readdedBytes) };
+      return {documentId,restored:true,readdedBytes:Number(after.readyBytes-before.readyBytes)};
     });
   }
 
@@ -1283,7 +1247,7 @@ export class DocumentsService {
        new Set(requirementIds).size!==requirementIds.length){
       throw new UnprocessableEntityException({code:'INVALID_EVIDENCE_LINKS'});
     }
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+    return this.db.withTenantContext({...ctx,projectWrite:true}, async (client: PoolClient) => {
       // All linked records and the active authority are checked and locked
       // BEFORE the first insert/update. An A-only supplier cannot attach B.
       const {rows:project}=await client.query(
@@ -1414,7 +1378,7 @@ export class DocumentsService {
     if (uniqueDocumentIds.length === 0 || uniqueDocumentIds.length > 250) {
       throw new BadRequestException('TRANSMITTAL_DOCUMENT_COUNT_INVALID');
     }
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+    return this.db.withTenantContext({...ctx,projectWrite:true}, async (client: PoolClient) => {
       await client.query(
         `SELECT id FROM projects WHERE org_id = $1 AND id = $2 FOR UPDATE`,
         [ctx.orgId, projectId],
