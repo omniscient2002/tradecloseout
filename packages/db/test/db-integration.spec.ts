@@ -154,6 +154,12 @@ void test('Disposable PostgreSQL migration, isolation and audit regression tests
         VALUES ($1,NULL,'FORGED','Invalid global')`, [randomUUID()])), (error: any) => error.code === '42501');
     });
     await t.test('AUDIT-02/03/04: nonempty chain rejects update/delete and detects privileged payload tampering', async () => {
+      // Earlier partition-boundary tests intentionally append to this same tenant.
+      // Verify this test adds three records without assuming an empty initial ledger.
+      const initialCount = Number((await admin.query(
+        'SELECT count(*)::int AS total FROM audit_events WHERE org_id = $1',
+        [a.orgId],
+      )).rows[0].total);
       for (let index = 0; index < 3; index++) await scoped(app, a.orgId, client => client.query(`INSERT INTO audit_events
         (id, org_id, actor_type, action, entity_type, entity_id, after_json, request_id)
         VALUES ($1,$2,'SYSTEM','TEST_APPEND','PROJECT',$3,$4,'db-regression')`, [randomUUID(), a.orgId, a.projectIds[0], JSON.stringify({ index })]));
@@ -164,7 +170,7 @@ void test('Disposable PostgreSQL migration, isolation and audit regression tests
           'request_id',request_id,'created_at',to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'))::text,'sha256'),'hex') AS computed
         FROM audit_events WHERE org_id = $1 ORDER BY chain_seq`, [a.orgId])).rows;
       const events = await check();
-      assert.equal(events.length, 3);
+      assert.equal(events.length, initialCount + 3, 'three audit rows must append without losing existing events');
       events.forEach((event, index) => {
         assert.equal(event.hash, event.computed);
         if (index) assert.equal(event.prev_hash, events[index - 1].hash);
