@@ -37,18 +37,19 @@ describe('PH2-G20-002: project notifications verify live identity at transaction
       expect((await admin.query(`SELECT count(*)::int n FROM notifications
         WHERE org_id=$1 AND dedup_key='stale-owner-1'`,[orgId])).rows[0].n).toBe(0);
 
+      await admin.query("UPDATE memberships SET role='R-PM' WHERE id=$1",[membershipId]);
       await admin.query(`INSERT INTO project_members(id,org_id,project_id,user_id,role,status,added_by)
-        VALUES($1,$2,$3,$4,'R-SITE','ACTIVE',$5)`,
+        VALUES($1,$2,$3,$4,'R-PM','ACTIVE',$5)`,
         [uuidv7(),orgId,projectId,userId,owner]);
-      expect((await create('scoped-site-1')).notification.status).toBe('SENT');
+      expect((await create('scoped-pm-1')).notification.status).toBe('SENT');
       await admin.query(`UPDATE memberships SET status='SUSPENDED'
         WHERE id=$1`,[membershipId]);
-      await expect(create('removed-user-1')).rejects.toThrow('PROJECT_NOT_FOUND');
+      await expect(create('removed-user-1')).rejects.toMatchObject({status:403});
       await expect(service.listNotifications(actor)).rejects.toMatchObject({
         response:expect.objectContaining({code:'NOTIFICATION_INBOX_RESTRICTED'}),
       });
       const {rows:[counts]}=await admin.query(`SELECT
-        count(*) FILTER (WHERE dedup_key IN ('live-owner-1','scoped-site-1'))::int AS created,
+        count(*) FILTER (WHERE dedup_key IN ('live-owner-1','scoped-pm-1'))::int AS created,
         count(*) FILTER (WHERE dedup_key IN ('stale-owner-1','removed-user-1'))::int AS forbidden
         FROM notifications WHERE org_id=$1`,[orgId]);
       expect(counts).toMatchObject({created:2,forbidden:0});

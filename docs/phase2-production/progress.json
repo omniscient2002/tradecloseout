@@ -649,6 +649,13 @@
       "state": "CANDIDATE_FIX_TESTED",
       "evidenceLevel": "TARGETED_POSTGRESQL",
       "notes": "D01\u2013D05 in NEXT-FIVE-DIRECTORY-2026-11-13.md; no directory label, contact validation or fixture invitation implies engineering/identity/provider approval."
+    },
+    {
+      "id": "PH2-NEW-011",
+      "title": "Notification commands omit live authority without a project and mistake project membership for capability",
+      "state": "CANDIDATE_FIX_TESTED",
+      "evidenceLevel": "TARGETED_POSTGRESQL",
+      "notes": "Cross-reference PH2-G20-002; actual baseline reproduction and concurrent PostgreSQL demotion regression. Recheck live account/organisation/member capability on creation and retries; preserve explicit SYSTEM workflow and deny unresolvable member scopes. See NOTIFICATION-AUTHORITY-2026-11-13.md. Original finding status and independent acceptance remain unchanged."
     }
   ],
   "candidateWork": [
@@ -726,6 +733,11 @@
       "id": "PH2-G20-001",
       "state": "IMPLEMENTED_SUBSET_TESTED_NOT_ACCEPTED",
       "notes": "B07: typed notification envelope/channel/urgency and bounded detached JSON. Reviewed external templates/provider acceptance remain separately gated."
+    },
+    {
+      "id": "PH2-G20-002",
+      "state": "IMPLEMENTED_SUBSET_TESTED_NOT_ACCEPTED",
+      "notes": "PH2-NEW-011 completes createNotification command issuer revalidation for projectless and project-scoped writes/retries. Locked current roles, active principals and resolvable member scope are required. Full notification resource projection and independent/browser/provider acceptance remain separate."
     }
   ],
   "engineeringBatches": [

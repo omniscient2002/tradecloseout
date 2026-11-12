@@ -101,13 +101,14 @@ describe('PH2-G20-001/002/006: notification creation cannot become an arbitrary 
       payload_json: { title: 'Original' },
     };
     const query = jest.fn()
+      .mockResolvedValueOnce({ rows: [{role:'R-OWNER'}] })
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [original] });
     const db = { withTenantContext: jest.fn(async (_ctx: any, fn: any) => fn({ query })) };
     await expect(create(db, { title: 'Modified' })).rejects.toMatchObject({
       response: expect.objectContaining({ code: 'NOTIFICATION_DEDUP_CONFLICT' }),
     });
-    expect(query.mock.calls[0]?.[0]).toContain('DO NOTHING');
+    expect(query.mock.calls[1]?.[0]).toContain('DO NOTHING');
   });
 
   it('accepts a byte-identical logical retry without touching the first row', async () => {
@@ -116,12 +117,13 @@ describe('PH2-G20-001/002/006: notification creation cannot become an arbitrary 
       payload_json: { a: 1, z: 2 },
     };
     const query = jest.fn()
+      .mockResolvedValueOnce({ rows: [{role:'R-OWNER'}] })
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [original] });
     const db = { withTenantContext: jest.fn(async (_ctx: any, fn: any) => fn({ query })) };
     const response = await create(db, { z: 2, a: 1 });
     expect(response.notification.id).toBe('existing-event');
-    expect(query).toHaveBeenCalledTimes(2);
+    expect(query).toHaveBeenCalledTimes(3);
   });
 
   it('denies project POST after owner demotion when there is no live project membership', async () => {
@@ -129,7 +131,7 @@ describe('PH2-G20-001/002/006: notification creation cannot become an arbitrary 
     const query=jest.fn(async (sql:string) => {
       if(sql.includes('SELECT id FROM projects')) return {rows:[{id:projectId}]};
       if(sql.includes('SELECT m.role FROM memberships')) return {rows:[{role:'R-SITE'}]};
-      if(sql.includes('SELECT 1 FROM project_members')) return {rows:[]};
+      if(sql.includes('SELECT role,scope_json FROM project_members')) return {rows:[]};
       throw new Error('unexpected INSERT after revocation');
     });
     const db={withTenantContext:jest.fn(async (_ctx:unknown,
@@ -158,8 +160,8 @@ describe('PH2-G20-001/002/006: notification creation cannot become an arbitrary 
         projectId,channel:'IN_APP',eventKey:'REQUIREMENT_CHANGED',
         dedupKey:'revoked-1',payload:{title:'Assignment changed'},
       },
-    )).rejects.toThrow('PROJECT_NOT_FOUND');
-    expect(query).toHaveBeenCalledTimes(2);
+    )).rejects.toMatchObject({status:403,response:{code:'NOTIFICATION_ISSUER_REQUIRED'}});
+    expect(query).toHaveBeenCalledTimes(1);
   });
 
   it('allows active owner and trusted system producer without trusting stale HTTP roles', async () => {

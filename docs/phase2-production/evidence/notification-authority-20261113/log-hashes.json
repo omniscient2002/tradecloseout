@@ -1,0 +1,45 @@
+{
+  "normalization": "Terminal carriage returns, trailing whitespace and final blank lines only; log messages/results preserved. Original logs retained under /tmp/tco-notification-*.log for this session.",
+  "logs": {
+    "workspace-final.txt": {
+      "rawSha256": "ba4e6d7274b444784425cd4461f427d06ee61fde41d8a91a8599d881c4ba0a89",
+      "storedSha256": "ba4e6d7274b444784425cd4461f427d06ee61fde41d8a91a8599d881c4ba0a89"
+    },
+    "channel-fixture.txt": {
+      "rawSha256": "ee8c4e17274462d48f8379d93f59e9ece8924b46bb4cf0acb3f9db2b44cb625e",
+      "storedSha256": "ee8c4e17274462d48f8379d93f59e9ece8924b46bb4cf0acb3f9db2b44cb625e"
+    },
+    "workspace-initial.txt": {
+      "rawSha256": "00cc4b4c0790c82cfe3b80a3b6b3d94494076742cf4c3640e1587e132b5d4bc4",
+      "storedSha256": "00cc4b4c0790c82cfe3b80a3b6b3d94494076742cf4c3640e1587e132b5d4bc4"
+    },
+    "migrate.txt": {
+      "rawSha256": "d8d93468f0530a5b277840f675957f690b50c69decc43029facb2fc5fb9978c7",
+      "storedSha256": "d8d93468f0530a5b277840f675957f690b50c69decc43029facb2fc5fb9978c7"
+    },
+    "rbac.txt": {
+      "rawSha256": "2037d9222bfd717f84a4eba5df8f6cfa2705aa6eea078011d18af379b4e56522",
+      "storedSha256": "2037d9222bfd717f84a4eba5df8f6cfa2705aa6eea078011d18af379b4e56522"
+    },
+    "security.txt": {
+      "rawSha256": "1fc90afb8020c625a715644d921d57480f0ba4e8fd44d7b778750d8b7cef2ca2",
+      "storedSha256": "1fc90afb8020c625a715644d921d57480f0ba4e8fd44d7b778750d8b7cef2ca2"
+    },
+    "build.txt": {
+      "rawSha256": "a4071ca946a70f25641e90c00d290b93a4ed1dd1331bff60748cf5350bf347b7",
+      "storedSha256": "ed0f03f1609c40f62d94435da239e4c8dffdf9846108644522356c39c0c8dbfc"
+    },
+    "typecheck.txt": {
+      "rawSha256": "8935e75360eaccba7ec1fee2d68b076e23856327a92e0b3f4f7ff0f2147b6b54",
+      "storedSha256": "8935e75360eaccba7ec1fee2d68b076e23856327a92e0b3f4f7ff0f2147b6b54"
+    },
+    "targeted.txt": {
+      "rawSha256": "98f9f482ff6d1b5f6bdc947ce034df4cc7990821c2ac297e6a36f0008d3bbd88",
+      "storedSha256": "98f9f482ff6d1b5f6bdc947ce034df4cc7990821c2ac297e6a36f0008d3bbd88"
+    },
+    "baseline.txt": {
+      "rawSha256": "a9b31244d68042535f1dbb93c9f7d7f9c190071617610618613f0da78b9974c5",
+      "storedSha256": "915cecf39866b69ceeff11bc8ff42ca41cded738a6d71b23ae79fda237624162"
+    }
+  }
+}

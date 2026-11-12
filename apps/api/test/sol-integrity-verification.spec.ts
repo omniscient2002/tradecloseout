@@ -162,6 +162,8 @@ describe('Sol Integrity & Audit Invariants Suite', () => {
       let insertParams: any[] = [];
       const mockClient = {
         query: jest.fn(async (sql: string, params: any[]) => {
+          // Supply a live issuer so this fixture still reaches the channel invariant.
+          if (sql.includes('SELECT m.role FROM memberships')) return {rows:[{role:'R-OWNER'}]};
           if (sql.includes('INSERT INTO notifications')) {
             insertParams = params;
             return { rows: [{ id: 'notif-1', status: params[7], sent_at: params[9] }] };

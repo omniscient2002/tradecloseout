@@ -1,0 +1,11 @@
+PASS test/phase2-notification-authority-db.spec.ts (5.648 s)
+PASS test/phase2-notification-project-authority-db.spec.ts
+PASS test/phase2-notification-visibility.spec.ts
+PASS test/phase2-easy-ten.spec.ts
+PASS test/phase2-notification-issuer.spec.ts
+
+Test Suites: 5 passed, 5 total
+Tests:       54 passed, 54 total
+Snapshots:   0 total
+Time:        8.123 s, estimated 11 s
+Ran all test suites matching /test\/phase2-notification-authority-db.spec.ts|test\/phase2-notification-project-authority-db.spec.ts|test\/phase2-notification-visibility.spec.ts|test\/phase2-notification-issuer.spec.ts|test\/phase2-easy-ten.spec.ts/i.

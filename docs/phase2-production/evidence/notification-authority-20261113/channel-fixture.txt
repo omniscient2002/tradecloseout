@@ -1,0 +1,16 @@
+PASS test/sol-integrity-verification.spec.ts
+  Sol Integrity & Audit Invariants Suite
+    1. Revision allocation locks parent document (TC-F013)
+      ✓ executes SELECT ... FROM documents FOR UPDATE before allocating nextVersionNo on existing document (6 ms)
+    2. Client-controlled EICAR quarantine bypass removed (SOL A1(d))
+      ✓ does not allow client DTO or filename to trigger quarantine directly on upload completion (2 ms)
+    3. Bulk import dry-run & commit disabled (SOL A1(e))
+      ✓ throws GoneException on createBulkImportIntent, dryRunBulkImport, and commitBulkImport (13 ms)
+    4. External notifications stored as QUEUED without fake SENT (TC-F017, SOL A1(b))
+      ✓ rejects unapproved external messages and delivers addressed in-app notifications (8 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       4 passed, 4 total
+Snapshots:   0 total
+Time:        3.896 s
+Ran all test suites matching /test\/sol-integrity-verification.spec.ts/i.

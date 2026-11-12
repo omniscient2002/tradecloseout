@@ -5,7 +5,8 @@ import { Injectable, BadRequestException, ConflictException, ForbiddenException,
 import { PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { TenantDbService, ExecutionContext } from '../../database/tenant-db.service';
-import { isIndiaQuietHour } from '@tradecloseout/shared';
+import { hasPermission, isIndiaQuietHour, ORG_ROLE_MATRIX } from '@tradecloseout/shared';
+import { assertValidMemberProjectScope } from '@tradecloseout/db/tenant-tx';
 import { boundedJsonObject } from '../../common/validation/bounded-json';
 import { getProjectCommercialSummary, paiseToSafeInr } from '../projects/project-commercial-summary';
 
@@ -47,6 +48,9 @@ export class NotificationsService {
       isUrgent?: boolean;
     },
   ) {
+    if (ctx.guestGrantId || !['USER', 'ADMIN', 'SYSTEM'].includes(ctx.actorType)) {
+      throw new ForbiddenException({ code: 'NOTIFICATION_ISSUER_REQUIRED' });
+    }
     if (!dto || typeof dto !== 'object' || Array.isArray(dto) ||
         !['IN_APP','EMAIL','SMS','WHATSAPP'].includes(dto.channel) ||
         (dto.isUrgent !== undefined && typeof dto.isUrgent !== 'boolean')) {
@@ -79,8 +83,29 @@ export class NotificationsService {
     }
 
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
-      // PH2-G20-002: a global POST guard cannot authorize a project ID
-      // carried only in the body. Recheck membership under the same transaction.
+      // PH2-NEW-011 / PH2-G20-002: the command must check current
+      // issuance authority even when there is no project in the envelope.
+      // Keep these locks until the notification (including a retry) settles.
+      let liveOrgRole: string | undefined;
+      if (ctx.actorType !== 'SYSTEM') {
+        const { rows } = await client.query(
+          `SELECT m.role FROM memberships m
+             JOIN users u ON u.id=m.user_id AND u.status='ACTIVE'
+             JOIN organisations o ON o.id=m.org_id AND o.status='ACTIVE'
+            WHERE m.org_id=$1 AND m.user_id=$2 AND m.status='ACTIVE'
+            FOR SHARE OF m,u,o`,
+          [ctx.orgId, ctx.userId],
+        );
+        liveOrgRole = rows[0]?.role;
+        if (!liveOrgRole) {
+          throw new ForbiddenException({ code: 'NOTIFICATION_ISSUER_REQUIRED' });
+        }
+        // Scoped notification capabilities require an actual project target.
+        if (!dto.projectId &&
+            ORG_ROLE_MATRIX[liveOrgRole as keyof typeof ORG_ROLE_MATRIX]?.['notification.manage'] !== 'ALL') {
+          throw new ForbiddenException({ code: 'NOTIFICATION_ISSUER_REQUIRED' });
+        }
+      }
       if (dto.projectId) {
         const { rows: projects } = await client.query(
           `SELECT id FROM projects
@@ -89,28 +114,26 @@ export class NotificationsService {
           [ctx.orgId, dto.projectId],
         );
         if (!projects.length) throw new NotFoundException('PROJECT_NOT_FOUND');
-        // PH2-G20-002: orgRole from the session is NOT authorization.
-        // An offboarded or demoted ex-owner must not write project-associated
-        // notifications using their stale R-OWNER claim. Internal system
-        // producers are a separate trusted path and do not impersonate users.
-        if (ctx.actorType !== 'SYSTEM') {
-          const { rows: activeMembers } = await client.query(
-            `SELECT m.role FROM memberships m
-               JOIN users u ON u.id = m.user_id AND u.status='ACTIVE'
-              WHERE m.org_id=$1 AND m.user_id=$2 AND m.status='ACTIVE'
-              FOR SHARE OF m,u`,
-            [ctx.orgId, ctx.userId],
+        if (ctx.actorType !== 'SYSTEM' && liveOrgRole !== 'R-OWNER' && liveOrgRole !== 'R-ADMIN') {
+          const { rows: members } = await client.query(
+            `SELECT role,scope_json FROM project_members
+              WHERE org_id = $1 AND project_id = $2 AND user_id = $3
+                AND status = 'ACTIVE' FOR SHARE`,
+            [ctx.orgId, dto.projectId, ctx.userId],
           );
-          if (!activeMembers.length) throw new NotFoundException('PROJECT_NOT_FOUND');
-          const liveOrgRole = activeMembers[0].role;
-          if (liveOrgRole !== 'R-OWNER' && liveOrgRole !== 'R-ADMIN') {
-            const { rows: members } = await client.query(
-              `SELECT 1 FROM project_members
-                WHERE org_id = $1 AND project_id = $2 AND user_id = $3
-                  AND status = 'ACTIVE' FOR SHARE`,
-              [ctx.orgId, dto.projectId, ctx.userId],
-            );
-            if (!members.length) throw new NotFoundException('PROJECT_NOT_FOUND');
+          const member = members[0];
+          if (!member) throw new NotFoundException('PROJECT_NOT_FOUND');
+          if (!hasPermission({ orgRole: liveOrgRole, projectRole: member.role }, 'notification.manage').allowed) {
+            throw new ForbiddenException({ code: 'NOTIFICATION_ISSUER_REQUIRED' });
+          }
+          try { assertValidMemberProjectScope(member.scope_json); }
+          catch { throw new ForbiddenException({ code: 'NOTIFICATION_SCOPE_UNRESOLVED' }); }
+          const scope = member.scope_json ?? {};
+          // The envelope identifies no asset/document/requirement. Narrower
+          // resource/date restrictions therefore cannot authorize this write.
+          if (scope.readOnly === true || scope.mode === 'READ_ONLY' ||
+              Object.keys(scope).some(key => key !== 'readOnly' && key !== 'mode')) {
+            throw new ForbiddenException({ code: 'NOTIFICATION_SCOPE_UNRESOLVED' });
           }
         }
       }

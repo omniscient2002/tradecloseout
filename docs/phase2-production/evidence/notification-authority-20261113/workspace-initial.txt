@@ -1,0 +1,402 @@
+$ pnpm --filter @tradecloseout/shared build && pnpm --filter @tradecloseout/db build && pnpm --filter @tradecloseout/pdf-engine build && pnpm -r --workspace-concurrency=1 run test
+$ tsc
+$ tsc
+$ tsc
+Scope: 6 of 7 workspace projects
+$ node --import tsx --test test/db-integration.spec.ts
+TAP version 13
+# Subtest: Disposable PostgreSQL migration, isolation and audit regression tests
+    # Subtest: DB-02: upgrading the 0005 baseline converges to the fresh schema
+    ok 1 - DB-02: upgrading the 0005 baseline converges to the fresh schema
+      ---
+      duration_ms: 3810.23031
+      type: 'test'
+      ...
+    # Subtest: DB-01: fresh ledger matches every actual SQL checksum, reruns and concurrent runners do not change it
+    ok 2 - DB-01: fresh ledger matches every actual SQL checksum, reruns and concurrent runners do not change it
+      ---
+      duration_ms: 308.733583
+      type: 'test'
+      ...
+    # Subtest: DB-03: mismatched and unknown ledger entries reject migration
+    ok 3 - DB-03: mismatched and unknown ledger entries reject migration
+      ---
+      duration_ms: 457.351678
+      type: 'test'
+      ...
+    # Subtest: DB-06/07: real runtime role reads own tenant and rejects an otherwise valid foreign write with RLS SQLSTATE
+    ok 4 - DB-06/07: real runtime role reads own tenant and rejects an otherwise valid foreign write with RLS SQLSTATE
+      ---
+      duration_ms: 8.280411
+      type: 'test'
+      ...
+    # Subtest: DB-10: tenant-table inventory catches disabled RLS as well as unforced RLS
+    ok 5 - DB-10: tenant-table inventory catches disabled RLS as well as unforced RLS
+      ---
+      duration_ms: 2.571233
+      type: 'test'
+      ...
+    # Subtest: PH1-G26-001: direct audit partitions deny tc_app and enforce RLS
+    ok 6 - PH1-G26-001: direct audit partitions deny tc_app and enforce RLS
+      ---
+      duration_ms: 156.894344
+      type: 'test'
+      ...
+    # Subtest: PH1-G26-002/G24-007: quota SQL commits typed bigint changes in real PG16
+    ok 7 - PH1-G26-002/G24-007: quota SQL commits typed bigint changes in real PG16
+      ---
+      duration_ms: 21.312355
+      type: 'test'
+      ...
+    # Subtest: PH1-G26-008: forged audit chain_seq is replaced under trusted tenant serialization
+    ok 8 - PH1-G26-008: forged audit chain_seq is replaced under trusted tenant serialization
+      ---
+      duration_ms: 11.72253
+      type: 'test'
+      ...
+    # Subtest: DB-08: direct cross-project procurement insert fails the intended composite FK
+    ok 9 - DB-08: direct cross-project procurement insert fails the intended composite FK
+      ---
+      duration_ms: 9.649088
+      type: 'test'
+      ...
+    # Subtest: DB-07: shared catalogue rows are readable, foreign rows and global writes are blocked
+    ok 10 - DB-07: shared catalogue rows are readable, foreign rows and global writes are blocked
+      ---
+      duration_ms: 6.590338
+      type: 'test'
+      ...
+    # Subtest: AUDIT-02/03/04: nonempty chain rejects update/delete and detects privileged payload tampering
+    ok 11 - AUDIT-02/03/04: nonempty chain rejects update/delete and detects privileged payload tampering
+      ---
+      duration_ms: 32.066406
+      type: 'test'
+      ...
+    # Subtest: N30: canonical tenant alias validation rejects conflicting tenant settings
+    ok 12 - N30: canonical tenant alias validation rejects conflicting tenant settings
+      ---
+      duration_ms: 4.549372
+      type: 'test'
+      ...
+    1..12
+ok 1 - Disposable PostgreSQL migration, isolation and audit regression tests
+  ---
+  duration_ms: 8111.612162
+  type: 'test'
+  ...
+1..1
+# tests 13
+# suites 0
+# pass 13
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 8452.430583
+$ jest --runInBand
+
+Test Suites: 5 passed, 5 total
+Tests:       91 passed, 91 total
+Snapshots:   0 total
+Time:        2.582 s
+Ran all test suites.
+$ playwright test --project=archive --project=auth-storage
+
+Running 10 tests using 4 workers
+
+(node:201567) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:201575) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:201574) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:201568) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   2 [archive] › e2e/archive-verifier.spec.ts:10:7 › ARC-03/WEB-UX: offline extracted archive missing (838ms)
+  ✓   3 [archive] › e2e/archive-verifier.spec.ts:10:7 › ARC-03/WEB-UX: offline extracted archive changed-manifest (846ms)
+  ✓   4 [archive] › e2e/archive-verifier.spec.ts:10:7 › ARC-03/WEB-UX: offline extracted archive changed-file (842ms)
+  ✓   1 [archive] › e2e/archive-verifier.spec.ts:10:7 › ARC-03/WEB-UX: offline extracted archive valid (857ms)
+  ✓   6 [archive] › e2e/archive-verifier.spec.ts:10:7 › ARC-03/WEB-UX: offline extracted archive extra-file (261ms)
+  ✓   5 [archive] › e2e/archive-verifier.spec.ts:10:7 › ARC-03/WEB-UX: offline extracted archive unsafe-title (294ms)
+(node:201938) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:201937) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:201961) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:201967) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   9 [auth-storage] › e2e/g01-offline-context.spec.ts:130:5 › G01 browser logout keeps identity until the exact revocation acknowledgement (692ms)
+  ✓   8 [auth-storage] › e2e/g01-offline-context.spec.ts:25:7 › G01 browser IndexedDB/multipart: switch-during-scan (1.2s)
+  ✓   7 [auth-storage] › e2e/g01-offline-context.spec.ts:25:7 › G01 browser IndexedDB/multipart: switch-during-put (1.2s)
+  ✓  10 [auth-storage] › e2e/g01-offline-context.spec.ts:25:7 › G01 browser IndexedDB/multipart: interrupt-and-resume (1.3s)
+
+  10 passed (5.7s)
+$ tsx test/pdf-engine.spec.ts
+======================================================================
+TradeCloseout PDF Engine & Submittal Compilation Suite
+======================================================================
+
+[PDF-01] Testing PDF inspection and sanitisation...
+✓ Inspection and sanitisation verified: pages=3, objects=14
+
+[PDF-02] Testing front matter generation...
+✓ Front matter generated with Cover Page and TOC.
+
+[PDF-03] Testing multi-document compilation & Bates stamping...
+✓ Dossier compilation verified: 7 pages merged, stamped, and zipped (3792 bytes).
+
+======================================================================
+✓ ALL PDF ENGINE UNIT TESTS PASSED PERFECTLY!
+======================================================================
+
+$ jest --runInBand
+PASS test/g01-two-api-http.spec.ts (43.635 s)
+PASS test/g01-auth-denial-budget-db.spec.ts (20.42 s)
+  ● Console
+
+    console.error
+      AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE
+
+      340 |   lastAuthDenialDiagnosticAt = now;
+      341 |   // No exception string, HTTP request data, raw source or credentials.
+    > 342 |   console.error('AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE');
+          |           ^
+      343 | }
+      344 |
+      345 | /**
+
+      at reportAuthDenialPersistenceFailure (src/modules/identity/auth-security.ts:342:11)
+      at recordDeniedAuthenticationEvent (src/modules/identity/auth-security.ts:483:5)
+      at async /tmp/tco-phase2-reaudit/apps/api/test/g01-auth-denial-budget-db.spec.ts:146:9
+      at async withDisposableDatabase (../../packages/db/test/helpers/disposable-database.ts:107:5)
+      at async Object.<anonymous> (test/g01-auth-denial-budget-db.spec.ts:135:5)
+
+PASS test/phase2-quota-recovery-db.spec.ts (19.511 s)
+PASS test/g01-mfa-db.spec.ts (22.222 s)
+PASS test/pr1-independent-db-acceptance.spec.ts (25.787 s)
+PASS test/g02-authorization-db.spec.ts (12.984 s)
+PASS test/g01-delivery-reconciliation-db.spec.ts (12.271 s)
+PASS test/g01-invitation-db.spec.ts (14.213 s)
+PASS test/pr4-authorization-evidence-gates.spec.ts (13.232 s)
+  ● Console
+
+    console.error
+      AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE
+
+      340 |   lastAuthDenialDiagnosticAt = now;
+      341 |   // No exception string, HTTP request data, raw source or credentials.
+    > 342 |   console.error('AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE');
+          |           ^
+      343 | }
+      344 |
+      345 | /**
+
+      at reportAuthDenialPersistenceFailure (src/modules/identity/auth-security.ts:342:11)
+      at recordDeniedAuthenticationEvent (src/modules/identity/auth-security.ts:483:5)
+      at async PermissionGuard.canActivate (src/common/guards/permission.guard.ts:236:9)
+      at async Object.<anonymous> (test/pr4-authorization-evidence-gates.spec.ts:82:7)
+
+PASS test/remaining-production-gaps.spec.ts (15.358 s)
+PASS test/g01-distributed-rate-budgets.spec.ts (7.244 s)
+PASS test/g01-guest-principal-db.spec.ts (6.272 s)
+PASS test/phase2-policy-upgrade-and-org-lock-db.spec.ts (5.808 s)
+PASS test/phase2-project-money-variations-db.spec.ts (6.336 s)
+PASS test/phase2-notification-authority-db.spec.ts
+PASS test/g01-member-invitation-authority-db.spec.ts (6.435 s)
+PASS test/phase2-procurement-db.spec.ts
+PASS test/g01-independent-party-approval-db.spec.ts
+PASS test/phase2-owner-digest-commercial-db.spec.ts
+PASS test/rls-and-integrity.spec.ts
+PASS test/contractor-user-journey.spec.ts
+PASS test/phase1-live-session-eligibility-db.spec.ts
+PASS test/production-reaudit-remediation.spec.ts
+  ● Console
+
+    console.error
+      AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE
+
+      340 |   lastAuthDenialDiagnosticAt = now;
+      341 |   // No exception string, HTTP request data, raw source or credentials.
+    > 342 |   console.error('AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE');
+          |           ^
+      343 | }
+      344 |
+      345 | /**
+
+      at reportAuthDenialPersistenceFailure (src/modules/identity/auth-security.ts:342:11)
+      at recordDeniedAuthenticationEvent (src/modules/identity/auth-security.ts:483:5)
+      at async PermissionGuard.canActivate (src/common/guards/permission.guard.ts:236:9)
+      at async Object.<anonymous> (test/production-reaudit-remediation.spec.ts:578:7)
+
+PASS test/hvac-domain-excellence.spec.ts
+PASS test/phase2-storage-reservation-db.spec.ts
+PASS test/phase2-package-artifact-publication-db.spec.ts
+PASS test/phase2-subscription-price-precision-db.spec.ts
+PASS test/g01-auth-session-transaction-fence-db.spec.ts
+PASS test/g01-session-guard-db.spec.ts
+PASS test/idempotency-cleanup-replay.spec.ts
+PASS test/g01-device-session-revocation-db.spec.ts
+PASS test/g01-auth-route-audit-db.spec.ts
+PASS test/phase2-organisation-offboarding-db.spec.ts
+PASS test/phase2-checklist-change-decision-db.spec.ts
+PASS test/phase2-two-party-ownership-db.spec.ts
+PASS test/concurrency.spec.ts
+PASS test/phase2-org-dashboard-visibility-db.spec.ts
+PASS test/phase2-project-members-db.spec.ts
+PASS test/phase2-easy-ten-db.spec.ts
+PASS test/g01-external-authority-db.spec.ts
+PASS test/g01-external-document-attestation-db.spec.ts
+PASS test/phase2-hvac-governance-db.spec.ts
+PASS test/g01-org-switch-review-regressions.spec.ts
+PASS test/rls-isolation.spec.ts
+PASS test/phase1-notification-producer-db.spec.ts
+PASS test/g01-legacy-external-migration-upgrade-db.spec.ts
+PASS test/phase2-entitlements.spec.ts
+PASS test/phase2-org-audit-authority-db.spec.ts
+PASS test/g01-guest-project-party-db.spec.ts
+PASS test/g01-identity-recovery-db.spec.ts
+PASS test/phase2-next-five-db.spec.ts
+PASS test/hvac-production-reaudit-remediation.spec.ts
+PASS test/phase2-notification-project-authority-db.spec.ts
+PASS test/g01-privileged-route-inventory.spec.ts
+  ● Console
+
+    console.error
+      AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE
+
+      340 |   lastAuthDenialDiagnosticAt = now;
+      341 |   // No exception string, HTTP request data, raw source or credentials.
+    > 342 |   console.error('AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE');
+          |           ^
+      343 | }
+      344 |
+      345 | /**
+
+      at reportAuthDenialPersistenceFailure (src/modules/identity/auth-security.ts:342:11)
+      at recordDeniedAuthenticationEvent (src/modules/identity/auth-security.ts:483:5)
+      at SessionCsrfGuard.canActivate (src/common/guards/session-csrf.guard.ts:91:46)
+      at async /tmp/tco-phase2-reaudit/apps/api/test/g01-privileged-route-inventory.spec.ts:53:14
+
+PASS test/g02-authorization-contract.spec.ts
+  ● Console
+
+    console.error
+      AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE
+
+      340 |   lastAuthDenialDiagnosticAt = now;
+      341 |   // No exception string, HTTP request data, raw source or credentials.
+    > 342 |   console.error('AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE');
+          |           ^
+      343 | }
+      344 |
+      345 | /**
+
+      at reportAuthDenialPersistenceFailure (src/modules/identity/auth-security.ts:342:11)
+      at recordDeniedAuthenticationEvent (src/modules/identity/auth-security.ts:483:5)
+      at async PermissionGuard.canActivate (src/common/guards/permission.guard.ts:236:9)
+      at async Object.<anonymous> (test/g02-authorization-contract.spec.ts:149:7)
+
+PASS test/phase2-notification-visibility.spec.ts
+PASS test/production-review-remediation.spec.ts
+PASS test/perfect-10-remediation.spec.ts
+PASS test/discovery-lifecycle-foundations.spec.ts
+PASS test/phase2-easy-ten.spec.ts
+PASS test/phase0-evidence-integrity-remediation.spec.ts
+PASS test/g01-authentication-security.spec.ts
+  ● Console
+
+    console.error
+      AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE
+
+      340 |   lastAuthDenialDiagnosticAt = now;
+      341 |   // No exception string, HTTP request data, raw source or credentials.
+    > 342 |   console.error('AUTH_SECURITY_EVENT_PERSISTENCE_FAILURE');
+          |           ^
+      343 | }
+      344 |
+      345 | /**
+
+      at reportAuthDenialPersistenceFailure (src/modules/identity/auth-security.ts:342:11)
+      at recordDeniedAuthenticationEvent (src/modules/identity/auth-security.ts:483:5)
+      at SessionCsrfGuard.canActivate (src/common/guards/session-csrf.guard.ts:91:46)
+      at async Object.<anonymous> (test/g01-authentication-security.spec.ts:284:7)
+
+PASS test/review-authority-boundaries.spec.ts
+PASS test/modules/documents-reviews.spec.ts
+PASS test/phase2-procurement-boundaries.spec.ts
+PASS test/document-download-boundaries.spec.ts
+PASS test/g01-delivery-redirect-boundaries.spec.ts
+PASS test/phase2-project-route-capabilities.spec.ts
+PASS test/phase2-next-five.spec.ts
+PASS test/guest-session-boundaries.spec.ts
+PASS test/phase2-configuration-boundaries.spec.ts
+PASS test/hvac-checklist-readiness-branch.spec.ts
+FAIL test/sol-integrity-verification.spec.ts
+  ● Sol Integrity & Audit Invariants Suite › 4. External notifications stored as QUEUED without fake SENT (TC-F017, SOL A1(b)) › rejects unapproved external messages and delivers addressed in-app notifications
+
+    ForbiddenException: Forbidden Exception
+
+       99 |         liveOrgRole = rows[0]?.role;
+      100 |         if (!liveOrgRole) {
+    > 101 |           throw new ForbiddenException({ code: 'NOTIFICATION_ISSUER_REQUIRED' });
+          |                 ^
+      102 |         }
+      103 |         // Scoped notification capabilities require an actual project target.
+      104 |         if (!dto.projectId &&
+
+      at src/modules/notifications/notifications.service.ts:101:17
+      at async TenantDbService.withTenantContext (src/database/tenant-db.service.ts:87:22)
+      at async Object.<anonymous> (test/sol-integrity-verification.spec.ts:188:27)
+
+PASS test/phase1-mfa-idempotency-boundary.spec.ts
+PASS test/idempotency-expired-claim.spec.ts
+PASS test/phase2-project-lifecycle-lock.spec.ts
+PASS test/phase2-notification-issuer.spec.ts
+PASS test/remaining-dossier-delivery.spec.ts
+PASS test/g03-organisation-validation.spec.ts
+PASS test/phase2-public-plan-policy.spec.ts
+PASS test/g01-request-id-privacy.spec.ts
+PASS test/phase1-tenantdb-rollback.spec.ts
+PASS test/phase1-error-leakage.spec.ts
+PASS test/g01-reviewer-operations.spec.ts
+PASS test/security-invariants.e2e-spec.ts
+PASS test/v021-edge-cases.e2e-spec.ts
+PASS test/modules/config-checklists-assets.spec.ts
+PASS test/rbac-matrix.spec.ts
+PASS test/modules/nfr-quality-attributes.spec.ts
+PASS test/modules/handover-billing-system.spec.ts
+PASS test/modules/auth-iam.spec.ts
+PASS test/phase1-tenant-event-boundaries.spec.ts
+PASS test/modules/parties-projects.spec.ts
+
+Summary of all failing tests
+FAIL test/sol-integrity-verification.spec.ts
+  ● Sol Integrity & Audit Invariants Suite › 4. External notifications stored as QUEUED without fake SENT (TC-F017, SOL A1(b)) › rejects unapproved external messages and delivers addressed in-app notifications
+
+    ForbiddenException: Forbidden Exception
+
+       99 |         liveOrgRole = rows[0]?.role;
+      100 |         if (!liveOrgRole) {
+    > 101 |           throw new ForbiddenException({ code: 'NOTIFICATION_ISSUER_REQUIRED' });
+          |                 ^
+      102 |         }
+      103 |         // Scoped notification capabilities require an actual project target.
+      104 |         if (!dto.projectId &&
+
+      at src/modules/notifications/notifications.service.ts:101:17
+      at async TenantDbService.withTenantContext (src/database/tenant-db.service.ts:87:22)
+      at async Object.<anonymous> (test/sol-integrity-verification.spec.ts:188:27)
+
+
+Test Suites: 1 failed, 92 passed, 93 total
+Tests:       1 failed, 599 passed, 600 total
+Snapshots:   0 total
+Time:        368.422 s
+Ran all test suites.
+[ELIFECYCLE] Test failed. See above for more details.
+Error: ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL
+
+  × "pnpm recursive run" failed in /tmp/tco-phase2-reaudit/apps/api
+
+[ELIFECYCLE] Test failed. See above for more details.

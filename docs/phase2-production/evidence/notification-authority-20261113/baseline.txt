@@ -1,0 +1,311 @@
+FAIL test/phase2-notification-authority-db.spec.ts (10.964 s)
+  PH2-NEW-011 / PH2-G20-002: notification command authority
+    ✓ permits current administrators and preserves identical retries (40 ms)
+    ✕ rejects stale owner/project claims after demotion to R-SITE without a project (19 ms)
+    ✕ rejects stale owner/project claims after demotion to R-BILLING without a project (14 ms)
+    ✕ rejects SUSPENDED organisation membership without a project (15 ms)
+    ✕ rejects REMOVED organisation membership without a project (15 ms)
+    ✕ rejects an inactive user without a project (16 ms)
+    ✕ cannot use a foreign organisation membership (13 ms)
+    ✕ requires a concrete project for a scoped PM capability (17 ms)
+    ✕ does not interpret mere project membership as notification authority (20 ms)
+    ✓ permits a live project PM without relying on the stale session role (18 ms)
+    ✕ fails closed for unresolvable or read-only member scope {"readOnly":true} (17 ms)
+    ✕ fails closed for unresolvable or read-only member scope {"mode":"READ_ONLY"} (20 ms)
+    ✕ fails closed for unresolvable or read-only member scope {"assetIds":[]} (40 ms)
+    ✕ fails closed for unresolvable or read-only member scope {"requirementIds":["01a1d216-7b3e-7a76-a59d-ad887d16664d"]} (20 ms)
+    ✕ fails closed for unresolvable or read-only member scope {"unknown":true} (29 ms)
+    ✓ rejects a foreign project without writing either tenant (17 ms)
+    ✕ rechecks authority on a deduplicated retry and retains the original row (17 ms)
+    ✕ observes a concurrent demotion that commits before admission (5016 ms)
+
+  ● PH2-NEW-011 / PH2-G20-002: notification command authority › rejects stale owner/project claims after demotion to R-SITE without a project
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"deferredForQuietHours": false, "notification": {"channel": "IN_APP", "claim_token": null, "claim_until": null, "created_at": 2026-11-12T23:27:33.147Z, "dead_lettered_at": null, "dedup_key": "01a1d216-831a-7847-9290-f9ceff70fb22", "delivery_attempts": 0, "error": null, "event_key": "REQUIREMENT_CHANGED", "failure_code": null, "gateway_state": "DELIVERED", "id": "01a1d216-831d-7d11-b87c-0a91297b5ca2", "next_attempt_at": 2026-11-12T23:27:33.147Z, "org_id": "01a1d216-830f-7d45-99d7-f46b5e38c41a", "payload_json": {"title": "Synthetic change"}, "project_id": null, "read_at": null, "recipient_party_id": null, "recipient_user_id": "01a1d216-830f-7d45-99d7-f46dfc92b092", "sent_at": 2026-11-12T23:27:33.149Z, "status": "SENT"}}
+
+      30 |     eventKey:'REQUIREMENT_CHANGED',dedupKey:uuidv7(),payload:{title:'Synthetic change'}});
+      31 |   const denied = async (work: Promise<unknown>) => {
+    > 32 |     await expect(work).rejects.toMatchObject({status:403});
+         |           ^
+      33 |     expect((await db.admin.query('SELECT count(*)::int AS n FROM notifications WHERE org_id=$1',[org])).rows[0].n).toBe(0);
+      34 |   };
+      35 |   const setRole = (role:string) => db.admin.query('UPDATE memberships SET role=$3 WHERE org_id=$1 AND user_id=$2',[org,user,role]);
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at denied (test/phase2-notification-authority-db.spec.ts:32:11)
+      at test/phase2-notification-authority-db.spec.ts:50:11
+
+  ● PH2-NEW-011 / PH2-G20-002: notification command authority › rejects stale owner/project claims after demotion to R-BILLING without a project
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"deferredForQuietHours": false, "notification": {"channel": "IN_APP", "claim_token": null, "claim_until": null, "created_at": 2026-11-12T23:27:33.172Z, "dead_lettered_at": null, "dedup_key": "01a1d216-8334-7fbb-8f04-57266edcd93f", "delivery_attempts": 0, "error": null, "event_key": "REQUIREMENT_CHANGED", "failure_code": null, "gateway_state": "DELIVERED", "id": "01a1d216-8336-741c-beff-67ada4594bbb", "next_attempt_at": 2026-11-12T23:27:33.172Z, "org_id": "01a1d216-832a-7c6d-8085-cf2dc426a865", "payload_json": {"title": "Synthetic change"}, "project_id": null, "read_at": null, "recipient_party_id": null, "recipient_user_id": "01a1d216-832a-7c6d-8085-cf2fad95b99e", "sent_at": 2026-11-12T23:27:33.174Z, "status": "SENT"}}
+
+      30 |     eventKey:'REQUIREMENT_CHANGED',dedupKey:uuidv7(),payload:{title:'Synthetic change'}});
+      31 |   const denied = async (work: Promise<unknown>) => {
+    > 32 |     await expect(work).rejects.toMatchObject({status:403});
+         |           ^
+      33 |     expect((await db.admin.query('SELECT count(*)::int AS n FROM notifications WHERE org_id=$1',[org])).rows[0].n).toBe(0);
+      34 |   };
+      35 |   const setRole = (role:string) => db.admin.query('UPDATE memberships SET role=$3 WHERE org_id=$1 AND user_id=$2',[org,user,role]);
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at denied (test/phase2-notification-authority-db.spec.ts:32:11)
+      at test/phase2-notification-authority-db.spec.ts:50:11
+
+  ● PH2-NEW-011 / PH2-G20-002: notification command authority › rejects SUSPENDED organisation membership without a project
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"deferredForQuietHours": false, "notification": {"channel": "IN_APP", "claim_token": null, "claim_until": null, "created_at": 2026-11-12T23:27:33.187Z, "dead_lettered_at": null, "dedup_key": "01a1d216-8343-7cdc-b8e5-ab89f364b1e0", "delivery_attempts": 0, "error": null, "event_key": "REQUIREMENT_CHANGED", "failure_code": null, "gateway_state": "DELIVERED", "id": "01a1d216-8345-7904-b7ca-e084ef95a943", "next_attempt_at": 2026-11-12T23:27:33.187Z, "org_id": "01a1d216-8339-7f73-a7fa-d35b1f87ee72", "payload_json": {"title": "Synthetic change"}, "project_id": null, "read_at": null, "recipient_party_id": null, "recipient_user_id": "01a1d216-8339-7f73-a7fa-d35d7ea61f7e", "sent_at": 2026-11-12T23:27:33.190Z, "status": "SENT"}}
+
+      30 |     eventKey:'REQUIREMENT_CHANGED',dedupKey:uuidv7(),payload:{title:'Synthetic change'}});
+      31 |   const denied = async (work: Promise<unknown>) => {
+    > 32 |     await expect(work).rejects.toMatchObject({status:403});
+         |           ^
+      33 |     expect((await db.admin.query('SELECT count(*)::int AS n FROM notifications WHERE org_id=$1',[org])).rows[0].n).toBe(0);
+      34 |   };
+      35 |   const setRole = (role:string) => db.admin.query('UPDATE memberships SET role=$3 WHERE org_id=$1 AND user_id=$2',[org,user,role]);
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at denied (test/phase2-notification-authority-db.spec.ts:32:11)
+      at test/phase2-notification-authority-db.spec.ts:54:11
+
+  ● PH2-NEW-011 / PH2-G20-002: notification command authority › rejects REMOVED organisation membership without a project
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"deferredForQuietHours": false, "notification": {"channel": "IN_APP", "claim_token": null, "claim_until": null, "created_at": 2026-11-12T23:27:33.203Z, "dead_lettered_at": null, "dedup_key": "01a1d216-8352-7712-b0cd-3a75c6b71b54", "delivery_attempts": 0, "error": null, "event_key": "REQUIREMENT_CHANGED", "failure_code": null, "gateway_state": "DELIVERED", "id": "01a1d216-8355-7f4d-9cb9-e5e8e1a9fd6e", "next_attempt_at": 2026-11-12T23:27:33.203Z, "org_id": "01a1d216-8349-7bb0-965a-ffee3f39095b", "payload_json": {"title": "Synthetic change"}, "project_id": null, "read_at": null, "recipient_party_id": null, "recipient_user_id": "01a1d216-8349-7bb0-965a-fff09f05015b", "sent_at": 2026-11-12T23:27:33.205Z, "status": "SENT"}}
+
+      30 |     eventKey:'REQUIREMENT_CHANGED',dedupKey:uuidv7(),payload:{title:'Synthetic change'}});
+      31 |   const denied = async (work: Promise<unknown>) => {
+    > 32 |     await expect(work).rejects.toMatchObject({status:403});
+         |           ^
+      33 |     expect((await db.admin.query('SELECT count(*)::int AS n FROM notifications WHERE org_id=$1',[org])).rows[0].n).toBe(0);
+      34 |   };
+      35 |   const setRole = (role:string) => db.admin.query('UPDATE memberships SET role=$3 WHERE org_id=$1 AND user_id=$2',[org,user,role]);
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at denied (test/phase2-notification-authority-db.spec.ts:32:11)
+      at test/phase2-notification-authority-db.spec.ts:54:11
+
+  ● PH2-NEW-011 / PH2-G20-002: notification command authority › rejects an inactive user without a project
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"deferredForQuietHours": false, "notification": {"channel": "IN_APP", "claim_token": null, "claim_until": null, "created_at": 2026-11-12T23:27:33.220Z, "dead_lettered_at": null, "dedup_key": "01a1d216-8363-7597-bec9-3db84433230f", "delivery_attempts": 0, "error": null, "event_key": "REQUIREMENT_CHANGED", "failure_code": null, "gateway_state": "DELIVERED", "id": "01a1d216-8366-75e1-a514-2d66d358a5a9", "next_attempt_at": 2026-11-12T23:27:33.220Z, "org_id": "01a1d216-8358-7d13-a6e9-c6b14e14eeee", "payload_json": {"title": "Synthetic change"}, "project_id": null, "read_at": null, "recipient_party_id": null, "recipient_user_id": "01a1d216-8358-7d13-a6e9-c6b3106f02d1", "sent_at": 2026-11-12T23:27:33.222Z, "status": "SENT"}}
+
+      30 |     eventKey:'REQUIREMENT_CHANGED',dedupKey:uuidv7(),payload:{title:'Synthetic change'}});
+      31 |   const denied = async (work: Promise<unknown>) => {
+    > 32 |     await expect(work).rejects.toMatchObject({status:403});
+         |           ^
+      33 |     expect((await db.admin.query('SELECT count(*)::int AS n FROM notifications WHERE org_id=$1',[org])).rows[0].n).toBe(0);
+      34 |   };
+      35 |   const setRole = (role:string) => db.admin.query('UPDATE memberships SET role=$3 WHERE org_id=$1 AND user_id=$2',[org,user,role]);
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at denied (test/phase2-notification-authority-db.spec.ts:32:11)
+      at Object.<anonymous> (test/phase2-notification-authority-db.spec.ts:58:11)
+
+  ● PH2-NEW-011 / PH2-G20-002: notification command authority › cannot use a foreign organisation membership
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"deferredForQuietHours": false, "notification": {"channel": "IN_APP", "claim_token": null, "claim_until": null, "created_at": 2026-11-12T23:27:33.234Z, "dead_lettered_at": null, "dedup_key": "01a1d216-8371-78ae-bf72-f69811e01b55", "delivery_attempts": 0, "error": null, "event_key": "REQUIREMENT_CHANGED", "failure_code": null, "gateway_state": "DELIVERED", "id": "01a1d216-8374-75e9-90c8-6970ff1f75a5", "next_attempt_at": 2026-11-12T23:27:33.234Z, "org_id": "01a1d216-8369-75f0-a656-54967bd18345", "payload_json": {"title": "Synthetic change"}, "project_id": null, "read_at": null, "recipient_party_id": null, "recipient_user_id": "01a1d216-8369-75f0-a656-5497bf2140a8", "sent_at": 2026-11-12T23:27:33.236Z, "status": "SENT"}}
+
+      30 |     eventKey:'REQUIREMENT_CHANGED',dedupKey:uuidv7(),payload:{title:'Synthetic change'}});
+      31 |   const denied = async (work: Promise<unknown>) => {
+    > 32 |     await expect(work).rejects.toMatchObject({status:403});
+         |           ^
+      33 |     expect((await db.admin.query('SELECT count(*)::int AS n FROM notifications WHERE org_id=$1',[org])).rows[0].n).toBe(0);
+      34 |   };
+      35 |   const setRole = (role:string) => db.admin.query('UPDATE memberships SET role=$3 WHERE org_id=$1 AND user_id=$2',[org,user,role]);
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at denied (test/phase2-notification-authority-db.spec.ts:32:11)
+      at Object.<anonymous> (test/phase2-notification-authority-db.spec.ts:61:11)
+
+  ● PH2-NEW-011 / PH2-G20-002: notification command authority › requires a concrete project for a scoped PM capability
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"deferredForQuietHours": false, "notification": {"channel": "IN_APP", "claim_token": null, "claim_until": null, "created_at": 2026-11-12T23:27:33.251Z, "dead_lettered_at": null, "dedup_key": "01a1d216-8382-71fc-a677-4d58e717bedb", "delivery_attempts": 0, "error": null, "event_key": "REQUIREMENT_CHANGED", "failure_code": null, "gateway_state": "DELIVERED", "id": "01a1d216-8385-7eb5-be56-399d81191f3c", "next_attempt_at": 2026-11-12T23:27:33.251Z, "org_id": "01a1d216-8377-7f46-bbae-bbb2c5e03dd6", "payload_json": {"title": "Synthetic change"}, "project_id": null, "read_at": null, "recipient_party_id": null, "recipient_user_id": "01a1d216-8377-7f46-bbae-bbb4d337b95c", "sent_at": 2026-11-12T23:27:33.253Z, "status": "SENT"}}
+
+      30 |     eventKey:'REQUIREMENT_CHANGED',dedupKey:uuidv7(),payload:{title:'Synthetic change'}});
+      31 |   const denied = async (work: Promise<unknown>) => {
+    > 32 |     await expect(work).rejects.toMatchObject({status:403});
+         |           ^
+      33 |     expect((await db.admin.query('SELECT count(*)::int AS n FROM notifications WHERE org_id=$1',[org])).rows[0].n).toBe(0);
+      34 |   };
+      35 |   const setRole = (role:string) => db.admin.query('UPDATE memberships SET role=$3 WHERE org_id=$1 AND user_id=$2',[org,user,role]);
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at denied (test/phase2-notification-authority-db.spec.ts:32:11)
+      at Object.<anonymous> (test/phase2-notification-authority-db.spec.ts:65:11)
+
+  ● PH2-NEW-011 / PH2-G20-002: notification command authority › does not interpret mere project membership as notification authority
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"deferredForQuietHours": false, "notification": {"channel": "IN_APP", "claim_token": null, "claim_until": null, "created_at": 2026-11-12T23:27:33.269Z, "dead_lettered_at": null, "dedup_key": "01a1d216-8395-7b81-a2c3-72dd063885fd", "delivery_attempts": 0, "error": null, "event_key": "REQUIREMENT_CHANGED", "failure_code": null, "gateway_state": "DELIVERED", "id": "01a1d216-839a-701f-99bc-46a912bd611c", "next_attempt_at": 2026-11-12T23:27:33.269Z, "org_id": "01a1d216-8388-7524-a2f7-73b08c5fced5", "payload_json": {"title": "Synthetic change"}, "project_id": "01a1d216-8388-7524-a2f7-73b32832c2a5", "read_at": null, "recipient_party_id": null, "recipient_user_id": "01a1d216-8388-7524-a2f7-73b2ba3221f7", "sent_at": 2026-11-12T23:27:33.274Z, "status": "SENT"}}
+
+      30 |     eventKey:'REQUIREMENT_CHANGED',dedupKey:uuidv7(),payload:{title:'Synthetic change'}});
+      31 |   const denied = async (work: Promise<unknown>) => {
+    > 32 |     await expect(work).rejects.toMatchObject({status:403});
+         |           ^
+      33 |     expect((await db.admin.query('SELECT count(*)::int AS n FROM notifications WHERE org_id=$1',[org])).rows[0].n).toBe(0);
+      34 |   };
+      35 |   const setRole = (role:string) => db.admin.query('UPDATE memberships SET role=$3 WHERE org_id=$1 AND user_id=$2',[org,user,role]);
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at denied (test/phase2-notification-authority-db.spec.ts:32:11)
+      at Object.<anonymous> (test/phase2-notification-authority-db.spec.ts:69:11)
+
+  ● PH2-NEW-011 / PH2-G20-002: notification command authority › fails closed for unresolvable or read-only member scope {"readOnly":true}
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"deferredForQuietHours": false, "notification": {"channel": "IN_APP", "claim_token": null, "claim_until": null, "created_at": 2026-11-12T23:27:33.307Z, "dead_lettered_at": null, "dedup_key": "01a1d216-83bb-709c-9537-904ef43ae4c9", "delivery_attempts": 0, "error": null, "event_key": "REQUIREMENT_CHANGED", "failure_code": null, "gateway_state": "DELIVERED", "id": "01a1d216-83bf-79aa-8db3-bc0ad0e55c4c", "next_attempt_at": 2026-11-12T23:27:33.307Z, "org_id": "01a1d216-83b0-7f2f-bc05-648339034bf4", "payload_json": {"title": "Synthetic change"}, "project_id": "01a1d216-83b0-7f2f-bc05-648625b4983a", "read_at": null, "recipient_party_id": null, "recipient_user_id": "01a1d216-83b0-7f2f-bc05-64857886df73", "sent_at": 2026-11-12T23:27:33.311Z, "status": "SENT"}}
+
+      30 |     eventKey:'REQUIREMENT_CHANGED',dedupKey:uuidv7(),payload:{title:'Synthetic change'}});
+      31 |   const denied = async (work: Promise<unknown>) => {
+    > 32 |     await expect(work).rejects.toMatchObject({status:403});
+         |           ^
+      33 |     expect((await db.admin.query('SELECT count(*)::int AS n FROM notifications WHERE org_id=$1',[org])).rows[0].n).toBe(0);
+      34 |   };
+      35 |   const setRole = (role:string) => db.admin.query('UPDATE memberships SET role=$3 WHERE org_id=$1 AND user_id=$2',[org,user,role]);
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at denied (test/phase2-notification-authority-db.spec.ts:32:11)
+      at test/phase2-notification-authority-db.spec.ts:79:13
+
+  ● PH2-NEW-011 / PH2-G20-002: notification command authority › fails closed for unresolvable or read-only member scope {"mode":"READ_ONLY"}
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"deferredForQuietHours": false, "notification": {"channel": "IN_APP", "claim_token": null, "claim_until": null, "created_at": 2026-11-12T23:27:33.328Z, "dead_lettered_at": null, "dedup_key": "01a1d216-83cf-726b-b510-f0f29d4bba4a", "delivery_attempts": 0, "error": null, "event_key": "REQUIREMENT_CHANGED", "failure_code": null, "gateway_state": "DELIVERED", "id": "01a1d216-83d3-7481-8282-961e273ad525", "next_attempt_at": 2026-11-12T23:27:33.328Z, "org_id": "01a1d216-83c2-76d0-b298-3ab9cad80bbc", "payload_json": {"title": "Synthetic change"}, "project_id": "01a1d216-83c2-76d0-b298-3abcea7e9776", "read_at": null, "recipient_party_id": null, "recipient_user_id": "01a1d216-83c2-76d0-b298-3abbc0b52bcb", "sent_at": 2026-11-12T23:27:33.331Z, "status": "SENT"}}
+
+      30 |     eventKey:'REQUIREMENT_CHANGED',dedupKey:uuidv7(),payload:{title:'Synthetic change'}});
+      31 |   const denied = async (work: Promise<unknown>) => {
+    > 32 |     await expect(work).rejects.toMatchObject({status:403});
+         |           ^
+      33 |     expect((await db.admin.query('SELECT count(*)::int AS n FROM notifications WHERE org_id=$1',[org])).rows[0].n).toBe(0);
+      34 |   };
+      35 |   const setRole = (role:string) => db.admin.query('UPDATE memberships SET role=$3 WHERE org_id=$1 AND user_id=$2',[org,user,role]);
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at denied (test/phase2-notification-authority-db.spec.ts:32:11)
+      at test/phase2-notification-authority-db.spec.ts:79:13
+
+  ● PH2-NEW-011 / PH2-G20-002: notification command authority › fails closed for unresolvable or read-only member scope {"assetIds":[]}
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"deferredForQuietHours": false, "notification": {"channel": "IN_APP", "claim_token": null, "claim_until": null, "created_at": 2026-11-12T23:27:33.361Z, "dead_lettered_at": null, "dedup_key": "01a1d216-83f0-703a-b80a-dceb4fb9f635", "delivery_attempts": 0, "error": null, "event_key": "REQUIREMENT_CHANGED", "failure_code": null, "gateway_state": "DELIVERED", "id": "01a1d216-83fc-7670-94ca-3fddc3ccc966", "next_attempt_at": 2026-11-12T23:27:33.361Z, "org_id": "01a1d216-83d8-7e38-9ebd-a71bb91ea3fc", "payload_json": {"title": "Synthetic change"}, "project_id": "01a1d216-83d8-7e38-9ebd-a71ec19ebb4c", "read_at": null, "recipient_party_id": null, "recipient_user_id": "01a1d216-83d8-7e38-9ebd-a71d96676b90", "sent_at": 2026-11-12T23:27:33.372Z, "status": "SENT"}}
+
+      30 |     eventKey:'REQUIREMENT_CHANGED',dedupKey:uuidv7(),payload:{title:'Synthetic change'}});
+      31 |   const denied = async (work: Promise<unknown>) => {
+    > 32 |     await expect(work).rejects.toMatchObject({status:403});
+         |           ^
+      33 |     expect((await db.admin.query('SELECT count(*)::int AS n FROM notifications WHERE org_id=$1',[org])).rows[0].n).toBe(0);
+      34 |   };
+      35 |   const setRole = (role:string) => db.admin.query('UPDATE memberships SET role=$3 WHERE org_id=$1 AND user_id=$2',[org,user,role]);
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at denied (test/phase2-notification-authority-db.spec.ts:32:11)
+      at test/phase2-notification-authority-db.spec.ts:79:13
+
+  ● PH2-NEW-011 / PH2-G20-002: notification command authority › fails closed for unresolvable or read-only member scope {"requirementIds":["01a1d216-7b3e-7a76-a59d-ad887d16664d"]}
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"deferredForQuietHours": false, "notification": {"channel": "IN_APP", "claim_token": null, "claim_until": null, "created_at": 2026-11-12T23:27:33.390Z, "dead_lettered_at": null, "dedup_key": "01a1d216-840e-7f59-9bf0-1f2f7709d6e9", "delivery_attempts": 0, "error": null, "event_key": "REQUIREMENT_CHANGED", "failure_code": null, "gateway_state": "DELIVERED", "id": "01a1d216-8412-74e3-8e99-19497586219b", "next_attempt_at": 2026-11-12T23:27:33.390Z, "org_id": "01a1d216-8401-7c36-a1d5-2d35cc9837b8", "payload_json": {"title": "Synthetic change"}, "project_id": "01a1d216-8401-7c36-a1d5-2d38fb771767", "read_at": null, "recipient_party_id": null, "recipient_user_id": "01a1d216-8401-7c36-a1d5-2d373e040d4d", "sent_at": 2026-11-12T23:27:33.394Z, "status": "SENT"}}
+
+      30 |     eventKey:'REQUIREMENT_CHANGED',dedupKey:uuidv7(),payload:{title:'Synthetic change'}});
+      31 |   const denied = async (work: Promise<unknown>) => {
+    > 32 |     await expect(work).rejects.toMatchObject({status:403});
+         |           ^
+      33 |     expect((await db.admin.query('SELECT count(*)::int AS n FROM notifications WHERE org_id=$1',[org])).rows[0].n).toBe(0);
+      34 |   };
+      35 |   const setRole = (role:string) => db.admin.query('UPDATE memberships SET role=$3 WHERE org_id=$1 AND user_id=$2',[org,user,role]);
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at denied (test/phase2-notification-authority-db.spec.ts:32:11)
+      at test/phase2-notification-authority-db.spec.ts:79:13
+
+  ● PH2-NEW-011 / PH2-G20-002: notification command authority › fails closed for unresolvable or read-only member scope {"unknown":true}
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"deferredForQuietHours": false, "notification": {"channel": "IN_APP", "claim_token": null, "claim_until": null, "created_at": 2026-11-12T23:27:33.413Z, "dead_lettered_at": null, "dedup_key": "01a1d216-8423-7cec-bef5-4b2a5821ed69", "delivery_attempts": 0, "error": null, "event_key": "REQUIREMENT_CHANGED", "failure_code": null, "gateway_state": "DELIVERED", "id": "01a1d216-842f-7c72-9ddb-ad4eb79218b4", "next_attempt_at": 2026-11-12T23:27:33.413Z, "org_id": "01a1d216-8415-7df1-ad1a-b2d86ea63ee6", "payload_json": {"title": "Synthetic change"}, "project_id": "01a1d216-8415-7df1-ad1a-b2db480c07b2", "read_at": null, "recipient_party_id": null, "recipient_user_id": "01a1d216-8415-7df1-ad1a-b2da726646be", "sent_at": 2026-11-12T23:27:33.423Z, "status": "SENT"}}
+
+      30 |     eventKey:'REQUIREMENT_CHANGED',dedupKey:uuidv7(),payload:{title:'Synthetic change'}});
+      31 |   const denied = async (work: Promise<unknown>) => {
+    > 32 |     await expect(work).rejects.toMatchObject({status:403});
+         |           ^
+      33 |     expect((await db.admin.query('SELECT count(*)::int AS n FROM notifications WHERE org_id=$1',[org])).rows[0].n).toBe(0);
+      34 |   };
+      35 |   const setRole = (role:string) => db.admin.query('UPDATE memberships SET role=$3 WHERE org_id=$1 AND user_id=$2',[org,user,role]);
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at denied (test/phase2-notification-authority-db.spec.ts:32:11)
+      at test/phase2-notification-authority-db.spec.ts:79:13
+
+  ● PH2-NEW-011 / PH2-G20-002: notification command authority › rechecks authority on a deduplicated retry and retains the original row
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"deferredForQuietHours": false, "notification": {"channel": "IN_APP", "claim_token": null, "claim_until": null, "created_at": 2026-11-12T23:27:33.452Z, "dead_lettered_at": null, "dedup_key": "01a1d216-844c-7a2a-85b7-7dc964e506e6", "delivery_attempts": 0, "error": null, "event_key": "REQUIREMENT_CHANGED", "failure_code": null, "gateway_state": "DELIVERED", "id": "01a1d216-844e-7d05-992f-9924cd8e0b46", "next_attempt_at": 2026-11-12T23:27:33.452Z, "org_id": "01a1d216-8444-7241-ac82-0079b4cc3872", "payload_json": {"title": "Synthetic change"}, "project_id": null, "read_at": null, "recipient_party_id": null, "recipient_user_id": "01a1d216-8444-7241-ac82-007b3be76452", "sent_at": 2026-11-12T23:27:33.454Z, "status": "SENT"}}
+
+      87 |     const first=await service.createNotification(ctx,dto);
+      88 |     await setRole('R-SITE');
+    > 89 |     await expect(service.createNotification(ctx,dto)).rejects.toMatchObject({status:403});
+         |           ^
+      90 |     const stored=(await db.admin.query('SELECT * FROM notifications WHERE id=$1',[first.notification.id])).rows[0];
+      91 |     expect(stored).toEqual(first.notification);
+      92 |   });
+
+      at expect (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at Object.<anonymous> (test/phase2-notification-authority-db.spec.ts:89:11)
+
+  ● PH2-NEW-011 / PH2-G20-002: notification command authority › observes a concurrent demotion that commits before admission
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+      109 |         await new Promise(resolve=>setTimeout(resolve,10));
+      110 |       }
+    > 111 |       expect(waiting).toBe(true);
+          |                       ^
+      112 |       await revoker.query('COMMIT');
+      113 |       expect(await outcome).toMatchObject({error:{status:403}});
+      114 |       expect((await db.admin.query('SELECT count(*)::int AS n FROM notifications WHERE org_id=$1',[org])).rows[0].n).toBe(0);
+
+      at Object.<anonymous> (test/phase2-notification-authority-db.spec.ts:111:23)
+
+Test Suites: 1 failed, 1 total
+Tests:       15 failed, 3 passed, 18 total
+Snapshots:   0 total
+Time:        11.03 s
+Ran all test suites matching /test\/phase2-notification-authority-db.spec.ts/i.
+Error: ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL
+
+  × "pnpm recursive exec" failed in /tmp/tco-phase2-reaudit/apps/api

@@ -1,0 +1,13 @@
+{
+  "baselineSha": "f4d8191f4585cddc3852336f56af64029acf9e3d",
+  "node": "22.23.5",
+  "pnpm": "12.4.1",
+  "files": {
+    "apps/api/src/modules/notifications/notifications.service.ts": "853a3044edfa541ddb117c873aa8c9399a671cb696a3ea7aba7fa38bf7d38edc",
+    "apps/api/test/phase2-notification-authority-db.spec.ts": "825dae9377bf4b64385a450eb6fa5fec8caff725a9811fff0b3b86ee83f63766",
+    "apps/api/test/phase2-notification-issuer.spec.ts": "f9c181cd30968609d8c043c467baa7f62c98322e74c9cbf1255ef9cd5e42a8b0",
+    "apps/api/test/phase2-notification-project-authority-db.spec.ts": "a720436b48305e3b004ff85806b458945d9fcb42b74c0b7ee82ddd687ffc9932",
+    "apps/api/test/phase2-notification-visibility.spec.ts": "99a8b434b0cfbf58005ccf8b98e72dea5a61c75d8964d1117750b2991d7c11f1",
+    "apps/api/test/sol-integrity-verification.spec.ts": "4939c6e313f32d005c8eb370bfb986aa6ea53f4008b17fb5078d4d5043e0e946"
+  }
+}
