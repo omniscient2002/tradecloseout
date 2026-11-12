@@ -187,6 +187,49 @@ describe('PH3-G11-001 — exactly one terminal review decision per document vers
       expect(rejected.requirement.status).toBe('REJECTED');
       expect(rejected.reviews.map(r => r.status).sort()).toEqual(['CANCELLED','REJECTED']);
       expect(rejected.audits).toHaveLength(1);
+
+      // Commit-acknowledgement loss: PostgreSQL COMMIT succeeds, but the
+      // application never receives a successful response. A different
+      // terminal retry must fail without a second audit event or pointer
+      // reversal, even though the first caller observed an exception.
+      const uncertain = await createVersion('ACK-LOST');
+      let dropped = false;
+      const lostCommitPool: any = {
+        connect: async () => {
+          const realClient = await app.connect();
+          return {
+            query: async (sql: string, params?: unknown[]) => {
+              const result = await realClient.query(sql, params);
+              if (!dropped && sql === 'COMMIT') {
+                dropped = true;
+                throw new Error('COMMIT_ACKNOWLEDGEMENT_LOST');
+              }
+              return result;
+            },
+            release: () => realClient.release(),
+          };
+        },
+      };
+      const lostCommitService = new ReviewsService(new TenantDbService(lostCommitPool));
+      await expect(lostCommitService.decideReview(contexts[0], uncertain.reviewA, {
+        decision: 'APPROVE', expectedRowVersion: 1,
+      })).rejects.toThrow('COMMIT_ACKNOWLEDGEMENT_LOST');
+      expect(dropped).toBe(true);
+      const committed = await state(uncertain);
+      expect(committed.version.review_status).toBe('APPROVED');
+      expect(committed.document.current_approved_version_id).toBe(uncertain.versionId);
+      expect(committed.reviews.map(x => x.status).sort()).toEqual(['APPROVED', 'CANCELLED']);
+      expect(committed.audits).toHaveLength(1);
+      await expect(service.decideReview(contexts[1], uncertain.reviewB, {
+        decision: 'REJECT', comment: 'Reverse after lost acknowledgement',
+        expectedRowVersion: 1,
+      })).rejects.toThrow();
+      await expect(service.decideReview(contexts[0], uncertain.reviewA, {
+        decision: 'APPROVE', expectedRowVersion: 1,
+      })).rejects.toThrow();
+      const replayed = await state(uncertain);
+      expect(replayed.document.current_approved_version_id).toBe(uncertain.versionId);
+      expect(replayed.audits).toHaveLength(1);
     });
   });
   it.each(['APPROVED', 'REJECTED', 'CHANGES_REQUESTED', 'SUPERSEDED', 'WITHDRAWN'])(
