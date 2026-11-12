@@ -13,7 +13,7 @@
 | Finding | Candidate | Changes / outstanding closure |
 |---|---|---|
 | PH5-G23-001 | PARTIAL | Upload modal now reports browser-local draft persistence instead of completed submission; all actual end-to-end product journeys remain incomplete |
-| PH5-G23-002 | PARTIAL | Audit-page metadata-only hashes handled; fail-closed strict checklist DTO parser supports snake/camel fields, exact statuses and row versions; full cross-module typed DTO/permission integration pending |
+| PH5-G23-002 | PARTIAL | Audit-page metadata-only hashes handled; fail-closed checklist and project dashboard parsers reject absent/mismatched status, mandatory, counts, money and row versions; cross-module DTO and permission integration pending |
 | PH5-G23-003 | OPEN | Server-derived per-action capability UI missing |
 | PH5-G23-004 | PARTIAL | Removed invented warranty/defect defaults and exact BigInt-only INR paise display (invalid money is unavailable, not zero); authoritative scoped reporting/search still missing |
 | PH5-G23-005 | CANDIDATE | Safe UTF-8 CSV/Blob export, formula-prefix policy, regression tests; consumer/large-file acceptance pending |
@@ -42,7 +42,7 @@
 
 The browser regression file `apps/web/e2e/offline-queue-phase5.spec.ts` executes the actual queue against a stubbed API client, real Chromium IndexedDB/Web Locks and loopback HTTP PUTs. It covers expired presigned URL refresh, concurrent drains, actor isolation, per-actor/global quota, scoped draft inventory/discard, missing completion responses and same-key retry when the server remains pending, plus injected browser-storage exhaustion. `apps/web/e2e/chunked-sha256.spec.ts` compares original-byte SHA-256 against known empty/abc vectors and Node crypto across padding/segment boundaries. `apps/web/e2e/csv-export.spec.ts` covers Unicode, #/%/CRLF, quoting, formula prefixes and malformed values. Backend regressions check restricted incident SQL privileges and deny refresh of quarantined upload intents. These are fixture/DB mechanics tests, **not** production provider or end-to-end acceptance.
 
-**Latest verified passing engineering head before this ledger edit:** `f6b430bdf04f40a2bfc8cb886c23ec625f50331d`, GitHub `verify-and-test` and `group-register` successful, with **281/281 API**, **37/37 Chromium archive-project**, **15/15 security** and **44/44 shared** tests. This head includes bounded offline retry, exact money and strict checklist parsing regressions. Later project-page asynchronous error/empty-state fixes require new exact-head CI. Do not infer human/provider acceptance from green fixture tests.
+**Latest verified passing engineering head before this ledger edit:** `8fa78280ed1ecefe6bc9ce79692d4143c368ffa0`, GitHub `verify-and-test` and `group-register` successful, with **281/281 API**, **39/39 Chromium archive-project**, **15/15 security** and **44/44 shared** tests. This head includes project-page loading/empty/error and stale-generation guards plus the shared list-parser tests. The later strict dashboard parser needs an exact-head CI result. Do not infer human/provider acceptance from green fixture tests.
 
 Useful commands on a clean Node 22/pnpm 12.4.1 checkout with isolated PG16/Redis and Chromium:
 ```sh
@@ -65,7 +65,7 @@ The original-blob SHA-256 digest now uses a streaming incremental implementation
 
 ## Frontend data-integrity and recoverability checks
 
-The checklist boundary parser preserves the API's actual `UNDER_REVIEW` and `SUPERSEDED` states and rejects missing/unknown status, mandatory, group, document type or row-version fields instead of inventing `NOT_STARTED` or version 1. Contract and retention values in paise are formatted with BigInt, not lossy IEEE-754 conversion; malformed amounts are labeled unavailable, not zero. The equipment/review/package tabs now surface failed or denied loads with accessible alerts and retries rather than presenting an empty result. Per-resource request generations and a current-project fence prevent late old-project responses from overwriting current data. Strict DTO and money parsing have CI tests; actual authenticated route/controller acceptance is still pending.
+The checklist boundary parser preserves the API's actual `UNDER_REVIEW` and `SUPERSEDED` states and rejects missing/unknown status, mandatory, group, document type or row-version fields instead of inventing `NOT_STARTED` or version 1. The new project-summary parser also requires the exact requested project ID, valid lifecycle status, count totals, paise integers and optimistic-lock version before rendering the dashboard. Contract and retention values in paise are formatted with BigInt, not lossy IEEE-754 conversion; malformed amounts are labeled unavailable, not zero. The equipment/review/package tabs now surface failed or denied loads with accessible alerts and retries rather than presenting an empty result. Per-resource request generations and a current-project fence prevent late old-project responses from overwriting current data. Strict DTO and money parsing have CI tests; actual authenticated route/controller acceptance is still pending.
 
 ## Bounded retry contract
 
