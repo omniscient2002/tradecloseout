@@ -28,7 +28,7 @@ export function ExternalApprovalModal({
     "STAMPED_PDF" | "EMAIL" | "PORTAL" | "PHYSICAL"
   >("STAMPED_PDF");
   const [approverName, setApproverName] = useState("");
-  const [approverRole, setApproverRole] = useState("Chief Fire Officer / Consultant");
+  const [approverRole, setApproverRole] = useState("");
   const [reference, setReference] = useState("");
   const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -126,7 +126,7 @@ export function ExternalApprovalModal({
             type="text"
             value={reference}
             onChange={(e) => setReference(e.target.value)}
-            placeholder="e.g. NOC/FIRE/2026/8841-B or EMAIL-2026-10-18"
+            placeholder="Approval letter or email reference"
             className="w-full rounded-md border border-[#E5E7EB] p-2 text-xs font-mono text-[#111827] focus:border-[#0F766E] focus:outline-none"
           />
         </div>

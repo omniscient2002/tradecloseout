@@ -1,5 +1,6 @@
 "use client";
 
+import { documentTypeLabel } from "../../lib/document-catalogue";
 import React, { useState, useRef } from "react";
 import { Modal } from "../ui/modal";
 import {
@@ -33,8 +34,8 @@ export function UploadEvidenceModal({
   onUploadSuccess,
 }: UploadEvidenceModalProps) {
   const [file, setFile] = useState<File | null>(null);
-  const [revisionCode, setRevisionCode] = useState("R0");
-  const [issueDate, setIssueDate] = useState(new Date().toISOString().slice(0, 10));
+  const [revisionCode, setRevisionCode] = useState("");
+  const [issueDate, setIssueDate] = useState("");
   const [externalComment, setExternalComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,6 +53,11 @@ export function UploadEvidenceModal({
       return;
     }
 
+    if (selected.size > 100 * 1024 * 1024) {
+      setError("Choose a file smaller than 100 MB.");
+      setFile(null);
+      return;
+    }
     setError(null);
     setFile(selected);
 
@@ -83,7 +89,7 @@ export function UploadEvidenceModal({
       setFile(null);
       setExternalComment("");
     } catch (err: any) {
-      setError(err?.message || "Failed to enqueue upload.");
+      setError(err?.message || "We could not save your document for upload.");
     } finally {
       setSubmitting(false);
     }
@@ -93,8 +99,8 @@ export function UploadEvidenceModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="Upload Technical Evidence"
-      subtitle={`${requirement.requirementKey} · ${requirement.docTypeKey} (${requirement.assetTag || "Project-wide"})`}
+      title="Upload project document"
+      subtitle={`${requirement.requirementKey} · ${documentTypeLabel(requirement.docTypeKey)} (${requirement.assetTag || "Project-wide"})`}
       maxWidth="max-w-lg"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -127,7 +133,7 @@ export function UploadEvidenceModal({
                 {file ? file.name : "Click to select certificate, drawing, or photo"}
               </p>
               <p className="text-[11px] text-slate-500">
-                {file ? `${(file.size / 1024).toFixed(0)} KB` : "PDF, JPEG, PNG, WebP, XLSX, DOCX (Max 250 MB)"}
+                {file ? `${(file.size / 1024).toFixed(0)} KB` : "PDF, JPEG, PNG, WebP, XLSX, DOCX (Max 100 MB)"}
               </p>
             </div>
           </div>
@@ -144,14 +150,14 @@ export function UploadEvidenceModal({
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Revision Code
+              Document revision
             </label>
             <input
               type="text"
               required
               value={revisionCode}
               onChange={(e) => setRevisionCode(e.target.value)}
-              placeholder="R0"
+              placeholder="Revision shown on the document"
               className="w-full rounded border border-slate-300 p-2 text-xs font-mono font-semibold focus:border-blue-600 focus:outline-none"
             />
           </div>
@@ -179,7 +185,7 @@ export function UploadEvidenceModal({
             type="text"
             value={externalComment}
             onChange={(e) => setExternalComment(e.target.value)}
-            placeholder="e.g. Witnessed by Consultant Mr. Sharma on site"
+            placeholder="Add any information the reviewer needs"
             className="w-full rounded border border-slate-300 p-2 text-xs focus:border-blue-600 focus:outline-none"
           />
         </div>

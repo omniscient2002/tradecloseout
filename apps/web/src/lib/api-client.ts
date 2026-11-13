@@ -1,3 +1,4 @@
+import { problemMessage } from "./presentation";
 /**
  * TradeCloseout Production API Client
  * Supports CSRF, Idempotency-Key, If-Match, and Problem+JSON
@@ -17,7 +18,7 @@ export class ApiProblemError extends Error {
     requestId?: string;
     fieldErrors?: Array<{ field: string; message: string }>;
   }) {
-    super(problem.detail || problem.title || 'Request failed');
+    super(problemMessage(problem));
     this.status = problem.status ?? 500;
     this.code = problem.code ?? 'INTERNAL_ERROR';
     this.requestId = problem.requestId ?? 'unknown';
@@ -93,7 +94,7 @@ export async function apiFetch<T>(
     ) {
       window.location.href = '/login';
     }
-    throw new ApiProblemError(data);
+    throw new ApiProblemError({ ...data, status: data.status ?? res.status });
   }
 
   return data as T;

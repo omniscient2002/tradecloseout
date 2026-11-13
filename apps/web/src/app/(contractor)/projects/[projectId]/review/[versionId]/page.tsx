@@ -1,5 +1,6 @@
 "use client";
 
+import { humanLabel } from "../../../../../../lib/presentation";
 import React, { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
@@ -87,9 +88,7 @@ export default function DocumentReviewWorkbenchPage() {
   // External Approval Form State (WF-23 / SCR-027 / RT-022)
   const [extApproverName, setExtApproverName] = useState("");
   const [extApproverRoleOrg, setExtApproverRoleOrg] = useState("");
-  const [extDecisionDate, setExtDecisionDate] = useState(
-    new Date().toISOString().slice(0, 10),
-  );
+  const [extDecisionDate, setExtDecisionDate] = useState("");
   const [extMethod, setExtMethod] = useState<
     "STAMPED_PDF" | "EMAIL" | "PORTAL" | "PHYSICAL"
   >("STAMPED_PDF");
@@ -237,7 +236,7 @@ export default function DocumentReviewWorkbenchPage() {
   if (loading) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-[#0F172A] text-xs text-slate-300">
-        Loading verified PDF stream & review context…
+        Loading document and review details…
       </div>
     );
   }
@@ -301,7 +300,7 @@ export default function DocumentReviewWorkbenchPage() {
                 <input
                   type="number"
                   min={1}
-                  max={detail?.pageCount || 999}
+                  max={detail?.pageCount || undefined}
                   placeholder="1"
                   value={targetPage ?? ''}
                   onChange={(e) => {
@@ -329,7 +328,7 @@ export default function DocumentReviewWorkbenchPage() {
           <div className="flex-1 bg-[#1E293B] p-2 sm:p-3 min-h-0">
             <iframe
               src={streamUrl}
-              title="Verified Engineering PDF Preview"
+              title="Document preview"
               className="h-full w-full rounded border border-slate-700 bg-white shadow-2xl"
             />
           </div>
@@ -359,10 +358,10 @@ export default function DocumentReviewWorkbenchPage() {
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-1.5">
                 <div className="flex items-center justify-between">
                   <span className="font-mono font-bold text-slate-900">
-                    Revision {detail.revisionCode} ({detail.reviewStatus})
+                    Revision {detail.revisionCode} ({humanLabel(detail.reviewStatus)})
                   </span>
                   <span className="font-mono text-[11px] text-emerald-700 font-semibold">
-                    File status: {detail.fileStatus}
+                    File status: {humanLabel(detail.fileStatus)}
                   </span>
                 </div>
                 <div className="text-[11px] text-slate-600">
@@ -370,7 +369,7 @@ export default function DocumentReviewWorkbenchPage() {
                   Date: <strong className="font-mono">{detail.issueDate || "Not recorded"}</strong>
                 </div>
                 <div className="font-mono text-[10px] text-slate-400 truncate">
-                  SHA-256: {detail.sha256 || "Not available"}
+                  File reference: {detail.sha256 || "Not available"}
                 </div>
               </div>
 
@@ -470,7 +469,7 @@ export default function DocumentReviewWorkbenchPage() {
                       <input
                         type="number"
                         min={1}
-                        max={detail.pageCount || 999}
+                        max={detail.pageCount || undefined}
                         value={newPinPage}
                         onChange={(e) => setNewPinPage(Number(e.target.value))}
                         className="w-20 rounded border border-slate-300 px-2 py-1 font-mono text-xs"
@@ -621,7 +620,7 @@ export default function DocumentReviewWorkbenchPage() {
                     required
                     value={extApproverName}
                     onChange={(e) => setExtApproverName(e.target.value)}
-                    placeholder="e.g., Vikram Sengupta"
+                    placeholder="Approver’s full name"
                     className="w-full rounded border border-slate-300 bg-white px-2 py-1.5"
                   />
                 </div>
@@ -679,7 +678,7 @@ export default function DocumentReviewWorkbenchPage() {
                   required
                   value={extReference}
                   onChange={(e) => setExtReference(e.target.value)}
-                  placeholder="e.g., TRN-MEIN-HYD-2026-104"
+                  placeholder="Approval letter or email reference"
                   className="w-full rounded border border-slate-300 bg-white px-2 py-1.5 font-mono"
                 />
               </div>
@@ -690,7 +689,7 @@ export default function DocumentReviewWorkbenchPage() {
                 className="w-full flex items-center justify-center gap-1.5 rounded-md bg-teal-700 py-2 font-semibold text-white hover:bg-teal-800 disabled:opacity-50"
               >
                 <Stamp className="h-3.5 w-3.5" />
-                <span>Record External Approval (WF-23)</span>
+                <span>Record external approval</span>
               </button>
             </form>
           )}

@@ -32,8 +32,9 @@ export function ShareSupplierLinkModal({
 }: ShareSupplierLinkModalProps) {
   const [parties, setParties] = useState<any[]>([]);
   const [selectedPartyId, setSelectedPartyId] = useState<string>("");
-  const [supplierName, setSupplierName] = useState("Blue Star Representative");
-  const [phone, setPhone] = useState("+919848011100");
+  const [supplierName, setSupplierName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [validDays, setValidDays] = useState(30);
   const [generating, setGenerating] = useState(false);
   const [loadingParties, setLoadingParties] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -55,14 +56,9 @@ export function ShareSupplierLinkModal({
         .then((data) => {
           const list = Array.isArray(data) ? data : (data as any)?.data || [];
           setParties(list);
-          const supplier = list.find((p: any) =>
-            Array.isArray(p.types) ? p.types.includes("SUPPLIER_OEM") : p.type === "SUPPLIER_OEM"
-          ) || list[0];
-          if (supplier) {
-            setSelectedPartyId(supplier.id);
-            setSupplierName(supplier.name);
-            if (supplier.phone) setPhone(supplier.phone);
-          }
+          setSelectedPartyId("");
+          setSupplierName("");
+          setPhone("");
         })
         .catch((err) => {
           console.warn("Could not load parties:", err);
@@ -91,7 +87,7 @@ export function ShareSupplierLinkModal({
         body: JSON.stringify({
           supplierPartyId: selectedPartyId,
           requirementIds: [requirementId],
-          expiresInDays: 30,
+          expiresInDays: validDays,
           otpRequired: true,
         }),
       });
@@ -122,8 +118,8 @@ export function ShareSupplierLinkModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="Generate Supplier WhatsApp Magic Link"
-      subtitle="Invite equipment OEMs (Daikin, Blue Star, Grundfos) to upload evidence directly from their phone"
+      title="Invite a supplier to upload documents"
+      subtitle="Choose a supplier and share a link to the documents you need."
       maxWidth="max-w-lg"
     >
       {!generatedResult ? (
@@ -151,15 +147,16 @@ export function ShareSupplierLinkModal({
                   const p = parties.find((item) => item.id === e.target.value);
                   if (p) {
                     setSupplierName(p.name);
-                    if (p.phone) setPhone(p.phone);
+                    setPhone(p.phone || "");
                   }
                 }}
                 required
                 className="w-full rounded border border-slate-300 p-2 text-xs bg-white focus:border-blue-600 focus:outline-none"
               >
+                <option value="">Choose a supplier</option>
                 {parties.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.name} ({Array.isArray(p.types) ? p.types.join(", ") : p.type || "SUPPLIER"})
+                    {p.name}
                   </option>
                 ))}
               </select>
@@ -175,7 +172,7 @@ export function ShareSupplierLinkModal({
               required
               value={supplierName}
               onChange={(e) => setSupplierName(e.target.value)}
-              placeholder="e.g. Naveen Kumar (Blue Star Service)"
+              placeholder="Supplier contact name"
               className="w-full rounded border border-slate-300 p-2 text-xs focus:border-blue-600 focus:outline-none"
             />
           </div>
@@ -189,18 +186,19 @@ export function ShareSupplierLinkModal({
               required
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
-              placeholder="+919848011100"
+              placeholder="Supplier’s +91 mobile number"
               className="w-full rounded border border-slate-300 p-2 text-xs font-mono focus:border-blue-600 focus:outline-none"
             />
             <span className="text-[10px] text-slate-500 mt-0.5 block">
-              Used to generate a direct 1-click WhatsApp message deep link.
+              Use this number when sharing the invitation on WhatsApp.
             </span>
           </div>
 
+          <div><label htmlFor="supplier-link-days" className="mb-1 block text-xs font-semibold text-slate-700">Invitation valid for (days)</label><input id="supplier-link-days" type="number" min={1} max={90} required value={validDays} onChange={e => setValidDays(Number(e.target.value))} className="w-full rounded border border-slate-300 p-2 text-xs" /></div>
           <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-[11px] text-emerald-900 flex items-start gap-2">
             <KeyRound className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
             <span>
-              <strong>Zero Password Friction:</strong> The supplier receives a 4-digit PIN. They do not need to register an account or install any app.
+              The supplier verifies their identity using a code sent to their registered contact. No separate account is needed.
             </span>
           </div>
 
@@ -244,10 +242,10 @@ export function ShareSupplierLinkModal({
           <div className="rounded-lg bg-emerald-50 border border-emerald-300 p-3.5 text-xs text-emerald-950 space-y-1">
             <div className="font-bold flex items-center gap-1.5">
               <Check className="w-4 h-4 text-emerald-600" />
-              <span>Supplier Magic Link Ready!</span>
+              <span>Supplier invitation ready</span>
             </div>
             <p className="text-[11px] text-emerald-800">
-              Deliver this link to <strong>{supplierName}</strong>. Any files uploaded will be quarantined until verified by your QC team.
+              Deliver this link to <strong>{supplierName}</strong>. Files are checked before they become available to your reviewers.
             </p>
           </div>
 
@@ -255,7 +253,7 @@ export function ShareSupplierLinkModal({
           <div className="space-y-2.5">
             <div>
               <label className="block text-[11px] font-bold uppercase text-slate-500 mb-1">
-                Direct Guest Link
+                Supplier upload link
               </label>
               <div className="flex items-center gap-1.5">
                 <input
@@ -280,7 +278,7 @@ export function ShareSupplierLinkModal({
                 <span className="text-[11px] uppercase font-bold text-slate-500 block">Supplier verification</span>
                 <span className="text-sm font-semibold text-slate-900">One-time code required</span>
               </div>
-              <span className="text-[11px] text-slate-500">Valid for 30 days</span>
+              <span className="text-[11px] text-slate-500">Valid for {validDays} days</span>
             </div>
           </div>
 

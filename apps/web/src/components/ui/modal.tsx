@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useEffect, useId } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
 
@@ -21,6 +21,7 @@ export function Modal({
   children,
   maxWidth = "max-w-lg",
 }: ModalProps) {
+  const titleId = useId();
   useEffect(() => {
     if (open) {
       document.body.style.overflow = "hidden";
@@ -53,6 +54,9 @@ export function Modal({
 
           {/* Modal Container: Silky smooth Apple/Stripe ease curve */}
           <motion.div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
             initial={{ opacity: 0, scale: 0.96, y: 10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.97, y: 6 }}
@@ -61,7 +65,7 @@ export function Modal({
           >
             <div className="flex items-center justify-between border-b border-[#E5E7EB] px-5 py-3.5 bg-[#FAFBFD]">
               <div>
-                <h3 className="text-sm font-semibold text-[#111827]">{title}</h3>
+                <h3 id={titleId} className="text-sm font-semibold text-[#111827]">{title}</h3>
                 {subtitle && <p className="mt-0.5 text-xs text-[#667085]">{subtitle}</p>}
               </div>
               <button

@@ -93,9 +93,9 @@ export default function PartiesDirectoryPage() {
     <div className="p-6 max-w-[1600px] mx-auto space-y-6 text-xs">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-900">Counterparties & Stakeholders Directory</h1>
+          <h1 className="text-xl font-bold text-slate-900">Contacts</h1>
           <p className="text-slate-500 mt-0.5">
-            External commercial stakeholders: Clients, General Contractors, MEP Consultants, OEM Equipment Suppliers, and NABL Labs.
+            Keep contact details for your clients, main contractors, consultants, suppliers, and testing laboratories.
           </p>
         </div>
         <button
@@ -103,7 +103,7 @@ export default function PartiesDirectoryPage() {
           className="inline-flex items-center gap-1.5 rounded-md bg-[#0F2942] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[#163A5F] transition-colors cursor-pointer"
         >
           <Plus className="h-3.5 w-3.5" />
-          <span>Add Stakeholder</span>
+          <span>Add contact</span>
         </button>
       </div>
 
@@ -151,7 +151,7 @@ export default function PartiesDirectoryPage() {
         )}
       </div>
 
-      {/* Add Stakeholder Modal */}
+      {/* Add contact Modal */}
       {addModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
           <div className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl border border-slate-200 text-xs">
@@ -170,7 +170,7 @@ export default function PartiesDirectoryPage() {
 
             <form onSubmit={handleCreateParty} className="mt-4 space-y-3.5">
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Company / Stakeholder Name</label>
+                <label className="block font-semibold text-slate-700 mb-1">Company / Organisation or contact name</label>
                 <input
                   type="text"
                   required
@@ -234,7 +234,7 @@ export default function PartiesDirectoryPage() {
               </div>
 
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Contact Email (for WhatsApp / Magic Link Dispatch)</label>
+                <label className="block font-semibold text-slate-700 mb-1">Contact email</label>
                 <input
                   type="email"
                   value={email}

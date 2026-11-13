@@ -8,6 +8,7 @@ export default defineConfig({
   reporter: [['list'], ['html', { outputFolder: 'playwright-report', open: 'never' }]],
   use: { trace: 'retain-on-failure', screenshot: 'only-on-failure' },
   projects: [
+    { name: 'user-workspace', testMatch: 'user-workspace.spec.ts', use: { browserName: 'chromium' } },
     { name: 'pwa-development', testMatch: 'pwa-development.spec.ts', use: { browserName: 'chromium' } },
     { name: 'archive', testMatch: 'archive-verifier.spec.ts', use: { browserName: 'chromium' } },
     // Requires separately running application/API/worker and explicit isolated fixtures.

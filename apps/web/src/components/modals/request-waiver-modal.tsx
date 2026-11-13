@@ -83,7 +83,7 @@ export function RequestWaiverModal({
           <span className="text-[11px] text-slate-500 mt-0.5 block">
             {requirement.mandatory ? (
               <span className="text-amber-800 font-bold">
-                ⚠️ Mandatory Contract Item: Requires Two-Step Approval (FR-CHK-016)
+                Mandatory requirement: two approvals needed
               </span>
             ) : (
               <span>Optional Item: Single-approver sign-off</span>
@@ -148,7 +148,7 @@ export function RequestWaiverModal({
         {requirement.mandatory && (
           <div className="rounded-lg bg-amber-50 border border-amber-200 p-2.5 text-[11px] text-amber-900">
             <strong>Mandatory Two-Approver Rule:</strong> Upon submission, this requirement enters{" "}
-            <span className="font-mono font-semibold">PENDING_SECOND_APPROVAL</span> status, requiring countersignature from Managing Director (R-OWNER).
+            <span className="font-semibold">awaiting a second approval</span> status until an authorised owner signs off.
           </div>
         )}
 

@@ -1,5 +1,7 @@
 "use client";
 
+import { humanLabel, roleLabel } from "../../../../lib/presentation";
+import { documentTypeLabel } from "../../../../lib/document-catalogue";
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
@@ -234,6 +236,8 @@ export default function ProjectWorkspacePage() {
   const [errorSummary, setErrorSummary] = useState<{ message: string; requestId?: string } | null>(null);
   const [errorReqs, setErrorReqs] = useState<{ message: string; requestId?: string } | null>(null);
 
+  const [resourceErrors, setResourceErrors] = useState<Record<string, string>>({});
+
   // Sub-resource state
   const [assets, setAssets] = useState<any[]>([]);
   const [loadingAssets, setLoadingAssets] = useState(false);
@@ -266,14 +270,14 @@ export default function ProjectWorkspacePage() {
   // New Asset Form State
   const [newAssetTag, setNewAssetTag] = useState("");
   const [newAssetName, setNewAssetName] = useState("");
-  const [newAssetCategory, setNewAssetCategory] = useState("CHILLER");
+  const [newAssetCategory, setNewAssetCategory] = useState("");
   const [newAssetSerial, setNewAssetSerial] = useState("");
   const [newAssetLocation, setNewAssetLocation] = useState("");
 
   // New Defect Form State
   const [defectTitle, setDefectTitle] = useState("");
   const [defectDesc, setDefectDesc] = useState("");
-  const [defectSeverity, setDefectSeverity] = useState<"LOW" | "MEDIUM" | "HIGH" | "CRITICAL">("MEDIUM");
+  const [defectSeverity, setDefectSeverity] = useState<"" | "MINOR" | "MAJOR" | "CRITICAL">("");
 
   // Lifecycle Transition Loading
   const [transitioning, setTransitioning] = useState(false);
@@ -347,7 +351,7 @@ export default function ProjectWorkspacePage() {
         revisionCode: r.revisionCode || r.revision_code || null,
         latestVersionId: r.latestVersionId || r.latest_version_id || null,
         waiverId: r.waiverId || r.waiver_id || null,
-        rowVersion: r.rowVersion || r.row_version || 1,
+        rowVersion: r.rowVersion ?? r.row_version,
       }));
       setRequirements(mappedList);
     } catch (err: any) {
@@ -363,11 +367,12 @@ export default function ProjectWorkspacePage() {
   const fetchAssets = useCallback(async () => {
     if (!projectId) return;
     setLoadingAssets(true);
+    setResourceErrors(current => ({ ...current, equipment: "" }));
     try {
       const data = await apiFetch<any>(`/api/v1/projects/${encodeURIComponent(projectId)}/assets`);
       setAssets(Array.isArray(data) ? data : data?.data || []);
     } catch (err) {
-      console.error("Error loading assets", err);
+      setResourceErrors(current => ({ ...current, equipment: "We could not load the equipment. Please try again." }));
     } finally {
       setLoadingAssets(false);
     }
@@ -376,11 +381,12 @@ export default function ProjectWorkspacePage() {
   const fetchReviews = useCallback(async () => {
     if (!projectId) return;
     setLoadingReviews(true);
+    setResourceErrors(current => ({ ...current, reviews: "" }));
     try {
       const data = await apiFetch<any>(`/api/v1/projects/${encodeURIComponent(projectId)}/reviews`);
       setReviews(Array.isArray(data) ? data : data?.data || []);
     } catch (err) {
-      console.error("Error loading reviews", err);
+      setResourceErrors(current => ({ ...current, reviews: "We could not load the document reviews. Please try again." }));
     } finally {
       setLoadingReviews(false);
     }
@@ -389,11 +395,12 @@ export default function ProjectWorkspacePage() {
   const fetchPackages = useCallback(async () => {
     if (!projectId) return;
     setLoadingPackages(true);
+    setResourceErrors(current => ({ ...current, handover: "" }));
     try {
       const data = await apiFetch<any>(`/api/v1/projects/${encodeURIComponent(projectId)}/packages`);
       setPackages(Array.isArray(data) ? data : data?.data || []);
     } catch (err) {
-      console.error("Error loading packages", err);
+      setResourceErrors(current => ({ ...current, handover: "We could not load the handover packages. Please try again." }));
     } finally {
       setLoadingPackages(false);
     }
@@ -402,15 +409,16 @@ export default function ProjectWorkspacePage() {
   const fetchWarranties = useCallback(async () => {
     if (!projectId) return;
     setLoadingWarranties(true);
+    setResourceErrors(current => ({ ...current, warranties: "" }));
     try {
       const [wData, dData] = await Promise.all([
-        apiFetch<any>(`/api/v1/projects/${encodeURIComponent(projectId)}/warranty-events`).catch(() => []),
-        apiFetch<any>(`/api/v1/projects/${encodeURIComponent(projectId)}/defects`).catch(() => []),
+        apiFetch<any>(`/api/v1/projects/${encodeURIComponent(projectId)}/warranty-events`),
+        apiFetch<any>(`/api/v1/projects/${encodeURIComponent(projectId)}/defects`),
       ]);
       setWarranties(Array.isArray(wData) ? wData : wData?.data || []);
       setDefects(Array.isArray(dData) ? dData : dData?.data || []);
     } catch (err) {
-      console.error("Error loading warranties", err);
+      setResourceErrors(current => ({ ...current, warranties: "We could not load the warranty and defect records. Please try again." }));
     } finally {
       setLoadingWarranties(false);
     }
@@ -590,7 +598,7 @@ export default function ProjectWorkspacePage() {
       <div className="border-b border-slate-200 bg-slate-50 px-6 py-2.5 text-xs flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <span className="font-semibold text-slate-700">Project Stage:</span>
-          <span className="font-bold text-slate-900">{summary?.status || "LOADING"}</span>
+          <span className="font-bold text-slate-900">{summary?.status ? humanLabel(summary.status) : "Loading…"}</span>
           <span className="text-slate-400">·</span>
           <span className="text-slate-500">
             {summary?.status === "DRAFT"
@@ -666,14 +674,14 @@ export default function ProjectWorkspacePage() {
                   ? "bg-slate-100 text-slate-700 border border-slate-300"
                   : "bg-amber-50 text-amber-700 border border-amber-200"
               }`}>
-                {summary?.status || "LOADING"}
+                {summary?.status ? humanLabel(summary.status) : "Loading…"}
               </span>
             </div>
             <h1 className="text-xl font-bold text-slate-900 mt-1">
               {summary?.name || "Loading Project..."}
             </h1>
             <p className="text-xs text-slate-500 mt-0.5">
-              Client: <span className="font-semibold text-slate-700">{summary?.clientName || "Direct Subcontract"}</span> · Target Handover: <span className="font-semibold text-slate-700">{formatDateIst(summary?.targetHandoverDate || null)}</span>
+              Client: <span className="font-semibold text-slate-700">{summary?.clientName || "Not recorded"}</span> · Target Handover: <span className="font-semibold text-slate-700">{formatDateIst(summary?.targetHandoverDate || null)}</span>
             </p>
           </div>
 
@@ -699,7 +707,7 @@ export default function ProjectWorkspacePage() {
               className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700 shadow-xs transition-all cursor-pointer"
             >
               <PackageCheck className="h-4 w-4" />
-              <span>Compile Dossier</span>
+              <span>Prepare handover package</span>
             </button>
           </div>
         </div>
@@ -763,6 +771,7 @@ export default function ProjectWorkspacePage() {
           </div>
         )}
 
+        {resourceErrors[activeTab] && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{resourceErrors[activeTab]} <button className="font-semibold underline" onClick={() => { if (activeTab === 'equipment') void fetchAssets(); else if (activeTab === 'reviews') void fetchReviews(); else if (activeTab === 'handover') void fetchPackages(); else if (activeTab === 'warranties') void fetchWarranties(); }}>Try again</button></div>}
         {/* TAB 1: OVERVIEW */}
         {activeTab === "overview" && (
           <div className="space-y-6">
@@ -798,7 +807,7 @@ export default function ProjectWorkspacePage() {
                 </div>
 
                 <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-2xs">
-                  <div className="text-xs font-medium text-slate-500">Under Consultant Review</div>
+                  <div className="text-xs font-medium text-slate-500">Awaiting review</div>
                   <div className="mt-2 font-mono text-3xl font-bold text-amber-700">
                     {summary.counts.inReviewCount}
                   </div>
@@ -819,12 +828,12 @@ export default function ProjectWorkspacePage() {
                     </>
                   ) : (
                     <>
-                      <div className="text-xs font-medium text-slate-500">Retention Money Gated</div>
+                      <div className="text-xs font-medium text-slate-500">Estimated retention</div>
                       <div className="mt-2 font-mono text-2xl font-bold text-slate-900">
                         {formatInrPaise(summary.retentionAtRiskPaise)}
                       </div>
                       <div className="mt-3 text-xs text-slate-500">
-                        Subject to 100% closeout dossier release
+                        Estimate based on recorded contract terms
                       </div>
                     </>
                   )}
@@ -843,7 +852,7 @@ export default function ProjectWorkspacePage() {
                     <ClipboardCheck className="h-5 w-5" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-slate-900">Execute Technical Checklist</h3>
+                    <h3 className="text-sm font-bold text-slate-900">Open project checklist</h3>
                     <p className="text-xs text-slate-500 mt-0.5">Upload FATs, hydrostatic tests, and as-built drawings.</p>
                   </div>
                 </div>
@@ -858,8 +867,8 @@ export default function ProjectWorkspacePage() {
                     <PackageCheck className="h-5 w-5" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-slate-900">Compile Handover Dossier</h3>
-                    <p className="text-xs text-slate-500 mt-0.5">Bates-numbered, bookmarked ISO 32000-1 PDF bundle.</p>
+                    <h3 className="text-sm font-bold text-slate-900">Prepare handover package</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">Bring reviewed documents together in a handover PDF.</p>
                   </div>
                 </div>
               </div>
@@ -874,7 +883,7 @@ export default function ProjectWorkspacePage() {
                   </div>
                   <div>
                     <h3 className="text-sm font-bold text-slate-900">Reports & Compliance Registers</h3>
-                    <p className="text-xs text-slate-500 mt-0.5">Retention risk, equipment matrix, and consultant SLA reports.</p>
+                    <p className="text-xs text-slate-500 mt-0.5">Export document, equipment, and review records.</p>
                   </div>
                 </div>
               </div>
@@ -1053,7 +1062,7 @@ export default function ProjectWorkspacePage() {
                           <tr key={req.id} className="hover:bg-slate-50/80 transition-colors">
                             <td className="py-3 px-4">
                               <div className="font-mono text-[11px] font-bold text-slate-600">
-                                {req.requirementKey} · <span className="text-slate-500">{req.docTypeKey}</span>
+                                {req.requirementKey} · <span className="text-slate-500">{documentTypeLabel(req.docTypeKey)}</span>
                               </div>
                               <div className="font-semibold text-slate-900 mt-0.5">{req.title}</div>
                             </td>
@@ -1134,7 +1143,7 @@ export default function ProjectWorkspacePage() {
                                     title="Record External Consultant Stamp or Physical NOC"
                                   >
                                     <Stamp className="h-3 w-3" />
-                                    <span>Stamp</span>
+                                    <span>External approval</span>
                                   </button>
                                 )}
 
@@ -1171,7 +1180,7 @@ export default function ProjectWorkspacePage() {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-base font-bold text-slate-900">Project Equipment & Assets Matrix</h2>
+                <h2 className="text-base font-bold text-slate-900">Project equipment</h2>
                 <p className="text-xs text-slate-500">Installed chillers, AHUs, pumps, and fire dampers tagged on site.</p>
               </div>
 
@@ -1193,7 +1202,7 @@ export default function ProjectWorkspacePage() {
                     <div key={i} className="h-10 w-full animate-pulse rounded bg-slate-100" />
                   ))}
                 </div>
-              ) : assets.length === 0 ? (
+              ) : resourceErrors.equipment ? null : assets.length === 0 ? (
                 <div className="p-12 text-center text-xs text-slate-500 space-y-3">
                   <p>No equipment assets catalogued for this project yet.</p>
                   <button
@@ -1220,13 +1229,13 @@ export default function ProjectWorkspacePage() {
                       {assets.map((asset) => (
                         <tr key={asset.id} className="hover:bg-slate-50/80">
                           <td className="py-3 px-4 font-mono font-bold text-slate-900">{asset.tag}</td>
-                          <td className="py-3 px-4 font-medium text-slate-900">{asset.name || asset.description || "HVAC Equipment"}</td>
-                          <td className="py-3 px-4 font-mono text-slate-600">{asset.category_key || asset.categoryKey || "HVAC"}</td>
-                          <td className="py-3 px-4 text-slate-600">{asset.location || "Main Plant Room"}</td>
+                          <td className="py-3 px-4 font-medium text-slate-900">{asset.name || asset.description || "Name not recorded"}</td>
+                          <td className="py-3 px-4 font-mono text-slate-600">{humanLabel(asset.category_key || asset.categoryKey)}</td>
+                          <td className="py-3 px-4 text-slate-600">{asset.location || "Not recorded"}</td>
                           <td className="py-3 px-4 font-mono text-slate-500">{asset.serial_no || asset.serialNo || "—"}</td>
                           <td className="py-3 px-4">
                             <span className="rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
-                              {asset.status || "INSTALLED"}
+                              {humanLabel(asset.status)}
                             </span>
                           </td>
                         </tr>
@@ -1244,7 +1253,7 @@ export default function ProjectWorkspacePage() {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-base font-bold text-slate-900">Technical Reviews Workbench</h2>
+                <h2 className="text-base font-bold text-slate-900">Document reviews</h2>
                 <p className="text-xs text-slate-500">Consultant sign-offs and peer engineer approvals.</p>
               </div>
             </div>
@@ -1256,7 +1265,7 @@ export default function ProjectWorkspacePage() {
                     <div key={i} className="h-10 w-full animate-pulse rounded bg-slate-100" />
                   ))}
                 </div>
-              ) : reviews.length === 0 ? (
+              ) : resourceErrors.reviews ? null : reviews.length === 0 ? (
                 <div className="p-12 text-center text-xs text-slate-500">
                   No active reviews pending for this project.
                 </div>
@@ -1266,11 +1275,11 @@ export default function ProjectWorkspacePage() {
                     <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold uppercase text-[10px]">
                       <tr>
                         <th className="py-3 px-4">Submittal / Version</th>
-                        <th className="py-3 px-4">Reviewer Role</th>
+                        <th className="py-3 px-4">Reviewer</th>
                         <th className="py-3 px-4">Method</th>
                         <th className="py-3 px-4">Status</th>
                         <th className="py-3 px-4">Decision</th>
-                        <th className="py-3 pr-4 text-right">Workbench</th>
+                        <th className="py-3 pr-4 text-right">Review</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -1280,11 +1289,11 @@ export default function ProjectWorkspacePage() {
                             <div className="font-semibold text-slate-900">{rev.document_title || rev.title || "Technical Document"}</div>
                             <div className="font-mono text-[11px] text-slate-500">Version: {rev.version_id || rev.id}</div>
                           </td>
-                          <td className="py-3 px-4 font-mono font-semibold text-slate-700">{rev.reviewer_role || "R-QC"}</td>
-                          <td className="py-3 px-4 text-slate-600">{rev.method || "IN_APP"}</td>
+                          <td className="py-3 px-4 font-mono font-semibold text-slate-700">{roleLabel(rev.reviewer_role)}</td>
+                          <td className="py-3 px-4 text-slate-600">{rev.method === "IN_APP" ? "Reviewed in TradeCloseout" : rev.method === "EXTERNAL" ? "External approval" : "Not recorded"}</td>
                           <td className="py-3 px-4">
                             <span className="rounded-full bg-slate-100 border border-slate-300 px-2 py-0.5 text-[10px] font-semibold text-slate-800">
-                              {rev.status}
+                              {humanLabel(rev.status)}
                             </span>
                           </td>
                           <td className="py-3 px-4">
@@ -1297,7 +1306,7 @@ export default function ProjectWorkspacePage() {
                                 ? "bg-red-50 text-red-800 border border-red-200"
                                 : "bg-slate-100 text-slate-600"
                             }`}>
-                              {rev.decision || "PENDING"}
+                              {humanLabel(rev.decision)}
                             </span>
                           </td>
                           <td className="py-3 pr-4 text-right">
@@ -1329,7 +1338,7 @@ export default function ProjectWorkspacePage() {
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-base font-bold text-slate-900">Compiled Handover Dossiers</h2>
-                <p className="text-xs text-slate-500">ISO 32000-1 statutory dossiers with Bates numbering and bookmarks.</p>
+                <p className="text-xs text-slate-500">Prepare and download the project’s handover documents.</p>
               </div>
               <button
                 onClick={() => setCompileModalOpen(true)}
@@ -1347,14 +1356,14 @@ export default function ProjectWorkspacePage() {
                     <div key={i} className="h-12 w-full animate-pulse rounded bg-slate-100" />
                   ))}
                 </div>
-              ) : packages.length === 0 ? (
+              ) : resourceErrors.handover ? null : packages.length === 0 ? (
                 <div className="p-12 text-center text-xs text-slate-500">
                   <p>No handover dossiers compiled yet for this project.</p>
                   <button
                     onClick={() => setCompileModalOpen(true)}
                     className="mt-3 px-3.5 py-2 rounded-lg bg-emerald-600 text-white font-semibold text-xs hover:bg-emerald-700 cursor-pointer"
                   >
-                    Compile First Dossier
+                    Prepare first handover package
                   </button>
                 </div>
               ) : (
@@ -1368,11 +1377,11 @@ export default function ProjectWorkspacePage() {
                           </span>
                           <span className="font-bold text-slate-900 text-sm">{pkg.title || `Handover Dossier (Rev ${pkg.version_no})`}</span>
                           <span className="rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 text-[10px] font-bold text-emerald-800">
-                            {pkg.status}
+                            {humanLabel(pkg.status)}
                           </span>
                         </div>
-                        <div className="font-mono text-[11px] text-slate-500 mt-1">
-                          Snapshot Checksum: {pkg.snapshot_checksum?.slice(0, 16) || "—"}... · Created: {formatDateIst(pkg.created_at)}
+                        <div className="text-[11px] text-slate-500 mt-1">
+                          Prepared: {formatDateIst(pkg.created_at)}
                         </div>
                       </div>
 
@@ -1443,14 +1452,14 @@ export default function ProjectWorkspacePage() {
                     <tbody className="divide-y divide-slate-100">
                       {warranties.map((w) => (
                         <tr key={w.id} className="hover:bg-slate-50/80">
-                          <td className="py-3 px-4 font-mono font-bold text-slate-900">{w.asset_tag || w.tag || "CHLR-01"}</td>
+                          <td className="py-3 px-4 font-mono font-bold text-slate-900">{w.asset_tag || w.tag || "Equipment not recorded"}</td>
                           <td className="py-3 px-4 font-mono text-slate-700">{w.oem_reference || "—"}</td>
-                          <td className="py-3 px-4 font-medium text-slate-600">{w.basis || "HANDOVER"}</td>
+                          <td className="py-3 px-4 font-medium text-slate-600">{humanLabel(w.basis)}</td>
                           <td className="py-3 px-4 font-mono text-slate-600">{formatDateIst(w.warranty_start)}</td>
                           <td className="py-3 px-4 font-mono text-slate-600">{formatDateIst(w.warranty_end)}</td>
                           <td className="py-3 px-4">
                             <span className="rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
-                              {w.status || "CONFIRMED"}
+                              {humanLabel(w.status)}
                             </span>
                           </td>
                         </tr>
@@ -1466,7 +1475,7 @@ export default function ProjectWorkspacePage() {
               <div className="px-5 py-4 border-b border-slate-200 font-bold text-sm text-slate-900">
                 Defect Liability & Rectification Register
               </div>
-              {defects.length === 0 ? (
+              {resourceErrors.warranties ? null : defects.length === 0 ? (
                 <div className="p-8 text-center text-xs text-slate-500">
                   Zero defects recorded for this project.
                 </div>
@@ -1495,28 +1504,28 @@ export default function ProjectWorkspacePage() {
                                 ? "bg-amber-100 text-amber-800"
                                 : "bg-slate-100 text-slate-700"
                             }`}>
-                              {d.severity}
+                              {humanLabel(d.severity)}
                             </span>
                           </td>
                           <td className="py-3 px-4">
                             <div className="font-semibold text-slate-900">{d.title}</div>
                             <div className="text-slate-500 text-[11px] mt-0.5">{d.description}</div>
                           </td>
-                          <td className="py-3 px-4 font-mono text-slate-700">{d.asset_tag || "HVAC Unit"}</td>
+                          <td className="py-3 px-4 font-mono text-slate-700">{d.asset_tag || "Project-wide"}</td>
                           <td className="py-3 px-4">
                             <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
                               d.status === "CLOSED"
                                 ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
                                 : "bg-amber-50 text-amber-800 border border-amber-200"
                             }`}>
-                              {d.status}
+                              {humanLabel(d.status)}
                             </span>
                           </td>
                           <td className="py-3 px-4 text-xs">
                             {d.closure_evidence_object_id ? (
                               <span className="font-mono text-emerald-700 font-semibold flex items-center gap-1">
                                 <CheckCircle2 className="h-3.5 w-3.5" />
-                                <span>Verified Attached</span>
+                                <span>Evidence attached</span>
                               </span>
                             ) : (
                               <span className="text-slate-400">Pending</span>
@@ -1536,7 +1545,7 @@ export default function ProjectWorkspacePage() {
         {activeTab === "reports" && (
           <div className="space-y-6">
             <div>
-              <h2 className="text-base font-bold text-slate-900">Executive & Site Compliance Reports Center</h2>
+              <h2 className="text-base font-bold text-slate-900">Project reports</h2>
               <p className="text-xs text-slate-500">
                 1-click exports and compliance analytics for project meetings, client billing, and consultant reviews.
               </p>
@@ -1552,25 +1561,25 @@ export default function ProjectWorkspacePage() {
                   <span className="text-emerald-700 font-bold text-[11px]">COMMERCIAL</span>
                 </div>
                 <div>
-                  <h3 className="font-bold text-sm text-slate-900">Retention & Milestone Cash-Flow Gate Report</h3>
+                  <h3 className="font-bold text-sm text-slate-900">Document completion by project stage</h3>
                   <p className="text-xs text-slate-500 mt-1">
-                    Rupees unlocked vs. gated per commercial milestone (Mobilisation, Delivery, Erection, Commissioning, Handover).
+                    Approved and outstanding requirements in the current checklist, grouped by project stage.
                   </p>
                 </div>
                 <button
                   onClick={() => {
-                    const milestones = ["MOBILISATION", "DELIVERY", "INSTALLATION", "COMMISSIONING", "HANDOVER", "FINAL_BILL"];
+                    const milestones = Array.from(new Set(requirements.map(r => r.milestoneKey).filter(Boolean)));
                     const rows = milestones.map((m) => {
                       const reqs = requirements.filter((r) => r.milestoneKey === m);
                       const approved = reqs.filter((r) => r.status === "APPROVED" || r.status === "APPROVED_EXTERNAL").length;
-                      return [m, reqs.length, approved, reqs.length - approved, approved === reqs.length ? "UNLOCKED" : "GATED"];
+                      return [humanLabel(m), reqs.length, approved, reqs.length - approved];
                     });
-                    exportCsv(`${summary?.code || "PRJ"}_Milestone_CashFlow_Report.csv`, ["Milestone", "Total Requirements", "Approved", "Pending", "Payment Gate Status"], rows);
+                    exportCsv(`${summary?.code || "PRJ"}_Stage_Progress.csv`, ["Project stage", "Requirements", "Approved", "Still needed"], rows);
                   }}
                   className="w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-lg border border-slate-300 hover:bg-slate-50 font-semibold text-xs cursor-pointer"
                 >
                   <Download className="h-3.5 w-3.5 text-indigo-600" />
-                  <span>Export Cash-Flow Gate CSV</span>
+                  <span>Export stage progress</span>
                 </button>
               </div>
 
@@ -1583,7 +1592,7 @@ export default function ProjectWorkspacePage() {
                   <span className="text-blue-700 font-bold text-[11px]">TECHNICAL MATRIX</span>
                 </div>
                 <div>
-                  <h3 className="font-bold text-sm text-slate-900">Equipment-to-Document Compliance Matrix</h3>
+                  <h3 className="font-bold text-sm text-slate-900">Equipment document register</h3>
                   <p className="text-xs text-slate-500 mt-1">
                     Full cross-tab of equipment tags against required submittals (Datasheet, FAT, Hydro, Leak Test, TAB, O&M).
                   </p>
@@ -1593,14 +1602,14 @@ export default function ProjectWorkspacePage() {
                     const rows = assets.map((a) => {
                       const linked = requirements.filter((r) => r.assetTag === a.tag);
                       const approved = linked.filter((r) => r.status === "APPROVED" || r.status === "APPROVED_EXTERNAL").length;
-                      return [a.tag, a.name || "HVAC Unit", a.category_key || "HVAC", linked.length, approved, linked.length - approved];
+                      return [a.tag, a.name || "Not recorded", humanLabel(a.category_key), linked.length, approved, linked.length - approved];
                     });
                     exportCsv(`${summary?.code || "PRJ"}_Equipment_Document_Matrix.csv`, ["Asset Tag", "Description", "Category", "Required Submittals", "Approved", "Pending"], rows);
                   }}
                   className="w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-lg border border-slate-300 hover:bg-slate-50 font-semibold text-xs cursor-pointer"
                 >
                   <Download className="h-3.5 w-3.5 text-blue-600" />
-                  <span>Export Equipment Matrix CSV</span>
+                  <span>Export equipment register</span>
                 </button>
               </div>
 
@@ -1613,7 +1622,7 @@ export default function ProjectWorkspacePage() {
                   <span className="text-amber-700 font-bold text-[11px]">PROCUREMENT</span>
                 </div>
                 <div>
-                  <h3 className="font-bold text-sm text-slate-900">Supplier Pending & Delay Scorecard</h3>
+                  <h3 className="font-bold text-sm text-slate-900">Outstanding document requests</h3>
                   <p className="text-xs text-slate-500 mt-1">
                     Tracks pending OEM certificates (Blue Star, Daikin, Grundfos, Caryaire) with delay days and status.
                   </p>
@@ -1622,13 +1631,13 @@ export default function ProjectWorkspacePage() {
                   onClick={() => {
                     const rows = requirements
                       .filter((r) => r.status === "REQUESTED" || r.status === "NOT_STARTED")
-                      .map((r) => [r.requirementKey, r.title, r.assetTag || "Project General", r.status, formatDateIst(r.dueAt)]);
-                    exportCsv(`${summary?.code || "PRJ"}_Supplier_Pending_Scorecard.csv`, ["Requirement Key", "Title", "Equipment", "Status", "Due Date"], rows);
+                      .map((r) => [r.requirementKey, r.title, r.assetTag || "Project General", humanLabel(r.status), formatDateIst(r.dueAt)]);
+                    exportCsv(`${summary?.code || "PRJ"}_Supplier_Pending_Scorecard.csv`, ["Requirement reference", "Title", "Equipment", "Status", "Due Date"], rows);
                   }}
                   className="w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-lg border border-slate-300 hover:bg-slate-50 font-semibold text-xs cursor-pointer"
                 >
                   <Download className="h-3.5 w-3.5 text-amber-600" />
-                  <span>Export Supplier Scorecard CSV</span>
+                  <span>Export outstanding requests</span>
                 </button>
               </div>
 
@@ -1641,22 +1650,22 @@ export default function ProjectWorkspacePage() {
                   <span className="text-red-700 font-bold text-[11px]">SAFETY & LEGAL</span>
                 </div>
                 <div>
-                  <h3 className="font-bold text-sm text-slate-900">Expiring Certificates & Calibration Radar</h3>
+                  <h3 className="font-bold text-sm text-slate-900">Certificates needing attention</h3>
                   <p className="text-xs text-slate-500 mt-1">
-                    Insurance, labour licences, fire NOCs, and pressure gauge calibrations expiring in &lt;30 days.
+                    Expired requirements, insurance records, and fire NOCs, with their submission due dates.
                   </p>
                 </div>
                 <button
                   onClick={() => {
                     const rows = requirements
                       .filter((r) => r.status === "EXPIRED" || r.docTypeKey === "DT-004" || r.docTypeKey === "DT-086")
-                      .map((r) => [r.requirementKey, r.title, r.docTypeKey, r.status, formatDateIst(r.dueAt)]);
-                    exportCsv(`${summary?.code || "PRJ"}_Expiring_Certificates_Radar.csv`, ["Requirement Key", "Title", "Doc Type", "Status", "Expiry Date"], rows);
+                      .map((r) => [r.requirementKey, r.title, documentTypeLabel(r.docTypeKey), humanLabel(r.status), formatDateIst(r.dueAt)]);
+                    exportCsv(`${summary?.code || "PRJ"}_Certificate_Followup.csv`, ["Requirement reference", "Title", "Doc Type", "Status", "Submission due date"], rows);
                   }}
                   className="w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-lg border border-slate-300 hover:bg-slate-50 font-semibold text-xs cursor-pointer"
                 >
                   <Download className="h-3.5 w-3.5 text-red-600" />
-                  <span>Export Calibration Radar CSV</span>
+                  <span>Export certificate list</span>
                 </button>
               </div>
 
@@ -1666,25 +1675,25 @@ export default function ProjectWorkspacePage() {
                   <span className="font-mono font-bold text-indigo-700 text-[11px] bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded">
                     REPORT #5
                   </span>
-                  <span className="text-purple-700 font-bold text-[11px]">CONSULTANT SLA</span>
+                  <span className="text-purple-700 font-bold text-[11px]">REVIEWS</span>
                 </div>
                 <div>
-                  <h3 className="font-bold text-sm text-slate-900">Consultant Review SLA Turnaround Log</h3>
+                  <h3 className="font-bold text-sm text-slate-900">Documents awaiting review</h3>
                   <p className="text-xs text-slate-500 mt-1">
-                    Submittals under consultant review with turnaround timestamps for Extension of Time (EOT) claims.
+                    Requirements currently awaiting a review decision, with their assigned reviewer.
                   </p>
                 </div>
                 <button
                   onClick={() => {
                     const rows = requirements
                       .filter((r) => r.status === "IN_REVIEW")
-                      .map((r) => [r.requirementKey, r.title, r.reviewerRole || "R-QC", r.status, "Awaiting Sign-off"]);
-                    exportCsv(`${summary?.code || "PRJ"}_Consultant_SLA_Turnaround_Log.csv`, ["Requirement Key", "Title", "Reviewer Role", "Status", "SLA Flag"], rows);
+                      .map((r) => [r.requirementKey, r.title, roleLabel(r.reviewerRole), humanLabel(r.status), "Awaiting Sign-off"]);
+                    exportCsv(`${summary?.code || "PRJ"}_Awaiting_Review.csv`, ["Requirement reference", "Title", "Reviewer", "Status", "Review note"], rows);
                   }}
                   className="w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-lg border border-slate-300 hover:bg-slate-50 font-semibold text-xs cursor-pointer"
                 >
                   <Download className="h-3.5 w-3.5 text-purple-600" />
-                  <span>Export Consultant SLA CSV</span>
+                  <span>Export review list</span>
                 </button>
               </div>
 
@@ -1697,7 +1706,7 @@ export default function ProjectWorkspacePage() {
                   <span className="text-slate-800 font-bold text-[11px]">MASTER REGISTER</span>
                 </div>
                 <div>
-                  <h3 className="font-bold text-sm text-slate-900">Master Closeout Submittal Register</h3>
+                  <h3 className="font-bold text-sm text-slate-900">Project document register</h3>
                   <p className="text-xs text-slate-500 mt-1">
                     Complete project checklist in official L&T / Shapoorji / CPWD submittal register format.
                   </p>
@@ -1721,7 +1730,7 @@ export default function ProjectWorkspacePage() {
                   className="w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[#0F2942] hover:bg-[#163A5F] font-semibold text-xs text-white cursor-pointer shadow-xs"
                 >
                   <Download className="h-3.5 w-3.5" />
-                  <span>Export Master Register CSV</span>
+                  <span>Export document register</span>
                 </button>
               </div>
             </div>
@@ -1781,7 +1790,7 @@ export default function ProjectWorkspacePage() {
         open={addReqModalOpen}
         onClose={() => setAddReqModalOpen(false)}
         onSubmit={handleAddRequirement}
-        nextKeySuggestion={`REQ-${summary?.code || "HVAC"}-0${requirements.length + 1}`}
+        nextKeySuggestion=""
       />
 
       <ExternalApprovalModal
@@ -1826,10 +1835,12 @@ export default function ProjectWorkspacePage() {
                 <div>
                   <label className="block font-semibold mb-1">Category</label>
                   <select
+                    required
                     value={newAssetCategory}
                     onChange={(e) => setNewAssetCategory(e.target.value)}
                     className="w-full rounded border border-slate-300 p-2 bg-white"
                   >
+                    <option value="">Choose equipment type</option>
                     <option value="CHILLER">Chiller</option>
                     <option value="AHU">Air Handling Unit (AHU)</option>
                     <option value="FCU">Fan Coil Unit (FCU)</option>
@@ -1845,7 +1856,7 @@ export default function ProjectWorkspacePage() {
                     type="text"
                     value={newAssetSerial}
                     onChange={(e) => setNewAssetSerial(e.target.value)}
-                    placeholder="e.g. BSL-2026-9921"
+                    placeholder="Manufacturer’s serial number"
                     className="w-full rounded border border-slate-300 p-2 font-mono"
                   />
                 </div>
@@ -1856,7 +1867,7 @@ export default function ProjectWorkspacePage() {
                   type="text"
                   value={newAssetLocation}
                   onChange={(e) => setNewAssetLocation(e.target.value)}
-                  placeholder="e.g. Basement-2 Main Plant Room"
+                  placeholder="Building, floor, and room"
                   className="w-full rounded border border-slate-300 p-2"
                 />
               </div>
@@ -1885,7 +1896,7 @@ export default function ProjectWorkspacePage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
           <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl space-y-4 text-xs">
             <div className="flex items-center justify-between border-b pb-3">
-              <h3 className="text-sm font-bold text-slate-900">Log DLP Punch List Snag / Defect</h3>
+              <h3 className="text-sm font-bold text-slate-900">Report a defect</h3>
               <button onClick={() => setAddDefectModalOpen(false)} className="text-slate-400 hover:text-slate-600">✕</button>
             </div>
             <form onSubmit={handleCreateDefect} className="space-y-3">
@@ -1903,18 +1914,19 @@ export default function ProjectWorkspacePage() {
               <div>
                 <label className="block font-semibold mb-1">Severity</label>
                 <select
-                  value={defectSeverity}
+                  required
+                    value={defectSeverity}
                   onChange={(e) => setDefectSeverity(e.target.value as any)}
                   className="w-full rounded border border-slate-300 p-2 bg-white"
                 >
-                  <option value="LOW">Low (Minor cosmetic / label)</option>
-                  <option value="MEDIUM">Medium (Vibration / minor deviation)</option>
-                  <option value="HIGH">High (Leakage / cooling degradation)</option>
+                  <option value="">Choose severity</option>
+                  <option value="MINOR">Minor</option>
+                  <option value="MAJOR">Major</option>
                   <option value="CRITICAL">Critical (Tripping / safety hazard)</option>
                 </select>
               </div>
               <div>
-                <label className="block font-semibold mb-1">Engineering Description & Location</label>
+                <label className="block font-semibold mb-1">Description and location</label>
                 <textarea
                   rows={3}
                   value={defectDesc}

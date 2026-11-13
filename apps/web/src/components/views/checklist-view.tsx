@@ -1,5 +1,7 @@
 "use client";
 
+import { roleLabel, humanLabel } from "../../lib/presentation";
+import { documentTypeLabel } from "../../lib/document-catalogue";
 import React, { useState, useMemo } from "react";
 import clsx from "clsx";
 import {
@@ -223,7 +225,7 @@ export function ChecklistView({
                   <th className="py-3 px-3">Asset Tag</th>
                   <th className="py-3 px-3">Status</th>
                   <th className="py-3 px-3">Due Date</th>
-                  <th className="py-3 px-3">Reviewer Role</th>
+                  <th className="py-3 px-3">Reviewer</th>
                   <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
@@ -259,7 +261,7 @@ export function ChecklistView({
                           )}
                         </div>
                         <div className="mt-0.5 text-[11px] text-[#667085]">
-                          Type: <span className="font-mono">{item.docTypeCode}</span>
+                          Type: <span className="font-mono">{documentTypeLabel(item.docTypeCode)}</span>
                           {item.revisionCode && (
                             <span className="ml-2 font-mono text-[#3157D5]">Rev {item.revisionCode}</span>
                           )}
@@ -269,7 +271,7 @@ export function ChecklistView({
                       {/* Milestone */}
                       <td className="py-3 px-3 whitespace-nowrap">
                         <span className="font-mono text-[11px] text-[#4B5563] bg-[#F3F4F6] px-2 py-0.5 rounded">
-                          {item.milestoneKey || "HANDOVER"}
+                          {humanLabel(item.milestoneKey)}
                         </span>
                       </td>
 
@@ -308,9 +310,9 @@ export function ChecklistView({
                         </div>
                       </td>
 
-                      {/* Reviewer Role */}
+                      {/* Reviewer */}
                       <td className="py-3 px-3 whitespace-nowrap text-[#667085] font-mono text-[11px]">
-                        {item.reviewerRole || "R-QC"}
+                        {roleLabel(item.reviewerRole)}
                       </td>
 
                       {/* Actions */}

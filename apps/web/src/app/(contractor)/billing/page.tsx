@@ -1,212 +1,250 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
-import { CreditCard, CheckCircle2, Download, Building, ShieldCheck, RefreshCw, Plus, FileText, AlertCircle } from "lucide-react";
-import { apiFetch, ApiProblemError } from "../../../lib/api-client";
+import React, { useCallback, useEffect, useState } from "react";
+import { RefreshCw } from "lucide-react";
+import { apiFetch } from "../../../lib/api-client";
+import {
+  displayDate,
+  displayMoney,
+  humanLabel,
+} from "../../../lib/presentation";
 
-interface SubscriptionDto {
-  planName?: string;
-  plan_name?: string;
-  planTier?: string;
-  plan_tier?: string;
+interface Subscription {
+  id: string | null;
+  planName: string;
   status: string;
   seatLimit?: number;
-  seat_limit?: number;
   storageQuotaBytes?: number;
-  storage_quota_bytes?: number;
   maxActiveProjects?: number;
   pricePaise?: number;
-  price_paise?: number;
+  interval?: string;
 }
-
-interface InvoiceDto {
+interface Invoice {
   id: string;
-  invoice_number?: string;
-  invoiceNumber?: string;
+  number: string;
   status: string;
-  total_paise?: number;
-  totalPaise?: number;
-  tax_paise?: number;
-  taxPaise?: number;
-  subtotal_paise?: number;
-  subtotalPaise?: number;
-  place_of_supply?: string;
-  placeOfSupply?: string;
-  created_at: string;
+  issued_at: string;
+  total_paise: string;
+  tax_paise: string;
+  place_of_supply: string;
+  tax_rate_bps: number;
+  tds_deductions?: Array<{ amount_paise: string; status: string }>;
+}
+interface Organisation {
+  legal_name: string;
+  profile: { gstin?: string; pan?: string } | null;
 }
 
 export default function BillingPage() {
-  const [subscription, setSubscription] = useState<SubscriptionDto | null>(null);
-  const [invoices, setInvoices] = useState<InvoiceDto[]>([]);
+  const [subscription, setSubscription] = useState<Subscription | null>(null);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [organisation, setOrganisation] = useState<Organisation | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const fetchBillingData = useCallback(async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [subData, invData] = await Promise.all([
-        apiFetch<any>("/api/v1/orgs/current/subscription").catch(() => null),
-        apiFetch<any>("/api/v1/billing/invoices").catch(() => []),
+      const [plan, bills, org] = await Promise.all([
+        apiFetch<Subscription>("/api/v1/orgs/current/subscription"),
+        apiFetch<Invoice[]>("/api/v1/billing/invoices"),
+        apiFetch<Organisation>("/api/v1/orgs/current"),
       ]);
-
-      if (subData) setSubscription(subData);
-      setInvoices(Array.isArray(invData) ? invData : invData?.data || []);
-    } catch (err: any) {
-      setError(err?.message || "Failed to load subscription & billing data.");
+      setSubscription(plan);
+      setInvoices(bills);
+      setOrganisation(org);
+    } catch {
+      setError("We could not load your billing records. Please try again.");
     } finally {
       setLoading(false);
     }
   }, []);
-
   useEffect(() => {
-    fetchBillingData();
-  }, [fetchBillingData]);
-
-  const formatInr = (paise?: number) => {
-    if (!paise) return "₹0.00";
-    return new Intl.NumberFormat("en-IN", {
-      style: "currency",
-      currency: "INR",
-      maximumFractionDigits: 2,
-    }).format(paise / 100);
-  };
-
-  const formatDate = (isoDate: string) => {
-    try {
-      return new Intl.DateTimeFormat("en-IN", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-        timeZone: "Asia/Kolkata",
-      }).format(new Date(isoDate));
-    } catch {
-      return isoDate;
-    }
-  };
-
-  const planName = subscription?.planName || subscription?.plan_name || "GROWTH PLAN";
-  const planTier = subscription?.planTier || subscription?.plan_tier || "GROWTH";
-  const seatLimit = subscription?.seatLimit || subscription?.seat_limit || 20;
-  const storageGb = Math.round(((subscription?.storageQuotaBytes || subscription?.storage_quota_bytes || 107374182400) / (1024 * 1024 * 1024)));
+    void load();
+  }, [load]);
+  const interval =
+    subscription?.interval === "MONTH" ||
+    subscription?.interval === "MONTHLY" ||
+    subscription?.interval === "month"
+      ? "month"
+      : subscription?.interval === "YEAR" ||
+          subscription?.interval === "ANNUAL" ||
+          subscription?.interval === "year"
+        ? "year"
+        : subscription?.interval === "ONE_TIME_PROJECT"
+          ? "project"
+          : null;
+  const value = (number?: number, suffix = "") =>
+    number === undefined || number === null
+      ? "Not recorded"
+      : `${number}${suffix}`;
 
   return (
-    <div className="p-6 max-w-[1600px] mx-auto space-y-6 text-xs">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="mx-auto max-w-[1600px] space-y-6 p-4 sm:p-6">
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-slate-900">Subscription & Billing Management</h1>
-          <p className="text-slate-500 mt-0.5">
-            Subscription plan limits, Indian GST Rule 46 sequential tax invoices, and Section 194J customer TDS reconciliation.
+          <h1 className="text-2xl font-bold">Billing</h1>
+          <p className="mt-2 text-sm text-slate-500">
+            Your subscription, business details, and invoices.
           </p>
         </div>
-
         <button
-          onClick={fetchBillingData}
+          onClick={load}
           disabled={loading}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 py-1.5 font-semibold text-slate-700 hover:bg-slate-50 shadow-2xs cursor-pointer"
+          aria-label="Refresh billing"
+          className="rounded-lg border border-slate-200 bg-white p-2 disabled:opacity-50"
         >
-          <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-          <span>Refresh Billing</span>
+          <RefreshCw className="h-4 w-4" />
         </button>
       </div>
-
-      {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-xs text-red-900 flex items-center justify-between">
-          <span>{error}</span>
-          <button onClick={fetchBillingData} className="font-semibold text-red-800 hover:underline">
-            Retry
+      {loading ? (
+        <p role="status" className="text-sm text-slate-500">
+          Loading billing records…
+        </p>
+      ) : error ? (
+        <div
+          role="alert"
+          className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800"
+        >
+          {error}{" "}
+          <button onClick={load} className="font-semibold underline">
+            Try again
           </button>
         </div>
-      )}
-
-      {/* Subscription Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-2xs space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="font-bold text-slate-800 text-sm">Active Plan</span>
-            <span className="rounded bg-emerald-50 border border-emerald-300 px-2 py-0.5 font-bold text-emerald-800 text-[10px] uppercase">
-              {planTier} PLAN
-            </span>
-          </div>
-          <div className="text-2xl font-bold text-slate-900 font-mono">
-            ₹9,999 <span className="text-xs font-normal text-slate-500">/ month + 18% GST</span>
-          </div>
-          <div className="text-slate-600 space-y-1 pt-2 border-t border-slate-100">
-            <div>Projects Limit: <strong>15 Active Projects</strong></div>
-            <div>Seats Limit: <strong>{seatLimit} Team Members</strong></div>
-            <div>Storage Included: <strong>{storageGb} GB S3 Storage</strong></div>
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-2xs space-y-3">
-          <div className="font-bold text-slate-800 text-sm">Tax & Business Profile</div>
-          <div className="space-y-1.5 text-slate-700">
-            <div>Legal Name: <strong>Deccan EnviroTech MEP Pvt Ltd</strong></div>
-            <div>GSTIN: <strong className="font-mono">36AABCD4512F1Z4</strong> (Telangana · Code 36)</div>
-            <div>PAN: <strong className="font-mono">AABCD4512F</strong></div>
-            <div>SAC Code: <strong className="font-mono">998315</strong> (IT Hosting & SaaS Applications)</div>
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-2xs space-y-3">
-          <div className="font-bold text-slate-800 text-sm">Customer TDS (Section 194J)</div>
-          <div className="space-y-1.5 text-slate-600">
-            <div>Applicable Rate: <strong>2% TDS on Technical Services</strong></div>
-            <div>Pending Form 16A Reconciliation: <strong className="text-amber-800">₹4,200.00</strong></div>
-            <div className="text-[11px] text-slate-500">TRACES quarterly certificate reconciliation active.</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Tax Invoices History */}
-      <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-2xs">
-        <div className="border-b border-slate-200 bg-slate-50 px-5 py-3.5 flex items-center justify-between">
-          <div className="font-semibold text-slate-800">
-            Rule 46 Sequential Tax Invoices History (Financial Year 2026-27)
-          </div>
-          <span className="font-mono text-[11px] text-slate-500">{invoices.length} Invoices Found</span>
-        </div>
-
-        {loading ? (
-          <div className="p-8 space-y-3">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="h-12 w-full animate-pulse rounded bg-slate-100" />
-            ))}
-          </div>
-        ) : invoices.length === 0 ? (
-          <div className="p-10 text-center text-xs text-slate-500">
-            No tax invoices generated yet for this billing cycle.
-          </div>
-        ) : (
-          <div className="divide-y divide-slate-100">
-            {invoices.map((inv) => (
-              <div key={inv.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-50/80 transition-colors">
-                <div className="space-y-0.5">
-                  <div className="font-bold text-slate-900 font-mono text-sm">
-                    {inv.invoice_number || inv.invoiceNumber || "TC/2026-27/00001"}
-                  </div>
-                  <div className="text-slate-500">
-                    Date: {formatDate(inv.created_at)} · Place of Supply: {inv.place_of_supply || inv.placeOfSupply || "Telangana (36)"}
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-4">
-                  <div className="text-right font-mono">
-                    <div className="font-bold text-slate-900">{formatInr(inv.total_paise || inv.totalPaise || 1179882)}</div>
-                    <div className="text-[10px] text-slate-500">
-                      Tax: {formatInr(inv.tax_paise || inv.taxPaise || 179982)} (18% GST)
+      ) : (
+        <>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <section className="rounded-xl border border-slate-200 bg-white p-5">
+              <h2 className="font-semibold">Subscription</h2>
+              {subscription?.id ? (
+                <>
+                  <p className="mt-3 text-lg font-bold">
+                    {subscription.planName}
+                  </p>
+                  <p className="mt-1 text-sm text-slate-500">
+                    {humanLabel(subscription.status)}
+                  </p>
+                  <p className="mt-3 text-lg">
+                    {displayMoney(subscription.pricePaise)}
+                    {interval ? ` / ${interval}` : ""}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Taxes are shown on each invoice.
+                  </p>
+                  <dl className="mt-4 space-y-2 border-t border-slate-100 pt-4 text-sm">
+                    <div className="flex justify-between">
+                      <dt>Active project limit</dt>
+                      <dd>{value(subscription.maxActiveProjects)}</dd>
                     </div>
-                  </div>
-
-                  <span className="rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 text-[10px] font-bold text-emerald-800">
-                    {inv.status || "PAID"}
-                  </span>
+                    <div className="flex justify-between">
+                      <dt>Team member limit</dt>
+                      <dd>{value(subscription.seatLimit)}</dd>
+                    </div>
+                    <div className="flex justify-between">
+                      <dt>Included file storage</dt>
+                      <dd>
+                        {subscription.storageQuotaBytes == null
+                          ? "Not recorded"
+                          : `${Number((subscription.storageQuotaBytes / 1024 ** 3).toFixed(2))} GB`}
+                      </dd>
+                    </div>
+                  </dl>
+                </>
+              ) : (
+                <p className="mt-3 text-sm text-slate-500">
+                  No subscription is recorded for your organisation.
+                </p>
+              )}
+            </section>
+            <section className="rounded-xl border border-slate-200 bg-white p-5">
+              <h2 className="font-semibold">Business details</h2>
+              <dl className="mt-4 space-y-3 text-sm">
+                <div>
+                  <dt className="text-slate-500">Registered name</dt>
+                  <dd className="mt-1 font-medium">
+                    {organisation?.legal_name || "Not recorded"}
+                  </dd>
                 </div>
-              </div>
-            ))}
+                <div>
+                  <dt className="text-slate-500">GSTIN</dt>
+                  <dd className="mt-1">
+                    {organisation?.profile?.gstin || "Not recorded"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-slate-500">PAN</dt>
+                  <dd className="mt-1">
+                    {organisation?.profile?.pan || "Not recorded"}
+                  </dd>
+                </div>
+              </dl>
+            </section>
           </div>
-        )}
-      </div>
+          <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <div className="border-b border-slate-100 p-5">
+              <h2 className="font-semibold">
+                Invoices{" "}
+                <span className="font-normal text-slate-500">
+                  ({invoices.length})
+                </span>
+              </h2>
+            </div>
+            {invoices.length === 0 ? (
+              <p className="p-8 text-center text-sm text-slate-500">
+                No invoices have been issued yet.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-slate-50 text-xs text-slate-500">
+                    <tr>
+                      {[
+                        "Invoice",
+                        "Issued",
+                        "Place of supply",
+                        "Tax",
+                        "Total",
+                        "Status",
+                      ].map((label) => (
+                        <th
+                          key={label}
+                          className="whitespace-nowrap px-5 py-3 font-medium"
+                        >
+                          {label}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {invoices.map((invoice) => (
+                      <tr key={invoice.id}>
+                        <td className="px-5 py-4 font-medium">
+                          {invoice.number || "Number not recorded"}
+                        </td>
+                        <td className="px-5 py-4">
+                          {displayDate(invoice.issued_at)}
+                        </td>
+                        <td className="px-5 py-4">
+                          {invoice.place_of_supply || "Not recorded"}
+                        </td>
+                        <td className="px-5 py-4">
+                          {displayMoney(invoice.tax_paise)}
+                        </td>
+                        <td className="px-5 py-4">
+                          {displayMoney(invoice.total_paise)}
+                        </td>
+                        <td className="px-5 py-4">
+                          {humanLabel(invoice.status)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        </>
+      )}
     </div>
   );
 }

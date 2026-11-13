@@ -1,5 +1,6 @@
 "use client";
 
+import { DOCUMENT_TYPES } from "../../lib/document-catalogue";
 import React, { useState } from "react";
 import { Modal } from "../ui/modal";
 
@@ -23,16 +24,16 @@ export function AddRequirementModal({
   open,
   onClose,
   onSubmit,
-  nextKeySuggestion = "REQ-MEP-02",
+  nextKeySuggestion = "",
 }: AddRequirementModalProps) {
   const [key, setKey] = useState(nextKeySuggestion);
   const [title, setTitle] = useState("");
-  const [docTypeCode, setDocTypeCode] = useState("DT-022");
-  const [milestoneKey, setMilestoneKey] = useState("COMMISSIONING");
+  const [docTypeCode, setDocTypeCode] = useState("");
+  const [milestoneKey, setMilestoneKey] = useState("");
   const [mandatory, setMandatory] = useState(true);
   const [assetTag, setAssetTag] = useState("");
-  const [reviewerRole, setReviewerRole] = useState("R-QC");
-  const [dueDate, setDueDate] = useState("2026-12-15");
+  const [reviewerRole, setReviewerRole] = useState("");
+  const [dueDate, setDueDate] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -64,14 +65,14 @@ export function AddRequirementModal({
       open={open}
       onClose={onClose}
       title="Add Closeout Requirement"
-      subtitle="Define a new compliance artifact in the project stage gate checklist"
+      subtitle="Add a document or record needed for this project."
       maxWidth="max-w-lg"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-semibold text-[#374151] mb-1">
-              Requirement Key
+              Requirement reference
             </label>
             <input
               type="text"
@@ -85,23 +86,16 @@ export function AddRequirementModal({
 
           <div>
             <label className="block text-xs font-semibold text-[#374151] mb-1">
-              Document Type Code
+              Document type
             </label>
             <select
+              required
               value={docTypeCode}
               onChange={(e) => setDocTypeCode(e.target.value)}
               className="w-full rounded-md border border-[#E5E7EB] p-2 text-xs text-[#111827] focus:border-[#3157D5] focus:outline-none"
             >
-              <option value="DT-022">DT-022: Factory Acceptance Test (AHRI/FAT)</option>
-              <option value="DT-033">DT-033: Hydrostatic / Line Pressure Test</option>
-              <option value="DT-035">DT-035: Duct Air Leakage Test (DW/144)</option>
-              <option value="DT-050">DT-050: Testing, Adjusting & Balancing (TAB)</option>
-              <option value="DT-011">DT-011: As-Built Engineering Drawing</option>
-              <option value="DT-026">DT-026: OEM Manufacturer Warranty Certificate</option>
-              <option value="DT-058">DT-058: Operation & Maintenance (O&M) Manual</option>
-              <option value="DT-086">DT-086: Statutory CFO Final Fire NOC</option>
-              <option value="DT-028">DT-028: Attic Stock & Critical Spares Handover</option>
-              <option value="DT-061">DT-061: Client Engineering Operations Training</option>
+              <option value="">Choose a document type</option>
+              {DOCUMENT_TYPES.map(type => <option key={type.code} value={type.code}>{type.name}</option>)}
             </select>
           </div>
         </div>
@@ -123,27 +117,29 @@ export function AddRequirementModal({
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-semibold text-[#374151] mb-1">
-              Milestone Stage Gate
+              Project stage
             </label>
             <select
+              required
               value={milestoneKey}
               onChange={(e) => setMilestoneKey(e.target.value)}
               className="w-full rounded-md border border-[#E5E7EB] p-2 text-xs text-[#111827] focus:border-[#3157D5] focus:outline-none"
             >
-              <option value="MOBILISATION">MOBILISATION (Advance Release)</option>
-              <option value="SUBMISSION">SUBMISSION (Technical Reviews)</option>
-              <option value="DELIVERY">DELIVERY (Factory & Material Inspection)</option>
-              <option value="INSTALLATION">INSTALLATION (Erection & Pressure Tests)</option>
-              <option value="COMMISSIONING">COMMISSIONING (TAB & Functional Tests)</option>
-              <option value="HANDOVER">HANDOVER (Interim Handover Dossier)</option>
-              <option value="FINAL_BILL">FINAL_BILL (Final Commercial Closeout)</option>
-              <option value="DLP_END">DLP_END (Defect Liability Expiry)</option>
+              <option value="">Choose a project stage</option>
+              <option value="MOBILISATION">Mobilisation</option>
+              <option value="SUBMISSION">Technical submission</option>
+              <option value="DELIVERY">Delivery and inspection</option>
+              <option value="INSTALLATION">Installation</option>
+              <option value="COMMISSIONING">Testing and commissioning</option>
+              <option value="HANDOVER">Handover</option>
+              <option value="FINAL_BILL">Final bill</option>
+              <option value="DLP_END">End of defects liability period</option>
             </select>
           </div>
 
           <div>
             <label className="block text-xs font-semibold text-[#374151] mb-1">
-              Equipment Asset Tag (Optional)
+              Equipment tag (optional)
             </label>
             <input
               type="text"
@@ -158,17 +154,18 @@ export function AddRequirementModal({
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-semibold text-[#374151] mb-1">
-              Reviewer Role
+              Reviewer
             </label>
             <select
+              required
               value={reviewerRole}
               onChange={(e) => setReviewerRole(e.target.value)}
               className="w-full rounded-md border border-[#E5E7EB] p-2 text-xs text-[#111827] focus:border-[#3157D5] focus:outline-none"
             >
-              <option value="R-QC">Quality Control Engineer (R-QC)</option>
-              <option value="R-CONSULTANT">Lead MEP Consultant (R-CONSULTANT)</option>
-              <option value="R-PM">Client Project Manager (R-PM)</option>
-              <option value="R-FIRE">Chief Fire Officer (R-FIRE)</option>
+              <option value="">Choose a reviewer</option>
+              <option value="R-QC">Quality reviewer</option>
+              <option value="R-CONSULTANT">Consultant</option>
+              <option value="R-PM">Project manager</option>
             </select>
           </div>
 
@@ -194,7 +191,7 @@ export function AddRequirementModal({
               className="rounded border-[#D1D5DB] text-[#3157D5] focus:ring-[#3157D5]"
             />
             <span className="text-xs font-semibold text-[#111827]">
-              Mandatory Gate Blocker (Strictly required for Handover Package snapshot)
+              Required for handover
             </span>
           </label>
         </div>

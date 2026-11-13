@@ -1,5 +1,6 @@
 "use client";
 
+import { humanLabel } from "../../lib/presentation";
 import React, { useState, useEffect } from "react";
 import { Modal } from "../ui/modal";
 import {
@@ -41,9 +42,9 @@ export function CompileHandoverModal({
   const [readinessAvailable, setReadinessAvailable] = useState(false);
 
   // RA Bill States
-  const [milestoneKey, setMilestoneKey] = useState<string>("COMMISSIONING");
-  const [billNumber, setBillNumber] = useState<string>("RA-BILL-05");
-  const [billAmountInr, setBillAmountInr] = useState<string>("4500000");
+  const [milestoneKey, setMilestoneKey] = useState<string>("");
+  const [billNumber, setBillNumber] = useState<string>("");
+  const [billAmountInr, setBillAmountInr] = useState<string>("");
   const [description, setDescription] = useState<string>("");
 
   const [compiling, setCompiling] = useState(false);
@@ -53,7 +54,7 @@ export function CompileHandoverModal({
   // Result States
   const [packageResult, setPackageResult] = useState<{
     packageId: string;
-    versionNo: number;
+    versionNo?: number;
     status: string;
   } | null>(null);
 
@@ -145,7 +146,7 @@ export function CompileHandoverModal({
 
         setPackageResult({
           packageId: data.packageId,
-          versionNo: data.versionNo || 1,
+          versionNo: data.versionNo,
           status: data.status || "QUEUED",
         });
       } else {
@@ -157,7 +158,7 @@ export function CompileHandoverModal({
 
         setPackageResult({
           packageId: data.packageId,
-          versionNo: data.versionNo || 1,
+          versionNo: data.versionNo,
           status: data.status || "QUEUED",
         });
       }
@@ -172,8 +173,8 @@ export function CompileHandoverModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={packType === "RA_BILL" ? "Compile RA-Bill Milestone Evidence Pack" : "Compile Final Handover Dossier"}
-      subtitle={`Assemble certified documentation packs for ${projectName}`}
+      title={packType === "RA_BILL" ? "Prepare running account bill package" : "Prepare handover package"}
+      subtitle={`Prepare a document package for ${projectName}`}
       maxWidth="max-w-xl"
     >
       {!packageResult ? (
@@ -190,7 +191,7 @@ export function CompileHandoverModal({
               }`}
             >
               <PackageCheck className="w-3.5 h-3.5" />
-              <span>Full Handover Dossier</span>
+              <span>Full handover package</span>
             </button>
             <button
               type="button"
@@ -223,16 +224,18 @@ export function CompileHandoverModal({
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">Billing Milestone Stage</label>
                   <select
+                    required
                     value={milestoneKey}
                     onChange={(e) => setMilestoneKey(e.target.value)}
                     className="w-full px-3 py-1.5 border border-slate-300 rounded text-xs bg-white focus:outline-none focus:border-blue-600"
                   >
+                    <option value="">Choose a billing stage</option>
                     <option value="MOBILISATION">Mobilisation Advance Pack</option>
                     <option value="DELIVERY">Material / Equipment Delivery (Factory Tests)</option>
                     <option value="INSTALLATION">Erection & Installation (Pressure Tests)</option>
                     <option value="COMMISSIONING">Testing & Commissioning (TAB / Balancing)</option>
-                    <option value="HANDOVER">Interim Handover (50% Retention)</option>
-                    <option value="FINAL_BILL">Final Bill / DLP Close (100% Retention)</option>
+                    <option value="HANDOVER">Interim handover</option>
+                    <option value="FINAL_BILL">Final bill / end of defects liability period</option>
                   </select>
                 </div>
 
@@ -243,7 +246,7 @@ export function CompileHandoverModal({
                     required
                     value={billNumber}
                     onChange={(e) => setBillNumber(e.target.value)}
-                    placeholder="e.g. RA-BILL-08"
+                    placeholder="Your running account bill reference"
                     className="w-full px-3 py-1.5 border border-slate-300 rounded font-mono text-xs focus:outline-none focus:border-blue-600"
                   />
                 </div>
@@ -254,9 +257,12 @@ export function CompileHandoverModal({
                   <label className="block font-semibold text-slate-700 mb-1">Claim amount (₹ INR, informational only)</label>
                   <input
                     type="number"
+                    required
+                    min={0}
+                    step="0.01"
                     value={billAmountInr}
                     onChange={(e) => setBillAmountInr(e.target.value)}
-                    placeholder="4500000"
+                    placeholder="Amount claimed in this bill"
                     className="w-full px-3 py-1.5 border border-slate-300 rounded text-xs focus:outline-none focus:border-blue-600"
                   />
                 </div>
@@ -279,7 +285,7 @@ export function CompileHandoverModal({
               {loadingReadiness ? (
                 <div className="flex items-center gap-2 p-3 bg-slate-50 border border-slate-200 rounded-lg">
                   <Loader2 className="w-4 h-4 animate-spin text-slate-500" />
-                  <span className="text-slate-600">Checking project readiness gates...</span>
+                  <span className="text-slate-600">Checking handover requirements…</span>
                 </div>
               ) : !readinessAvailable ? (
                 <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-900">
@@ -288,13 +294,13 @@ export function CompileHandoverModal({
               ) : readiness.readyWithoutOverride ? (
                 <div className="flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-900">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>All mandatory closeout requirements approved. Ready for final compile!</span>
+                  <span>The handover readiness check passed. You can prepare the package.</span>
                 </div>
               ) : (
                 <div className="p-3 bg-amber-50 border border-amber-300 rounded-lg text-amber-950 space-y-1">
                   <div className="flex items-center gap-1.5 font-bold">
                     <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                    <span>Incomplete Requirements Detected</span>
+                    <span>Requirements still need attention</span>
                   </div>
                   <p className="text-[11px] text-amber-800">
                     {readiness.missingCount} mandatory document(s) missing or {readiness.expiredCount} expired.
@@ -328,12 +334,12 @@ export function CompileHandoverModal({
               {compiling ? (
                 <>
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>Compiling PDF Pack...</span>
+                  <span>Preparing package…</span>
                 </>
               ) : (
                 <>
                   <PackageCheck className="w-3.5 h-3.5" />
-                  <span>{packType === "RA_BILL" ? "Compile RA-Bill Pack" : "Compile Handover Dossier"}</span>
+                  <span>{packType === "RA_BILL" ? "Prepare running account bill package" : "Prepare handover package"}</span>
                 </>
               )}
             </button>
@@ -345,10 +351,10 @@ export function CompileHandoverModal({
           <div className={`rounded-lg border p-4 space-y-1 ${packageResult.status === "READY" ? "bg-emerald-50 border-emerald-300 text-emerald-950" : packageResult.status === "FAILED" ? "bg-red-50 border-red-300 text-red-950" : "bg-amber-50 border-amber-300 text-amber-950"}`}>
             <div className="font-bold flex items-center gap-1.5">
               {packageResult.status === "READY" ? <CheckCircle2 className="w-4 h-4 text-emerald-700" /> : packageResult.status === "FAILED" ? <AlertTriangle className="w-4 h-4 text-red-600" /> : <Loader2 className="w-4 h-4 animate-spin text-amber-700" />}
-              <span>{packageResult.status === "READY" ? "Verified PDF is ready" : packageResult.status === "FAILED" ? "Package generation failed" : "Generating handover package"}</span>
+              <span>{packageResult.status === "READY" ? "Handover PDF is ready" : packageResult.status === "FAILED" ? "Package generation failed" : "Generating handover package"}</span>
             </div>
             <p className="text-[11px]">
-              State: {packageResult.status}. A PDF download is enabled only after the stored artifact checksum and provider version are verified.
+              {humanLabel(packageResult.status)}. The download becomes available after the package has been prepared and checked.
             </p>
           </div>
 
@@ -356,8 +362,8 @@ export function CompileHandoverModal({
 
           <div className="rounded-lg bg-slate-50 border border-slate-200 p-3.5">
             <div>
-              <span className="text-[11px] text-slate-500 block">Package version {packageResult.versionNo} · ID</span>
-              <span className="text-xs font-mono font-bold text-slate-900">{packageResult.packageId}</span>
+              <span className="text-[11px] text-slate-500 block">Handover package{packageResult.versionNo == null ? "" : ` · Version ${packageResult.versionNo}`}</span>
+
             </div>
           </div>
 

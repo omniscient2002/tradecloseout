@@ -1,40 +1,21 @@
 "use client";
 
+import { INDIAN_STATES } from "../../../lib/presentation";
 import React, { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ShieldCheck, ArrowRight, KeyRound, Building2, CheckCircle2, AlertCircle } from "lucide-react";
-import { apiFetch, ApiProblemError, setCsrfToken } from "../../../lib/api-client";
-
-const REAL_COMPANY_PERSONAS = [
-  {
-    name: "Vikramaditya Reddy",
-    role: "Managing Director (Owner)",
-    identifier: "vikram@deccanmep.in",
-    phone: "+919848011101",
-    badge: "Full Org, Billing & 2nd-Approver Waiver Authority",
-  },
-  {
-    name: "Meera Deshmukh",
-    role: "Senior Project Manager",
-    identifier: "meera@deccanmep.in",
-    phone: "+919848011102",
-    badge: "Manages Projects, Checklists, Supplier Links & Packages",
-  },
-  {
-    name: "Karthikeya Sharma",
-    role: "Lead QA/QC Engineer",
-    identifier: "karthik@deccanmep.in",
-    phone: "+919848011103",
-    badge: "Reviews & Approves Hydrostatic, Duct Leakage & TAB Reports",
-  },
-  {
-    name: "Amit Verma",
-    role: "Site Execution Engineer",
-    identifier: "amit@deccanmep.in",
-    phone: "+919848011104",
-    badge: "Uploads Site Test Reports & Registers Equipment Tags",
-  },
-];
+import {
+  ShieldCheck,
+  ArrowRight,
+  KeyRound,
+  Building2,
+  CheckCircle2,
+  AlertCircle,
+} from "lucide-react";
+import {
+  apiFetch,
+  ApiProblemError,
+  setCsrfToken,
+} from "../../../lib/api-client";
 
 function LoginForm() {
   const router = useRouter();
@@ -43,10 +24,10 @@ function LoginForm() {
 
   const [step, setStep] = useState<"IDENTIFIER" | "OTP">("IDENTIFIER");
   const [mode, setMode] = useState<"SIGNIN" | "SIGNUP">("SIGNIN");
-  const [identifier, setIdentifier] = useState("meera@deccanmep.in");
+  const [identifier, setIdentifier] = useState("");
   const [fullName, setFullName] = useState("");
   const [orgName, setOrgName] = useState("");
-  const [stateCode, setStateCode] = useState("TS");
+  const [stateCode, setStateCode] = useState("");
   const [otp, setOtp] = useState("");
   const [devOtpHint, setDevOtpHint] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -67,13 +48,19 @@ function LoginForm() {
         body: JSON.stringify({ identifier: identifier.trim() }),
       });
       const code = res.devOtpPreview || res.debugOtp;
+      setDevOtpHint(null);
+      setOtp("");
       if (code) {
         setDevOtpHint(code);
         setOtp(code);
       }
       setStep("OTP");
     } catch (err: any) {
-      setError(err instanceof ApiProblemError ? err.message : "Could not send verification code.");
+      setError(
+        err instanceof ApiProblemError
+          ? err.message
+          : "Could not send verification code.",
+      );
     } finally {
       setLoading(false);
     }
@@ -103,7 +90,11 @@ function LoginForm() {
       router.push(nextPath);
       router.refresh();
     } catch (err: any) {
-      setError(err instanceof ApiProblemError ? err.message : "Invalid verification code.");
+      setError(
+        err instanceof ApiProblemError
+          ? err.message
+          : "Invalid verification code.",
+      );
     } finally {
       setLoading(false);
     }
@@ -129,52 +120,21 @@ function LoginForm() {
           </div>
 
           <h1 className="mt-10 text-2xl lg:text-3xl font-bold tracking-tight text-white leading-snug">
-            The handover file your main contractor and consultant will accept.
+            Keep your project handover on track.
           </h1>
           <p className="mt-3 text-xs lg:text-sm text-slate-400 leading-relaxed">
-            Every required certificate, for every installed chiller, AHU, and fire damper—reviewed,
-            stamped, and compiled into a bookmarked handover dossier so your retention money is
-            released without last-minute disputes.
+            Bring drawings, test reports, certificates, and approvals together
+            so your team can see what is ready and what still needs attention.
           </p>
         </div>
 
-        {/* Seeded Real Company Personas for Instant Role Testing */}
-        <div className="mt-8 rounded-xl border border-slate-800 bg-slate-900/90 p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-blue-400">
-              Seeded Tenant: Deccan EnviroTech MEP Pvt Ltd
-            </span>
-            <span className="font-mono text-[10px] text-slate-400">GSTIN: 36AABCD4512F1Z4</span>
-          </div>
-          <p className="text-[11px] text-slate-400">
-            Click any team member below to pre-fill their login identity and test their exact
-            role permissions:
-          </p>
-          <div className="space-y-1.5">
-            {REAL_COMPANY_PERSONAS.map((p) => (
-              <button
-                key={p.identifier}
-                type="button"
-                onClick={() => {
-                  setMode("SIGNIN");
-                  setStep("IDENTIFIER");
-                  setIdentifier(p.identifier);
-                }}
-                className={`w-full text-left rounded-lg border p-2.5 transition-all ${
-                  identifier === p.identifier
-                    ? "border-blue-500 bg-blue-500/10 shadow-sm"
-                    : "border-slate-800 bg-slate-950/60 hover:border-slate-700"
-                }`}
-              >
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-semibold text-white">{p.name}</span>
-                  <span className="font-mono text-[11px] text-blue-300">{p.identifier}</span>
-                </div>
-                <div className="text-[11px] text-slate-300 mt-0.5">{p.role}</div>
-                <div className="text-[10px] text-slate-500 mt-0.5">{p.badge}</div>
-              </button>
-            ))}
-          </div>
+        <div className="mt-10 rounded-xl border border-slate-700 p-5 text-sm text-slate-300">
+          <h2 className="font-semibold text-white">Keep handover moving</h2>
+          <ul className="mt-4 space-y-3">
+            <li>See which documents your project still needs.</li>
+            <li>Submit test reports and drawings for review.</li>
+            <li>Prepare handover packages from reviewed records.</li>
+          </ul>
         </div>
       </div>
 
@@ -187,13 +147,15 @@ function LoginForm() {
                 {step === "OTP"
                   ? "Enter verification code"
                   : mode === "SIGNIN"
-                  ? "Sign in to your workspace"
-                  : "Register contractor organisation"}
+                    ? "Sign in to your workspace"
+                    : "Register contractor organisation"}
               </h2>
               <p className="mt-0.5 text-xs text-slate-500">
                 {step === "OTP"
-                  ? `We sent a 6-digit code to ${identifier}`
-                  : "Passwordless sign-in via OTP or email login link"}
+                  ? devOtpHint
+                    ? `Use the code shown below for ${identifier}`
+                    : `Enter the 6-digit code sent to ${identifier}`
+                  : "Sign in with a verification code sent to your email or mobile."}
               </p>
             </div>
             <KeyRound className="h-5 w-5 text-slate-400" />
@@ -207,17 +169,25 @@ function LoginForm() {
           )}
 
           {step === "IDENTIFIER" ? (
-            <form onSubmit={handleRequestOtp} className="mt-5 space-y-4 text-xs">
+            <form
+              onSubmit={handleRequestOtp}
+              className="mt-5 space-y-4 text-xs"
+            >
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  Business Email or Indian Mobile (+91) (Required)
+                <label
+                  htmlFor="login-identifier"
+                  className="block font-semibold text-slate-700 mb-1"
+                >
+                  Work email or Indian mobile number (+91)
                 </label>
                 <input
+                  id="login-identifier"
+                  autoComplete="username"
                   type="text"
                   required
                   value={identifier}
                   onChange={(e) => setIdentifier(e.target.value)}
-                  placeholder="e.g., meera@deccanmep.in or +919848011102"
+                  placeholder="Your work email or +91 mobile number"
                   className="w-full rounded-md border border-slate-300 px-3 py-2 text-xs text-slate-900 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none"
                 />
               </div>
@@ -233,7 +203,7 @@ function LoginForm() {
                       required
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
-                      placeholder="e.g., Rajesh Sharma"
+                      placeholder="Your full name"
                       className="w-full rounded-md border border-slate-300 px-3 py-2 text-xs"
                     />
                   </div>
@@ -246,9 +216,33 @@ function LoginForm() {
                       required
                       value={orgName}
                       onChange={(e) => setOrgName(e.target.value)}
-                      placeholder="e.g., Sharma HVAC Solutions Pvt Ltd"
+                      placeholder="Your organisation’s registered name"
                       className="w-full rounded-md border border-slate-300 px-3 py-2 text-xs"
                     />
+                  </div>
+                  <div>
+                    <label
+                      htmlFor="company-state"
+                      className="block font-semibold text-slate-700 mb-1"
+                    >
+                      Organisation state or union territory (Required)
+                    </label>
+                    <select
+                      id="company-state"
+                      required
+                      value={stateCode}
+                      onChange={(e) => setStateCode(e.target.value)}
+                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-xs"
+                    >
+                      <option value="">
+                        Select your state or union territory
+                      </option>
+                      {INDIAN_STATES.map(([code, name]) => (
+                        <option key={code} value={code}>
+                          {name}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </>
               )}
@@ -258,7 +252,9 @@ function LoginForm() {
                 disabled={loading}
                 className="w-full flex items-center justify-center gap-2 rounded-md bg-[#0F2942] py-2.5 text-xs font-semibold text-white hover:bg-[#163A5F] transition-colors disabled:opacity-60 cursor-pointer"
               >
-                <span>{loading ? "Sending code…" : "Send Verification Code"}</span>
+                <span>
+                  {loading ? "Sending code…" : "Send Verification Code"}
+                </span>
                 <ArrowRight className="h-3.5 w-3.5" />
               </button>
 
@@ -286,7 +282,9 @@ function LoginForm() {
             <form onSubmit={handleVerifyOtp} className="mt-5 space-y-4 text-xs">
               {devOtpHint && (
                 <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-emerald-950">
-                  <div className="font-semibold">Local Development OTP Code:</div>
+                  <div className="font-semibold">
+                    Verification code (local preview):
+                  </div>
                   <div className="mt-1 font-mono text-base font-bold tracking-widest text-emerald-800">
                     {devOtpHint}
                   </div>
@@ -294,12 +292,18 @@ function LoginForm() {
               )}
 
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">
+                <label
+                  htmlFor="login-code"
+                  className="block font-semibold text-slate-700 mb-1"
+                >
                   6-Digit Verification Code (Required)
                 </label>
                 <input
                   type="text"
                   required
+                  id="login-code"
+                  autoComplete="one-time-code"
+                  inputMode="numeric"
                   maxLength={6}
                   value={otp}
                   onChange={(e) => setOtp(e.target.value)}
@@ -313,7 +317,7 @@ function LoginForm() {
                 disabled={loading}
                 className="w-full rounded-md bg-[#0F2942] py-2.5 text-xs font-semibold text-white hover:bg-[#163A5F] transition-colors disabled:opacity-60 cursor-pointer"
               >
-                {loading ? "Verifying identity…" : "Verify & Open Company Dashboard"}
+                {loading ? "Verifying identity…" : "Verify & Sign In"}
               </button>
 
               <button
@@ -333,7 +337,13 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-[#0B1120] flex items-center justify-center text-white">Loading...</div>}>
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#0B1120] flex items-center justify-center text-white">
+          Loading...
+        </div>
+      }
+    >
       <LoginForm />
     </Suspense>
   );

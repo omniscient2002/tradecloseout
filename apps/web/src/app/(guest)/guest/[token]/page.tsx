@@ -1,5 +1,6 @@
 "use client";
 
+import { documentTypeLabel } from "../../../../lib/document-catalogue";
 import React, { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import {
@@ -57,8 +58,8 @@ export default function StandaloneGuestPortalPage() {
   // Supplier Upload State (SCR-034)
   const [selectedReqId, setSelectedReqId] = useState<string>("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [revCode, setRevCode] = useState("R0");
-  const [issueDate, setIssueDate] = useState(new Date().toISOString().slice(0, 10));
+  const [revCode, setRevCode] = useState("");
+  const [issueDate, setIssueDate] = useState("");
   const [remarks, setRemarks] = useState("");
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
 
@@ -85,7 +86,7 @@ export default function StandaloneGuestPortalPage() {
         if (session.grantId === res.grantId && session.projectId === res.projectId) {
           resolved = { ...res, ...session };
           setOfflineActorPartition(`guest:${session.grantId}`);
-          if (session.assignedRequirements?.[0]) setSelectedReqId(session.assignedRequirements[0].id);
+
         } else {
           setOfflineActorPartition(null);
         }
@@ -120,7 +121,7 @@ export default function StandaloneGuestPortalPage() {
       setOtpChallengeId(result.challengeId);
       setOtpSent(true);
     } catch (err: any) {
-      setError(err.message || "Could not send OTP.");
+      setError(err.message || "We could not send a verification code.");
     }
   };
 
@@ -144,7 +145,7 @@ export default function StandaloneGuestPortalPage() {
       }
       await loadGuestContext();
     } catch (err: any) {
-      setError(err.message || "Invalid OTP code.");
+      setError(err.message || "The verification code is invalid or has expired.");
     }
   };
 
@@ -153,7 +154,7 @@ export default function StandaloneGuestPortalPage() {
     if (!ctx || !selectedFile || !selectedReqId) return;
     if (/\.(svg|exe|bat|docm|xlsm)$/i.test(selectedFile.name)) {
       setError(
-        "This file type isn't supported. Use PDF, JPG, PNG, WebP, DOCX, XLSX, DWG or ZIP (SVG is strictly banned).",
+        "This file type isn't supported. Use PDF, JPG, PNG, WebP, DOCX, XLSX, DWG or ZIP .",
       );
       return;
     }
@@ -170,7 +171,7 @@ export default function StandaloneGuestPortalPage() {
         title: selectedFile.name,
         externalComment: remarks,
       });
-      setUploadSuccess(`Uploaded. ${ctx.contractorName} will review it.`);
+      setUploadSuccess(`Saved for upload. ${ctx.contractorName} can review it after the file has been uploaded and checked.`);
     } catch (err: any) {
       setError(err.message || "Upload failed.");
     }
@@ -280,7 +281,7 @@ export default function StandaloneGuestPortalPage() {
                     maxLength={6}
                     value={otpCode}
                     onChange={(e) => setOtpCode(e.target.value)}
-                    placeholder="Enter 6-digit OTP"
+                    placeholder="Enter the 6-digit verification code"
                     className="w-full rounded-md border border-slate-400 px-3 py-2 text-center font-mono text-base font-bold tracking-widest"
                   />
                   <button
@@ -304,13 +305,15 @@ export default function StandaloneGuestPortalPage() {
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">
-                  Assigned Requirement (Scoped to this link)
+                  Document requested by the contractor
                 </label>
                 <select
+                  required
                   value={selectedReqId}
                   onChange={(e) => setSelectedReqId(e.target.value)}
                   className="w-full rounded-md border border-slate-400 bg-white px-3 py-2 text-xs font-medium"
                 >
+                  <option value="">Choose the requirement for this document</option>
                   {(ctx.assignedRequirements ?? []).map((r) => (
                     <option key={r.id} value={r.id}>
                       {r.requirementKey} — {r.title}
