@@ -219,6 +219,7 @@ export default function ProjectWorkspacePage() {
   const projectId = Array.isArray(params?.projectId) ? params.projectId[0] : params?.projectId;
 
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
+  const [baselineNotice,setBaselineNotice]=useState('');
   const [isOffline, setIsOffline] = useState(false);
   const [currentUser, setCurrentUser] = useState<{ id: string; name: string; orgRole: string } | null>(null);
 
@@ -479,6 +480,7 @@ export default function ProjectWorkspacePage() {
       setNewAssetSerial("");
       setNewAssetLocation("");
       setAddAssetModalOpen(false);
+      setBaselineNotice('Equipment was registered. Review the changed applicability facts and apply an independently approved baseline change before handover.');
       fetchAssets();
     } catch (err: any) {
       alert(err?.message || "Failed to add equipment unit.");
@@ -654,6 +656,7 @@ export default function ProjectWorkspacePage() {
         </div>
       </div>
 
+      {baselineNotice&&<p role="status" className="m-4 rounded border border-amber-300 bg-amber-50 p-3">{baselineNotice}</p>}
       {/* Project Header Bar */}
       <div className="bg-white border-b border-slate-200 px-6 py-5">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">

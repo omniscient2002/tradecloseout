@@ -117,9 +117,12 @@ export class ConfigurationService {
  async preview(ctx:TenantActorContext,projectId:string,versionIds:unknown){
   requireProjectCommandId(projectId,'INVALID_PROJECT_ID');return withTenantTransaction(this.pool,ctx,async client=>{
    await this.authority(client,ctx,projectId);const layers=await this.loadLayers(client,ctx,projectId,versionIds);
-   const resolved=resolveConfigurationHierarchy(layers);const {rows}=await client.query(`SELECT id,checksum,resolved_payload_json FROM checklist_snapshots WHERE org_id=$1 AND project_id=$2 AND status='ACTIVE' ORDER BY version_no DESC LIMIT 1`,[ctx.orgId,projectId]);
+   const resolved=resolveConfigurationHierarchy(layers);const {rows}=await client.query(`SELECT id,checksum,resolved_payload_json,obligation_context_checksum,obligation_context_json FROM checklist_snapshots WHERE org_id=$1 AND project_id=$2 AND status='ACTIVE' ORDER BY version_no DESC LIMIT 1`,[ctx.orgId,projectId]);
+   const {rows:[context]}=await client.query('SELECT project_obligation_context_checksum($1,$2) AS checksum,project_obligation_context($1,$2) AS facts',[ctx.orgId,projectId]);
    return {...resolved,sources:layers.map(l=>({level:l.level,versionId:l.versionId})),baselineSnapshotId:rows[0]?.id??null,
-    baselineChecksum:rows[0]?.checksum??null,proposedChecksum:resolved.checksum,unchanged:rows[0]?.checksum===resolved.checksum};
+    baselineChecksum:rows[0]?.checksum??null,proposedChecksum:resolved.checksum,unchanged:rows[0]?.checksum===resolved.checksum&&rows[0]?.obligation_context_checksum===context.checksum,
+    applicabilityContext:{baselineChecksum:rows[0]?.obligation_context_checksum??null,currentChecksum:context.checksum,currentFacts:context.facts,
+      baselineFacts:rows[0]?.obligation_context_json??null,requiresExplicitMappingReview:true}};
   });
  }
  async proposeChange(ctx:TenantActorContext,projectId:string,value:unknown){

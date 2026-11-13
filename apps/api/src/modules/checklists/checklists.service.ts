@@ -251,7 +251,7 @@ export class ChecklistsService {
       await this.lockEditableProject(client, ctx.orgId, projectId);
       // Supersede prior ACTIVE snapshot if one exists (06 §3.5)
       const { rows: priorSnaps } = await client.query(
-        `SELECT id, version_no, checksum, resolved_payload_json FROM checklist_snapshots
+        `SELECT id, version_no, checksum, resolved_payload_json,obligation_context_checksum FROM checklist_snapshots
           WHERE org_id = $1 AND project_id = $2
           ORDER BY version_no DESC LIMIT 1
           FOR UPDATE`,
@@ -261,14 +261,16 @@ export class ChecklistsService {
       const {rows:[lifecycle]}=await client.query('SELECT status FROM projects WHERE org_id=$1 AND id=$2',[ctx.orgId,projectId]);
       const prior=priorSnaps[0];
       const sourceManifest=await this.assertPersistedLayers(client,ctx,projectId,layers);
-      if(prior?.checksum===resolved.checksum)return {snapshotId:prior.id,versionNo:prior.version_no,checksum:prior.checksum,
+      const {rows:[context]}=await client.query('SELECT project_obligation_context_checksum($1,$2) AS checksum',[ctx.orgId,projectId]);
+      const contextChanged=!!prior&&prior.obligation_context_checksum!==context.checksum;
+      if(prior?.checksum===resolved.checksum&&!contextChanged)return {snapshotId:prior.id,versionNo:prior.version_no,checksum:prior.checksum,
         instantiatedRequirements:0,unchanged:true};
       if(lifecycle.status!=='DRAFT'||changeRequestId){
         if(!changeRequestId)throw new ConflictException({code:'APPROVED_BASELINE_CHANGE_REQUIRED',baselineSnapshotId:prior?.id??null});
         const {rows:requests}=await client.query(`SELECT * FROM requirement_change_requests WHERE org_id=$1 AND project_id=$2 AND id=$3 FOR UPDATE`,[ctx.orgId,projectId,changeRequestId]);
         const approval=requests[0];
         if(!approval||approval.status!=='APPROVED'||!approval.approved_by||approval.approved_by===approval.requested_by||
-          approval.baseline_snapshot_id!==prior?.id||approval.proposed_checksum!==resolved.checksum||approval.applied_snapshot_id)
+          approval.baseline_snapshot_id!==prior?.id||approval.proposed_checksum!==resolved.checksum||approval.proposed_context_checksum!==context.checksum||approval.applied_snapshot_id)
           throw new ConflictException({code:'BASELINE_APPROVAL_STALE_OR_MISMATCHED'});
       }
 
@@ -436,7 +438,7 @@ export class ChecklistsService {
           const priorSpec=previousSpecs.get(inst.spec.key);
           const definition=obligationDefinition(inst.spec,reviewerRole);
           const previousDefinition=ex.obligation_definition_json??(priorSpec?obligationDefinition(priorSpec,ex.reviewer_role):null);
-          const semanticChange = previousDefinition===null||configPayloadChecksum(previousDefinition)!==configPayloadChecksum(definition)||
+          const semanticChange = contextChanged||previousDefinition===null||configPayloadChecksum(previousDefinition)!==configPayloadChecksum(definition)||
             ex.title !== inst.spec.title ||
             ex.doc_type_key !== inst.spec.docTypeKey ||
             ex.mandatory !== inst.spec.mandatory ||
@@ -662,11 +664,13 @@ export class ChecklistsService {
     requireProjectCommandId(projectId,'INVALID_PROJECT_ID');
     return withTenantTransaction(this.pool,ctx,async client=>{
       await this.assertBaselineAuthority(client,ctx,projectId);await this.lockEditableProject(client,ctx.orgId,projectId);
-      const {rows}=await client.query(`SELECT id,version_no,checksum,resolved_payload_json FROM checklist_snapshots
+      const {rows}=await client.query(`SELECT id,version_no,checksum,resolved_payload_json,
+        obligation_context_checksum=project_obligation_context_checksum(org_id,project_id) AS context_current FROM checklist_snapshots
         WHERE org_id=$1 AND project_id=$2 AND status='ACTIVE' ORDER BY version_no DESC LIMIT 1`,[ctx.orgId,projectId]);
       const current=rows[0];if(!current||!Array.isArray(current.resolved_payload_json?.requirements)||!current.resolved_payload_json.requirements.length)
         throw new UnprocessableEntityException({code:'CHECKLIST_CONFIGURATION_REQUIRED',detail:'Configure explicit requirements before creating a snapshot.'});
       if(configPayloadChecksum(current.resolved_payload_json)!==current.checksum)throw new ConflictException('ACTIVE_CHECKLIST_CHECKSUM_INVALID');
+      if(current.context_current!==true)throw new ConflictException('BASELINE_APPLICABILITY_CONTEXT_CHANGED');
       return {snapshotId:current.id,versionNo:current.version_no,checksum:current.checksum,instantiatedRequirements:0,unchanged:true};
     });
   }
@@ -1168,7 +1172,7 @@ export class ChecklistsService {
     client:PoolClient,emit:(ev:DomainOutboxEvent)=>void){
     await this.assertBaselineAuthority(client,ctx,projectId);
     await this.lockEditableProject(client,ctx.orgId,projectId);
-    const {rows}=await client.query(`SELECT id,checksum,resolved_payload_json FROM checklist_snapshots
+    const {rows}=await client.query(`SELECT id,checksum,resolved_payload_json,obligation_context_checksum,obligation_context_json FROM checklist_snapshots
       WHERE org_id=$1 AND project_id=$2 AND status='ACTIVE' ORDER BY version_no DESC LIMIT 1 FOR UPDATE`,[ctx.orgId,projectId]);
     if(rows[0]?.id!==baselineId)throw new ConflictException({code:'BASELINE_VERSION_STALE'});
     await this.assertPersistedLayers(client,ctx,projectId,layers);
@@ -1177,13 +1181,16 @@ export class ChecklistsService {
     const requirements=resolved.payload.requirements;
     if(!Array.isArray(requirements)||!requirements.length)throw new UnprocessableEntityException('CHECKLIST_REQUIREMENTS_MISSING');
     assertLockedChecklistBaselineInvariant(rows[0].resolved_payload_json,resolved.payload,true);
-    if(rows[0].checksum===resolved.checksum)throw new ConflictException({code:'BASELINE_CHANGE_EMPTY'});
+    const {rows:[context]}=await client.query('SELECT project_obligation_context_checksum($1,$2) AS checksum,project_obligation_context($1,$2) AS facts',[ctx.orgId,projectId]);
+    if(rows[0].checksum===resolved.checksum&&rows[0].obligation_context_checksum===context.checksum)throw new ConflictException({code:'BASELINE_CHANGE_EMPTY'});
     const before=rows[0].resolved_payload_json.requirements??[];
     const oldByKey=new Map<string,any>(before.map((r:any)=>[r.key,r]));const newByKey=new Map<string,any>(requirements.map((r:any)=>[r.key,r]));
     const impact={added:[...newByKey.keys()].filter(k=>!oldByKey.has(k)),removed:[...oldByKey.keys()].filter(k=>!newByKey.has(k)),
       modified:[...newByKey.keys()].filter(k=>oldByKey.has(k)&&JSON.stringify(oldByKey.get(k))!==JSON.stringify(newByKey.get(k))),
       changedRequirements:[...new Set([...oldByKey.keys(),...newByKey.keys()])].filter(key=>configPayloadChecksum(oldByKey.get(key)??null)!==configPayloadChecksum(newByKey.get(key)??null)).map(key=>({key,before:oldByKey.get(key)??null,after:newByKey.get(key)??null})),
-      qualificationWillBeReevaluated:true,acceptanceWillBeReevaluated:true};
+      qualificationWillBeReevaluated:true,acceptanceWillBeReevaluated:true,
+      applicabilityContext:{changed:rows[0].obligation_context_checksum!==context.checksum,beforeChecksum:rows[0].obligation_context_checksum,afterChecksum:context.checksum,
+        before:rows[0].obligation_context_json,after:context.facts,unresolvedFactsMustBeReviewed:true}};
     const id=uuidv7();const {rows:created}=await client.query(`INSERT INTO requirement_change_requests
       (id,org_id,project_id,change_type,reason,requested_by,status,baseline_snapshot_id,proposed_checksum,proposed_layers_json,impact_json)
       VALUES($1,$2,$3,'MODIFY',$4,$5,'PENDING',$6,$7,$8,$9) RETURNING *`,
@@ -1215,8 +1222,9 @@ export class ChecklistsService {
         WHERE m.org_id=$1 AND m.user_id=$2 AND m.status='ACTIVE' FOR SHARE OF m,u`,[ctx.orgId,ctx.userId]);
       if(ctx.guestGrantId||!['R-OWNER','R-ADMIN'].includes(members[0]?.role))throw new ForbiddenException('BASELINE_REVIEW_AUTHORITY_REQUIRED');
       await this.lockEditableProject(client,ctx.orgId,projectId);
-      const {rows}=await client.query(`SELECT id,checksum,created_by FROM checklist_snapshots WHERE org_id=$1 AND project_id=$2 AND id=$3 AND status='ACTIVE' FOR SHARE`,[ctx.orgId,projectId,dto.snapshotId]);
+      const {rows}=await client.query(`SELECT id,checksum,created_by,obligation_context_checksum=project_obligation_context_checksum(org_id,project_id) AS context_current FROM checklist_snapshots WHERE org_id=$1 AND project_id=$2 AND id=$3 AND status='ACTIVE' FOR SHARE`,[ctx.orgId,projectId,dto.snapshotId]);
       const snapshot=rows[0];if(!snapshot||snapshot.checksum!==dto.checksum)throw new ConflictException('BASELINE_REVIEW_STALE');
+      if(snapshot.context_current!==true)throw new ConflictException('BASELINE_APPLICABILITY_CONTEXT_CHANGED');
       if(snapshot.created_by===ctx.userId)throw new ForbiddenException('BASELINE_SELF_REVIEW_FORBIDDEN');
       const {rows:approved}=await client.query(`INSERT INTO project_baseline_approvals(id,org_id,project_id,snapshot_id,checksum,reviewer_user_id,reason)
         VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(org_id,project_id,snapshot_id) DO NOTHING RETURNING *`,[uuidv7(),ctx.orgId,projectId,dto.snapshotId,dto.checksum,ctx.userId,dto.reason]);
@@ -1312,6 +1320,8 @@ export class ChecklistsService {
       if(dto.decision==='APPROVED'){
         if(!Array.isArray(cr.proposed_layers_json))throw new ConflictException('VERSIONED_CHANGE_PROPOSAL_REQUIRED');
         await this.assertPersistedLayers(client,ctx,cr.project_id,cr.proposed_layers_json);
+        const {rows:[context]}=await client.query('SELECT project_obligation_context_checksum($1,$2) AS checksum',[ctx.orgId,cr.project_id]);
+        if(cr.proposed_context_checksum!==context.checksum)throw new ConflictException('BASELINE_PROPOSAL_CONTEXT_STALE');
       }
 
       if (!['PENDING','SUBMITTED'].includes(cr.status)) {

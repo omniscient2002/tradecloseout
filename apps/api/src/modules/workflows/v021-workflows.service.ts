@@ -8,6 +8,7 @@ import {
 import { Pool } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { withTenantTransaction, TenantActorContext } from '@tradecloseout/db/tenant-tx';
+import {assertCurrentProjectAuthority} from '@tradecloseout/db/tenant-tx';
 
 @Injectable()
 export class V021WorkflowsService {
@@ -412,6 +413,7 @@ export class V021WorkflowsService {
     },
   ) {
     return withTenantTransaction(this.pool, ctx, async (client, emit) => {
+      await assertCurrentProjectAuthority(client,{...ctx,projectId,projectWrite:true});
       const { rows: subRows } = await client.query(
         `SELECT id, package_id, status FROM submissions
           WHERE org_id = $1 AND project_id = $2 AND id = $3
@@ -422,6 +424,8 @@ export class V021WorkflowsService {
         throw new NotFoundException({ code: 'NOT_FOUND', detail: 'Submission not found.' });
       }
       const submission = subRows[0];
+      const {rows:baseline}=await client.query('SELECT package_baseline_is_current($1,$2,$3) AS current',[ctx.orgId,projectId,submission.package_id]);
+      if(baseline[0]?.current!==true)throw new ConflictException('PACKAGE_BASELINE_OBSOLETE');
 
       await client.query(
         `UPDATE submission_recipients

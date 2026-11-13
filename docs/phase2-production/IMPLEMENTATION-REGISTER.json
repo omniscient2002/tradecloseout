@@ -626,7 +626,7 @@
       "id": "PH2-G05-006",
       "title": "Enforce optimistic concurrency and real reasons at lifecycle APIs",
       "engineeringStatus": "PARTIAL_CANDIDATE_IMPLEMENTATION",
-      "validationStatus": "FULL_VALIDATION_DEFERRED_BY_USER",
+      "validationStatus": "RELATED_FOCUSED_CHECKS_PASSED_FULL_VALIDATION_DEFERRED",
       "independentAcceptance": "UNCHANGED",
       "files": [
         "apps/api/src/modules/projects/projects.service.ts",
@@ -634,7 +634,8 @@
         "apps/web/src/app/(contractor)/projects/[projectId]/page.tsx"
       ],
       "requiredOutcome": "Require a consistent explicit version/precondition contract, validate nonempty actor-supplied reasons where required, and check them under lock. Add reviewed idempotency to lifecycle commands so retrying cannot duplicate effects or quota consumption. Do not bypass final-readiness/package acceptance checks.",
-      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering."
+      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering.",
+      "obligationContextEvidence": "docs/phase2-production/OBLIGATION-CONTEXT-2026-11-13.md"
     },
     {
       "id": "PH2-G05-007",
@@ -692,7 +693,8 @@
       ],
       "requiredOutcome": "Use shared current-obligation queries for due/expiry/unassigned/review status, resource-scope-filtered counts and bounded activity. Retain the independent readiness evaluator for closure. Make commercial visibility and unknown values explicit; do not turn all informational retention into earned or blocked payment.",
       "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering.",
-      "qualificationEvidence": "docs/phase2-production/QUALIFICATION-IMPLEMENTATION-2026-11-13.md"
+      "qualificationEvidence": "docs/phase2-production/QUALIFICATION-IMPLEMENTATION-2026-11-13.md",
+      "obligationContextEvidence": "docs/phase2-production/OBLIGATION-CONTEXT-2026-11-13.md"
     },
     {
       "id": "PH2-G05-011",
@@ -820,7 +822,8 @@
       ],
       "requiredOutcome": "Require an approved, version-bound change request with impact analysis before every active-project baseline mutation. Use one locked applicator to update snapshots, revisions, requirements, exceptions, package acceptance and readiness coherently; preserve material-change invalidation already present. Decision alone must not bypass lifecycle or apply an incomplete delta.",
       "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering.",
-      "qualificationEvidence": "docs/phase2-production/QUALIFICATION-IMPLEMENTATION-2026-11-13.md"
+      "qualificationEvidence": "docs/phase2-production/QUALIFICATION-IMPLEMENTATION-2026-11-13.md",
+      "obligationContextEvidence": "docs/phase2-production/OBLIGATION-CONTEXT-2026-11-13.md"
     },
     {
       "id": "PH2-G06-007",
@@ -842,7 +845,7 @@
       "id": "PH2-G06-008",
       "title": "Connect reviewed applicability rules to actual project setup",
       "engineeringStatus": "EXTERNAL_REVIEW_OR_ACCEPTANCE_REQUIRED",
-      "validationStatus": "FULL_VALIDATION_DEFERRED_BY_USER",
+      "validationStatus": "RELATED_FOCUSED_CHECKS_PASSED_FULL_VALIDATION_DEFERRED",
       "independentAcceptance": "UNCHANGED",
       "files": [
         "apps/api/src/modules/configuration/configuration.service.ts",
@@ -852,7 +855,8 @@
         "apps/worker/src/queues/package-branding.ts"
       ],
       "requiredOutcome": "Implement reviewed project/contract/asset applicability inputs and an explicit mapping/preview/approval step that drives baseline creation. Normalize project/client/category vocabulary, capture unknown facts as unresolved review items and apply only approved rules. Re-evaluate material asset/contract changes through G06 change control, not silent defaults.",
-      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering."
+      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering.",
+      "obligationContextEvidence": "docs/phase2-production/OBLIGATION-CONTEXT-2026-11-13.md"
     },
     {
       "id": "PH2-G06-009",
@@ -891,7 +895,7 @@
       "id": "PH2-G06-011",
       "title": "Deliver safe preview, impact and configuration administration journeys",
       "engineeringStatus": "PARTIAL_CANDIDATE_IMPLEMENTATION",
-      "validationStatus": "RELATED_BACKEND_MECHANISMS_TARGETED_CHECK_PASSED_OTHER_ASSERTIONS_DEFERRED",
+      "validationStatus": "RELATED_FOCUSED_CHECKS_PASSED_FULL_VALIDATION_DEFERRED",
       "independentAcceptance": "UNCHANGED",
       "files": [
         "apps/api/src/modules/configuration/configuration.service.ts",
@@ -901,7 +905,8 @@
         "apps/worker/src/queues/package-branding.ts"
       ],
       "requiredOutcome": "Build typed authorized preview/diff/version and impact endpoints, followed by accessible org/project UI for the supported MVP subset. Display real source versions, conflicts, unknown mapping and affected projects before applying. Keep V1 custom fields/approval workflow authoring/Hindi explicit instead of claiming they are implemented.",
-      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering."
+      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering.",
+      "obligationContextEvidence": "docs/phase2-production/OBLIGATION-CONTEXT-2026-11-13.md"
     },
     {
       "id": "PH2-G06-012",

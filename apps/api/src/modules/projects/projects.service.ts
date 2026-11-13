@@ -475,6 +475,7 @@ export class ProjectsService {
       const { rows: snapRows } = await client.query(
         `SELECT id FROM checklist_snapshots
           WHERE org_id = $1 AND project_id = $2 AND status = 'ACTIVE'
+            AND obligation_context_checksum=project_obligation_context_checksum(org_id,project_id)
             AND EXISTS(SELECT 1 FROM project_baseline_approvals b WHERE b.org_id=checklist_snapshots.org_id
               AND b.project_id=checklist_snapshots.project_id AND b.snapshot_id=checklist_snapshots.id AND b.checksum=checklist_snapshots.checksum)
           LIMIT 1`,

@@ -16,6 +16,7 @@ import { withTenantTransaction, consumePlanQuota, TenantActorContext } from '@tr
 import { S3StorageService } from '../documents/s3-storage.service';
 import { canonicalJson, quotaMonthIndia } from '@tradecloseout/shared';
 import { evaluateReadinessInTransaction } from './closeout-readiness';
+import {assertCurrentProjectAuthority} from '@tradecloseout/db/tenant-tx';
 
 @Injectable()
 export class HandoverService {
@@ -23,6 +24,11 @@ export class HandoverService {
     private readonly pool: Pool,
     private readonly storage: S3StorageService,
   ) {}
+
+  private async assertCurrentPackageBaseline(client:PoolClient,orgId:string,projectId:string,packageId:string){
+    const {rows}=await client.query('SELECT package_baseline_is_current($1,$2,$3) AS current',[orgId,projectId,packageId]);
+    if(rows[0]?.current!==true)throw new ConflictException('PACKAGE_BASELINE_OBSOLETE');
+  }
 
   private async reservePackageGeneration(client:PoolClient,ctx:TenantActorContext,projectId:string) {
     const {rows}=await client.query(`SELECT id,status,purged_at FROM projects
@@ -76,6 +82,7 @@ export class HandoverService {
         `SELECT s.resolved_payload_json
            FROM checklist_snapshots s
           WHERE s.org_id = $1 AND s.project_id = $2 AND s.status = 'ACTIVE'
+            AND s.obligation_context_checksum=project_obligation_context_checksum(s.org_id,s.project_id)
             AND EXISTS (
               SELECT 1 FROM requirements r
                WHERE r.org_id = s.org_id AND r.project_id = s.project_id
@@ -390,6 +397,9 @@ export class HandoverService {
 
     return withTenantTransaction(this.pool, ctx, async (client, emit) => {
       // 1. Resolve and lock submission to guarantee correct project context (TC2-011)
+      const {rows:targets}=await client.query('SELECT project_id FROM submissions WHERE org_id=$1 AND id=$2',[ctx.orgId,submissionId]);
+      if(!targets.length||projectId&&projectId!==targets[0].project_id)throw new NotFoundException('SUBMISSION_NOT_FOUND');
+      await assertCurrentProjectAuthority(client,{...ctx,projectId:targets[0].project_id,projectWrite:true});
       const subRes = await client.query(
         `SELECT s.id, s.project_id, s.status, s.package_id, hp.package_purpose
            FROM submissions s
@@ -416,6 +426,7 @@ export class HandoverService {
         });
       }
       const targetProjectId = submission.project_id || projectId;
+      await this.assertCurrentPackageBaseline(client,ctx.orgId,targetProjectId,submission.package_id);
 
       // 2. Map recipient decision to valid recipient status enum (ACCEPTED, ACCEPTED_WITH_EXCEPTIONS, REJECTED)
       const recipientStatusMap: Record<string, string> = {
@@ -902,6 +913,7 @@ export class HandoverService {
         }
         targetProjectId = ownedPackage[0].project_id;
       }
+      await assertCurrentProjectAuthority(client,{...ctx,projectId:targetProjectId,projectWrite:true});
       // The package must belong to this project, be the newest revision, and
       // have completed real artifact generation. Never submit QUEUED/FAILED
       // packages or older versions after a corrected dossier is generated.
@@ -923,6 +935,7 @@ export class HandoverService {
         });
       }
       const packageId = latest.id;
+      await this.assertCurrentPackageBaseline(client,ctx.orgId,targetProjectId,packageId);
       const submissionId = uuidv7();
       await client.query(
         `INSERT INTO submissions (id, org_id, project_id, package_id, status, submitted_by, submitted_at, cover_note)

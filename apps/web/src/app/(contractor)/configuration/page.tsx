@@ -15,7 +15,7 @@ export default function ConfigurationPage(){
  async function refreshProject(){setPreview(await post(`/api/v1/projects/${encodeURIComponent(project)}/configuration/preview`,{versionIds:selected}));setChanges(await apiFetch<Change[]>(`/api/v1/projects/${encodeURIComponent(project)}/change-requests`));}
  const projectPath='/api/v1/projects/'+encodeURIComponent(project);
  return <div className="mx-auto max-w-5xl p-6 space-y-6"><h1 className="text-2xl font-semibold">Configuration versions</h1>
- <p>Versions are immutable. Another owner or administrator must publish a draft. Active projects require a version-bound change request and independent approval before application.</p>
+ <p>Versions are immutable. Another owner or administrator must publish a draft. Active projects require a version-bound change request and independent approval before application. Preview includes the recorded project, contract and asset facts. Review unknown facts and map explicit obligations before approving; the legacy HVAC rule examples do not supply an approved mapping.</p>
  {error&&<p role="alert" className="text-red-800">{error}</p>}<p role="status">{busy?'Working…':result}</p>
  <section className="rounded border bg-white p-4 space-y-3"><h2 className="text-xl font-semibold">Install a reviewed template</h2><p>Use a published pack ID from organisation setup. An upgrade creates a new draft and preserves existing project baselines.</p>
  <label className="block">Reviewed pack ID<input value={pack} onChange={e=>setPack(e.target.value)} className="ml-2 border p-2"/></label>

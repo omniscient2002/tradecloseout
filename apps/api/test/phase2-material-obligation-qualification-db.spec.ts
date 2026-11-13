@@ -7,6 +7,7 @@ import {ConfigurationService} from '../src/modules/configuration/configuration.s
 import {ReviewsService} from '../src/modules/reviews/reviews.service';
 import {HandoverService} from '../src/modules/handover/handover.service';
 import {TenantDbService} from '../src/database/tenant-db.service';
+import {AssetsService} from '../src/modules/assets/assets.service';
 jest.setTimeout(180000);
 it('material changes invalidate exceptions and applicable review proof while preserving immutable evidence and authorship',async()=>{
  await withDisposableDatabase(async({admin,app})=>{
@@ -74,5 +75,32 @@ it('material changes invalidate exceptions and applicable review proof while pre
   expect((await admin.query('SELECT object_id FROM document_versions WHERE id=$1',[version])).rows[0].object_id).toBe(object);
   expect((await admin.query('SELECT sha256,provider_version_id FROM storage_objects WHERE id=$1',[object])).rows[0]).toEqual({sha256:sha,provider_version_id:'synthetic-object-version'});
   expect((await admin.query('SELECT count(*)::int AS n FROM requirement_evidence_qualifications WHERE requirement_id=$1',[req])).rows[0].n).toBe(2);
+  const assets=new AssetsService(app),currentSnapshot=(await admin.query("SELECT id,checksum FROM checklist_snapshots WHERE project_id=$1 AND status='ACTIVE'",[project])).rows[0];
+  const currentPackage=randomUUID();
+  await admin.query("INSERT INTO handover_packages(id,org_id,project_id,version_no,status,snapshot_id,snapshot_checksum,requested_by) VALUES($1,$2,$3,2,'DRAFT',$4,$5,$6)",[currentPackage,org,project,currentSnapshot.id,currentSnapshot.checksum,author]);
+  expect((await scoped(app,org,c=>c.query('SELECT package_baseline_is_current($1,$2,$3) AS current',[org,project,currentPackage]))).rows[0].current).toBe(true);
+  const asset=await assets.createAsset(owner,project,{tag:'SYNTHETIC-UNIT-1',name:'Synthetic unit',categoryKey:'SYNTHETIC'});
+  expect(asset).toMatchObject({instantiatedRequirements:0,baselineReviewRequired:true});
+  expect((await handover.evaluateProjectReadiness(owner,project)).configurationBlocker).toBe('BASELINE_APPLICABILITY_CONTEXT_CHANGED');
+  expect((await scoped(app,org,c=>c.query('SELECT package_baseline_is_current($1,$2,$3) AS current',[org,project,currentPackage]))).rows[0].current).toBe(false);
+  await expect(checklists.createSnapshot(owner,project)).rejects.toThrow('BASELINE_APPLICABILITY_CONTEXT_CHANGED');
+  const contextProposal=await configuration.proposeChange(owner,project,{versionIds:[next.id],baselineSnapshotId:currentSnapshot.id,reason:'Review synthetic material equipment context'});
+  expect(contextProposal.impact_json.applicabilityContext.changed).toBe(true);
+  await assets.updateAsset(owner,project,asset.assetId,{name:'Synthetic revised unit',reason:'Synthetic equipment identity amendment'});
+  await expect(checklists.decideChangeRequest(independent,contextProposal.id,{decision:'APPROVED'})).rejects.toThrow('BASELINE_PROPOSAL_CONTEXT_STALE');
+  const freshProposal=await configuration.proposeChange(owner,project,{versionIds:[next.id],baselineSnapshotId:currentSnapshot.id,reason:'Review current synthetic equipment facts'});
+  await checklists.decideChangeRequest(independent,freshProposal.id,{decision:'APPROVED'});
+  const reapplied=await checklists.applyChangeRequest(owner,project,freshProposal.id);
+  expect(reapplied.snapshotId).not.toBe(currentSnapshot.id);
+  expect((await admin.query('SELECT checksum FROM checklist_snapshots WHERE id=$1',[reapplied.snapshotId])).rows[0].checksum).toBe(currentSnapshot.checksum);
+  expect((await handover.evaluateProjectReadiness(owner,project)).readyWithoutOverride).toBe(false);
+  const requalified=await reviews.submitReview(uploader,req,{documentVersionId:version,reviewerUserId:qc});
+  await reviews.decideReview(technical,requalified.reviewId,{decision:'APPROVE',expectedRowVersion:await rowVersion()});
+  expect((await handover.evaluateProjectReadiness(owner,project)).readyWithoutOverride).toBe(true);
+  const beforeImport=(await admin.query('SELECT count(*)::int AS n FROM assets WHERE project_id=$1',[project])).rows[0].n;
+  await expect(assets.importAssets(owner,project,[{tag:'SYNTHETIC-BATCH-OK',name:'Synthetic valid first unit',categoryKey:'SYNTHETIC'},
+    {tag:'??',name:'Synthetic invalid second tag',categoryKey:'SYNTHETIC'}],false,{atomic:true})).rejects.toThrow();
+  expect((await admin.query('SELECT count(*)::int AS n FROM assets WHERE project_id=$1',[project])).rows[0].n).toBe(beforeImport);
+  expect((await handover.evaluateProjectReadiness(owner,project)).readyWithoutOverride).toBe(true);
  });
 });

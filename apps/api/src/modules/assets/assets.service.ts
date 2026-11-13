@@ -1,5 +1,5 @@
 // apps/api/src/modules/assets/assets.service.ts
-// Equipment / Assets Service with Dynamic Requirement Instantiation (API-070..076, WF-07, FR-AST-001..012, AUD-002)
+// Equipment register; obligations are applied through reviewed checklist baselines.
 
 import {
   ConflictException,
@@ -14,7 +14,6 @@ import { uuidv7 } from 'uuidv7';
 import { withTenantTransaction, TenantActorContext, DomainOutboxEvent } from '@tradecloseout/db';
 import { assertMemberResourceScope } from '@tradecloseout/db/tenant-tx';
 import { AssetTagSchema } from '@tradecloseout/shared';
-import { ResolvedRequirementSpec } from '../checklists/checklists.service';
 
 export interface CreateAssetInput {
   tag: string;
@@ -60,13 +59,14 @@ export class AssetsService {
 
   /**
    * API-071: POST /api/v1/projects/:id/assets
-   * Registers an equipment unit and automatically instantiates asset-scoped requirements
-   * from the active project checklist snapshot (WF-07, AUD-002).
+   * Registers an equipment unit. Applicability must be reviewed and applied
+   * through the canonical baseline writer before readiness can be restored.
    */
   async createAsset(
     ctx: TenantActorContext,
     projectId: string,
     input: CreateAssetInput,
+    transaction?:{client:PoolClient;emit:(event:DomainOutboxEvent)=>void},
   ) {
     const tagParse = AssetTagSchema.safeParse(input.tag);
     if (!tagParse.success) {
@@ -76,7 +76,7 @@ export class AssetsService {
       });
     }
 
-    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+    const create=async (client:PoolClient,emit:(ev:DomainOutboxEvent)=>void)=>{
       await this.lockEditableProject(client, ctx, projectId);
       const normalizedTag = tagParse.data;
 
@@ -138,15 +138,6 @@ export class AssetsService {
         );
       }
 
-      // Instantiate asset-scoped requirements from active snapshot (AUD-002 / FR-AST-005)
-      const instantiatedCount = await this.instantiateAssetRequirements(
-        client,
-        ctx,
-        projectId,
-        assetId,
-        input.categoryKey,
-      );
-
       emit({
         eventType: 'ASSET_CREATED',
         projectId,
@@ -155,7 +146,7 @@ export class AssetsService {
         afterJson: {
           tag: normalizedTag,
           categoryKey: input.categoryKey,
-          instantiatedRequirements: instantiatedCount,
+          instantiatedRequirements:0,baselineReviewRequired:true,
         },
       });
 
@@ -163,9 +154,10 @@ export class AssetsService {
         ...insertedRows[0],
         assetId,
         tag: normalizedTag,
-        instantiatedRequirements: instantiatedCount,
+        instantiatedRequirements:0,baselineReviewRequired:true,
       };
-    });
+    };
+    return transaction?create(transaction.client,transaction.emit):withTenantTransaction(this.pool,{...ctx,projectId,projectWrite:true},create);
   }
 
   /**
@@ -712,7 +704,7 @@ export class AssetsService {
     const failed: Array<{ tag: string; error: string }> = [];
 
     if (isAtomic) {
-      return withTenantTransaction(this.pool, ctx, async (client, emit) => {
+      return withTenantTransaction(this.pool, {...ctx,projectId,projectWrite:true}, async (client, emit) => {
         for (let i = 0; i < items.length; i++) {
           const item = items[i];
           const check = results[i];
@@ -729,7 +721,7 @@ export class AssetsService {
             }
           }
 
-          const asset = await this.createAsset(ctx, projectId, item);
+          const asset = await this.createAsset(ctx, projectId, item,{client,emit});
           created.push(asset);
         }
 
@@ -814,65 +806,6 @@ export class AssetsService {
       count: assets.length,
       data: assets,
     };
-  }
-
-  private async instantiateAssetRequirements(
-    client: PoolClient,
-    ctx: TenantActorContext,
-    projectId: string,
-    assetId: string,
-    categoryKey: string,
-  ): Promise<number> {
-    const { rows: snapRows } = await client.query(
-      `SELECT id, resolved_payload_json
-         FROM checklist_snapshots
-        WHERE org_id = $1 AND project_id = $2 AND status = 'ACTIVE'
-        LIMIT 1`,
-      [ctx.orgId, projectId],
-    );
-
-    if (snapRows.length === 0) return 0;
-
-    const snapshot = snapRows[0];
-    const reqDefs = (snapshot.resolved_payload_json?.requirements ?? []) as Array<any>;
-    const matchingDefs = reqDefs.filter(
-      (r) =>
-        (r.scopeType === 'ASSET_CATEGORY' && r.assetCategoryKey === categoryKey) ||
-        ((r.scope === 'A' || r.scope === 'AC') && r.assetCategoryKey === categoryKey),
-    );
-
-    const scopeKey = `asset:${assetId}`;
-    let count = 0;
-
-    for (const def of matchingDefs) {
-      const reqId = uuidv7();
-      await client.query(
-        `INSERT INTO requirements
-          (id, org_id, project_id, current_snapshot_id, requirement_key, scope_key,
-           asset_id, group_key, title, description, doc_type_key, mandatory, reviewer_role, status)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'NOT_STARTED')
-         ON CONFLICT (project_id, requirement_key, scope_key) WHERE superseded_at IS NULL
-         DO NOTHING`,
-        [
-          reqId,
-          ctx.orgId,
-          projectId,
-          snapshot.id,
-          def.key,
-          scopeKey,
-          assetId,
-          def.groupKey || 'EQUIPMENT_DOCS',
-          def.title,
-          def.description ?? null,
-          def.docTypeKey || 'DT-025',
-          def.mandatory ?? true,
-          def.reviewerRole ?? null,
-        ],
-      );
-      count += 1;
-    }
-
-    return count;
   }
 
   /**

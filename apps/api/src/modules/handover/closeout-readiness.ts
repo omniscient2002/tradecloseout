@@ -69,7 +69,7 @@ export async function evaluateReadinessInTransaction(
       );
 
       const { rows: snapshots } = await client.query(
-        `SELECT id, resolved_payload_json,
+        `SELECT id, resolved_payload_json,obligation_context_checksum=project_obligation_context_checksum(org_id,project_id) AS context_current,
           (EXISTS(SELECT 1 FROM project_baseline_approvals b WHERE b.org_id=checklist_snapshots.org_id
              AND b.project_id=checklist_snapshots.project_id AND b.snapshot_id=checklist_snapshots.id AND b.checksum=checklist_snapshots.checksum)
            OR EXISTS(SELECT 1 FROM requirement_change_requests cr WHERE cr.org_id=checklist_snapshots.org_id
@@ -82,7 +82,7 @@ export async function evaluateReadinessInTransaction(
       );
       const rawConfig = snapshots[0]?.resolved_payload_json;
       const snapshotConfig = typeof rawConfig === 'string' ? JSON.parse(rawConfig) : rawConfig;
-      const configured = snapshots[0]?.reviewed === true && Array.isArray(snapshotConfig?.requirements) &&
+      const configured = snapshots[0]?.reviewed === true && snapshots[0]?.context_current===true && Array.isArray(snapshotConfig?.requirements) &&
         snapshotConfig.requirements.length > 0 &&
         reqs.some((r: any) => r.mandatory === true);
       const missingMandatory: any[] = [];
@@ -116,7 +116,7 @@ export async function evaluateReadinessInTransaction(
 
       return {
         readyWithoutOverride: configured && missingMandatory.length === 0 && expiredMandatory.length === 0,
-        configurationBlocker: configured ? null : 'ACTIVE_CHECKLIST_WITH_MANDATORY_REQUIREMENTS_REQUIRED',
+        configurationBlocker: configured ? null : snapshots[0]&&snapshots[0].context_current!==true?'BASELINE_APPLICABILITY_CONTEXT_CHANGED':'ACTIVE_CHECKLIST_WITH_MANDATORY_REQUIREMENTS_REQUIRED',
         blockers: {
           missingMandatoryCount: missingMandatory.length,
           expiredMandatoryCount: expiredMandatory.length,
