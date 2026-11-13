@@ -22,8 +22,12 @@ export async function assertCurrentSessionEligibility(client: PoolClient, ctx: {
   guestGrantId?: string;
   projectId?: string;
   organisationWrite?: boolean;
+  readOnlyOrganisation?:boolean;
 }): Promise<void> {
-  if (!ctx.sessionId && !ctx.authGeneration) return;
+  if (!ctx.sessionId && !ctx.authGeneration) {
+    if(ctx.readOnlyOrganisation)throw new Error('AUTH_SESSION_CONTEXT_INCOMPLETE');
+    return;
+  }
   if (!ctx.sessionId || !ctx.authGeneration) {
     throw new Error('AUTH_SESSION_CONTEXT_INCOMPLETE');
   }
@@ -33,12 +37,21 @@ export async function assertCurrentSessionEligibility(client: PoolClient, ctx: {
   );
   if (account.rows[0]?.status !== 'ACTIVE') throw new Error('AUTH_ACCOUNT_INACTIVE');
 
+  if(ctx.readOnlyOrganisation&&(ctx.projectWrite||ctx.organisationWrite))throw new Error('AUTH_RETAINED_ACCESS_READ_ONLY');
   const organisation = await client.query<{status:string}>(
     `SELECT status FROM organisations WHERE id=$1 FOR ${ctx.organisationWrite ? 'UPDATE' : 'SHARE'}`, [ctx.orgId],
   );
-  if (organisation.rows[0]?.status !== 'ACTIVE') throw new Error('AUTH_ORGANISATION_INACTIVE');
+  // Recheck in a new statement AFTER the organisation lock is held. A grant
+  // revoker may have committed while this transaction waited for that lock.
+  let retained=false;
+  if(ctx.readOnlyOrganisation===true&&!ctx.guestGrantId&&ctx.actorType!=='GUEST'&&organisation.rows[0]?.status==='SUSPENDED'){
+    const {rows}=await client.query('SELECT organisation_has_retained_read_access($1,$2) AS approved',[ctx.orgId,ctx.userId]);
+    retained=rows[0]?.approved===true;
+  }
+  if (organisation.rows[0]?.status !== 'ACTIVE'&&!retained) throw new Error('AUTH_ORGANISATION_INACTIVE');
 
   const guest = ctx.actorType === 'GUEST' || !!ctx.guestGrantId;
+  let actualOrgRole:string|undefined;
   if (guest) {
     if (!ctx.guestGrantId) throw new Error('AUTH_GUEST_GRANT_INACTIVE');
     const {rows} = await client.query<{
@@ -68,13 +81,14 @@ export async function assertCurrentSessionEligibility(client: PoolClient, ctx: {
         FOR SHARE`, [ctx.orgId,ctx.userId],
     );
     if (!rows.length) throw new Error('AUTH_MEMBERSHIP_INACTIVE');
+    actualOrgRole=rows[0].role;
     if (ctx.orgRole && rows[0].role !== ctx.orgRole) {
       throw new Error('AUTH_ORG_ROLE_CHANGED');
     }
   }
 
-  const {rows:sessions} = await client.query<{guest_grant_id:string|null}>(
-    `SELECT guest_grant_id FROM sessions
+  const {rows:sessions} = await client.query<{guest_grant_id:string|null;mfa_verified:boolean;mfa_verified_at:Date|null}>(
+    `SELECT guest_grant_id,mfa_verified,mfa_verified_at FROM sessions
       WHERE id=$1 AND user_id=$2 AND active_org_id=$3 AND auth_generation=$4
         AND revoked_at IS NULL AND expires_at>now() AND absolute_expires_at>now()
       FOR SHARE`,
@@ -86,4 +100,7 @@ export async function assertCurrentSessionEligibility(client: PoolClient, ctx: {
       (!guest && actualGrant !== null)) {
     throw new Error('AUTH_SESSION_CONTEXT_CHANGED');
   }
+  if(retained&&['R-OWNER','R-ADMIN'].includes(actualOrgRole??'')&&(!sessions[0].mfa_verified||!sessions[0].mfa_verified_at||
+    sessions[0].mfa_verified_at.getTime()<Date.now()-12*3600_000))throw new Error('AUTH_RETAINED_ACCESS_MFA_REQUIRED');
+  if(ctx.readOnlyOrganisation)await client.query("SELECT set_config('app.retained_organisation_read','true',true)");
 }

@@ -1888,6 +1888,13 @@ export const projectLifecycleCommands = pgTable('project_lifecycle_commands', {
  inputHash:text('input_hash').notNull(),responseJson:jsonb('response_json').notNull(),
  createdAt:timestamp('created_at',{withTimezone:true}).notNull().defaultNow(),
 });
+
+export const organisationRetainedReadGrants=pgTable('organisation_retained_read_grants',{
+ id:uuid('id').primaryKey(),orgId:uuid('org_id').notNull(),orgRowVersion:integer('org_row_version').notNull(),
+ suspensionKind:text('suspension_kind').notNull(),evidenceRef:text('evidence_ref').notNull(),reviewerIdentity:text('reviewer_identity').notNull(),
+ createdAt:timestamp('created_at',{withTimezone:true}).notNull().defaultNow(),expiresAt:timestamp('expires_at',{withTimezone:true}).notNull(),
+ revokedAt:timestamp('revoked_at',{withTimezone:true}),revokedBy:text('revoked_by'),
+});
 export const projectBaselineApprovals = pgTable('project_baseline_approvals', {
  id:uuid('id').primaryKey(),orgId:uuid('org_id').notNull(),projectId:uuid('project_id').notNull(),snapshotId:uuid('snapshot_id').notNull(),
  checksum:text('checksum').notNull(),reviewerUserId:uuid('reviewer_user_id').notNull(),reason:text('reason').notNull(),

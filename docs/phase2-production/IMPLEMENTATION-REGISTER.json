@@ -471,7 +471,7 @@
       "id": "PH2-G03-008",
       "title": "Preserve the contracted suspended-org read/export policy safely",
       "engineeringStatus": "PARTIAL_CANDIDATE_IMPLEMENTATION",
-      "validationStatus": "FULL_VALIDATION_DEFERRED_BY_USER",
+      "validationStatus": "RELATED_FOCUSED_CHECKS_PASSED_FULL_VALIDATION_DEFERRED",
       "independentAcceptance": "UNCHANGED",
       "files": [
         "apps/api/src/modules/organisations/organisations.service.ts",
@@ -481,7 +481,8 @@
         "apps/web/src/app/(contractor)/onboarding/page.tsx"
       ],
       "requiredOutcome": "Define operation-aware access for verified suspended members: deny mutations while permitting the explicitly approved scoped reads/exports. Thread this mode through guard and transaction eligibility, audit it, and distinguish billing/policy suspension from revoked membership/account or guest authority.",
-      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering."
+      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering.",
+      "retainedReadEvidence": "docs/phase2-production/RETAINED-READS-2026-11-13.md"
     },
     {
       "id": "PH2-G03-009",

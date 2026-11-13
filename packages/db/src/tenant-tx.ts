@@ -31,6 +31,8 @@ export interface TenantActorContext {
   projectWrite?: boolean;
   /** Server-selected stronger initial lock for organisation administration. */
   organisationWrite?: boolean;
+  /** Server-selected, allowlisted retained reads during a reviewed suspension. */
+  readOnlyOrganisation?:boolean;
 }
 
 export interface DomainOutboxEvent {

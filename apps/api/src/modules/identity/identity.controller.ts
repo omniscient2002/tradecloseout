@@ -667,7 +667,7 @@ export class IdentityController {
 
         const { rows: memberships } = await client.query(
           `SELECT m.org_id, m.role FROM memberships m JOIN organisations o ON o.id = m.org_id
-            WHERE m.user_id = $1 AND m.status = 'ACTIVE' AND o.status = 'ACTIVE'
+            WHERE m.user_id = $1 AND m.status = 'ACTIVE' AND (o.status = 'ACTIVE' OR organisation_has_retained_read_access(o.id,m.user_id))
             ORDER BY m.joined_at DESC LIMIT 1 FOR SHARE OF m, o`,
           [userId],
         );
@@ -897,6 +897,7 @@ export class IdentityController {
       activeOrgId: req.auth.activeOrgId,
       active_org_id: req.auth.activeOrgId,
       activeOrg: rows[0] ?? null,
+      readOnlyOrganisation:req.auth.readOnlyOrganisation===true,
       orgRole: req.auth.orgRole,
       org_role: req.auth.orgRole,
       authGeneration: req.auth.authGeneration,
@@ -925,9 +926,10 @@ export class IdentityController {
         [req.auth.userId, req.auth.activeOrgId || '00000000-0000-0000-0000-000000000000'],
       );
       const { rows } = await client.query(
-        `SELECT o.id, o.legal_name, o.display_name, m.role
+        `SELECT o.id, o.legal_name, o.display_name, m.role,o.status,
+                (o.status='SUSPENDED') AS "readOnlyOrganisation"
            FROM memberships m
-           JOIN organisations o ON o.id = m.org_id AND o.status = 'ACTIVE'
+           JOIN organisations o ON o.id = m.org_id AND (o.status = 'ACTIVE' OR organisation_has_retained_read_access(o.id,m.user_id))
           WHERE m.user_id = $1 AND m.status = 'ACTIVE'`,
         [req.auth.userId],
       );
@@ -989,7 +991,7 @@ export class IdentityController {
       );
       const { rows: memberships } = await client.query(
         `SELECT m.id FROM memberships m
-          JOIN organisations o ON o.id = m.org_id AND o.status = 'ACTIVE'
+          JOIN organisations o ON o.id = m.org_id AND (o.status = 'ACTIVE' OR organisation_has_retained_read_access(o.id,m.user_id))
           WHERE m.org_id = $1 AND m.user_id = $2 AND m.status = 'ACTIVE'
           LIMIT 1 FOR SHARE OF m, o`,
         [body.targetOrgId, req.auth.userId],

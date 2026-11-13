@@ -12,6 +12,8 @@ import { Pool } from 'pg';
 import { Request } from 'express';
 import { recordDeniedAuthenticationEvent } from '../../modules/identity/auth-security';
 import { safeAuthenticationDeviceLabel, requestIdFor } from '../security/audit-metadata';
+import {isRetainedOrganisationOperation} from '@tradecloseout/shared';
+import {recordAuthenticationEvent} from '../../modules/identity/auth-security';
 
 export interface AuthenticatedRequest extends Request {
   auth: {
@@ -25,6 +27,7 @@ export interface AuthenticatedRequest extends Request {
     userAgent: string;
     authGeneration: string;
     mfaVerified: boolean;
+    readOnlyOrganisation?:boolean;
   };
 }
 
@@ -129,6 +132,8 @@ export class SessionCsrfGuard implements CanActivate {
               u.name AS user_name,
               u.status AS user_status,
               o.status AS org_status,
+              CASE WHEN s.guest_grant_id IS NULL AND o.status='SUSPENDED'
+                THEN organisation_has_retained_read_access(o.id,s.user_id) ELSE false END AS retained_read_approved,
               o.doc_controller_org_wide_download
          FROM sessions s
          JOIN users u ON u.id = s.user_id
@@ -285,7 +290,9 @@ export class SessionCsrfGuard implements CanActivate {
         detail: 'Sign in again or contact your organisation administrator.',
       });
     }
-    if ((membershipStatus !== 'ACTIVE' || session.org_status !== 'ACTIVE') &&
+    const readOnlyOrganisation=session.org_status==='SUSPENDED'&&session.retained_read_approved===true&&
+      membershipStatus==='ACTIVE'&&session.user_status==='ACTIVE'&&!session.guest_grant_id&&isRetainedOrganisationOperation(method,pathname);
+    if ((membershipStatus !== 'ACTIVE' || session.org_status !== 'ACTIVE') && !readOnlyOrganisation&&
         !switchingOrganisation && !emergencySessionControl) {
       throw new ForbiddenException({
         code: 'ORG_ACCESS_SUSPENDED',
@@ -375,6 +382,8 @@ export class SessionCsrfGuard implements CanActivate {
       req.params?.projectId ||
       (req.path?.startsWith('/api/v1/projects/') ? req.params?.id : undefined);
 
+    if(targetProjectId&&(typeof targetProjectId!=='string'||!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(targetProjectId)))throw new NotFoundException({code:'NOT_FOUND'});
+
     if (targetProjectId && session.user_id && session.active_org_id && !session.guest_grant_id) {
       const client = await this.pool.connect();
       try {
@@ -420,6 +429,7 @@ export class SessionCsrfGuard implements CanActivate {
       authGeneration: String(session.auth_generation),
       mfaVerified: Boolean(session.mfa_verified && session.mfa_verified_at &&
         new Date(session.mfa_verified_at).getTime() >= Date.now() - 12 * 3600_000),
+      readOnlyOrganisation,
     };
 
     req.auth = authData;
@@ -448,6 +458,7 @@ export class SessionCsrfGuard implements CanActivate {
       authGeneration: String(session.auth_generation),
       actorType: session.guest_grant_id ? 'GUEST' : 'USER',
       projectWrite: UNSAFE_METHODS.has(method),
+      readOnlyOrganisation:readOnlyOrganisation&&method==='GET',
       requestId: authData.requestId,
       orgRole,
       projectRole,
@@ -461,6 +472,10 @@ export class SessionCsrfGuard implements CanActivate {
       docControllerOrgWideDownload: session.guest_grant_id
         ? false : session.doc_controller_org_wide_download === true,
     };
+
+    if(readOnlyOrganisation)await recordAuthenticationEvent(this.pool,'ORG_RETAINED_READ','SUCCESS',{
+      userId:session.user_id,orgId:session.active_org_id,sessionId:session.session_id,reasonCode:method==='GET'?'REVIEWED_RETAINED_READ':'RETAINED_ACCESS_ASSURANCE',
+    });
 
     // Sliding expiry is earned ONLY after authentication, CSRF, current
     // generation, MFA and resource-scope checks have all succeeded. Previously,

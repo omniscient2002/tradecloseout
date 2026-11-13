@@ -8,3 +8,4 @@ export * from './business-rules';
 
 export * from './configuration-consumers';
 export * from './organisation-dates';
+export * from './retained-organisation-access';

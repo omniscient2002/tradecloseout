@@ -23,6 +23,7 @@ export interface ExecutionContext {
   authGeneration?: string;
   /** Server-selected initial project lock mode; never read from request JSON. */
   projectWrite?: boolean;
+  readOnlyOrganisation?:boolean;
 }
 
 @Injectable()

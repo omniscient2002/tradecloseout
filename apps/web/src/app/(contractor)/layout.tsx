@@ -24,6 +24,7 @@ import {
 import { api, apiFetch, setCsrfToken, watchAuthChanges } from "../../lib/api-client";
 import { setOfflineActorPartition } from "../../lib/offline-upload-queue";
 import {OrganisationDatesProvider} from '../../components/organisation-dates';
+import {OrganisationReadOnlyContext} from '../../components/organisation-access';
 
 const REAL_DECCAN_PERSONAS = [
   {
@@ -72,7 +73,7 @@ export default function ContractorLayout({ children }: { children: React.ReactNo
   const router = useRouter();
   const pathname = usePathname();
   const [user, setUser] = useState<{
-    id?: string; name: string; orgRole: string; activeOrgId: string;
+    id?: string; name: string; orgRole: string; activeOrgId: string;readOnlyOrganisation?:boolean;
     activeOrg?: { display_name?: string; legal_name?: string };
   } | null>(null);
   const [sessionConfirmed, setSessionConfirmed] = useState(false);
@@ -91,7 +92,7 @@ export default function ContractorLayout({ children }: { children: React.ReactNo
       .then((data) => {
         if (data.mfaRequired && !data.mfaVerified) {
           setOfflineActorPartition(null);
-          router.push('/mfa');
+          router.push(data.readOnlyOrganisation?'/mfa?returnTo=/projects':'/mfa');
           return;
         }
         if (!data.userId && !data.user_id) {
@@ -144,6 +145,10 @@ export default function ContractorLayout({ children }: { children: React.ReactNo
   const getNavLinks = () => {
     const role = user?.orgRole;
     if (!role) return [];
+    if(user?.readOnlyOrganisation)return [
+      {label:'Projects',href:'/projects',icon:FolderKanban},
+      ...(['R-OWNER','R-ADMIN','R-BILLING'].includes(role)?[{label:'Billing',href:'/billing',icon:CreditCard}]:[]),
+    ];
 
     if (role === "R-SITE") {
       return [
@@ -183,7 +188,7 @@ export default function ContractorLayout({ children }: { children: React.ReactNo
     ];
   };
 
-  const navLinks = [...getNavLinks(), {label:'Notifications',href:'/notifications',icon:Bell},
+  const navLinks = user?.readOnlyOrganisation?getNavLinks():[...getNavLinks(), {label:'Notifications',href:'/notifications',icon:Bell},
     {label:'Settings',href:'/settings',icon:Users},
     ...(['R-OWNER','R-ADMIN'].includes(user?.orgRole??'')?[
       {label:'Setup',href:'/onboarding',icon:ClipboardList},
@@ -358,7 +363,8 @@ export default function ContractorLayout({ children }: { children: React.ReactNo
             {logoutError}
           </div>
         )}
-        <OrganisationDatesProvider key={user?.activeOrgId}>{children}</OrganisationDatesProvider>
+        {user.readOnlyOrganisation&&<p role="status" className="m-4 rounded border border-amber-300 bg-amber-50 p-3">This organisation is suspended. Reviewed read access permits authorised project records and existing file/export downloads. Business changes and new export generation are unavailable.</p>}
+        <OrganisationReadOnlyContext.Provider value={user.readOnlyOrganisation===true}><OrganisationDatesProvider key={user?.activeOrgId}>{children}</OrganisationDatesProvider></OrganisationReadOnlyContext.Provider>
       </main>
     </div>
   );

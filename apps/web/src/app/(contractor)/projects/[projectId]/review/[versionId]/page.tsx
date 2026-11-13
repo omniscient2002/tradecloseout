@@ -1,4 +1,5 @@
 "use client";
+import {useOrganisationReadOnly} from '@/components/organisation-access';
 import {useOrganisationDate} from '@/components/organisation-dates';
 
 import React, { useEffect, useState, useCallback } from "react";
@@ -64,6 +65,7 @@ interface VersionReviewDetailDto {
 }
 
 export default function DocumentReviewWorkbenchPage() {
+  const readOnlyOrganisation=useOrganisationReadOnly();
   const formatDate=useOrganisationDate();
   const params = useParams<{ projectId: string; versionId: string }>();
   const router = useRouter();
@@ -110,7 +112,7 @@ export default function DocumentReviewWorkbenchPage() {
   } | null>(null);
 
   useEffect(() => {
-    if (tab !== 'EXTERNAL' || !projectId) return;
+    if (readOnlyOrganisation||tab !== 'EXTERNAL' || !projectId) return;
     let cancelled = false;
     setExternalOptions(null);
     apiFetch<{ authorities: Array<{ id: string; name: string }>; proofVersions: Array<{ id: string; title: string; revision_code: string }> }>(
@@ -481,7 +483,7 @@ export default function DocumentReviewWorkbenchPage() {
                 ))}
 
                 {/* Add Page Comment Form */}
-                {detail.reviewId && (
+                {!readOnlyOrganisation&&detail.reviewId && (
                   <form onSubmit={handleAddPageComment} className="pt-2 space-y-2">
                     <div className="flex gap-2">
                       <input
@@ -554,7 +556,7 @@ export default function DocumentReviewWorkbenchPage() {
            {Object.entries(detail.validityRule??{}).map(([key,value])=><p key={key}>{key}: {typeof value==='string'?value:JSON.stringify(value)}</p>)}
            {detail.requiresRequalification&&<p role="status" className="rounded bg-amber-50 p-2 text-amber-950">This obligation requires a current review. Earlier approvals remain historical.</p>}
           </section>}
-          {detail?.requirementId&&detail.fileStatus==='READY'&&['R-OWNER','R-ADMIN','R-PM','R-QC','R-SITE','R-DOC','R-SAFETY','R-PROC'].includes(currentUser?.orgRole??'')&&<section className="rounded border bg-white p-3 text-xs space-y-2"><h3 className="font-semibold">Request an assigned review</h3>
+          {!readOnlyOrganisation&&detail?.requirementId&&detail.fileStatus==='READY'&&['R-OWNER','R-ADMIN','R-PM','R-QC','R-SITE','R-DOC','R-SAFETY','R-PROC'].includes(currentUser?.orgRole??'')&&<section className="rounded border bg-white p-3 text-xs space-y-2"><h3 className="font-semibold">Request an assigned review</h3>
            <label className="block">Mapped requirement<select className="block w-full border p-2" value={requestRequirement||detail.requirementId} onChange={event=>{setRequestRequirement(event.target.value);setReviewerOptions([]);setRequestedReviewer('');}}>{(detail.linkedRequirements?.length?detail.linkedRequirements:[{id:detail.requirementId,title:detail.requirementTitle,key:detail.requirementKey??''}]).map(requirement=><option key={requirement.id} value={requirement.id}>{requirement.key} · {requirement.title}</option>)}</select></label>
            <button disabled={submitting} className="underline" onClick={()=>void loadReviewers()}>Load eligible reviewers</button>
            {reviewerOptions.length>0&&<><label className="block">Reviewer<select className="block w-full border p-2" value={requestedReviewer} onChange={event=>setRequestedReviewer(event.target.value)}><option value="">Select reviewer</option>{reviewerOptions.map(reviewer=><option key={reviewer.userId} value={reviewer.userId}>{reviewer.name} · {reviewer.role}</option>)}</select></label><button disabled={submitting||!requestedReviewer} className="rounded border p-2" onClick={()=>void requestReview()}>Request review</button></>}
@@ -589,7 +591,7 @@ export default function DocumentReviewWorkbenchPage() {
               <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
-                  disabled={submitting || !detail?.reviewId}
+                  disabled={readOnlyOrganisation || submitting || !detail?.reviewId}
                   onClick={() => handleInAppDecision("APPROVE")}
                   className="flex items-center justify-center gap-1 rounded-md bg-emerald-700 py-2 font-semibold text-white hover:bg-emerald-800 disabled:opacity-50 cursor-pointer"
                 >
@@ -598,7 +600,7 @@ export default function DocumentReviewWorkbenchPage() {
                 </button>
                 <button
                   type="button"
-                  disabled={submitting || !detail?.reviewId}
+                  disabled={readOnlyOrganisation || submitting || !detail?.reviewId}
                   onClick={() => handleInAppDecision("REQUEST_CHANGES")}
                   className="flex items-center justify-center gap-1 rounded-md bg-orange-600 py-2 font-semibold text-white hover:bg-orange-700 disabled:opacity-50 cursor-pointer"
                 >
@@ -607,7 +609,7 @@ export default function DocumentReviewWorkbenchPage() {
                 </button>
                 <button
                   type="button"
-                  disabled={submitting || !detail?.reviewId}
+                  disabled={readOnlyOrganisation || submitting || !detail?.reviewId}
                   onClick={() => handleInAppDecision("REJECT")}
                   className="flex items-center justify-center gap-1 rounded-md bg-red-600 py-2 font-semibold text-white hover:bg-red-700 disabled:opacity-50 cursor-pointer"
                 >

@@ -1,4 +1,5 @@
 "use client";
+import {useOrganisationReadOnly} from '@/components/organisation-access';
 import {useOrganisationDate} from '@/components/organisation-dates';
 
 
@@ -211,6 +212,7 @@ const TABS: { id: TabKey; label: string; icon: React.ElementType }[] = [
 /* -------------------------------------------------------------------------- */
 
 export default function ProjectWorkspacePage() {
+  const readOnlyOrganisation=useOrganisationReadOnly();
   const formatDateIst=useOrganisationDate();
   const params = useParams<{ projectId: string }>();
   const router = useRouter();
@@ -605,7 +607,7 @@ export default function ProjectWorkspacePage() {
         </div>
 
         {/* State Transition Actions */}
-        <div className="flex items-center gap-2">
+        <div hidden={readOnlyOrganisation} className="flex items-center gap-2">
           {summary?.status === "DRAFT" && (
             <button
               onClick={() => handleLifecycleTransition("activate")}
@@ -690,7 +692,7 @@ export default function ProjectWorkspacePage() {
             </button>
 
             <button
-              onClick={() => setImportModalOpen(true)}
+                aria-disabled={readOnlyOrganisation} onClick={() => {if(!readOnlyOrganisation)setImportModalOpen(true);}}
               className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-2xs transition-all cursor-pointer"
             >
               <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
@@ -698,7 +700,7 @@ export default function ProjectWorkspacePage() {
             </button>
 
             <button
-              onClick={() => setCompileModalOpen(true)}
+              disabled={readOnlyOrganisation} onClick={() => setCompileModalOpen(true)}
               className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700 shadow-xs transition-all cursor-pointer"
             >
               <PackageCheck className="h-4 w-4" />
@@ -853,7 +855,7 @@ export default function ProjectWorkspacePage() {
               </div>
 
               <div
-                onClick={() => setCompileModalOpen(true)}
+                aria-disabled={readOnlyOrganisation} onClick={() => {if(!readOnlyOrganisation)setCompileModalOpen(true);}}
                 className="rounded-xl border border-slate-200 bg-white p-5 hover:border-emerald-300 hover:shadow-xs transition-all cursor-pointer group"
               >
                 <div className="flex items-center gap-3">
@@ -1026,7 +1028,7 @@ export default function ProjectWorkspacePage() {
                     {searchQuery || statusFilter ? "No requirements match your active filter." : "No requirements in this checklist yet."}
                   </p>
                   <button
-                    onClick={() => setImportModalOpen(true)}
+                    disabled={readOnlyOrganisation} onClick={() => setImportModalOpen(true)}
                     className="inline-flex items-center gap-1.5 rounded-lg bg-[#0F2942] px-4 py-2 text-xs font-semibold text-white hover:bg-[#163A5F] cursor-pointer"
                   >
                     <FileSpreadsheet className="h-4 w-4 text-emerald-400" />
@@ -1080,6 +1082,7 @@ export default function ProjectWorkspacePage() {
                                 {/* Countersign Waiver (Owner/Admin only) */}
                                 {isPendingWaiver && isOwnerOrAdmin && (
                                   <button
+                                    disabled={readOnlyOrganisation}
                                     onClick={() => handleCountersignWaiver(req)}
                                     className="inline-flex items-center gap-1 rounded bg-purple-700 text-white px-2 py-1 text-[11px] font-bold hover:bg-purple-800 transition-all cursor-pointer shadow-2xs"
                                     title="Countersign & Officially Waive Requirement"
@@ -1096,6 +1099,7 @@ export default function ProjectWorkspacePage() {
                                   }}
                                   className="inline-flex items-center gap-1 rounded bg-blue-50 border border-blue-200 text-blue-700 px-2 py-1 text-[11px] font-semibold hover:bg-blue-100 transition-all cursor-pointer"
                                   title="Upload Technical Evidence"
+                                  disabled={readOnlyOrganisation}
                                 >
                                   <UploadCloud className="h-3 w-3" />
                                   <span>Upload</span>
@@ -1108,6 +1112,7 @@ export default function ProjectWorkspacePage() {
                                   }}
                                   className="inline-flex items-center gap-1 rounded bg-emerald-50 border border-emerald-200 text-emerald-700 px-2 py-1 text-[11px] font-semibold hover:bg-emerald-100 transition-all cursor-pointer"
                                   title="Share WhatsApp Upload Link with Supplier"
+                                  disabled={readOnlyOrganisation}
                                 >
                                   <Send className="h-3 w-3" />
                                   <span>Supplier</span>
@@ -1180,7 +1185,7 @@ export default function ProjectWorkspacePage() {
 
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setAddAssetModalOpen(true)}
+                  disabled={readOnlyOrganisation} onClick={() => setAddAssetModalOpen(true)}
                   className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 shadow-xs cursor-pointer"
                 >
                   <Plus className="h-3.5 w-3.5" />
@@ -1200,7 +1205,7 @@ export default function ProjectWorkspacePage() {
                 <div className="p-12 text-center text-xs text-slate-500 space-y-3">
                   <p>No equipment assets catalogued for this project yet.</p>
                   <button
-                    onClick={() => setAddAssetModalOpen(true)}
+                    disabled={readOnlyOrganisation} onClick={() => setAddAssetModalOpen(true)}
                     className="px-3.5 py-2 rounded-lg bg-indigo-600 text-white font-semibold cursor-pointer"
                   >
                     Add First Equipment Tag
@@ -1335,7 +1340,7 @@ export default function ProjectWorkspacePage() {
                 <p className="text-xs text-slate-500">ISO 32000-1 statutory dossiers with Bates numbering and bookmarks.</p>
               </div>
               <button
-                onClick={() => setCompileModalOpen(true)}
+                disabled={readOnlyOrganisation} onClick={() => setCompileModalOpen(true)}
                 className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-emerald-700 shadow-xs cursor-pointer"
               >
                 <PackageCheck className="h-4 w-4" />
@@ -1354,7 +1359,7 @@ export default function ProjectWorkspacePage() {
                 <div className="p-12 text-center text-xs text-slate-500">
                   <p>No handover dossiers compiled yet for this project.</p>
                   <button
-                    onClick={() => setCompileModalOpen(true)}
+                    disabled={readOnlyOrganisation} onClick={() => setCompileModalOpen(true)}
                     className="mt-3 px-3.5 py-2 rounded-lg bg-emerald-600 text-white font-semibold text-xs hover:bg-emerald-700 cursor-pointer"
                   >
                     Compile First Dossier
@@ -1408,7 +1413,7 @@ export default function ProjectWorkspacePage() {
               </div>
 
               <button
-                onClick={() => setAddDefectModalOpen(true)}
+                disabled={readOnlyOrganisation} onClick={() => setAddDefectModalOpen(true)}
                 className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 shadow-xs cursor-pointer"
               >
                 <Plus className="h-3.5 w-3.5" />

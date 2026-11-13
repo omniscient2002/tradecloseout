@@ -290,7 +290,7 @@ export class OrganisationsService {
         COALESCE(p.date_format,'DD MMM YYYY') AS "dateFormat" FROM organisations o
         JOIN memberships m ON m.org_id=o.id AND m.user_id=$2 AND m.status='ACTIVE'
         JOIN users u ON u.id=m.user_id AND u.status='ACTIVE' LEFT JOIN org_profiles p ON p.org_id=o.id
-        WHERE o.id=$1 AND o.status='ACTIVE' FOR SHARE OF o,m,u`,[ctx.orgId,ctx.userId]);
+        WHERE o.id=$1 AND (o.status='ACTIVE' OR $3::boolean AND organisation_has_retained_read_access(o.id,m.user_id)) FOR SHARE OF o,m,u`,[ctx.orgId,ctx.userId,ctx.readOnlyOrganisation===true]);
       if(!rows.length)throw new NotFoundException('ORGANISATION_NOT_FOUND');
       return rows[0];
     });

@@ -20,7 +20,7 @@ export default function MfaPage() {
 
   useEffect(() => {
     const params=new URLSearchParams(window.location.search),stepUp=params.get('stepUp')==='1';
-    const next=params.get('returnTo');if(next&&['/settings','/billing','/configuration','/onboarding'].includes(next))destination.current=next;
+    const next=params.get('returnTo');if(next&&['/settings','/billing','/configuration','/onboarding','/projects'].includes(next))destination.current=next;
     apiFetch<{ enrolled: boolean; verified: boolean }>("/api/v1/auth/mfa/status")
       .then(status => {
         if (status.verified&&!stepUp) {

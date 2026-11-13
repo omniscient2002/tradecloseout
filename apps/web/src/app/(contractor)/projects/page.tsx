@@ -1,4 +1,5 @@
 "use client";
+import {useOrganisationReadOnly} from '@/components/organisation-access';
 
 import React, { useEffect, useState, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -45,6 +46,7 @@ function formatInr(paise: string | null | undefined): string {
 }
 
 function ProjectsDirectoryContent() {
+  const readOnlyOrganisation=useOrganisationReadOnly();
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialNew = searchParams.get("new") === "1";
@@ -53,7 +55,7 @@ function ProjectsDirectoryContent() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
-  const [createModalOpen, setCreateModalOpen] = useState(initialNew);
+  const [createModalOpen, setCreateModalOpen] = useState(initialNew&&!readOnlyOrganisation);
 
   // New Project Form
   const [code, setCode] = useState("");
@@ -141,6 +143,7 @@ function ProjectsDirectoryContent() {
           </p>
         </div>
         <button
+          disabled={readOnlyOrganisation}
           onClick={() => setCreateModalOpen(true)}
           className="inline-flex items-center gap-1.5 rounded-md bg-[#0F2942] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[#163A5F] transition-colors cursor-pointer"
         >
