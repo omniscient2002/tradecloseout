@@ -10,6 +10,9 @@ interface SubscriptionDto {
   planTier?: string;
   plan_tier?: string;
   status: string;
+  interval?:string;
+  scopeProjectId?:string|null;
+  rowVersion?:number;
   effectiveState?: string;
   canConsume?: boolean;
   policyVersion?: string | null;
@@ -43,6 +46,7 @@ interface InvoiceDto {
 export default function BillingPage() {
   const [subscription, setSubscription] = useState<SubscriptionDto | null>(null);
   const [invoices, setInvoices] = useState<InvoiceDto[]>([]);
+  const [boundProject,setBoundProject]=useState(''),[canBind,setCanBind]=useState(false),[binding,setBinding]=useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -50,12 +54,13 @@ export default function BillingPage() {
     setLoading(true);
     setError(null);
     try {
-      const [subData, invData] = await Promise.all([
+      const [subData, invData,me] = await Promise.all([
         apiFetch<SubscriptionDto>("/api/v1/orgs/current/subscription"),
         apiFetch<InvoiceDto[] | { data: InvoiceDto[] }>("/api/v1/billing/invoices"),
+        apiFetch<{orgRole:string}>("/api/v1/auth/me"),
       ]);
 
-      setSubscription(subData || null);
+      setSubscription(subData || null);setCanBind(["R-OWNER","R-ADMIN"].includes(me.orgRole));
       setInvoices(Array.isArray(invData) ? invData : (invData?.data ?? []));
     } catch (err: any) {
       setSubscription(null);
@@ -144,6 +149,12 @@ export default function BillingPage() {
           {' '}Existing authorised records remain accessible.
         </p>
       )}
+      {subscription?.interval==='ONE_TIME_PROJECT'&&<section className="rounded-xl border border-slate-200 bg-white p-4 space-y-3"><h2 className="font-semibold">Project offer scope</h2>
+        {subscription.scopeProjectId?<p>This offer is bound to project {subscription.scopeProjectId}.</p>:<><p>Select the project covered by the approved offer. The binding is permanent. Fresh MFA is required.</p>
+        <a href="/mfa?stepUp=1&returnTo=%2Fbilling" className="underline">Verify MFA</a>
+        {canBind&&<><label className="block">Project ID<input value={boundProject} onChange={e=>setBoundProject(e.target.value)} className="ml-2 border p-2"/></label>
+        <button disabled={binding||!boundProject||!subscription.rowVersion} className="rounded border p-2" onClick={async()=>{setBinding(true);setError(null);try{await apiFetch('/api/v1/billing/project-scope',{method:'POST',body:JSON.stringify({projectId:boundProject,rowVersion:subscription.rowVersion})});await fetchBillingData();}catch(error){setError((error as Error).message);}finally{setBinding(false);}}}>Bind approved offer</button></>}</>}
+      </section>}
       {subscription?.usage && (
         <dl className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 sm:grid-cols-4">
           <div><dt>Active seats</dt><dd>{subscription.usage.seats}</dd></div>

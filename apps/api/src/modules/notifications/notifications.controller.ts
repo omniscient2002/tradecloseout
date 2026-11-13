@@ -26,8 +26,13 @@ export class NotificationsController {
     return this.notificationsService.listNotifications(req.userContext);
   }
 
+  @Get('notifications/operations') @RequirePermission('notification.manage')
+  operations(@Req()req:any){return this.notificationsService.operationalMetrics(req.userContext);}
+
   @Get('notifications/inbox') @RequirePermission('notification.read')
   inbox(@Req()req:any,@Query('limit')limit?:string,@Query('cursor')cursor?:string){return this.notificationsService.inbox(req.userContext,limit===undefined?25:Number(limit),cursor);}
+  @Get('notifications/:id/attempts') @RequirePermission('notification.manage')
+  attempts(@Req()req:any,@Param('id')id:string){return this.notificationsService.attemptHistory(req.userContext,id);}
   @Post('notifications/:id/read') @RequirePermission('notification.read')
   read(@Req()req:any,@Param('id')id:string){return this.notificationsService.markRead(req.userContext,id);}
   @Get('notification-preferences') @RequirePermission('notification.read')

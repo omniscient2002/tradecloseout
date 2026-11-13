@@ -26,6 +26,13 @@ export class ProjectOfferController{
    const {rows}=await client.query(`SELECT s.*,p.status AS policy_status,p.one_time_project_model FROM subscriptions s
     JOIN billing_policy_versions p ON p.id=s.policy_version_id WHERE s.org_id=$1 FOR UPDATE OF s`,[ctx.orgId]);const sub=rows[0];
    if(!sub||sub.interval_snapshot!=='ONE_TIME_PROJECT'||sub.policy_status!=='APPROVED'||sub.one_time_project_model!=='ORG_TEAM_AND_ONE_PROJECT')throw new ConflictException('PROJECT_OFFER_POLICY_UNAPPROVED');
+   const {rows:policies}=await client.query('SELECT * FROM lock_current_billing_policy($1::uuid)',[sub.policy_version_id]);
+   if(policies[0]?.policy_status!=='APPROVED')throw new ConflictException('PROJECT_OFFER_POLICY_UNAPPROVED');
+   if(sub.project_id===dto.projectId&&sub.row_version===Number(dto.rowVersion)+1)
+    return {subscriptionId:sub.id,scopeProjectId:sub.project_id,rowVersion:sub.row_version};
+   const start=new Date(sub.current_period_start).getTime(),end=new Date(sub.current_period_end).getTime();
+   if(!['ACTIVE','TRIAL'].includes(sub.status)||!Number.isFinite(start)||!Number.isFinite(end)||start>Date.now()||end<=Date.now()||sub.cancel_at&&new Date(sub.cancel_at).getTime()<=Date.now())
+    throw new ConflictException('PROJECT_OFFER_NOT_CURRENT');
    if(sub.row_version!==dto.rowVersion||sub.project_id)throw new ConflictException('PROJECT_OFFER_VERSION_OR_SCOPE_CONFLICT');
    await client.query('UPDATE subscriptions SET project_id=$2,row_version=row_version+1,updated_at=now() WHERE org_id=$1',[ctx.orgId,dto.projectId]);
    emit({eventType:'PROJECT_OFFER_BOUND',projectId:dto.projectId as string,entityType:'SUBSCRIPTION',entityId:sub.id,afterJson:{projectId:dto.projectId}});

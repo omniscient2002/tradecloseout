@@ -1,3 +1,4 @@
+import {projectBusinessEventNotifications} from './business-notifications';
 import { Pool, PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { OUTBOX_EVENT_REGISTRY } from './event-registry';
@@ -187,6 +188,7 @@ export async function dispatchDueOutbox(
     for (const item of batch) {
       try {
         await dispatchClaimedOutboxEvent(item, enqueue);
+        await projectBusinessEventNotifications(pool,item);
         if (await acknowledgeOutboxClaim(pool, item)) result.acknowledged++;
         else result.failed++; // Ack loss requires outcome reconciliation.
       } catch (error) {

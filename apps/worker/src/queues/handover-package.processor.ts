@@ -369,6 +369,8 @@ async function compilePackageAttempt(
         [orgId, packageMeta.project_id, packageId, artifactId, actualOutputSha, owner],
       );
       if (updated.rowCount !== 1) throw new Error('PACKAGE_READY_COMPARE_AND_SET_FAILED');
+      await persistClient.query(`INSERT INTO outbox_events(id,org_id,project_id,event_type,payload_json) VALUES($1,$2,$3,'HANDOVER_PACKAGE_READY',$4)`,
+        [uuidv7(),orgId,packageMeta.project_id,JSON.stringify({entityType:'HANDOVER_PACKAGE',entityId:packageId,packageId})]);
       await persistClient.query(
         `INSERT INTO audit_events
           (id, org_id, project_id, actor_type, actor_user_id, action, entity_type, entity_id,

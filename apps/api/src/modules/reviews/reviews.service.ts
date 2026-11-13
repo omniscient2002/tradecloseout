@@ -141,6 +141,9 @@ export class ReviewsService {
         [ctx.orgId, requirementId],
       );
 
+      await client.query(`INSERT INTO outbox_events(id,org_id,project_id,event_type,payload_json) VALUES($1,$2,$3,'DOCUMENT_SUBMITTED_FOR_REVIEW',$4)`,
+        [uuidv7(),ctx.orgId,req.project_id,JSON.stringify({entityType:'DOCUMENT_VERSION',entityId:version.id,documentVersionId:version.id})]);
+
       return {
         reviewId,
         requirementId,
@@ -848,6 +851,8 @@ export class ReviewsService {
         ],
       );
 
+      await client.query(`INSERT INTO outbox_events(id,org_id,project_id,event_type,payload_json) VALUES($1,$2,$3,'DOCUMENT_REVIEW_DECIDED',$4)`,
+        [uuidv7(),ctx.orgId,version.project_id,JSON.stringify({entityType:'DOCUMENT_VERSION',entityId:version.id,documentVersionId:version.id})]);
       return { status: 'OK', decision: dto.decision, versionId: version.id };
     };
 

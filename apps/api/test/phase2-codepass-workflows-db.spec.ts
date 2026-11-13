@@ -99,6 +99,23 @@ describe('Phase 2 implementation workflows using restricted PostgreSQL',()=>{
    expect((await db.admin.query('SELECT count(*)::int AS n FROM notification_delivery_receipts WHERE notification_id=$1',[notice.notification.id])).rows[0].n).toBe(1);
   }finally{if(before===undefined)delete process.env.NOTIFICATION_DELIVERY_CALLBACK_KEY;else process.env.NOTIFICATION_DELIVERY_CALLBACK_KEY=before;}
  });
+
+ test('signed callback can settle a real recorded send attempt whose gateway acknowledgement was lost',async()=>{
+  const service=new NotificationPublicController(notifications,new TenantDbService(db.app));
+  const notice=await notifications.createNotification({...owner,actorType:'SYSTEM'},{channel:'EMAIL',eventKey:'REQUIREMENT_CHANGED',dedupKey:randomUUID(),payload:{}});
+  const attempt=randomUUID();await db.admin.query(`INSERT INTO notification_delivery_attempts(id,org_id,notification_id,attempt_no,claim_token,input_hash,status)
+    VALUES($1,$2,$3,1,$4,$5,'SENDING')`,[attempt,org,notice.notification.id,randomUUID(),'a'.repeat(64)]);
+  const before=process.env.NOTIFICATION_DELIVERY_CALLBACK_KEY,key='synthetic-callback-key-for-lost-acceptance-only';process.env.NOTIFICATION_DELIVERY_CALLBACK_KEY=key;
+  const signed=(value:unknown)=>{const rawBody=Buffer.from(JSON.stringify(value)),timestamp=String(Math.floor(Date.now()/1000));return {rawBody,headers:{'x-notification-timestamp':timestamp,'x-notification-signature':createHmac('sha256',key).update(timestamp+'.').update(rawBody).digest('hex')}};};
+  const value={eventId:randomUUID(),orgId:org,notificationId:notice.notification.id,messageId:'synthetic-lost-ack',sequence:1,status:'DELIVERED',deliveryAttemptId:attempt};
+  try{
+   await expect(service.receipt(signed({...value,deliveryAttemptId:randomUUID()}))).rejects.toThrow('NOTIFICATION_RECEIPT_UNCORRELATED');
+   expect(await service.receipt(signed(value))).toEqual({recorded:true});
+   expect((await db.admin.query('SELECT status FROM notification_delivery_attempts WHERE id=$1',[attempt])).rows[0].status).toBe('DELIVERED');
+   expect((await db.admin.query('SELECT gateway_state FROM notifications WHERE id=$1',[notice.notification.id])).rows[0].gateway_state).toBe('DELIVERED');
+  }finally{if(before===undefined)delete process.env.NOTIFICATION_DELIVERY_CALLBACK_KEY;else process.env.NOTIFICATION_DELIVERY_CALLBACK_KEY=before;}
+ });
+
  test('role changes remove old project grants and return only participant ownership intents',async()=>{
   const service=new OrganisationsService(db.app);const user=randomUUID();
   await db.admin.query("INSERT INTO users(id,name,status) VALUES($1,'Synthetic role transition','ACTIVE')",[user]);

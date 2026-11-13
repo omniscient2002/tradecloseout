@@ -318,6 +318,27 @@ export class NotificationsService {
       return {unsubscribed:true};
     });
   }
+  async attemptHistory(ctx:ExecutionContext,id:string){
+    requireProjectCommandId(id,'NOTIFICATION_ID_INVALID');return this.db.withTenantContext(ctx,async client=>{
+      const wide=await this.inboxAuthority(client,ctx);if(!wide)throw new ForbiddenException('NOTIFICATION_OPERATIONS_AUTHORITY_REQUIRED');
+      const {rows:notice}=await client.query('SELECT id FROM notifications WHERE org_id=$1 AND id=$2',[ctx.orgId,id]);if(!notice.length)throw new NotFoundException('NOTIFICATION_NOT_FOUND');
+      return {items:(await client.query(`SELECT id,attempt_no,status,provider_message_id,created_at,settled_at
+        FROM notification_delivery_attempts WHERE org_id=$1 AND notification_id=$2 ORDER BY attempt_no DESC LIMIT 100`,[ctx.orgId,id])).rows};
+    });
+  }
+
+  async operationalMetrics(ctx:ExecutionContext){return this.db.withTenantContext(ctx,async client=>{
+    await this.inboxAuthority(client,ctx);
+    const {rows:members}=await client.query("SELECT role FROM memberships WHERE org_id=$1 AND user_id=$2 AND status='ACTIVE' FOR SHARE",[ctx.orgId,ctx.userId]);
+    if(!['R-OWNER','R-ADMIN'].includes(members[0]?.role))throw new ForbiddenException('NOTIFICATION_OPERATIONS_AUTHORITY_REQUIRED');
+    const {rows}=await client.query(`SELECT channel,gateway_state,status,count(*)::int AS count,
+      EXTRACT(EPOCH FROM (now()-min(created_at)))::bigint::text AS "oldestAgeSeconds",
+      count(*) FILTER(WHERE dead_lettered_at IS NOT NULL)::int AS "deadLetters",
+      count(*) FILTER(WHERE gateway_state='UNCERTAIN')::int AS uncertain
+      FROM notifications WHERE org_id=$1 GROUP BY channel,gateway_state,status ORDER BY channel,gateway_state,status`,[ctx.orgId]);
+    return {items:rows,deliveryAcceptanceIsNotRecipientDelivery:true};
+  });}
+
   async redrive(ctx:ExecutionContext,id:string,reason:unknown){
     requireProjectCommandId(id,'NOTIFICATION_ID_INVALID');
     if(typeof reason!=='string'||reason.trim().length<5||reason.length>500)throw new UnprocessableEntityException('REDRIVE_REASON_REQUIRED');

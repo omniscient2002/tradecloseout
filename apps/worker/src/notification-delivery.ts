@@ -6,6 +6,7 @@ export interface QueuedNotification {
   payload_json: unknown;
   recipient_user_id?: string;
   recipient_party_id?: string;
+  delivery_attempt_id?:string;
 }
 
 /**
@@ -80,6 +81,7 @@ export async function deliverNotification(notification: QueuedNotification,onAcc
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
       'Idempotency-Key': notification.id,
+      ...(notification.delivery_attempt_id?{'X-Delivery-Attempt':notification.delivery_attempt_id}:{}),
     },
     body: JSON.stringify({
       id: notification.id,
@@ -116,4 +118,27 @@ export async function deliverNotification(notification: QueuedNotification,onAcc
     await onAccepted(messageId);
   }
   return accepted;
+}
+
+export type NotificationGatewayOutcome={notificationId:string;status:'NOT_FOUND'|'ACCEPTED'|'DELIVERED'|'BOUNCED'|'FAILED';sequence:number;messageId?:string};
+export function hasConfiguredNotificationStatusGateway():boolean{
+ if(!hasConfiguredNotificationGateway()||!process.env.NOTIFICATION_STATUS_URL)return false;
+ try{const url=new URL(process.env.NOTIFICATION_STATUS_URL),send=new URL(process.env.NOTIFICATION_DELIVERY_URL!);
+  return url.origin===send.origin&&!url.username&&!url.password&&!url.hash&&['https:','http:'].includes(url.protocol);
+ }catch{return false;}
+}
+/** An authoritative lookup resolves ambiguity; absence of this contract never authorizes a resend. */
+export async function lookupNotificationGatewayOutcome(orgId:string,notificationId:string):Promise<NotificationGatewayOutcome|null>{
+ if(!hasConfiguredNotificationStatusGateway())return null;
+ const response=await fetch(process.env.NOTIFICATION_STATUS_URL!,{method:'POST',redirect:'error',headers:{'Content-Type':'application/json',Authorization:`Bearer ${process.env.NOTIFICATION_DELIVERY_TOKEN}`},
+  body:JSON.stringify({orgId,notificationId}),signal:AbortSignal.timeout(5000)});
+ if(!response.ok||!response.headers.get('content-type')?.toLowerCase().includes('application/json')||Number(response.headers.get('content-length')||0)>4096||!response.body)return null;
+ const reader=response.body.getReader();const chunks:Uint8Array[]=[];let size=0;
+ try{while(true){const result=await reader.read();if(result.done)break;size+=result.value.length;if(size>4096)return null;chunks.push(result.value);}}
+ finally{await reader.cancel().catch(()=>{});}
+ let value:any;try{value=JSON.parse(Buffer.concat(chunks).toString());}catch{return null;}
+ if(!value||typeof value!=='object'||Array.isArray(value)||value.notificationId!==notificationId||
+  !['NOT_FOUND','ACCEPTED','DELIVERED','BOUNCED','FAILED'].includes(value.status)||!Number.isSafeInteger(value.sequence)||value.sequence<1||
+  value.status!=='NOT_FOUND'&&(typeof value.messageId!=='string'||!/^[A-Za-z0-9._:-]{1,128}$/.test(value.messageId)))return null;
+ return {notificationId,status:value.status,sequence:value.sequence,...(value.status==='NOT_FOUND'?{}:{messageId:value.messageId})};
 }

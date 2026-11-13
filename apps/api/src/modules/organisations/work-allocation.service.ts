@@ -37,8 +37,35 @@ export class WorkAllocationService{
   }
   return result;
  }
+ private async candidates(client:PoolClient,org:string,target:string,item:any){
+  if(item.blockedReason)return [];
+  const {rows:members}=await client.query(`SELECT m.user_id,m.role,u.name,pm.role AS project_role,pm.scope_json FROM memberships m
+   JOIN users u ON u.id=m.user_id AND u.status='ACTIVE' LEFT JOIN project_members pm
+   ON pm.org_id=m.org_id AND pm.user_id=m.user_id AND pm.project_id=$2 AND pm.status='ACTIVE'
+   WHERE m.org_id=$1 AND m.status='ACTIVE' AND m.user_id<>$3 AND (m.role IN('R-OWNER','R-ADMIN') OR pm.id IS NOT NULL) ORDER BY m.user_id`,[org,item.project_id,target]);
+  let qualifications:any[]=[];
+  if(item.kind==='REVIEW'){
+   const {rows:review}=await client.query('SELECT method,reviewer_subject_type,document_version_id FROM reviews WHERE org_id=$1 AND project_id=$2 AND id=$3',[org,item.project_id,item.id]);
+   if(review[0]?.method!=='IN_APP'||review[0]?.reviewer_subject_type!=='USER'){item.blockedReason='EXTERNAL_REVIEW_AUTHORITY_REQUIRES_REVERIFICATION';return [];}
+   qualifications=(await client.query(`SELECT dv.uploaded_by,r.reviewer_role FROM document_versions dv
+    JOIN document_requirements dr ON dr.org_id=dv.org_id AND dr.project_id=dv.project_id AND dr.document_id=dv.document_id
+    JOIN requirements r ON r.org_id=dr.org_id AND r.project_id=dr.project_id AND r.id=dr.requirement_id AND r.superseded_at IS NULL
+    WHERE dv.org_id=$1 AND dv.project_id=$2 AND dv.id=$3`,[org,item.project_id,review[0].document_version_id])).rows;
+   if(!qualifications.length){item.blockedReason='REVIEW_QUALIFICATION_MAPPING_REQUIRED';return [];}
+  }
+  return members.filter(member=>{
+   if(!hasPermission({orgRole:member.role,projectRole:member.project_role},WORK[item.kind as Kind].permission as Permission).allowed)return false;
+   if(!['R-OWNER','R-ADMIN'].includes(member.role)){
+    const scope=member.scope_json??{};try{assertValidMemberProjectScope(scope);}catch{return false;}
+    if(scope.readOnly||scope.mode==='READ_ONLY'||Object.keys(scope).some(k=>!['readOnly','mode'].includes(k)))return false;
+   }
+   return !qualifications.some(q=>q.uploaded_by===member.user_id||![member.role,member.project_role].includes(q.reviewer_role));
+  }).map(member=>({userId:member.user_id,name:member.name,role:member.role}));
+ }
  async manifest(ctx:TenantActorContext,target:string){requireProjectCommandId(target,'INVALID_MEMBER_ID');return withTenantTransaction(this.pool,ctx,async client=>{
-  await this.authority(client,ctx,target);return {targetUserId:target,items:await this.manifestRows(client,ctx.orgId,target),immutableAuthorshipTransferred:false};
+  await this.authority(client,ctx,target);const items=await this.manifestRows(client,ctx.orgId,target);
+  for(const item of items){item.eligibleReplacements=await this.candidates(client,ctx.orgId,target,item);if(!item.blockedReason&&!item.eligibleReplacements.length)item.blockedReason='NO_CURRENTLY_QUALIFIED_REPLACEMENT';}
+  return {targetUserId:target,items,immutableAuthorshipTransferred:false};
  });}
  async allocate(ctx:TenantActorContext,value:unknown){
   const dto=projectCommandRecord(value,['targetUserId','requestKey','reason','allocations'],'INVALID_WORK_ALLOCATION');

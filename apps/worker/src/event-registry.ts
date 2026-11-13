@@ -102,6 +102,10 @@ export const OUTBOX_EVENT_REGISTRY: Record<string, OutboxEventRegistration> = {
   PROCUREMENT_ORDER_ISSUED: { type: 'PROCUREMENT_ORDER_ISSUED', category: 'INFORMATIONAL', version: 1, description: 'Purchase order and explicit supplier obligations committed' },
   SUPPLIER_UPLOAD_LINK_CREATED: { type: 'SUPPLIER_UPLOAD_LINK_CREATED', category: 'INFORMATIONAL', version: 1, description: 'Supplier magic link issued' },
 
+  OWNERSHIP_TRANSFER_ACCEPTED:{type:'OWNERSHIP_TRANSFER_ACCEPTED',category:'INFORMATIONAL',version:1,description:'Two-party ownership transition committed'},
+  OWNERSHIP_TRANSFER_REQUESTED:{type:'OWNERSHIP_TRANSFER_REQUESTED',category:'INFORMATIONAL',version:1,description:'Recipient must independently confirm ownership intent'},
+  OWNERSHIP_TRANSFER_CANCELLED:{type:'OWNERSHIP_TRANSFER_CANCELLED',category:'INFORMATIONAL',version:1,description:'Ownership intent cancelled by a participant'},
+  HANDOVER_PACKAGE_READY:{type:'HANDOVER_PACKAGE_READY',category:'INFORMATIONAL',version:1,description:'Verified handover package output persisted'},
   // Organisation & membership events
   ORG_PROFILE_UPDATED: { type: 'ORG_PROFILE_UPDATED', category: 'INFORMATIONAL', version: 1, description: 'Tenant organisation profile updated' },
   ORG_OWNERSHIP_TRANSFERRED: { type: 'ORG_OWNERSHIP_TRANSFERRED', category: 'INFORMATIONAL', version: 1, description: 'Primary tenant ownership transferred' },

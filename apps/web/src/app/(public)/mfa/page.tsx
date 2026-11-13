@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch, setCsrfToken } from "../../../lib/api-client";
 
@@ -10,6 +10,7 @@ type EnrollResponse = SessionResponse & { recoveryCodes: string[] };
 
 export default function MfaPage() {
   const router = useRouter();
+  const destination=useRef("/dashboard");
   const [phase, setPhase] = useState<Phase>("loading");
   const [setupKey, setSetupKey] = useState("");
   const [code, setCode] = useState("");
@@ -18,10 +19,12 @@ export default function MfaPage() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
+    const params=new URLSearchParams(window.location.search),stepUp=params.get('stepUp')==='1';
+    const next=params.get('returnTo');if(next&&['/settings','/billing','/configuration','/onboarding'].includes(next))destination.current=next;
     apiFetch<{ enrolled: boolean; verified: boolean }>("/api/v1/auth/mfa/status")
       .then(status => {
-        if (status.verified) {
-          router.replace("/dashboard");
+        if (status.verified&&!stepUp) {
+          router.replace(destination.current);
           return;
         }
         setPhase(status.enrolled ? "verify" : "enroll");
@@ -42,7 +45,7 @@ export default function MfaPage() {
   const complete = (session: SessionResponse) => {
     if (!session.csrfToken || !session.authGeneration) throw new Error("Invalid MFA session response");
     setCsrfToken(session.csrfToken, session.authGeneration);
-    router.replace("/dashboard");
+    router.replace(destination.current);
     router.refresh();
   };
 
@@ -132,7 +135,7 @@ export default function MfaPage() {
               {recoveryCodes.map(c => <code key={c} className="bg-slate-800 p-2 text-xs break-all">{c}</code>)}
             </div>
             <button className="bg-blue-600 rounded-md px-4 py-2"
-              onClick={() => { setRecoveryCodes([]); setSetupKey(""); setPhase("complete"); router.replace("/dashboard"); }}>
+              onClick={() => { setRecoveryCodes([]); setSetupKey(""); setPhase("complete"); router.replace(destination.current); }}>
               I have saved the codes securely
             </button>
           </div>

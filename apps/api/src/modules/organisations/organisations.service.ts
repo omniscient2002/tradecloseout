@@ -30,6 +30,7 @@ export interface OffboardingGapReport {
   pendingReviewsCount: number;
   draftPackagesCount: number;
   assignedDefectsCount?: number;
+  pendingSubmissionsCount?:number;
   byProject: Array<{
     projectId: string;
     projectCode: string;
@@ -37,6 +38,7 @@ export interface OffboardingGapReport {
     pendingReviews: number;
     draftPackages?: number;
     assignedDefects?: number;
+    pendingSubmissions?:number;
     requiredReplacementRoles: string[];
   }>;
 }
@@ -659,7 +661,7 @@ export class OrganisationsService {
 
       if(targetRoles[0].role!==dto.role){
         const gaps=await this.computeMemberGapReport(client,orgId,targetUserId);
-        if(gaps.openRequirementsCount||gaps.pendingReviewsCount||gaps.draftPackagesCount||gaps.assignedDefectsCount)
+        if(gaps.openRequirementsCount||gaps.pendingReviewsCount||gaps.draftPackagesCount||gaps.assignedDefectsCount||gaps.pendingSubmissionsCount)
           throw new ConflictException({code:'ROLE_CHANGE_REQUIRES_RESPONSIBILITY_REVIEW',detail:'Allocate outstanding responsibilities before changing this role.'});
         const {rows:teams}=await client.query(`SELECT p.id,p.status FROM projects p JOIN project_members pm
           ON pm.org_id=p.org_id AND pm.project_id=p.id WHERE p.org_id=$1 AND pm.user_id=$2 AND pm.status='ACTIVE'
@@ -1046,6 +1048,10 @@ export class OrganisationsService {
       const {rows:actor}=await client.query(`SELECT m.role FROM memberships m JOIN users u ON u.id=m.user_id AND u.status='ACTIVE'
         WHERE m.org_id=$1 AND m.user_id=$2 AND m.status='ACTIVE' FOR SHARE OF m,u`,[ctx.orgId,ctx.userId]);
       if(ctx.guestGrantId||!['R-OWNER','R-ADMIN'].includes(actor[0]?.role))throw new ForbiddenException('MEMBERSHIP_REACTIVATION_AUTHORITY_REQUIRED');
+      const {rows:assurance}=await client.query(`SELECT id FROM sessions WHERE id=$1 AND user_id=$2 AND active_org_id=$3 AND auth_generation=$4
+        AND revoked_at IS NULL AND expires_at>now() AND absolute_expires_at>now() AND guest_grant_id IS NULL
+        AND mfa_verified=true AND mfa_verified_at<=now() AND mfa_verified_at>now()-interval '5 minutes' FOR SHARE`,[ctx.sessionId,ctx.userId,ctx.orgId,ctx.authGeneration]);
+      if(!assurance.length)throw new ForbiddenException('FRESH_MFA_REQUIRED');
       const {rows}=await client.query(`SELECT m.* FROM memberships m JOIN users u ON u.id=m.user_id AND u.status='ACTIVE'
         WHERE m.org_id=$1 AND m.user_id=$2 FOR UPDATE OF m FOR SHARE OF u`,[ctx.orgId,userId]);
       const target=rows[0];if(!target||target.status!=='SUSPENDED')throw new ConflictException('SUSPENDED_MEMBERSHIP_REQUIRED');
@@ -1173,6 +1179,10 @@ export class OrganisationsService {
       [orgId, targetUserId],
     );
 
+    const {rows:submissionRows}=await client.query(`SELECT p.id AS project_id,p.code AS project_code,count(s.id)::int AS pending_submissions
+      FROM submissions s JOIN projects p ON p.org_id=s.org_id AND p.id=s.project_id WHERE s.org_id=$1 AND s.responsible_user_id=$2
+       AND s.status IN('DRAFT','SENT','ACKNOWLEDGED','PARTIALLY_ACCEPTED','SUBMITTED') GROUP BY p.id,p.code`,[orgId,targetUserId]);
+
     const projectMap = new Map<
       string,
       {
@@ -1182,6 +1192,7 @@ export class OrganisationsService {
         pendingReviews: number;
         draftPackages: number;
         assignedDefects: number;
+        pendingSubmissions?:number;
         requiredReplacementRoles: string[];
       }
     >();
@@ -1250,9 +1261,18 @@ export class OrganisationsService {
       projectMap.set(df.project_id, existing);
     }
 
+    let pendingSubmissionsCount=0;
+    for(const submission of submissionRows){
+      pendingSubmissionsCount+=submission.pending_submissions;
+      const project=projectMap.get(submission.project_id)??{projectId:submission.project_id,projectCode:submission.project_code,
+        openRequirements:0,pendingReviews:0,draftPackages:0,assignedDefects:0,pendingSubmissions:0,requiredReplacementRoles:[]};
+      project.pendingSubmissions=submission.pending_submissions;projectMap.set(submission.project_id,project);
+    }
+
     return {
       targetUserId,
       openRequirementsCount: totalReqs,
+      pendingSubmissionsCount,
       pendingReviewsCount: totalRevs,
       draftPackagesCount: totalDraftPkgs,
       assignedDefectsCount: totalDefects,

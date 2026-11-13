@@ -13,7 +13,7 @@ async function recipients(client:PoolClient,org:string,project:string,assignee?:
 /** Reviewed snapshot policy only; no inferred due dates or administrative warranty events. */
 export async function enqueueConfiguredReminders(pool:Pool,now=new Date()):Promise<number>{
  const day=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(now);
- const {rows:orgs}=await pool.query("SELECT id FROM organisations WHERE status='ACTIVE' ORDER BY id");let enqueued=0;
+ const {rows:orgs}=await pool.query("SELECT id FROM organisations WHERE status='ACTIVE' ORDER BY id");let enqueued=0,failures=0;
  for(const org of orgs){const client=await pool.connect();let destroy=false;try{
   await client.query('BEGIN');await client.query("SET LOCAL lock_timeout='5s'");await client.query("SET LOCAL statement_timeout='30s'");
   await client.query("SELECT set_config('app.current_org',$1,true),set_config('app.current_org_id',$1,true)",[org.id]);
@@ -43,6 +43,7 @@ export async function enqueueConfiguredReminders(pool:Pool,now=new Date()):Promi
    }
   }
   await client.query('COMMIT');
- }catch(error){try{await client.query('ROLLBACK');}catch{destroy=true;}throw error;}finally{client.release(destroy);}}
+ }catch(error){try{await client.query('ROLLBACK');}catch{destroy=true;}failures++;}finally{client.release(destroy);}}
+ if(failures)throw new Error('CONFIGURED_REMINDERS_INCOMPLETE');
  return enqueued;
 }

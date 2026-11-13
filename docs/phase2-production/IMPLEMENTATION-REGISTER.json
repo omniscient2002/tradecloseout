@@ -25,7 +25,7 @@
       "id": "PH2-G20-002",
       "title": "Bind notification reads and writes to current project and resource visibility",
       "engineeringStatus": "PARTIAL_CANDIDATE_IMPLEMENTATION",
-      "validationStatus": "FULL_VALIDATION_DEFERRED_BY_USER",
+      "validationStatus": "RELATED_FOCUSED_CHECKS_PASSED_FULL_VALIDATION_DEFERRED",
       "independentAcceptance": "UNCHANGED",
       "files": [
         "apps/api/src/modules/notifications/notifications.service.ts",
@@ -35,13 +35,14 @@
         "apps/worker/src/configured-reminders.ts"
       ],
       "requiredOutcome": "Authorize the body project/resource and intended recipient explicitly, and revalidate current membership/scope in the transaction. Filter broadcasts and existing personal notifications after access changes. Define a safe digest DTO and financial visibility capability; do not rely on a global document.read grant for all notification categories.",
-      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering."
+      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering.",
+      "continuationEvidence": "RESUME-IMPLEMENTATION-2026-11-13.md: related code and fixture checks; whole original outcome and independent acceptance remain unverified"
     },
     {
       "id": "PH2-G20-003",
       "title": "Separate gateway acceptance from delivery and reconcile uncertain outcomes",
       "engineeringStatus": "PARTIAL_CANDIDATE_IMPLEMENTATION",
-      "validationStatus": "FULL_VALIDATION_DEFERRED_BY_USER",
+      "validationStatus": "RELATED_FOCUSED_CHECKS_PASSED_FULL_VALIDATION_DEFERRED",
       "independentAcceptance": "UNCHANGED",
       "files": [
         "apps/api/src/modules/notifications/notifications.service.ts",
@@ -51,13 +52,14 @@
         "apps/worker/src/configured-reminders.ts"
       ],
       "requiredOutcome": "Persist claim/attempt/acceptance/delivery/failure states with correlated provider IDs and a reviewed channel contract. Reconcile timeout-after-acceptance and crash-after-send safely; use provider deduplication on the stable message identity. Enforce HTTPS for real adapters, reject redirects, bound response size and validate acknowledgements. Keep secrets out of receipts.",
-      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering."
+      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering.",
+      "continuationEvidence": "RESUME-IMPLEMENTATION-2026-11-13.md: related code and fixture checks; whole original outcome and independent acceptance remain unverified"
     },
     {
       "id": "PH2-G20-004",
       "title": "Add bounded retries, fair claiming and dead-letter recovery to business notifications",
       "engineeringStatus": "PARTIAL_CANDIDATE_IMPLEMENTATION",
-      "validationStatus": "FULL_VALIDATION_DEFERRED_BY_USER",
+      "validationStatus": "RELATED_FOCUSED_CHECKS_PASSED_FULL_VALIDATION_DEFERRED",
       "independentAcceptance": "UNCHANGED",
       "files": [
         "apps/api/src/modules/notifications/notifications.service.ts",
@@ -67,7 +69,8 @@
         "apps/worker/src/configured-reminders.ts"
       ],
       "requiredOutcome": "Claim a bounded batch in a short transaction, send outside locks, and settle each leased attempt with fencing. Persist exponential backoff/jitter, permanent versus transient errors, retry ceilings, dead letters and audited redrive. Provide per-tenant/channel fairness, bounded concurrency, rate limits and queue-age/failure metrics.",
-      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering."
+      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering.",
+      "continuationEvidence": "RESUME-IMPLEMENTATION-2026-11-13.md: related code and fixture checks; whole original outcome and independent acceptance remain unverified"
     },
     {
       "id": "PH2-G20-005",
@@ -105,7 +108,7 @@
       "id": "PH2-G20-007",
       "title": "Persist and consistently apply urgency, quiet hours and expiry",
       "engineeringStatus": "PARTIAL_CANDIDATE_IMPLEMENTATION",
-      "validationStatus": "FULL_VALIDATION_DEFERRED_BY_USER",
+      "validationStatus": "RELATED_FOCUSED_CHECKS_PASSED_FULL_VALIDATION_DEFERRED",
       "independentAcceptance": "UNCHANGED",
       "files": [
         "apps/api/src/modules/notifications/notifications.service.ts",
@@ -115,13 +118,14 @@
         "apps/worker/src/configured-reminders.ts"
       ],
       "requiredOutcome": "Define a channel/category urgency policy, persist authorized urgency and eligible/expiry timestamps, and share one timezone/quiet-hours calculation. Re-evaluate recipient, project and obligation eligibility before sending. Never let arbitrary callers classify marketing as urgent security traffic.",
-      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering."
+      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering.",
+      "continuationEvidence": "RESUME-IMPLEMENTATION-2026-11-13.md: related code and fixture checks; whole original outcome and independent acceptance remain unverified"
     },
     {
       "id": "PH2-G20-008",
       "title": "Complete requirement and warranty reminder scheduling and supplier message contracts",
       "engineeringStatus": "PARTIAL_CANDIDATE_IMPLEMENTATION",
-      "validationStatus": "FULL_VALIDATION_DEFERRED_BY_USER",
+      "validationStatus": "RELATED_FOCUSED_CHECKS_PASSED_FULL_VALIDATION_DEFERRED",
       "independentAcceptance": "UNCHANGED",
       "files": [
         "apps/api/src/modules/notifications/notifications.service.ts",
@@ -131,13 +135,14 @@
         "apps/worker/src/configured-reminders.ts"
       ],
       "requiredOutcome": "Implement durable per-event schedules from reviewed project configuration, correct NULL-due semantics, assignee/PM/asset-owner resolution, cancellation/resume and dedup windows. Add safe supplier template fields and authenticated deep links without exposing internal content. Keep optional escalation and WhatsApp Business behind explicit V1 scope.",
-      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering."
+      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering.",
+      "continuationEvidence": "RESUME-IMPLEMENTATION-2026-11-13.md: related code and fixture checks; whole original outcome and independent acceptance remain unverified"
     },
     {
       "id": "PH2-G20-009",
       "title": "Use one qualified missing-work and financial-summary definition",
       "engineeringStatus": "PARTIAL_CANDIDATE_IMPLEMENTATION",
-      "validationStatus": "FULL_VALIDATION_DEFERRED_BY_USER",
+      "validationStatus": "RELATED_FOCUSED_CHECKS_PASSED_FULL_VALIDATION_DEFERRED",
       "independentAcceptance": "UNCHANGED",
       "files": [
         "apps/api/src/modules/notifications/notifications.service.ts",
@@ -147,13 +152,14 @@
         "apps/worker/src/configured-reminders.ts"
       ],
       "requiredOutcome": "Use shared current-obligation and contract-summary queries with explicit overdue/expiry semantics, approved financial visibility and integer paise. Label informational retention exposure accurately. Exclude superseded/non-applicable work and preserve unknown values rather than inventing money at risk.",
-      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering."
+      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering.",
+      "continuationEvidence": "RESUME-IMPLEMENTATION-2026-11-13.md: related code and fixture checks; whole original outcome and independent acceptance remain unverified"
     },
     {
       "id": "PH2-G20-010",
       "title": "Resolve real recipients and deliver business events through a reviewed asynchronous contract",
       "engineeringStatus": "PARTIAL_CANDIDATE_IMPLEMENTATION",
-      "validationStatus": "FULL_VALIDATION_DEFERRED_BY_USER",
+      "validationStatus": "RELATED_FOCUSED_CHECKS_PASSED_FULL_VALIDATION_DEFERRED",
       "independentAcceptance": "UNCHANGED",
       "files": [
         "apps/api/src/modules/notifications/notifications.service.ts",
@@ -163,13 +169,14 @@
         "apps/worker/src/configured-reminders.ts"
       ],
       "requiredOutcome": "Create trusted event-to-recipient/template producers backed by the outbox, current eligible identities and verified contact channels. Define a narrow gateway request/acknowledgement schema and server-owned routing. Preserve nonblocking business commits and durable notification failures; use the separate G01 protocol for OTP/invitation credentials.",
-      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering."
+      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering.",
+      "continuationEvidence": "RESUME-IMPLEMENTATION-2026-11-13.md: related code and fixture checks; whole original outcome and independent acceptance remain unverified"
     },
     {
       "id": "PH2-G20-011",
       "title": "Deliver a usable notification inbox and preference journey",
       "engineeringStatus": "PARTIAL_CANDIDATE_IMPLEMENTATION",
-      "validationStatus": "RELATED_BACKEND_MECHANISMS_TARGETED_CHECK_PASSED_OTHER_ASSERTIONS_DEFERRED",
+      "validationStatus": "RELATED_FOCUSED_CHECKS_PASSED_FULL_VALIDATION_DEFERRED",
       "independentAcceptance": "UNCHANGED",
       "files": [
         "apps/api/src/modules/notifications/notifications.service.ts",
@@ -179,7 +186,8 @@
         "apps/worker/src/configured-reminders.ts"
       ],
       "requiredOutcome": "Add scoped, paginated inbox/read-state endpoints and the approved accessible web journey with real unread state and links. Provide preferences/unsubscribe settings, honest queued/failed states and reload-safe errors. Avoid forcing notification visibility through document permissions for unrelated categories.",
-      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering."
+      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering.",
+      "continuationEvidence": "RESUME-IMPLEMENTATION-2026-11-13.md: related code and fixture checks; whole original outcome and independent acceptance remain unverified"
     },
     {
       "id": "PH2-G20-012",
@@ -201,7 +209,7 @@
       "id": "PH2-G18-001",
       "title": "Replace contradictory fallbacks with one effective entitlement policy",
       "engineeringStatus": "PARTIAL_CANDIDATE_IMPLEMENTATION",
-      "validationStatus": "FULL_VALIDATION_DEFERRED_BY_USER",
+      "validationStatus": "RELATED_FOCUSED_CHECKS_PASSED_FULL_VALIDATION_DEFERRED",
       "independentAcceptance": "UNCHANGED",
       "files": [
         "packages/db/src/entitlements.ts",
@@ -209,7 +217,8 @@
         "apps/api/src/modules/billing/project-offer.controller.ts"
       ],
       "requiredOutcome": "Implement one versioned effective-entitlement resolver for org status, subscription state, period/grace boundaries, plan status and explicit trial/no-plan policy. Unknown, cancelled or missing entitlements must follow an approved safe policy without invented Starter allowances. Share it across reads, invites, uploads, activation/reopen and package generation; preserve authorized reads/exports.",
-      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering."
+      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering.",
+      "continuationEvidence": "RESUME-IMPLEMENTATION-2026-11-13.md: related code and fixture checks; whole original outcome and independent acceptance remain unverified"
     },
     {
       "id": "PH2-G18-002",
@@ -313,7 +322,7 @@
       "id": "PH2-G18-009",
       "title": "Expose honest usage, remaining capacity and actionable billing recovery",
       "engineeringStatus": "PARTIAL_CANDIDATE_IMPLEMENTATION",
-      "validationStatus": "FULL_VALIDATION_DEFERRED_BY_USER",
+      "validationStatus": "RELATED_FOCUSED_CHECKS_PASSED_FULL_VALIDATION_DEFERRED",
       "independentAcceptance": "UNCHANGED",
       "files": [
         "packages/db/src/entitlements.ts",
@@ -321,7 +330,8 @@
         "apps/api/src/modules/billing/project-offer.controller.ts"
       ],
       "requiredOutcome": "Expose one typed usage/limit/effective-state DTO, including reservations, period and safe recovery actions. Build the authorized plan and payment-status journey with honest unavailable/disabled states, clear quota errors and retained reads/exports. Do not fabricate a plan when configuration/provider data is unavailable.",
-      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering."
+      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering.",
+      "continuationEvidence": "RESUME-IMPLEMENTATION-2026-11-13.md: related code and fixture checks; whole original outcome and independent acceptance remain unverified"
     },
     {
       "id": "PH2-G18-010",
@@ -389,7 +399,7 @@
       "id": "PH2-G03-004",
       "title": "Validate each replacement responsibility and lock its current eligibility",
       "engineeringStatus": "PARTIAL_CANDIDATE_IMPLEMENTATION",
-      "validationStatus": "FULL_VALIDATION_DEFERRED_BY_USER",
+      "validationStatus": "RELATED_FOCUSED_CHECKS_PASSED_FULL_VALIDATION_DEFERRED",
       "independentAcceptance": "UNCHANGED",
       "files": [
         "apps/api/src/modules/organisations/organisations.service.ts",
@@ -399,13 +409,14 @@
         "apps/web/src/app/(contractor)/onboarding/page.tsx"
       ],
       "requiredOutcome": "Use an explicit per-project/per-work allocation plan. Validate and lock current account, org/project membership, resource scope, reviewer stage/qualification and no-self-approval rules for every transferred operational responsibility. Recheck remaining work before removal and preserve immutable authorship.",
-      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering."
+      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering.",
+      "continuationEvidence": "RESUME-IMPLEMENTATION-2026-11-13.md: related code and fixture checks; whole original outcome and independent acceptance remain unverified"
     },
     {
       "id": "PH2-G03-005",
       "title": "Produce an accurate operational gap and delegation manifest",
       "engineeringStatus": "PARTIAL_CANDIDATE_IMPLEMENTATION",
-      "validationStatus": "FULL_VALIDATION_DEFERRED_BY_USER",
+      "validationStatus": "RELATED_FOCUSED_CHECKS_PASSED_FULL_VALIDATION_DEFERRED",
       "independentAcceptance": "UNCHANGED",
       "files": [
         "apps/api/src/modules/organisations/organisations.service.ts",
@@ -415,13 +426,14 @@
         "apps/web/src/app/(contractor)/onboarding/page.tsx"
       ],
       "requiredOutcome": "Separate immutable created_by/submitted_by/requested_by provenance from explicit operational responsibility. Include submissions, packages, review stage/party authority, requirements and defects in one scoped manifest with eligible allocation options and unresolved reasons. Add independently authorized external delegation; preserve honest blocked states until available.",
-      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering."
+      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering.",
+      "continuationEvidence": "RESUME-IMPLEMENTATION-2026-11-13.md: related code and fixture checks; whole original outcome and independent acceptance remain unverified"
     },
     {
       "id": "PH2-G03-006",
       "title": "Complete membership suspension/reactivation and project-team reconciliation",
       "engineeringStatus": "PARTIAL_CANDIDATE_IMPLEMENTATION",
-      "validationStatus": "RELATED_BACKEND_MECHANISMS_TARGETED_CHECK_PASSED_OTHER_ASSERTIONS_DEFERRED",
+      "validationStatus": "RELATED_FOCUSED_CHECKS_PASSED_FULL_VALIDATION_DEFERRED",
       "independentAcceptance": "UNCHANGED",
       "files": [
         "apps/api/src/modules/organisations/organisations.service.ts",
@@ -431,7 +443,8 @@
         "apps/web/src/app/(contractor)/onboarding/page.tsx"
       ],
       "requiredOutcome": "Define supported membership states and restore policy with fresh authority/assurance, seats and assignment review. Reconcile active project memberships and responsibility ownership on offboarding, retain history, and prevent silent privilege restoration from old project rows or invitation acceptance.",
-      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering."
+      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering.",
+      "continuationEvidence": "RESUME-IMPLEMENTATION-2026-11-13.md: related code and fixture checks; whole original outcome and independent acceptance remain unverified"
     },
     {
       "id": "PH2-G03-007",
@@ -501,7 +514,7 @@
       "id": "PH2-G03-011",
       "title": "Deliver organisation/team/ownership administration in the real application",
       "engineeringStatus": "PARTIAL_CANDIDATE_IMPLEMENTATION",
-      "validationStatus": "RELATED_BACKEND_MECHANISMS_TARGETED_CHECK_PASSED_OTHER_ASSERTIONS_DEFERRED",
+      "validationStatus": "RELATED_FOCUSED_CHECKS_PASSED_FULL_VALIDATION_DEFERRED",
       "independentAcceptance": "UNCHANGED",
       "files": [
         "apps/api/src/modules/organisations/organisations.service.ts",
@@ -511,7 +524,8 @@
         "apps/web/src/app/(contractor)/onboarding/page.tsx"
       ],
       "requiredOutcome": "Build the approved accessible org administration flows against corrected APIs and typed versioned DTOs. Show current actor/tenant, accurate work manifests, explicit sensitive-action confirmation and truthful delivery/blocked states. Remove demo tenant assumptions.",
-      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering."
+      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering.",
+      "continuationEvidence": "RESUME-IMPLEMENTATION-2026-11-13.md: related code and fixture checks; whole original outcome and independent acceptance remain unverified"
     },
     {
       "id": "PH2-G03-012",
@@ -845,7 +859,7 @@
       "id": "PH2-G06-010",
       "title": "Make accepted configuration affect its real consumers",
       "engineeringStatus": "PARTIAL_CANDIDATE_IMPLEMENTATION",
-      "validationStatus": "FULL_VALIDATION_DEFERRED_BY_USER",
+      "validationStatus": "RELATED_FOCUSED_CHECKS_PASSED_FULL_VALIDATION_DEFERRED",
       "independentAcceptance": "UNCHANGED",
       "files": [
         "apps/api/src/modules/configuration/configuration.service.ts",
@@ -855,7 +869,8 @@
         "apps/worker/src/queues/package-branding.ts"
       ],
       "requiredOutcome": "Define typed effective configuration contracts per consumer with non-overridable platform safety ceilings. Wire the reviewed MVP subset into actual upload, naming, reminder, package/branding and retention paths, with version pinning where evidence reproducibility requires it. Reject or clearly mark unsupported settings.",
-      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering."
+      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering.",
+      "continuationEvidence": "RESUME-IMPLEMENTATION-2026-11-13.md: related code and fixture checks; whole original outcome and independent acceptance remain unverified"
     },
     {
       "id": "PH2-G06-011",
@@ -890,8 +905,9 @@
       "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering."
     }
   ],
-  "checkpoint": "USER_REQUESTED_WRAP_UP_2026_11_13",
+  "checkpoint": "RESUMED_IMPLEMENTATION_2026_11_13",
   "allEngineeringComplete": false,
   "canonicalFindingClosures": 0,
-  "note": "Candidate implementation checkpoint. Original finding IDs and independent acceptance are unchanged. Backend service fixtures do not certify browser, domain, provider or production acceptance."
+  "note": "Candidate implementation checkpoint. Original finding IDs and independent acceptance are unchanged. Backend service fixtures do not certify browser, domain, provider or production acceptance.",
+  "continuationReport": "docs/phase2-production/RESUME-IMPLEMENTATION-2026-11-13.md"
 }

@@ -1427,6 +1427,7 @@ export const notifications = pgTable('notifications', {
   expiresAt: timestamp('expires_at',{withTimezone:true}),
   providerMessageId: text('provider_message_id'),
   receiptSequence: integer('receipt_sequence').notNull().default(0),
+  reconcileAfter:timestamp('reconcile_after',{withTimezone:true}).notNull().defaultNow(),
   claimToken: uuid('claim_token'),
   claimUntil: timestamp('claim_until',{withTimezone:true}),
   deliveryAttempts: integer('delivery_attempts').notNull().default(0),
@@ -1907,4 +1908,13 @@ export const workAllocationCommands=pgTable('work_allocation_commands',{
  id:uuid('id').primaryKey(),orgId:uuid('org_id').notNull(),requestKey:uuid('request_key').notNull(),
  actorUserId:uuid('actor_user_id').notNull(),targetUserId:uuid('target_user_id').notNull(),inputHash:text('input_hash').notNull(),
  responseJson:jsonb('response_json').notNull(),createdAt:timestamp('created_at',{withTimezone:true}).notNull().defaultNow(),
+});
+
+export const notificationDeliveryAttempts=pgTable('notification_delivery_attempts',{
+ id:uuid('id').primaryKey(),orgId:uuid('org_id').notNull(),notificationId:uuid('notification_id').notNull(),attemptNo:integer('attempt_no').notNull(),
+ claimToken:uuid('claim_token').notNull(),inputHash:text('input_hash').notNull(),status:text('status').notNull(),providerMessageId:text('provider_message_id'),
+ createdAt:timestamp('created_at',{withTimezone:true}).notNull().defaultNow(),settledAt:timestamp('settled_at',{withTimezone:true}),
+});
+export const notificationRateBudgets=pgTable('notification_rate_budgets',{
+ orgId:uuid('org_id').notNull(),channel:text('channel').notNull(),windowStart:timestamp('window_start',{withTimezone:true}).notNull(),claimed:integer('claimed').notNull(),
 });

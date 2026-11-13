@@ -1,3 +1,4 @@
+import {reconcileNotificationOutcomes} from './notification-reconciliation';
 import {overdueCurrentObligationSql} from '@tradecloseout/db';
 import {enqueueConfiguredReminders} from './configured-reminders';
 import { Pool } from 'pg';
@@ -523,6 +524,7 @@ export class TradeCloseoutScheduler {
 
   /** Claim/ack outside network I/O; quiet hours are applied before claiming. */
   async dispatchQueuedNotifications(): Promise<number> {
+    await reconcileNotificationOutcomes(this.pool);
     const result=await dispatchDueNotifications(this.pool,isIndiaQuietHour());
     if (result.failed) console.error('NOTIFICATION_DELIVERY_RETRY_OR_FAILURE', { count:result.failed });
     return result.accepted;

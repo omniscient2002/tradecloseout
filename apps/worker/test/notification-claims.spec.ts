@@ -8,6 +8,7 @@ import { claimNotificationBatch, resolveNotificationClaim, dispatchDueNotificati
 void test('PH1-G24-005: bounded/fenced notification delivery with per-recipient recovery', async t => {
   await withDisposableDatabase(async ({admin,app})=>{
     const {userId,tenants:[a,b]}=await seedTenants(admin);
+    for(const orgId of [a.orgId,b.orgId])await admin.query("INSERT INTO memberships(id,org_id,user_id,role,status) VALUES($1,$2,$3,'R-OWNER','ACTIVE')",[randomUUID(),orgId,userId]);
     const create=async (orgId:string,channel='EMAIL')=>{
       const id=randomUUID();
       await admin.query(`INSERT INTO notifications
@@ -93,10 +94,11 @@ void test('PH1-G24-005: bounded/fenced notification delivery with per-recipient 
       const {rows:[row]}=await admin.query(`SELECT status,delivery_attempts FROM notifications WHERE id=$1`,[id]);
       assert.equal(row.status,'SENT');assert.equal(row.delivery_attempts,2);
     });
-    await t.test('quiet hours defer SMS before LIMIT; email and other tenants make progress',async()=>{
+    await t.test('quiet hours defer nonessential external channels before LIMIT while in-app and other tenants progress',async()=>{
       for(let i=0;i<27;i++) await create(a.orgId,'SMS');
-      const email=await create(a.orgId,'EMAIL');
-      const other=await create(b.orgId,'EMAIL');
+      const deferredEmail=await create(a.orgId,'EMAIL');
+      const email=await create(a.orgId,'IN_APP');
+      const other=await create(b.orgId,'IN_APP');
       const seen:string[]=[];
       const result=await dispatchDueNotifications(app,true,async n=>{seen.push(n.id);return true;});
       assert.equal(result.accepted,2);
@@ -104,6 +106,7 @@ void test('PH1-G24-005: bounded/fenced notification delivery with per-recipient 
       const {rows:[sms]}=await admin.query(`SELECT count(*)::int n FROM notifications
         WHERE org_id=$1 AND channel='SMS' AND status='QUEUED' AND delivery_attempts=0`,[a.orgId]);
       assert.equal(sms.n,27);
+      assert.equal((await admin.query('SELECT delivery_attempts FROM notifications WHERE id=$1',[deferredEmail])).rows[0].delivery_attempts,0);
       const noStarve=await create(b.orgId);
       const failure=await create(a.orgId);
       const counts=await dispatchDueNotifications(app,false,async n=>n.id===noStarve);
