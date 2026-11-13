@@ -41,6 +41,7 @@ export class OrganisationsService {
    */
   async getDashboard(ctx: TenantActorContext, targetOrgId: string) {
     const orgId = targetOrgId === 'current' ? ctx.orgId : targetOrgId;
+    if (orgId !== ctx.orgId) throw new NotFoundException('ORGANISATION_NOT_FOUND');
     if (ctx.guestGrantId) throw new NotFoundException('ORGANISATION_NOT_FOUND');
     const projectRead = hasPermission({ orgRole: ctx.orgRole, projectRole: ctx.projectRole }, 'project.read');
     if (!projectRead.allowed) throw new NotFoundException('ORGANISATION_NOT_FOUND');
@@ -54,6 +55,7 @@ export class OrganisationsService {
                       WHERE pm.org_id = r.org_id AND pm.project_id = r.project_id
                         AND pm.user_id = $2 AND pm.status = 'ACTIVE')`
       : '';
+    const scopeParams = projectRead.scope === 'S' ? [orgId, ctx.userId] : [orgId];
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
       // 1. Fetch Org and Profile
       const { rows: orgRows } = await client.query(
@@ -101,7 +103,8 @@ export class OrganisationsService {
             p.id, p.code, p.name, p.status, p.target_handover_date,
             p.site_json->>'city' as city,
             COALESCE(cs.total_contract_value_paise, p.contract_value_paise, 0)::text as contract_value_paise,
-            COALESCE(cs.total_retention_at_risk_paise, p.retention_at_risk_paise, 0)::text as retention_at_risk_paise,
+            COALESCE(cs.total_retention_at_risk_paise,
+                     TRUNC(p.contract_value_paise::numeric * p.retention_bps / 10000)::bigint, 0)::text as retention_at_risk_paise,
             p_client.name as client_name,
             p_mc.name as mc_name,
             p_pmc.name as pmc_name,
@@ -117,7 +120,7 @@ export class OrganisationsService {
           LEFT JOIN parties p_pmc ON p_pmc.id = p.consultant_party_id
          WHERE p.org_id = $1 ${projectScopeClause}
          ORDER BY p.created_at DESC`,
-        [orgId, ctx.userId],
+        scopeParams,
       );
 
       const projects = projRows.map((p) => ({
@@ -162,7 +165,7 @@ export class OrganisationsService {
             AND dv.expiry_date IS NOT NULL
             AND dv.expiry_date BETWEEN (now() AT TIME ZONE 'Asia/Kolkata')::date
                                    AND ((now() AT TIME ZONE 'Asia/Kolkata') + interval '30 days')::date`,
-        [orgId, ctx.userId],
+        scopeParams,
       );
       const expiringSoonCount = Number(expiringRows[0]?.count || 0);
 
@@ -181,7 +184,7 @@ export class OrganisationsService {
             AND r.superseded_at IS NULL
           ORDER BY r.due_at ASC NULLS LAST, r.created_at DESC
           LIMIT 5`,
-        [orgId, ctx.userId],
+        scopeParams,
       );
 
       const needsAttention = attentionRows.map((r) => ({
