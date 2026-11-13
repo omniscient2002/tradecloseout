@@ -1,8 +1,10 @@
+import {drawPackageBranding,brandingColour} from './package-branding';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { createHash } from 'crypto';
 import { readFile, writeFile } from 'fs/promises';
 
 export interface PackageCompileInput {
+  branding?: import('./package-branding').PackageBranding;
   packageId: string;
   versionNo: number;
   orgLegalName: string;
@@ -67,7 +69,7 @@ export async function compileHandoverDossierPdf(
     y: height - 28,
     width,
     height: 28,
-    color: rgb(0.059, 0.161, 0.259), // #0F2942
+    color: brandingColour(input.branding?.brandColor), // #0F2942
   });
 
   coverPage.drawText(sanitisePdfText(input.orgLegalName, 80).toUpperCase(), {
@@ -75,7 +77,7 @@ export async function compileHandoverDossierPdf(
     y: height - 76,
     size: 11,
     font: fontBold,
-    color: rgb(0.059, 0.161, 0.259),
+    color: brandingColour(input.branding?.brandColor),
   });
 
   coverPage.drawText('TECHNICAL CLOSEOUT & O&M HANDOVER DOSSIER', {
@@ -156,7 +158,7 @@ export async function compileHandoverDossierPdf(
     y: rowY,
     size: 13,
     font: fontBold,
-    color: rgb(0.059, 0.161, 0.259),
+    color: brandingColour(input.branding?.brandColor),
   });
   rowY -= 26;
 
@@ -212,6 +214,7 @@ export async function compileHandoverDossierPdf(
     });
   }
 
+  await drawPackageBranding(mergedPdf,coverPage,fontRegular,input.branding);
   const finalBytes = await mergedPdf.save();
   await writeFile(outputPath, finalBytes);
   const pdfSha256 = createHash('sha256').update(finalBytes).digest('hex');

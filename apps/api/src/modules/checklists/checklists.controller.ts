@@ -113,6 +113,14 @@ export class ChecklistsController {
     return this.checklistsService.decideChangeRequest(req.userContext, id, dto);
   }
 
+  @Post('projects/:projectId/change-requests/:id/apply')
+  @RequirePermission('checklist.manage')
+  applyChange(@Req() req:any,@Param('projectId') projectId:string,@Param('id') id:string){return this.checklistsService.applyChangeRequest(req.userContext,projectId,id);}
+
+  @Post('projects/:projectId/checklists/review')
+  @RequirePermission('checklist.manage')
+  reviewBaseline(@Req() req:any,@Param('projectId') projectId:string,@Body() dto:unknown){return this.checklistsService.reviewBaseline(req.userContext,projectId,dto);}
+
   @Post('requirements/:id/waivers')
   @RequirePermission('requirement.waive')
   async requestWaiver(

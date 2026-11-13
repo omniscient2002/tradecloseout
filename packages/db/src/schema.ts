@@ -84,8 +84,13 @@ export const orgProfiles = pgTable('org_profiles', {
   signatoryName: text('signatory_name'),
   signatoryDesignation: text('signatory_designation'),
   brandColor: text('brand_color').notNull().default('#0F2942'),
-  defaultTimezone: text('default_timezone').notNull().default('Asia/Kolkata'),
-  defaultLocale: text('default_locale').notNull().default('en-IN'),
+  accentColor:text('accent_color'),
+  watermarkEnabled:boolean('watermark_enabled').notNull().default(false),
+  allowSelfApproval:boolean('allow_self_approval').notNull().default(false),
+  defaultRetentionMonths:integer('default_retention_months').notNull().default(96),
+  footerText:text('footer_text'),
+  contactEmail:text('contact_email'),
+  contactPhone:text('contact_phone'),
   rowVersion: integer('row_version').notNull().default(1),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
@@ -466,6 +471,8 @@ export const configVersions = pgTable(
     createdBy: uuid('created_by').notNull().references(() => users.id),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     publishedAt: timestamp('published_at', { withTimezone: true }),
+    publishedBy: uuid('published_by').references(() => users.id),
+    parentVersionId: uuid('parent_version_id'),
   },
   (t) => ({
     levelScopeVerUq: uniqueIndex('config_versions_level_scope_ver_uq').on(
@@ -561,11 +568,17 @@ export const requirementChangeRequests = pgTable('requirement_change_requests', 
   projectId: uuid('project_id')
     .notNull()
     .references(() => projects.id, { onDelete: 'cascade' }),
+  baselineSnapshotId: uuid('baseline_snapshot_id'),
+  proposedChecksum: text('proposed_checksum'),
+  proposedLayersJson: jsonb('proposed_layers_json'),
   requestedBy: uuid('requested_by').references(() => users.id),
   reason: text('reason').notNull(),
-  itemsJson: jsonb('items_json').notNull(),
+  requirementId:uuid('requirement_id'),
+  changeType:text('change_type').notNull(),
+  deltaJson:jsonb('delta_json').notNull().default({}),
+  decidedAt:timestamp('decided_at',{withTimezone:true}),
   impactJson: jsonb('impact_json').notNull().default({}),
-  status: text('status').notNull().default('DRAFT'), // DRAFT | SUBMITTED | APPROVED | REJECTED | APPLIED
+  status: text('status').notNull().default('PENDING'), // DRAFT | SUBMITTED | APPROVED | REJECTED | APPLIED
   approvedBy: uuid('approved_by').references(() => users.id),
   appliedSnapshotId: uuid('applied_snapshot_id').references(() => checklistSnapshots.id),
   rowVersion: integer('row_version').notNull().default(1),
@@ -1175,6 +1188,8 @@ export const handoverPackages = pgTable(
     zipObjectId: uuid('zip_object_id').references(() => storageObjects.id),
     manifestObjectId: uuid('manifest_object_id').references(() => storageObjects.id),
     checksum: text('checksum'),
+    outputProfileJson:jsonb('output_profile_json'),
+    responsibleUserId: uuid('responsible_user_id').references(() => users.id),
     requestedBy: uuid('requested_by')
       .notNull()
       .references(() => users.id),
@@ -1316,7 +1331,8 @@ export const submissions = pgTable(
     decidedAt: timestamp('decided_at', { withTimezone: true }),
     notes: text('notes'),
     rowVersion: integer('row_version').notNull().default(1),
-    createdBy: uuid('created_by').notNull().references(() => users.id),
+    responsibleUserId:uuid('responsible_user_id').references(()=>users.id),
+  createdBy: uuid('created_by').notNull().references(() => users.id),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
@@ -1405,6 +1421,19 @@ export const notifications = pgTable('notifications', {
   orgId: uuid('org_id')
     .notNull()
     .references(() => organisations.id),
+  projectId: uuid('project_id').references(() => projects.id),
+  category: text('category').notNull().default('WORK'),
+  urgent: boolean('urgent').notNull().default(false),
+  expiresAt: timestamp('expires_at',{withTimezone:true}),
+  providerMessageId: text('provider_message_id'),
+  receiptSequence: integer('receipt_sequence').notNull().default(0),
+  claimToken: uuid('claim_token'),
+  claimUntil: timestamp('claim_until',{withTimezone:true}),
+  deliveryAttempts: integer('delivery_attempts').notNull().default(0),
+  gatewayState: text('gateway_state').notNull().default('PENDING'),
+  nextAttemptAt: timestamp('next_attempt_at',{withTimezone:true}).notNull().defaultNow(),
+  deadLetteredAt: timestamp('dead_lettered_at',{withTimezone:true}),
+  failureCode: text('failure_code'),
   recipientUserId: uuid('recipient_user_id').references(() => users.id),
   recipientPartyId: uuid('recipient_party_id').references(() => parties.id),
   channel: text('channel').notNull(), // IN_APP | EMAIL | SMS | WHATSAPP
@@ -1426,6 +1455,8 @@ export const notificationPreferences = pgTable('notification_preferences', {
   userId: uuid('user_id')
     .notNull()
     .references(() => users.id, { onDelete: 'cascade' }),
+  rowVersion: integer('row_version').notNull().default(1),
+  updatedAt: timestamp('updated_at',{withTimezone:true}).notNull().defaultNow(),
   category: text('category').notNull(),
   channel: text('channel').notNull(),
   enabled: boolean('enabled').notNull().default(true),
@@ -1522,6 +1553,7 @@ export const billingPolicyVersions = pgTable('billing_policy_versions', {
   createdByIdentity: text('created_by_identity').notNull(),
   reviewerIdentity: text('reviewer_identity'),
   approvedAt: timestamp('approved_at',{withTimezone:true}),
+  oneTimeProjectModel: text('one_time_project_model'),
   evidenceRef: text('evidence_ref'),
 });
 
@@ -1569,6 +1601,7 @@ export const subscriptions = pgTable('subscriptions', {
     .notNull()
     .references(() => plans.id),
   status: text('status').notNull().default('TRIAL'), // TRIAL | ACTIVE | PAST_DUE | SUSPENDED | CANCELLED
+  projectId: uuid('project_id'),
   provider: text('provider').notNull().default('RAZORPAY'),
   providerRef: text('provider_ref'),
   currentPeriodStart: timestamp('current_period_start', { withTimezone: true }).notNull(),
@@ -1839,4 +1872,39 @@ export const deletionRequests = pgTable('deletion_requests', {
   ownerUserId: uuid('owner_user_id')
     .notNull()
     .references(() => users.id),
+});
+
+export const projectLifecycleCommands = pgTable('project_lifecycle_commands', {
+ id:uuid('id').primaryKey(),orgId:uuid('org_id').notNull(),projectId:uuid('project_id').notNull(),
+ requestKey:text('request_key').notNull(),actorUserId:uuid('actor_user_id').notNull(),action:text('action').notNull(),
+ inputHash:text('input_hash').notNull(),responseJson:jsonb('response_json').notNull(),
+ createdAt:timestamp('created_at',{withTimezone:true}).notNull().defaultNow(),
+});
+export const projectBaselineApprovals = pgTable('project_baseline_approvals', {
+ id:uuid('id').primaryKey(),orgId:uuid('org_id').notNull(),projectId:uuid('project_id').notNull(),snapshotId:uuid('snapshot_id').notNull(),
+ checksum:text('checksum').notNull(),reviewerUserId:uuid('reviewer_user_id').notNull(),reason:text('reason').notNull(),
+ createdAt:timestamp('created_at',{withTimezone:true}).notNull().defaultNow(),
+});
+export const notificationDeliveryReceipts = pgTable('notification_delivery_receipts', {
+ id:uuid('id').primaryKey(),orgId:uuid('org_id').notNull(),notificationId:uuid('notification_id').notNull(),
+ providerMessageId:text('provider_message_id').notNull(),sequence:integer('sequence').notNull(),outcome:text('outcome').notNull(),
+ createdAt:timestamp('created_at',{withTimezone:true}).notNull().defaultNow(),
+});
+export const organisationOnboarding = pgTable('organisation_onboarding', {
+ orgId:uuid('org_id').primaryKey(),step:integer('step').notNull().default(0),termsVersion:text('terms_version'),
+ termsAcceptedBy:uuid('terms_accepted_by'),termsAcceptedAt:timestamp('terms_accepted_at',{withTimezone:true}),
+ selectedTemplatePackId:uuid('selected_template_pack_id'),completedAt:timestamp('completed_at',{withTimezone:true}),
+ rowVersion:integer('row_version').notNull().default(1),
+});
+export const organisationDeletionRequests = pgTable('organisation_deletion_requests', {
+ id:uuid('id').primaryKey(),orgId:uuid('org_id').notNull(),requestedBy:uuid('requested_by').notNull(),requestKey:uuid('request_key').notNull(),
+ requestedOrgVersion:integer('requested_org_version').notNull(),confirmedName:text('confirmed_name').notNull(),reason:text('reason').notNull(),
+ status:text('status').notNull().default('PENDING_REVIEW'),retentionEvaluationJson:jsonb('retention_evaluation_json').notNull().default({}),
+ createdAt:timestamp('created_at',{withTimezone:true}).notNull().defaultNow(),cancelledAt:timestamp('cancelled_at',{withTimezone:true}),
+});
+
+export const workAllocationCommands=pgTable('work_allocation_commands',{
+ id:uuid('id').primaryKey(),orgId:uuid('org_id').notNull(),requestKey:uuid('request_key').notNull(),
+ actorUserId:uuid('actor_user_id').notNull(),targetUserId:uuid('target_user_id').notNull(),inputHash:text('input_hash').notNull(),
+ responseJson:jsonb('response_json').notNull(),createdAt:timestamp('created_at',{withTimezone:true}).notNull().defaultNow(),
 });

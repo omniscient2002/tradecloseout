@@ -51,7 +51,7 @@ export function Sidebar({
   badges,
   activePlane,
   onPlaneChange,
-  orgName = "Apex MEP Contractors",
+  orgName = "Your organisation",
 }: SidebarProps) {
   return (
     <aside

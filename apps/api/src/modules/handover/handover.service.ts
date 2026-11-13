@@ -31,7 +31,7 @@ export class HandoverService {
       throw new ConflictException({code:rows[0].status==='CLOSED'
         ?'CLOSED_PROJECT_REQUIRES_FORMAL_REOPEN':'PROJECT_PACKAGE_GENERATION_NOT_ALLOWED'});
     }
-    const effective=await resolveEffectiveEntitlements(client,ctx.orgId);
+    const effective=await resolveEffectiveEntitlements(client,ctx.orgId,{projectId});
     if(!effective.canConsume)throw new ConflictException({code:'PACKAGE_ENTITLEMENT_UNAVAILABLE'});
     await consumePlanQuota(client,ctx.orgId,'PACKAGE_GENERATIONS',quotaMonthIndia(),1n,
       BigInt(effective.limits.maxPackageGenerationsPerMonth));

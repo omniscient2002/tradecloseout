@@ -4,6 +4,7 @@
 import {
   Controller,
   Get,
+  Query,
   Post,
   Param,
   Body,
@@ -24,6 +25,20 @@ export class NotificationsController {
   async listNotifications(@Req() req: any) {
     return this.notificationsService.listNotifications(req.userContext);
   }
+
+  @Get('notifications/inbox') @RequirePermission('notification.read')
+  inbox(@Req()req:any,@Query('limit')limit?:string,@Query('cursor')cursor?:string){return this.notificationsService.inbox(req.userContext,limit===undefined?25:Number(limit),cursor);}
+  @Post('notifications/:id/read') @RequirePermission('notification.read')
+  read(@Req()req:any,@Param('id')id:string){return this.notificationsService.markRead(req.userContext,id);}
+  @Get('notification-preferences') @RequirePermission('notification.read')
+  preferences(@Req()req:any){return this.notificationsService.preferences(req.userContext);}
+  @Post('notification-preferences') @RequirePermission('notification.read')
+  preference(@Req()req:any,@Body()dto:unknown){return this.notificationsService.updatePreference(req.userContext,dto);}
+
+  @Post('notification-preferences/unsubscribe-link') @RequirePermission('notification.read')
+  unsubscribeLink(@Req()req:any,@Body('category')category:unknown){return this.notificationsService.unsubscribeLink(req.userContext,category);}
+  @Post('notifications/:id/redrive') @RequirePermission('notification.manage')
+  redrive(@Req()req:any,@Param('id')id:string,@Body('reason')reason:unknown){return this.notificationsService.redrive(req.userContext,id,reason);}
 
   @Post('notifications')
   @RequirePermission('notification.manage')

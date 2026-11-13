@@ -182,7 +182,12 @@ export default function ContractorLayout({ children }: { children: React.ReactNo
     ];
   };
 
-  const navLinks = getNavLinks();
+  const navLinks = [...getNavLinks(), {label:'Notifications',href:'/notifications',icon:Bell},
+    {label:'Settings',href:'/settings',icon:Users},
+    ...(['R-OWNER','R-ADMIN'].includes(user?.orgRole??'')?[
+      {label:'Setup',href:'/onboarding',icon:ClipboardList},
+      {label:'Configuration',href:'/configuration',icon:FileText},
+    ]:[])];
 
   if (!sessionConfirmed || !user) {
     return (

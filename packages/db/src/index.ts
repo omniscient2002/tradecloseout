@@ -6,3 +6,5 @@ export * from './auth-delivery';
 
 export * from './entitlements';
 export * from './storage-capacity';
+
+export * from './current-obligations';

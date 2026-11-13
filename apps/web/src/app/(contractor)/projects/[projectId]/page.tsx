@@ -430,12 +430,17 @@ export default function ProjectWorkspacePage() {
   }, [activeTab, fetchAssets, fetchReviews, fetchPackages, fetchWarranties]);
 
   // Project Lifecycle Actions
-  const handleLifecycleTransition = async (action: "activate" | "handover" | "close" | "reopen") => {
-    if (!projectId) return;
+  const handleLifecycleTransition = async (action: "activate" | "handover" | "close" | "reopen" | "suspend" | "resume" | "cancel" | "archive") => {
+    if (!projectId || !summary) return;
+    const reasonRequired=["suspend","resume","cancel","archive","reopen"].includes(action);
+    const reason=reasonRequired?window.prompt(`Reason to ${action} this project (5–500 characters)`):undefined;
+    if(reasonRequired&&(!reason||reason.trim().length<5))return;
     setTransitioning(true);
     try {
       await apiFetch(`/api/v1/projects/${encodeURIComponent(projectId)}/${action}`, {
         method: "POST",
+        headers: {"Idempotency-Key":crypto.randomUUID()},
+        body:JSON.stringify({expectedRowVersion:summary.rowVersion,...(reason?{reason:reason.trim()}:{})}),
       });
       await fetchProjectSummary();
     } catch (err: any) {
@@ -600,7 +605,7 @@ export default function ProjectWorkspacePage() {
               : summary?.status === "HANDOVER"
               ? "Handover dossier compilation in progress. All submittals being certified for client sign-off."
               : summary?.status === "CLOSED"
-              ? "Project is closed and in Defect Liability Period (DLP). Requirements are locked."
+              ? "Project is closed. Requirements are locked; warranty dates follow their recorded contractual events."
               : "Project workspace is active."}
           </span>
         </div>
@@ -633,7 +638,7 @@ export default function ProjectWorkspacePage() {
               disabled={transitioning}
               className="px-3 py-1 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded shadow-xs cursor-pointer"
             >
-              Close Project (Enter DLP)
+              Close Project
             </button>
           )}
 
@@ -646,6 +651,10 @@ export default function ProjectWorkspacePage() {
               Reopen Project
             </button>
           )}
+          {summary?.status === "ACTIVE" && <button disabled={transitioning} onClick={()=>handleLifecycleTransition("suspend")} className="px-3 py-1 border rounded">Suspend</button>}
+          {summary?.status === "SUSPENDED" && <button disabled={transitioning} onClick={()=>handleLifecycleTransition("resume")} className="px-3 py-1 border rounded">Resume</button>}
+          {summary && ["DRAFT","ACTIVE","SUSPENDED"].includes(summary.status) && <button disabled={transitioning} onClick={()=>handleLifecycleTransition("cancel")} className="px-3 py-1 border rounded">Cancel project</button>}
+          {summary && ["CLOSED","CANCELLED"].includes(summary.status) && <button disabled={transitioning} onClick={()=>handleLifecycleTransition("archive")} className="px-3 py-1 border rounded">Archive</button>}
         </div>
       </div>
 

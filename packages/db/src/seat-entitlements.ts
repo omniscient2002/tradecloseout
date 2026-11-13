@@ -13,7 +13,7 @@ import { uuidv7 } from 'uuidv7';
 export async function reserveActiveSeatForMembership(
   client: PoolClient, orgId: string,
 ): Promise<'RESERVED' | 'SEAT_ENTITLEMENT_UNAVAILABLE' | 'SEAT_LIMIT_EXCEEDED'> {
-  const effective=await resolveEffectiveEntitlements(client,orgId);
+  const effective=await resolveEffectiveEntitlements(client,orgId,{operation:'ORG_TEAM'});
   if(!effective.canConsume)return 'SEAT_ENTITLEMENT_UNAVAILABLE';
   const cap=BigInt(effective.limits.maxSeats);
   await client.query(

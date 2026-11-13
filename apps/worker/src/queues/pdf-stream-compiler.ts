@@ -1,3 +1,4 @@
+import {drawPackageBranding,brandingColour} from './package-branding';
 import { PDFDocument, StandardFonts, rgb, PDFName, PDFString, PDFDict } from 'pdf-lib';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
@@ -312,7 +313,7 @@ export async function compileHandoverDossierStreamingQpdf(
       y: height - 28,
       width,
       height: 28,
-      color: rgb(0.059, 0.161, 0.259),
+      color: brandingColour(input.branding?.brandColor),
     });
 
     drawSafePdfText(cover, sanitisePdfText(input.orgLegalName, 80), {
@@ -323,7 +324,7 @@ export async function compileHandoverDossierStreamingQpdf(
       fontBold,
       unicodeFont,
       isBold: true,
-      color: rgb(0.059, 0.161, 0.259),
+      color: brandingColour(input.branding?.brandColor),
     });
 
     cover.drawText('TECHNICAL CLOSEOUT & O&M HANDOVER DOSSIER', {
@@ -413,7 +414,7 @@ export async function compileHandoverDossierStreamingQpdf(
         y: rowY,
         size: 11,
         font: fontBold,
-        color: rgb(0.059, 0.161, 0.259),
+        color: brandingColour(input.branding?.brandColor),
       });
       rowY -= 24;
 
@@ -431,6 +432,7 @@ export async function compileHandoverDossierStreamingQpdf(
       }
     }
 
+    await drawPackageBranding(headerPdf,cover,fontRegular,input.branding);
     await writeFile(tempHeaderPath, await headerPdf.save());
 
     if (qpdfAvailable) {

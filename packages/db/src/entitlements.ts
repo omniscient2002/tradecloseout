@@ -28,11 +28,12 @@ export type EntitlementRecord = {
   cancel_at:Date|string|null; grace_until:Date|string|null;
   limits_snapshot_json:unknown; price_snapshot_paise:string|null;
   interval_snapshot:string|null; plan_code_snapshot:string|null;
+  project_id?:string|null;policy_one_time_project_model?:string|null;
   plan_name:string|null; snapshot_version:number|null; row_version:number|null;
 };
 
 /** PAST_DUE never creates grace implicitly. Reads remain available at zero allowance. */
-export function evaluateEntitlements(row: EntitlementRecord, now:Date=new Date()) {
+export function evaluateEntitlements(row: EntitlementRecord, now:Date=new Date(),scope?:{projectId?:string;operation?:'READ'|'ORG_TEAM'}) {
   let reason='ACTIVE'; let limits:PlanLimits={...ZERO_PLAN_LIMITS};
   const start=row.current_period_start?new Date(row.current_period_start).getTime():NaN;
   const end=row.current_period_end?new Date(row.current_period_end).getTime():NaN;
@@ -42,8 +43,10 @@ export function evaluateEntitlements(row: EntitlementRecord, now:Date=new Date()
   else if(!row.id)reason='NO_SUBSCRIPTION';
   else if(row.plan_status!=='ACTIVE')reason='PLAN_INACTIVE';
   else if(!row.policy_version||row.policy_status!=='APPROVED'||!row.policy_approved_at||!Number.isFinite(new Date(row.policy_approved_at).getTime())||new Date(row.policy_approved_at).getTime()>now.getTime())reason='BILLING_POLICY_UNAPPROVED';
-  else if(row.interval_snapshot==='ONE_TIME_PROJECT')reason='PROJECT_OFFER_SCOPE_NOT_CONFIGURED';
-  else if(!['MONTH','YEAR','MONTHLY','ANNUAL'].includes(row.interval_snapshot||''))reason='PLAN_CONFIGURATION_INVALID';
+  else if(row.interval_snapshot==='ONE_TIME_PROJECT'&&!row.project_id)reason='PROJECT_OFFER_SCOPE_NOT_CONFIGURED';
+  else if(row.interval_snapshot==='ONE_TIME_PROJECT'&&row.policy_one_time_project_model!=='ORG_TEAM_AND_ONE_PROJECT')reason='PROJECT_OFFER_POLICY_UNAPPROVED';
+  else if(row.interval_snapshot==='ONE_TIME_PROJECT'&&!scope?.operation&&scope?.projectId!==row.project_id)reason='PROJECT_OFFER_SCOPE_MISMATCH';
+  else if(!['MONTH','YEAR','MONTHLY','ANNUAL','ONE_TIME_PROJECT'].includes(row.interval_snapshot||''))reason='PLAN_CONFIGURATION_INVALID';
   else if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start||(row.cancel_at!==null&&!Number.isFinite(cancel)))reason='PERIOD_INVALID';
   else if(start>now.getTime())reason='PERIOD_NOT_STARTED';
   else if(cancel<=now.getTime())reason='CANCELLED';
@@ -61,18 +64,18 @@ export function evaluateEntitlements(row: EntitlementRecord, now:Date=new Date()
   return {subscriptionId:row.id,planId:row.plan_id,planName:row.plan_name,planCode:row.plan_code_snapshot,
     subscriptionStatus:row.status,effectiveState:reason,canConsume:['TRIAL','ACTIVE','PAST_DUE_GRACE'].includes(reason),
     limits,configurationValid,policySchemaVersion:1,policyVersion:row.policy_version||null,snapshotVersion:row.snapshot_version,
-    pricePaise:row.price_snapshot_paise,interval:row.interval_snapshot,currentPeriodStart:row.current_period_start,
+    scopeProjectId:row.project_id??null,pricePaise:row.price_snapshot_paise,interval:row.interval_snapshot,currentPeriodStart:row.current_period_start,
     currentPeriodEnd:row.current_period_end,graceUntil:row.grace_until,cancelAt:row.cancel_at,rowVersion:row.row_version};
 }
 
-export async function resolveEffectiveEntitlements(client:PoolClient,orgId:string){
+export async function resolveEffectiveEntitlements(client:PoolClient,orgId:string,scope?:{projectId?:string;operation?:'READ'|'ORG_TEAM'}){
   const {rows:org}=await client.query<{status:string}>(`SELECT status FROM organisations
     WHERE id=$1 AND id=current_setting('app.current_org',true)::uuid`,[orgId]);
   if(!org.length)throw new PlanEntitlementError('PLAN_ORGANISATION_NOT_FOUND');
   const {rows}=await client.query<EntitlementRecord & {policy_version_id:string|null}>(
     `SELECT s.id,s.status,s.plan_id,s.current_period_start,s.current_period_end,s.cancel_at,s.grace_until,
       s.limits_snapshot_json,s.price_snapshot_paise::text,s.interval_snapshot,s.plan_code_snapshot,
-      s.snapshot_version,s.row_version,s.policy_version_id,p.name AS plan_name,p.status AS plan_status
+      s.snapshot_version,s.row_version,s.project_id,s.policy_version_id,p.name AS plan_name,p.status AS plan_status
      FROM subscriptions s JOIN plans p ON p.id=s.plan_id
      WHERE s.org_id=$1 FOR SHARE OF s,p`,[orgId]);
   const base:EntitlementRecord=rows[0]||{org_status:org[0].status,id:null,status:null,plan_id:null,
@@ -83,8 +86,10 @@ export async function resolveEffectiveEntitlements(client:PoolClient,orgId:strin
   if(rows[0]?.policy_version_id){
     const {rows:policy}=await client.query('SELECT * FROM lock_current_billing_policy($1::uuid)',[rows[0].policy_version_id]);
     Object.assign(base,policy[0]||{});
+    const {rows:model}=await client.query('SELECT one_time_project_model FROM billing_policy_versions WHERE id=$1',[rows[0].policy_version_id]);
+    base.policy_one_time_project_model=model[0]?.one_time_project_model??null;
   }
-  return evaluateEntitlements(base);
+  return evaluateEntitlements(base,new Date(),scope);
 }
 
 export async function currentCapacityUsage(client:PoolClient,orgId:string){

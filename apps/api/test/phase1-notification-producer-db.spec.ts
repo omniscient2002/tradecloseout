@@ -47,8 +47,8 @@ describe('PH1-G24-005: notification producer preserves accepted and in-flight co
       // The producer is SYSTEM-authorised for creation, whereas inbox reads
       // are user-scoped and require a live active tenant membership.
       const listed=await service.listNotifications({...ctx,actorType:'USER'});
-      expect(listed.find((row:any)=>row.id===id).gateway_state).toBe('PENDING');
-      expect(listed.find((row:any)=>row.id===inapp.notification.id).gateway_state).toBe('DELIVERED');
+      expect(listed.find((row:any)=>row.id===id)?.gatewayState).toBe('PENDING');
+      expect(listed.find((row:any)=>row.id===inapp.notification.id)?.gatewayState).toBe('DELIVERED');
     });
   });
 });

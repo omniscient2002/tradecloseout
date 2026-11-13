@@ -8,9 +8,11 @@ export interface TenantActorContext {
   orgId: string;       // Must come exclusively from session.active_org_id (AUD-014)
   userId: string;
   actorType: 'MEMBER' | 'GUEST' | 'SYSTEM' | 'ADMIN';
-  ip: string;
-  userAgent: string;
+  ip?: string;
+  userAgent?: string;
   requestId: string;
+  /** Validated command identity supplied by the lifecycle transport. */
+  idempotencyKey?: string;
   orgRole?: string;
   projectRole?: string;
   projectId?: string;
@@ -92,6 +94,9 @@ export async function withTenantTransaction<T>(
     await client.query(`SELECT set_config('app.current_org', $1, true), set_config('app.current_org_id', $1, true)`, [ctx.orgId]);
     await client.query(`SELECT set_config('app.current_user', $1, true)`, [ctx.userId]);
 
+    if(ctx.organisationWrite&&!ctx.sessionId&&!ctx.authGeneration) {
+      await client.query('SELECT id FROM organisations WHERE id=$1 FOR UPDATE',[ctx.orgId]);
+    }
     await assertCurrentSessionEligibility(client, ctx);
 
     await assertCurrentProjectAuthority(client, ctx);

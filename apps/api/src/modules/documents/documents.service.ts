@@ -1,3 +1,4 @@
+import {assertConfiguredUploadPolicy} from '@tradecloseout/shared';
 import {resolveEffectiveEntitlements} from '@tradecloseout/db/entitlements';
 import {lockStorageCapacity,reconcileStorageCapacity} from '@tradecloseout/db';
 // apps/api/src/modules/documents/documents.service.ts
@@ -99,7 +100,7 @@ export class DocumentsService {
     if(!rows.length)throw new NotFoundException(version?'VERSION_NOT_FOUND':'DOCUMENT_NOT_FOUND');
     if(ctx.projectId&&ctx.projectId!==rows[0].project_id)throw new NotFoundException('DOCUMENT_NOT_FOUND');
     await this.lockStorageProject(client,ctx,rows[0].project_id,editable);
-    return lockStorageCapacity(client,ctx.orgId);
+    return {...await lockStorageCapacity(client,ctx.orgId),projectId:rows[0].project_id};
   }
 
   private async assertGuestVersionScope(
@@ -409,7 +410,9 @@ export class DocumentsService {
       // Every writer takes project -> capacity -> document locks. Derive usage
       // from objects, repairing counters separately rather than trusting drift.
       await this.lockStorageProject(client,ctx,projectId,true);
-      const effective=await resolveEffectiveEntitlements(client,ctx.orgId);
+      const {rows:configurations}=await client.query("SELECT resolved_payload_json FROM checklist_snapshots WHERE org_id=$1 AND project_id=$2 AND status='ACTIVE' FOR SHARE",[ctx.orgId,projectId]);
+      try{assertConfiguredUploadPolicy(configurations[0]?.resolved_payload_json,dto.sizeBytes,dto.mimeType);}catch(error){throw new UnprocessableEntityException({code:(error as Error).message});}
+      const effective=await resolveEffectiveEntitlements(client,ctx.orgId,{projectId});
       if(!effective.canConsume)throw new ConflictException({code:'STORAGE_ENTITLEMENT_UNAVAILABLE'});
       const storageCeiling=BigInt(effective.limits.maxStorageBytes);
       const usage=await lockStorageCapacity(client,ctx.orgId);
@@ -1071,7 +1074,7 @@ export class DocumentsService {
   async restoreDocument(ctx: ExecutionContext, documentId: string) {
     return this.db.withTenantContext({...ctx,projectWrite:true}, async (client: PoolClient) => {
       const before=await this.lockDocumentStorage(client,ctx,documentId,false,true);
-      const effective=await resolveEffectiveEntitlements(client,ctx.orgId);
+      const effective=await resolveEffectiveEntitlements(client,ctx.orgId,{projectId:before.projectId});
       if(!effective.canConsume)throw new ConflictException({code:'STORAGE_ENTITLEMENT_UNAVAILABLE'});
       const {rows}=await client.query(`UPDATE documents
         SET deleted_at=NULL,row_version=row_version+1

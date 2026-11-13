@@ -1,3 +1,4 @@
+import {missingCurrentObligationSql,overdueCurrentObligationSql} from '@tradecloseout/db';
 // apps/api/src/modules/organisations/organisations.service.ts
 // Organisations & Member Offboarding Service (API-010..019, WF-21, FR-ORG-014, FR-IAM-007, AUD-P-12)
 
@@ -14,6 +15,8 @@ import {
 import { Pool, PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { randomBytes, createHash } from 'crypto';
+import { reserveActiveSeatForMembership } from '@tradecloseout/db/seat-entitlements';
+import { projectCommandRecord,requireProjectCommandId } from '../projects/project-command-input';
 import { withTenantTransaction, TenantActorContext, DomainOutboxEvent } from '@tradecloseout/db';
 import { hasPermission, isValidIndianGstin, IndianPanSchema, canonicalAuthenticationEmail } from '@tradecloseout/shared';
 import { OwnershipTransfersService } from './ownership-transfers.service';
@@ -104,13 +107,12 @@ export class OrganisationsService {
             GROUP BY project_id, org_id
          ),
          req_summary AS (
-           SELECT project_id, org_id,
-                  COUNT(id) FILTER (WHERE status != 'NOT_APPLICABLE' AND superseded_at IS NULL) as applicable_count,
-                  COUNT(id) FILTER (WHERE status IN ('APPROVED', 'APPROVED_EXTERNAL') AND superseded_at IS NULL) as approved_count,
-                  COUNT(id) FILTER (WHERE status IN ('NOT_STARTED', 'REQUESTED', 'CHANGES_REQUESTED', 'EXPIRED') AND superseded_at IS NULL) as missing_count,
-                  COUNT(id) FILTER (WHERE status IN ('UPLOADED', 'IN_REVIEW') AND superseded_at IS NULL) as in_review_count
-             FROM requirements
-            GROUP BY project_id, org_id
+           SELECT obligation.project_id,obligation.org_id,
+             COUNT(obligation.id) FILTER(WHERE obligation.superseded_at IS NULL) AS applicable_count,
+             COUNT(obligation.id) FILTER(WHERE obligation.superseded_at IS NULL AND NOT(${missingCurrentObligationSql('obligation')})) AS approved_count,
+             COUNT(obligation.id) FILTER(WHERE ${overdueCurrentObligationSql('obligation')}) AS missing_count,
+             COUNT(obligation.id) FILTER(WHERE obligation.superseded_at IS NULL AND obligation.status IN('UPLOADED','IN_REVIEW')) AS in_review_count
+           FROM requirements obligation GROUP BY obligation.project_id,obligation.org_id
          )
          SELECT
             p.id, p.code, p.name, p.status, p.target_handover_date,
@@ -207,7 +209,7 @@ export class OrganisationsService {
         title: r.title,
         assetTag: r.asset_tag || null,
         status: r.status,
-        dueDate: r.due_at ? new Date(r.due_at).toLocaleDateString('en-IN') : 'ASAP',
+        dueDate: r.due_at ? new Date(r.due_at).toLocaleDateString('en-IN') : null,
         ownerName: r.owner_name || 'Unassigned',
       }));
 
@@ -314,7 +316,7 @@ export class OrganisationsService {
           `SELECT id FROM storage_objects
              WHERE org_id=$1 AND id=$2 AND status='READY'
                AND av_scanned_at IS NOT NULL
-               AND mime IN ('image/png','image/jpeg','image/webp')
+               AND mime IN ('image/png','image/jpeg') AND size_bytes<=2097152
                AND sha256 ~ '^[a-fA-F0-9]{64}$' AND size_bytes>0
                AND observed_size_bytes=size_bytes
                AND provider_version_id IS NOT NULL AND provider_version_id<>''
@@ -379,7 +381,7 @@ export class OrganisationsService {
 
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
       const { rows: members } = await client.query(
-        `SELECT m.id, m.user_id, m.role, m.status, m.joined_at, u.name,
+        `SELECT m.id, m.user_id, m.role, m.status, m.row_version, m.joined_at, u.name,
                 (SELECT value FROM user_identities WHERE user_id = u.id ORDER BY created_at ASC LIMIT 1) AS identifier
            FROM memberships m
            JOIN users u ON u.id = m.user_id
@@ -391,7 +393,7 @@ export class OrganisationsService {
       const { rows: pendingInvitations } = await client.query(
         `SELECT id, email, role, status, expires_at, created_at
            FROM invitations
-          WHERE org_id = $1 AND status = 'PENDING'
+          WHERE org_id = $1 AND status IN ('PENDING','DELIVERY_PENDING')
           ORDER BY created_at DESC`,
         [orgId],
       );
@@ -608,7 +610,7 @@ export class OrganisationsService {
     if (!changeableRoles.has(dto.role)) {
       throw new UnprocessableEntityException({code:'OWNER_ROLE_REQUIRES_TRANSFER'});
     }
-    return withTenantTransaction(this.pool, ctx, async (
+    return withTenantTransaction(this.pool, {...ctx,organisationWrite:true}, async (
       client: PoolClient, emit: (ev: DomainOutboxEvent) => void,
     ) => {
       const { rows: actorRows } = await client.query(
@@ -653,6 +655,24 @@ export class OrganisationsService {
             detail: 'An organisation must have at least one active Owner. Transfer ownership first.',
           });
         }
+      }
+
+      if(targetRoles[0].role!==dto.role){
+        const gaps=await this.computeMemberGapReport(client,orgId,targetUserId);
+        if(gaps.openRequirementsCount||gaps.pendingReviewsCount||gaps.draftPackagesCount||gaps.assignedDefectsCount)
+          throw new ConflictException({code:'ROLE_CHANGE_REQUIRES_RESPONSIBILITY_REVIEW',detail:'Allocate outstanding responsibilities before changing this role.'});
+        const {rows:teams}=await client.query(`SELECT p.id,p.status FROM projects p JOIN project_members pm
+          ON pm.org_id=p.org_id AND pm.project_id=p.id WHERE p.org_id=$1 AND pm.user_id=$2 AND pm.status='ACTIVE'
+          ORDER BY p.id FOR UPDATE OF p`,[orgId,targetUserId]);
+        for(const project of teams){
+          if(!['ACTIVE','HANDOVER'].includes(project.status))continue;
+          const {rows:managers}=await client.query(`SELECT pm.id FROM project_members pm
+            JOIN memberships m ON m.org_id=pm.org_id AND m.user_id=pm.user_id AND m.status='ACTIVE'
+            JOIN users u ON u.id=pm.user_id AND u.status='ACTIVE' WHERE pm.org_id=$1 AND pm.project_id=$2
+            AND pm.user_id<>$3 AND pm.status='ACTIVE' AND pm.role IN('R-PM','R-OWNER','R-ADMIN') LIMIT 1`,[orgId,project.id,targetUserId]);
+          if(!managers.length)throw new ConflictException({code:'ROLE_CHANGE_REQUIRES_PROJECT_MANAGER',projectId:project.id});
+        }
+        await client.query("UPDATE project_members SET status='REMOVED',updated_at=now() WHERE org_id=$1 AND user_id=$2 AND status='ACTIVE'",[orgId,targetUserId]);
       }
 
       const { rows } = await client.query(
@@ -715,12 +735,15 @@ export class OrganisationsService {
       targetUserId: string;
       action: 'SUSPEND' | 'REMOVE' | 'REASSIGN_ONLY';
       replacementUserId?: string;
+      emergencyReason?: string;
     },
   ) {
+    if(input.emergencyReason!==undefined&&(input.action!=='SUSPEND'||typeof input.emergencyReason!=='string'||input.emergencyReason.trim().length<10||input.emergencyReason.length>500))
+      throw new UnprocessableEntityException('EMERGENCY_SUSPENSION_REASON_REQUIRED');
     if (input.replacementUserId === input.targetUserId) {
       throw new UnprocessableEntityException({ code: 'SELF_REPLACEMENT_NOT_ALLOWED' });
     }
-    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+    return withTenantTransaction(this.pool, {...ctx,organisationWrite:true}, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
       const { rows: actorRows } = await client.query(
         `SELECT role FROM memberships
            WHERE org_id=$1 AND user_id=$2 AND status='ACTIVE' FOR SHARE`,
@@ -728,6 +751,12 @@ export class OrganisationsService {
       );
       if (!['R-OWNER','R-ADMIN'].includes(actorRows[0]?.role)) {
         throw new ForbiddenException({ code: 'OFFBOARDING_NOT_AUTHORIZED' });
+      }
+      if(input.emergencyReason){
+        const {rows}=await client.query(`SELECT id FROM sessions WHERE id=$1 AND user_id=$2 AND active_org_id=$3 AND auth_generation=$4
+          AND revoked_at IS NULL AND expires_at>now() AND absolute_expires_at>now() AND guest_grant_id IS NULL
+          AND mfa_verified=true AND mfa_verified_at<=now() AND mfa_verified_at>now()-interval '5 minutes' FOR SHARE`,[ctx.sessionId,ctx.userId,ctx.orgId,ctx.authGeneration]);
+        if(!rows.length)throw new ForbiddenException('FRESH_MFA_REQUIRED');
       }
       const { rows: targetMemberRows } = await client.query(
         `SELECT id, role, status FROM memberships
@@ -779,6 +808,9 @@ export class OrganisationsService {
 
       // 2. Compute the WF-21 Gap Report across all active projects (Top 25 Item 19)
       const gapReport = await this.computeMemberGapReport(client, ctx.orgId, input.targetUserId);
+      const {rows:pendingSubmissions}=await client.query(`SELECT id FROM submissions WHERE org_id=$1 AND responsible_user_id=$2
+        AND status IN('DRAFT','SENT','ACKNOWLEDGED','PARTIALLY_ACCEPTED','SUBMITTED')`,[ctx.orgId,input.targetUserId]);
+      if(input.action==='REMOVE'&&pendingSubmissions.length)throw new ConflictException({code:'SUBMISSION_RESPONSIBILITY_ALLOCATION_REQUIRED',count:pendingSubmissions.length});
       const hasOpenWork =
         gapReport.openRequirementsCount > 0 ||
         gapReport.pendingReviewsCount > 0 ||
@@ -822,12 +854,12 @@ export class OrganisationsService {
              WHERE p.org_id=$1 AND (
                EXISTS (SELECT 1 FROM requirements r
                  WHERE r.org_id=p.org_id AND r.project_id=p.id AND r.owner_user_id=$2
-                   AND r.status NOT IN ('APPROVED','WAIVED','NOT_APPLICABLE','SUPERSEDED'))
+                   AND r.status NOT IN ('APPROVED','APPROVED_EXTERNAL','WAIVED','NOT_APPLICABLE','HANDED_OVER','SUPERSEDED'))
                OR EXISTS (SELECT 1 FROM reviews rv
                  WHERE rv.org_id=p.org_id AND rv.project_id=p.id
                    AND rv.reviewer_user_id=$2 AND rv.status IN ('PENDING','IN_REVIEW'))
                OR EXISTS (SELECT 1 FROM handover_packages hp
-                 WHERE hp.org_id=p.org_id AND hp.project_id=p.id AND hp.requested_by=$2
+                 WHERE hp.org_id=p.org_id AND hp.project_id=p.id AND hp.responsible_user_id=$2
                    AND hp.status IN ('DRAFT','QUEUED','GENERATING'))
                OR EXISTS (SELECT 1 FROM defects d
                  WHERE d.org_id=p.org_id AND d.project_id=p.id AND d.assigned_user_id=$2
@@ -844,12 +876,12 @@ export class OrganisationsService {
         if (!['R-OWNER','R-ADMIN'].includes(replacementOrgRole ?? '')) {
           for (const affected of affectedProjects) {
             const { rows: scope } = await client.query(
-              `SELECT role FROM project_members
+              `SELECT role,scope_json FROM project_members
                 WHERE org_id=$1 AND project_id=$2 AND user_id=$3
                   AND status='ACTIVE' FOR SHARE`,
               [ctx.orgId, affected.id, input.replacementUserId],
             );
-            if (!scope.length) {
+            if (!scope.length || Object.keys(scope[0].scope_json??{}).length) {
               throw new UnprocessableEntityException({
                 code: 'REPLACEMENT_PROJECT_SCOPE_REQUIRED',
               });
@@ -865,6 +897,19 @@ export class OrganisationsService {
         if (externalReviews.length) {
           throw new ConflictException({ code: 'EXTERNAL_REVIEW_AUTHORITY_REQUIRES_REVERIFICATION' });
         }
+        const {rows:incompatible}=await client.query(`SELECT rv.id FROM reviews rv
+          JOIN document_versions dv ON dv.org_id=rv.org_id AND dv.project_id=rv.project_id AND dv.id=rv.document_version_id
+          LEFT JOIN document_requirements dr ON dr.org_id=dv.org_id AND dr.project_id=dv.project_id AND dr.document_id=dv.document_id
+          LEFT JOIN requirements r ON r.org_id=dr.org_id AND r.project_id=dr.project_id AND r.id=dr.requirement_id AND r.superseded_at IS NULL
+          LEFT JOIN project_members pm ON pm.org_id=rv.org_id AND pm.project_id=rv.project_id AND pm.user_id=$3 AND pm.status='ACTIVE'
+          WHERE rv.org_id=$1 AND rv.reviewer_user_id=$2 AND rv.status IN('PENDING','IN_REVIEW')
+            AND (dv.uploaded_by=$3 OR r.reviewer_role IS NULL OR
+              (r.reviewer_role<>$4 AND r.reviewer_role IS DISTINCT FROM pm.role)) LIMIT 1`,
+          [ctx.orgId,input.targetUserId,input.replacementUserId,replacementOrgRole]);
+        if(incompatible.length)throw new ConflictException({code:'REPLACEMENT_REVIEW_QUALIFICATION_REQUIRED'});
+        if(!hasPermission({orgRole:replacementOrgRole??undefined},'document.upload').allowed&&gapReport.openRequirementsCount>0)
+          throw new ConflictException({code:'REPLACEMENT_RESPONSIBILITY_CAPABILITY_REQUIRED'});
+
       }
 
       // 3. Perform Bulk Reassignment if replacementUserId is provided (FR-IAM-008 / SCR-056 / Top 25 Item 19)
@@ -873,7 +918,7 @@ export class OrganisationsService {
           `UPDATE requirements
               SET owner_user_id = $3, row_version = row_version + 1, updated_at = now()
             WHERE org_id = $1 AND owner_user_id = $2
-              AND status NOT IN ('APPROVED', 'WAIVED', 'NOT_APPLICABLE', 'SUPERSEDED')`,
+              AND status NOT IN ('APPROVED', 'APPROVED_EXTERNAL', 'WAIVED', 'NOT_APPLICABLE', 'HANDED_OVER', 'SUPERSEDED')`,
           [ctx.orgId, input.targetUserId, input.replacementUserId],
         );
 
@@ -889,8 +934,8 @@ export class OrganisationsService {
 
         await client.query(
           `UPDATE handover_packages
-              SET requested_by = $3, updated_at = now()
-            WHERE org_id = $1 AND requested_by = $2
+              SET responsible_user_id = $3, updated_at = now()
+            WHERE org_id = $1 AND responsible_user_id = $2
               AND status IN ('DRAFT', 'QUEUED', 'GENERATING')`,
           [ctx.orgId, input.targetUserId, input.replacementUserId],
         );
@@ -902,6 +947,25 @@ export class OrganisationsService {
               AND status IN ('OPEN', 'IN_PROGRESS')`,
           [ctx.orgId, input.targetUserId, input.replacementUserId],
         );
+      }
+
+      if(input.action==='SUSPEND'||input.action==='REMOVE'){
+        const {rows:teamProjects}=await client.query(`SELECT p.id,p.status FROM projects p JOIN project_members pm
+          ON pm.org_id=p.org_id AND pm.project_id=p.id WHERE p.org_id=$1 AND pm.user_id=$2 AND pm.status='ACTIVE'
+          ORDER BY p.id FOR UPDATE OF p`,[ctx.orgId,input.targetUserId]);
+        for(const project of teamProjects){
+          const {rows:managers}=await client.query(`SELECT pm.id FROM project_members pm
+            JOIN memberships m ON m.org_id=pm.org_id AND m.user_id=pm.user_id AND m.status='ACTIVE'
+            JOIN users u ON u.id=pm.user_id AND u.status='ACTIVE' WHERE pm.org_id=$1 AND pm.project_id=$2
+              AND pm.user_id<>$3 AND pm.status='ACTIVE' AND pm.role IN('R-PM','R-OWNER','R-ADMIN') LIMIT 1`,[ctx.orgId,project.id,input.targetUserId]);
+          if(['ACTIVE','HANDOVER'].includes(project.status)&&!managers.length){
+            if(!input.emergencyReason)throw new ConflictException({code:'OFFBOARDING_REQUIRES_PROJECT_MANAGER',projectId:project.id});
+            await client.query("UPDATE projects SET status='SUSPENDED',row_version=row_version+1,updated_at=now() WHERE org_id=$1 AND id=$2",[ctx.orgId,project.id]);
+            emit({eventType:'PROJECT_SUSPENDED',projectId:project.id,entityType:'PROJECT',entityId:project.id,
+              beforeJson:{status:project.status},afterJson:{status:'SUSPENDED',reason:input.emergencyReason,emergency:true,responsibilityReviewRequired:true}});
+          }
+        }
+        await client.query(`UPDATE project_members SET status='REMOVED',updated_at=now() WHERE org_id=$1 AND user_id=$2 AND status='ACTIVE'`,[ctx.orgId,input.targetUserId]);
       }
 
       // 4. Transition membership state (06 §3.3)
@@ -922,6 +986,7 @@ export class OrganisationsService {
         beforeJson: { status: targetMember.status },
         afterJson: {
           action: input.action,
+          emergencyReason: input.emergencyReason??null,
           replacementUserId: input.replacementUserId ?? null,
           gapReport,
         },
@@ -949,6 +1014,13 @@ export class OrganisationsService {
   /**
    * API-017: DELETE /orgs/:orgId/members/:userId wrapper
    */
+  async emergencySuspendMember(ctx:TenantActorContext,orgId:string,userId:string,value:unknown){
+    resolveOrganisationTarget(ctx.orgId,orgId);requireProjectCommandId(userId,'INVALID_MEMBER_ID');
+    const dto=projectCommandRecord(value,['reason'],'INVALID_EMERGENCY_SUSPENSION');
+    if(typeof dto.reason!=='string')throw new UnprocessableEntityException('EMERGENCY_SUSPENSION_REASON_REQUIRED');
+    return this.offboardOrReassignMember(ctx,{targetUserId:userId,action:'SUSPEND',emergencyReason:dto.reason});
+  }
+
   async removeMember(
     ctx: TenantActorContext,
     orgId: string,
@@ -967,6 +1039,25 @@ export class OrganisationsService {
    * API-018: POST /api/v1/orgs/:orgId/transfer-ownership
    * Atomically transfers R-OWNER to another active member (FR-IAM-004, FR-ORG-014).
    */
+  async reactivateMember(ctx:TenantActorContext,targetOrgId:string,userId:string,rowVersion:unknown){
+    resolveOrganisationTarget(ctx.orgId,targetOrgId);requireProjectCommandId(userId,'INVALID_MEMBER_ID');
+    if(!Number.isSafeInteger(rowVersion)||Number(rowVersion)<1)throw new UnprocessableEntityException('MEMBERSHIP_VERSION_REQUIRED');
+    return withTenantTransaction(this.pool,{...ctx,organisationWrite:true},async(client,emit)=>{
+      const {rows:actor}=await client.query(`SELECT m.role FROM memberships m JOIN users u ON u.id=m.user_id AND u.status='ACTIVE'
+        WHERE m.org_id=$1 AND m.user_id=$2 AND m.status='ACTIVE' FOR SHARE OF m,u`,[ctx.orgId,ctx.userId]);
+      if(ctx.guestGrantId||!['R-OWNER','R-ADMIN'].includes(actor[0]?.role))throw new ForbiddenException('MEMBERSHIP_REACTIVATION_AUTHORITY_REQUIRED');
+      const {rows}=await client.query(`SELECT m.* FROM memberships m JOIN users u ON u.id=m.user_id AND u.status='ACTIVE'
+        WHERE m.org_id=$1 AND m.user_id=$2 FOR UPDATE OF m FOR SHARE OF u`,[ctx.orgId,userId]);
+      const target=rows[0];if(!target||target.status!=='SUSPENDED')throw new ConflictException('SUSPENDED_MEMBERSHIP_REQUIRED');
+      if(Number(target.row_version)!==rowVersion)throw new ConflictException('MEMBERSHIP_VERSION_STALE');
+      if(target.role==='R-OWNER'||target.role==='R-ADMIN'&&actor[0].role!=='R-OWNER')throw new ForbiddenException('PROTECTED_MEMBER_TRANSITION');
+      const seat=await reserveActiveSeatForMembership(client,ctx.orgId);if(seat!=='RESERVED')throw new ConflictException({code:seat});
+      const {rows:updated}=await client.query(`UPDATE memberships SET status='ACTIVE',row_version=row_version+1,updated_at=now()
+        WHERE org_id=$1 AND user_id=$2 RETURNING id,user_id,role,status,row_version`,[ctx.orgId,userId]);
+      emit({eventType:'MEMBER_REACTIVATED',entityType:'MEMBERSHIP',entityId:target.id,afterJson:{userId,projectAccessRestored:false}});return updated[0];
+    });
+  }
+
   async requestOwnershipTransfer(ctx:TenantActorContext,input:{targetUserId:string;rowVersion:number;requestKey:string}) {
     return new OwnershipTransfersService(this.pool).request(ctx,input);
   }
@@ -975,6 +1066,16 @@ export class OrganisationsService {
   }
   async cancelOwnershipTransfer(ctx:TenantActorContext,id:string) {
     return new OwnershipTransfersService(this.pool).decide(ctx,id,'CANCEL');
+  }
+
+  async listOwnershipTransfers(ctx:TenantActorContext){
+    if(ctx.guestGrantId)throw new ForbiddenException('OWNERSHIP_MEMBER_REQUIRED');
+    return withTenantTransaction(this.pool,ctx,async client=>{
+      const {rows:members}=await client.query("SELECT role FROM memberships WHERE org_id=$1 AND user_id=$2 AND status='ACTIVE' FOR SHARE",[ctx.orgId,ctx.userId]);
+      if(!members.length)throw new ForbiddenException('OWNERSHIP_MEMBER_REQUIRED');
+      return (await client.query(`SELECT id,requested_by,recipient_user_id,status,expires_at,created_at FROM ownership_transfer_intents
+        WHERE org_id=$1 AND (requested_by=$2 OR recipient_user_id=$2) ORDER BY created_at DESC LIMIT 50`,[ctx.orgId,ctx.userId])).rows;
+    });
   }
 
   async transferOwnership(ctx: TenantActorContext, newOwnerUserId: string) {
@@ -1032,7 +1133,7 @@ export class OrganisationsService {
          FROM requirements r
          JOIN projects p ON p.org_id = r.org_id AND p.id = r.project_id
         WHERE r.org_id = $1 AND r.owner_user_id = $2
-          AND r.status NOT IN ('APPROVED','WAIVED','NOT_APPLICABLE','SUPERSEDED')
+          AND r.status NOT IN ('APPROVED','APPROVED_EXTERNAL','WAIVED','NOT_APPLICABLE','HANDED_OVER','SUPERSEDED')
         GROUP BY p.id, p.code`,
       [orgId, targetUserId],
     );
@@ -1056,7 +1157,7 @@ export class OrganisationsService {
       `SELECT p.id AS project_id, p.code AS project_code, COUNT(hp.id)::int AS draft_packages
          FROM handover_packages hp
          JOIN projects p ON p.org_id = hp.org_id AND p.id = hp.project_id
-        WHERE hp.org_id = $1 AND hp.requested_by = $2
+        WHERE hp.org_id = $1 AND hp.responsible_user_id = $2
           AND hp.status IN ('DRAFT', 'QUEUED', 'GENERATING')
         GROUP BY p.id, p.code`,
       [orgId, targetUserId],

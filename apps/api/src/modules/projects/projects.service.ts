@@ -4,12 +4,15 @@ import {resolveEffectiveEntitlements} from '@tradecloseout/db/entitlements';
 
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { Pool, PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
+import { createHash } from 'crypto';
+import { assertValidMemberProjectScope } from '@tradecloseout/db/tenant-tx';
 import {
   withTenantTransaction,
   TenantActorContext,
@@ -49,6 +52,67 @@ function validProjectDate(value: unknown): value is string {
 @Injectable()
 export class ProjectsService {
   constructor(private readonly pool: Pool) {}
+
+  private async withLifecycleCommand<T>(
+    ctx: TenantActorContext, projectId: string, action: string,
+    expectedVersion: number | undefined, reason: string | undefined,
+    work: (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => Promise<T>,
+    extra: Record<string, unknown> = {},
+  ): Promise<T> {
+    requireProjectCommandId(projectId, 'INVALID_PROJECT_ID');
+    if (ctx.guestGrantId || !['MEMBER','USER','ADMIN'].includes(ctx.actorType))
+      throw new ForbiddenException({code:'PROJECT_LIFECYCLE_AUTHORITY_REQUIRED'});
+    if (!Number.isSafeInteger(expectedVersion) || Number(expectedVersion)<1)
+      throw new UnprocessableEntityException({code:'CURRENT_PROJECT_VERSION_REQUIRED'});
+    const key=ctx.idempotencyKey;
+    if(typeof key!=='string'||!/^[A-Za-z0-9_.:-]{8,128}$/.test(key))
+      throw new UnprocessableEntityException({code:'LIFECYCLE_IDEMPOTENCY_KEY_REQUIRED'});
+    if ((['SUSPEND','RESUME','CANCEL','ARCHIVE','REOPEN'].includes(action)&&reason===undefined)||
+      (reason!==undefined&&(typeof reason!=='string'||reason.trim().length<5||reason.trim().length>500||/[\u0000-\u001f\u007f]/.test(reason))))
+      throw new UnprocessableEntityException({code:'PROJECT_TRANSITION_REASON_REQUIRED'});
+    const normalizedReason=reason?.trim()??null;
+    const hash=createHash('sha256').update(JSON.stringify({action,expectedVersion,reason:normalizedReason,...extra})).digest('hex');
+    return withTenantTransaction(this.pool,{...ctx,organisationWrite:true},async(client,emit)=>{
+      const {rows:members}=await client.query(`SELECT m.role FROM memberships m
+        JOIN users u ON u.id=m.user_id AND u.status='ACTIVE'
+        JOIN organisations o ON o.id=m.org_id AND o.status='ACTIVE'
+        WHERE m.org_id=$1 AND m.user_id=$2 AND m.status='ACTIVE' FOR SHARE OF m,u,o`,[ctx.orgId,ctx.userId]);
+      const liveRole=members[0]?.role;
+      if(!liveRole)throw new ForbiddenException({code:'PROJECT_LIFECYCLE_AUTHORITY_REQUIRED'});
+      const {rows:projects}=await client.query(`SELECT * FROM projects WHERE org_id=$1 AND id=$2 FOR UPDATE`,[ctx.orgId,projectId]);
+      const project=projects[0];if(!project)throw new NotFoundException('PROJECT_NOT_FOUND');
+      if(project.purged_at!=null)throw new ConflictException({code:'PROJECT_PURGED'});
+      let projectRole:string|undefined;
+      if(!['R-OWNER','R-ADMIN'].includes(liveRole)){
+        const {rows}=await client.query(`SELECT role,scope_json FROM project_members
+          WHERE org_id=$1 AND project_id=$2 AND user_id=$3 AND status='ACTIVE' FOR SHARE`,[ctx.orgId,projectId,ctx.userId]);
+        if(!rows.length)throw new ForbiddenException({code:'PROJECT_MEMBERSHIP_REQUIRED'});
+        projectRole=rows[0].role;
+        try{assertValidMemberProjectScope(rows[0].scope_json);}catch{throw new ForbiddenException({code:'PROJECT_SCOPE_INVALID'});}
+        const scope=rows[0].scope_json??{};
+        if(scope.readOnly||scope.mode==='READ_ONLY'||Object.keys(scope).some(k=>!['readOnly','mode'].includes(k)))
+          throw new ForbiddenException({code:'PROJECT_LIFECYCLE_SCOPE_REQUIRED'});
+      }
+      const permission=action==='CLOSE'?'project.close':'project.manage';
+      if(!hasPermission({orgRole:liveRole,projectRole},permission).allowed)
+        throw new ForbiddenException({code:'PROJECT_LIFECYCLE_AUTHORITY_REQUIRED'});
+      const {rows:receipts}=await client.query(`SELECT actor_user_id,action,input_hash,response_json
+        FROM project_lifecycle_commands WHERE org_id=$1 AND project_id=$2 AND request_key=$3`,[ctx.orgId,projectId,key]);
+      if(receipts[0]){
+        if(receipts[0].actor_user_id!==ctx.userId||receipts[0].action!==action||receipts[0].input_hash!==hash)
+          throw new ConflictException({code:'LIFECYCLE_IDEMPOTENCY_CONFLICT'});
+        return receipts[0].response_json as T;
+      }
+      if(Number(project.row_version)!==expectedVersion)throw new ConflictException({code:'PRECONDITION_FAILED'});
+      const result=await work(client,event=>emit({...event,
+        beforeJson:{...event.beforeJson,rowVersion:project.row_version},
+        afterJson:{...event.afterJson,reason:normalizedReason,requestKey:key}}));
+      const response=JSON.parse(JSON.stringify(result));
+      await client.query(`INSERT INTO project_lifecycle_commands(id,org_id,project_id,request_key,actor_user_id,action,input_hash,response_json)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,[uuidv7(),ctx.orgId,projectId,key,ctx.userId,action,hash,JSON.stringify(response)]);
+      return response;
+    });
+  }
 
   // PH2-G05-005: serialize commercial reference writers with project closure.
   // A writer waiting for the closure lock must recheck the state after acquiring it.
@@ -382,8 +446,9 @@ export class ProjectsService {
     ctx: TenantActorContext,
     projectId: string,
     expectedRowVersion?: number,
+    reason?: string,
   ) {
-    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+    return this.withLifecycleCommand(ctx, projectId, 'ACTIVATE', expectedRowVersion, reason, async (client, emit) => {
       const { rows: projRows } = await client.query(
         `SELECT id, code, status, row_version FROM projects
           WHERE org_id = $1 AND id = $2
@@ -410,6 +475,8 @@ export class ProjectsService {
       const { rows: snapRows } = await client.query(
         `SELECT id FROM checklist_snapshots
           WHERE org_id = $1 AND project_id = $2 AND status = 'ACTIVE'
+            AND EXISTS(SELECT 1 FROM project_baseline_approvals b WHERE b.org_id=checklist_snapshots.org_id
+              AND b.project_id=checklist_snapshots.project_id AND b.snapshot_id=checklist_snapshots.id AND b.checksum=checklist_snapshots.checksum)
           LIMIT 1`,
         [ctx.orgId, projectId],
       );
@@ -442,7 +509,7 @@ export class ProjectsService {
       }
 
       // Reserve against the canonical active-project count and current plan.
-      const maxProjectsLimit = await this.getOrgMaxActiveProjectsLimit(client, ctx.orgId);
+      const maxProjectsLimit = await this.getOrgMaxActiveProjectsLimit(client, ctx.orgId, projectId);
       await this.reconcileActiveProjectSlots(client, ctx.orgId, true, BigInt(maxProjectsLimit));
 
       const { rows: updatedRows } = await client.query(
@@ -469,8 +536,8 @@ export class ProjectsService {
   /**
    * POST /api/v1/projects/:id/suspend
    */
-  async suspendProject(ctx: TenantActorContext, projectId: string) {
-    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+  async suspendProject(ctx: TenantActorContext, projectId: string, expectedRowVersion?: number, reason?: string) {
+    return this.withLifecycleCommand(ctx, projectId, 'SUSPEND', expectedRowVersion, reason, async (client, emit) => {
       const { rows } = await client.query(
         `UPDATE projects
             SET status = 'SUSPENDED', updated_at = now(), row_version = row_version + 1
@@ -499,14 +566,14 @@ export class ProjectsService {
     ctx: TenantActorContext,
     projectId: string,
     expectedRowVersion?: number,
-    input?: { closureDate?: string },
+    input?: { closureDate?: string; reason?: string },
   ) {
     if (input?.closureDate !== undefined && !validProjectDate(input.closureDate)) {
       throw new UnprocessableEntityException({ code: 'INVALID_CLOSURE_DATE' });
     }
     const closureDate = input?.closureDate ?? new Date().toISOString().split('T')[0];
 
-    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+    return this.withLifecycleCommand(ctx, projectId, 'CLOSE', expectedRowVersion, input?.reason, async (client, emit) => {
       const { rows: projRows } = await client.query(
         `SELECT id, status, row_version FROM projects
           WHERE org_id = $1 AND id = $2 FOR UPDATE`,
@@ -649,7 +716,7 @@ export class ProjectsService {
       });
 
       return updatedRows[0];
-    });
+    }, {closureDate:input?.closureDate??null});
   }
 
   /**
@@ -662,7 +729,7 @@ export class ProjectsService {
     expectedRowVersion: number | undefined,
     reason: string | undefined,
   ) {
-    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+    return this.withLifecycleCommand(ctx, projectId, 'REOPEN', expectedRowVersion, reason, async (client, emit) => {
       const { rows } = await client.query(
         `SELECT id, status, purged_at, reopen_count, row_version
            FROM projects WHERE org_id = $1 AND id = $2 FOR UPDATE`,
@@ -696,7 +763,7 @@ export class ProjectsService {
           code: 'REOPEN_REASON_REQUIRED', detail: 'A specific reopening reason is required.',
         });
       }
-      const maxProjectsLimit = await this.getOrgMaxActiveProjectsLimit(client, ctx.orgId);
+      const maxProjectsLimit = await this.getOrgMaxActiveProjectsLimit(client, ctx.orgId, projectId);
       await this.reconcileActiveProjectSlots(client, ctx.orgId, true, BigInt(maxProjectsLimit));
 
       await client.query(
@@ -722,8 +789,8 @@ export class ProjectsService {
     });
   }
 
-  async handoverProject(ctx: TenantActorContext, projectId: string) {
-    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+  async handoverProject(ctx: TenantActorContext, projectId: string, expectedRowVersion?: number, reason?: string) {
+    return this.withLifecycleCommand(ctx, projectId, 'HANDOVER', expectedRowVersion, reason, async (client, emit) => {
       const { rows } = await client.query(
         `SELECT id, status, row_version FROM projects WHERE org_id = $1 AND id = $2 FOR UPDATE`,
         [ctx.orgId, projectId],
@@ -763,6 +830,30 @@ export class ProjectsService {
       });
 
       return { projectId, status: 'HANDOVER' };
+    });
+  }
+
+  async transitionProject(ctx:TenantActorContext,projectId:string,action:'RESUME'|'CANCEL'|'ARCHIVE',expectedRowVersion:number,reason:string){
+    return this.withLifecycleCommand(ctx,projectId,action,expectedRowVersion,reason,async(client,emit)=>{
+      const {rows:[project]}=await client.query('SELECT status FROM projects WHERE org_id=$1 AND id=$2',[ctx.orgId,projectId]);
+      const allowed={RESUME:['SUSPENDED'],CANCEL:['DRAFT','ACTIVE','SUSPENDED'],ARCHIVE:['CLOSED','CANCELLED']};
+      if(!allowed[action].includes(project.status))throw new ConflictException({code:'INVALID_STATE_TRANSITION'});
+      if(action==='RESUME'){
+        const limit=await this.getOrgMaxActiveProjectsLimit(client,ctx.orgId,projectId);
+        await this.reconcileActiveProjectSlots(client,ctx.orgId,false,BigInt(limit));
+        const {rows:managers}=await client.query(`SELECT pm.id FROM project_members pm
+          JOIN memberships m ON m.org_id=pm.org_id AND m.user_id=pm.user_id AND m.status='ACTIVE'
+          JOIN users u ON u.id=pm.user_id AND u.status='ACTIVE'
+          WHERE pm.org_id=$1 AND pm.project_id=$2 AND pm.status='ACTIVE' AND pm.role IN('R-PM','R-OWNER','R-ADMIN') LIMIT 1`,[ctx.orgId,projectId]);
+        if(!managers.length)throw new ConflictException({code:'MISSING_PROJECT_MANAGER'});
+      }
+      const next={RESUME:'ACTIVE',CANCEL:'CANCELLED',ARCHIVE:'ARCHIVED'}[action];
+      const {rows}=await client.query(`UPDATE projects SET status=$3,row_version=row_version+1,updated_at=now()
+        WHERE org_id=$1 AND id=$2 RETURNING *`,[ctx.orgId,projectId,next]);
+      if(action!=='RESUME')await this.reconcileActiveProjectSlots(client,ctx.orgId,false);
+      emit({eventType:'PROJECT_'+{RESUME:'RESUMED',CANCEL:'CANCELLED',ARCHIVE:'ARCHIVED'}[action],projectId,
+        entityType:'PROJECT',entityId:projectId,beforeJson:{status:project.status},afterJson:{status:next}});
+      return rows[0];
     });
   }
 
@@ -1294,7 +1385,7 @@ export class ProjectsService {
         !permittedRoles.has(dto.role)) {
       throw new UnprocessableEntityException({ code: 'INVALID_PROJECT_MEMBER' });
     }
-    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+    return withTenantTransaction(this.pool, {...ctx,organisationWrite:true}, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
       // PH2-G05-004: read the *current* tenant membership and user status.
       // An arbitrary UUID, suspended member or external guest cannot become
       // an ACTIVE project member merely by referencing an ID.
@@ -1370,7 +1461,7 @@ export class ProjectsService {
    * DELETE /projects/:id/members/:userId
    */
   async removeProjectMember(ctx: TenantActorContext, projectId: string, targetUserId: string) {
-    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+    return withTenantTransaction(this.pool, {...ctx,organisationWrite:true}, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
       await this.lockEditableCommercialProject(client, ctx.orgId, projectId);
       const { rows: current } = await client.query(
         `SELECT id,role,status FROM project_members
@@ -1400,8 +1491,8 @@ export class ProjectsService {
     });
   }
 
-  private async getOrgMaxActiveProjectsLimit(client: any, orgId: string): Promise<number> {
-    const effective=await resolveEffectiveEntitlements(client,orgId);
+  private async getOrgMaxActiveProjectsLimit(client: any, orgId: string, projectId:string): Promise<number> {
+    const effective=await resolveEffectiveEntitlements(client,orgId,{projectId});
     return effective.canConsume?effective.limits.maxActiveProjects:0;
   }
 }

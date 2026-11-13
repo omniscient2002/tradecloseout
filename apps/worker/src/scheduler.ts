@@ -1,3 +1,5 @@
+import {overdueCurrentObligationSql} from '@tradecloseout/db';
+import {enqueueConfiguredReminders} from './configured-reminders';
 import { Pool } from 'pg';
 import Redis from 'ioredis';
 import { createHash } from 'crypto';
@@ -309,13 +311,9 @@ export class TradeCloseoutScheduler {
              -- External weekly digest is intentionally nonfinancial; do not
              -- materialize commercial totals in its scheduler projection.
              LEFT JOIN LATERAL (
-               SELECT COUNT(*) AS missing_or_expired_count
-                 FROM requirements
-                WHERE org_id = p.org_id AND project_id = p.id
-                  AND mandatory = true AND superseded_at IS NULL
-                  AND status <> 'NOT_APPLICABLE'
-                  AND (status = 'EXPIRED' OR (due_at IS NOT NULL AND due_at < now()
-                       AND status NOT IN ('APPROVED','APPROVED_EXTERNAL','WAIVED','NOT_APPLICABLE','HANDED_OVER')))
+               SELECT COUNT(*) AS missing_or_expired_count FROM requirements obligation
+                WHERE obligation.org_id=p.org_id AND obligation.project_id=p.id AND obligation.mandatory=true
+                  AND ${overdueCurrentObligationSql('obligation')}
              ) r ON true
             WHERE p.org_id = $1 AND p.status IN ('ACTIVE', 'HANDOVER')
             `,
@@ -324,9 +322,9 @@ export class TradeCloseoutScheduler {
 
         await client.query(
           `INSERT INTO notifications
-            (id, org_id, recipient_user_id, channel, event_key, payload_json, status, dedup_key)
-           VALUES ($1, $2, $3, 'EMAIL', 'WEEKLY_OWNER_DIGEST', $4, 'QUEUED', $5)
-           ON CONFLICT (org_id, dedup_key, channel, COALESCE(recipient_user_id, recipient_party_id))
+            (id, org_id, recipient_user_id, channel, event_key, payload_json, status, dedup_key,category)
+           VALUES ($1, $2, $3, 'EMAIL', 'WEEKLY_OWNER_DIGEST', $4, 'QUEUED', $5,'OWNER_DIGEST')
+           ON CONFLICT (org_id, dedup_key, channel, recipient_user_id, recipient_party_id)
            DO NOTHING`,
           [
             uuidv7(),
@@ -520,6 +518,8 @@ export class TradeCloseoutScheduler {
       client.release();
     }
   }
+
+  async runConfiguredReminders(){return enqueueConfiguredReminders(this.pool);}
 
   /** Claim/ack outside network I/O; quiet hours are applied before claiming. */
   async dispatchQueuedNotifications(): Promise<number> {

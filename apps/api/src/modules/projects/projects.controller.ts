@@ -16,7 +16,7 @@ import { ProjectsService } from './projects.service';
 import { SessionCsrfGuard } from '../../common/guards/session-csrf.guard';
 import { PermissionGuard, RequirePermission } from '../../common/guards/permission.guard';
 import { RequireIdempotency } from '../../common/decorators/idempotency.decorator';
-import { CloseProjectDto } from './dto/close-project.dto';
+import { parseLifecycleInput } from './project-lifecycle-input';
 
 @Controller('api/v1/projects')
 @UseGuards(SessionCsrfGuard, PermissionGuard)
@@ -73,44 +73,74 @@ export class ProjectsController {
 
   @Post(':id/activate')
   @RequirePermission('project.manage')
-  async activateProject(@Req() req: any, @Param('id') id: string) {
-    return this.projectsService.activateProject(req.userContext, id);
+  @RequireIdempotency()
+  async activateProject(@Req() req:any,@Param('id') id:string,@Body() dto:unknown){
+    const input=parseLifecycleInput(dto,false,false);
+    const ctx={...req.userContext,idempotencyKey:req.headers?.['idempotency-key']};
+    return this.projectsService.activateProject(ctx,id,input.expectedRowVersion,input.reason);
   }
 
   @Post(':id/handover')
   @RequirePermission('project.manage')
-  async handoverProject(@Req() req: any, @Param('id') id: string) {
-    return this.projectsService.handoverProject(req.userContext, id);
+  @RequireIdempotency()
+  async handoverProject(@Req() req:any,@Param('id') id:string,@Body() dto:unknown){
+    const input=parseLifecycleInput(dto,false,false);
+    const ctx={...req.userContext,idempotencyKey:req.headers?.['idempotency-key']};
+    return this.projectsService.handoverProject(ctx,id,input.expectedRowVersion,input.reason);
   }
 
   @Post(':id/suspend')
   @RequirePermission('project.manage')
-  async suspendProject(@Req() req: any, @Param('id') id: string) {
-    return this.projectsService.suspendProject(req.userContext, id);
+  @RequireIdempotency()
+  async suspendProject(@Req() req:any,@Param('id') id:string,@Body() dto:unknown){
+    const input=parseLifecycleInput(dto,true,false);
+    const ctx={...req.userContext,idempotencyKey:req.headers?.['idempotency-key']};
+    return this.projectsService.suspendProject(ctx,id,input.expectedRowVersion,input.reason);
   }
 
   @Post(':id/close')
   @RequirePermission('project.close')
   @RequireIdempotency()
-  async closeProject(@Req() req: any, @Param('id') id: string, @Body() dto?: CloseProjectDto) {
-    return this.projectsService.closeProject(req.userContext, id, undefined, {
-      closureDate: dto?.closureDate,
-    });
+  async closeProject(@Req() req:any,@Param('id') id:string,@Body() dto:unknown){
+    const input=parseLifecycleInput(dto,false,true);
+    const ctx={...req.userContext,idempotencyKey:req.headers?.['idempotency-key']};
+    return this.projectsService.closeProject(ctx,id,input.expectedRowVersion,{closureDate:input.closureDate,reason:input.reason});
   }
 
   @Post(':id/reopen')
   @RequirePermission('project.manage')
-  async reopenProject(
-    @Req() req: any,
-    @Param('id') id: string,
-    @Body() dto: { expectedRowVersion?: number; reason?: string },
-  ) {
-    return this.projectsService.reopenProject(
-      req.userContext,
-      id,
-      dto?.expectedRowVersion,
-      dto?.reason,
-    );
+  @RequireIdempotency()
+  async reopenProject(@Req() req:any,@Param('id') id:string,@Body() dto:unknown){
+    const input=parseLifecycleInput(dto,true,false);
+    const ctx={...req.userContext,idempotencyKey:req.headers?.['idempotency-key']};
+    return this.projectsService.reopenProject(ctx,id,input.expectedRowVersion,input.reason);
+  }
+
+  @Post(':id/resume')
+  @RequirePermission('project.manage')
+  @RequireIdempotency()
+  async resumeProject(@Req() req:any,@Param('id') id:string,@Body() dto:unknown){
+    const input=parseLifecycleInput(dto,true,false);
+    const ctx={...req.userContext,idempotencyKey:req.headers?.['idempotency-key']};
+    return this.projectsService.transitionProject(ctx,id,'RESUME',input.expectedRowVersion,input.reason!);
+  }
+
+  @Post(':id/cancel')
+  @RequirePermission('project.manage')
+  @RequireIdempotency()
+  async cancelProject(@Req() req:any,@Param('id') id:string,@Body() dto:unknown){
+    const input=parseLifecycleInput(dto,true,false);
+    const ctx={...req.userContext,idempotencyKey:req.headers?.['idempotency-key']};
+    return this.projectsService.transitionProject(ctx,id,'CANCEL',input.expectedRowVersion,input.reason!);
+  }
+
+  @Post(':id/archive')
+  @RequirePermission('project.manage')
+  @RequireIdempotency()
+  async archiveProject(@Req() req:any,@Param('id') id:string,@Body() dto:unknown){
+    const input=parseLifecycleInput(dto,true,false);
+    const ctx={...req.userContext,idempotencyKey:req.headers?.['idempotency-key']};
+    return this.projectsService.transitionProject(ctx,id,'ARCHIVE',input.expectedRowVersion,input.reason!);
   }
 
   @Get(':id/contracts')

@@ -1,3 +1,4 @@
+import {packageOutputFilename} from '@tradecloseout/shared';
 import { HeadObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { Pool } from 'pg';
 import {lockStorageCapacity,reconcileStorageCapacity,resolveEffectiveEntitlements} from '@tradecloseout/db';
@@ -5,7 +6,7 @@ import {reservePackageArtifact} from './package-artifact-capacity';
 import { BoundedByteStream } from './bounded-stream';
 import { createHash } from 'crypto';
 import { createReadStream, createWriteStream } from 'fs';
-import { mkdtemp, rm, stat } from 'fs/promises';
+import { mkdtemp, rm, stat, readFile } from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import { pipeline } from 'stream/promises';
@@ -83,7 +84,7 @@ async function compilePackageAttempt(
               hp.updated_at > statement_timestamp() - interval '30 minutes' AS lease_active,
               hp.error_code, hp.pdf_object_id,
               p.code AS project_code, p.name AS project_name,
-              o.display_name AS org_name,
+              o.legal_name AS org_name,
               COALESCE(contract.contract_ref, contract.reference, '') AS contract_ref,
               COALESCE(party.name, '') AS client_name
          FROM handover_packages hp
@@ -254,11 +255,24 @@ async function compilePackageAttempt(
       decidedBy: requirement.decided_by,
       decisionMethod: decisionMethod(requirement.decision_method),
     }));
+    const outputProfile=packageMeta.output_profile_json??{};
+    const branding={brandColor:outputProfile.brandColor,footerText:outputProfile.footerText,signatoryName:outputProfile.signatoryName,signatoryDesignation:outputProfile.signatoryDesignation,logo:undefined as {bytes:Uint8Array;mimeType:string}|undefined};
+    if(outputProfile.logo){
+      const logo=outputProfile.logo;
+      if(!Number.isSafeInteger(Number(logo.sizeBytes))||Number(logo.sizeBytes)<1||Number(logo.sizeBytes)>2097152||!['image/png','image/jpeg'].includes(logo.mimeType)||typeof logo.providerVersionId!=='string'||!/^[a-f0-9]{64}$/.test(logo.sha256))throw new Error('PACKAGE_LOGO_SNAPSHOT_INVALID');
+      const logoPath=path.join(tempDir,'verified-branding-image');const signal=AbortSignal.timeout(transferTimeoutMs);
+      const object=await s3.send(new GetObjectCommand({Bucket:logo.bucket,Key:logo.objectKey,VersionId:logo.providerVersionId}),{abortSignal:signal});
+      if(!object.Body)throw new Error('PACKAGE_LOGO_BODY_MISSING');
+      await pipeline(object.Body as Readable,new BoundedByteStream(Number(logo.sizeBytes)),createWriteStream(logoPath,{flags:'wx',mode:0o600}),{signal});
+      if((await stat(logoPath)).size!==Number(logo.sizeBytes)||await sha256File(logoPath)!==logo.sha256)throw new Error('PACKAGE_LOGO_INTEGRITY_MISMATCH');
+      branding.logo={bytes:await readFile(logoPath),mimeType:logo.mimeType};
+    }
     const outputPath = path.join(tempDir, 'handover-dossier.pdf');
     const compileResult = await compileHandoverDossierStreamingQpdf({
       packageId,
       versionNo: packageMeta.version_no,
-      orgLegalName: packageMeta.org_name,
+      orgLegalName: outputProfile.legalName??packageMeta.org_name,
+      branding,
       projectCode: packageMeta.project_code,
       projectName: packageMeta.project_name,
       clientName: packageMeta.client_name,
@@ -283,7 +297,7 @@ async function compilePackageAttempt(
     const bucket = process.env.S3_BUCKET;
     if (!bucket) throw new Error('PACKAGE_STORAGE_NOT_CONFIGURED');
     const reservation=await reservePackageArtifact(pool,{orgId,projectId:packageMeta.project_id,packageId,owner,bucket,
-      filename:`handover-${packageMeta.project_code}-v${packageMeta.version_no}.pdf`,sizeBytes:outputStats.size,sha256:actualOutputSha});
+      filename:packageOutputFilename(outputProfile.namingPattern,packageMeta.project_code,packageMeta.version_no),sizeBytes:outputStats.size,sha256:actualOutputSha});
     const artifactId=reservation.id,objectKey=reservation.objectKey;
     const artifactStream = createReadStream(outputPath);
     const putResult = await s3.send(new PutObjectCommand({
@@ -317,7 +331,7 @@ async function compilePackageAttempt(
       );
       const {rows:project}=await persistClient.query(`SELECT status,purged_at FROM projects WHERE org_id=$1 AND id=$2 FOR UPDATE`,[orgId,packageMeta.project_id]);
       if(!project[0]||project[0].purged_at||!['ACTIVE','HANDOVER'].includes(project[0].status))throw new Error('PACKAGE_PROJECT_NOT_EDITABLE');
-      const entitlement=await resolveEffectiveEntitlements(persistClient,orgId);
+      const entitlement=await resolveEffectiveEntitlements(persistClient,orgId,{projectId:packageMeta.project_id});
       if(!entitlement.canConsume)throw new Error('PACKAGE_STORAGE_ENTITLEMENT_UNAVAILABLE');
       const usage=await lockStorageCapacity(persistClient,orgId);
       if(usage.totalBytes>BigInt(entitlement.limits.maxStorageBytes))throw new Error('STORAGE_QUOTA_EXCEEDED');

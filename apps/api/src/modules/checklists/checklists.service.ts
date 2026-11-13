@@ -21,7 +21,9 @@ import {
   resolveConfigurationHierarchy,
   ConfigLayerInput,
 } from '../configuration/config-resolver';
-import { RequirementStatus, WaiverStatus } from '@tradecloseout/shared';
+import { boundedJsonObject } from '../../common/validation/bounded-json';
+import { projectCommandRecord,requireProjectCommandId } from '../projects/project-command-input';
+import { hasPermission,RequirementStatus, WaiverStatus } from '@tradecloseout/shared';
 
 export interface ResolvedRequirementSpec {
   key: string;
@@ -85,7 +87,7 @@ export function assertLockedChecklistBaselineInvariant(previous: unknown, propos
     if (!item || typeof item !== 'object' || Array.isArray(item)) {
       throw new ConflictException({ code: 'ACTIVE_CHECKLIST_SNAPSHOT_INVALID' });
     }
-    if (item.locked !== true) continue;
+    if (item.locked !== true && item.mandatory !== true) continue;
     if (typeof item.key !== 'string' || !item.key.trim() ||
         !nextByKey.has(item.key) ||
         JSON.stringify(canonical(item)) !== JSON.stringify(canonical(nextByKey.get(item.key)))) {
@@ -100,6 +102,20 @@ export function assertLockedChecklistBaselineInvariant(previous: unknown, propos
 @Injectable()
 export class ChecklistsService {
   constructor(private readonly pool: Pool) {}
+
+  private async assertBaselineAuthority(client:PoolClient,ctx:TenantActorContext,projectId:string){
+    if(ctx.guestGrantId||!['MEMBER','USER','ADMIN'].includes(ctx.actorType))throw new ForbiddenException('BASELINE_AUTHORITY_REQUIRED');
+    const {rows}=await client.query(`SELECT m.role FROM memberships m JOIN users u ON u.id=m.user_id AND u.status='ACTIVE'
+      WHERE m.org_id=$1 AND m.user_id=$2 AND m.status='ACTIVE' FOR SHARE OF m,u`,[ctx.orgId,ctx.userId]);
+    const role=rows[0]?.role;if(!role)throw new ForbiddenException('BASELINE_AUTHORITY_REQUIRED');
+    let projectRole:string|undefined;
+    if(!['R-OWNER','R-ADMIN'].includes(role)){
+      const {rows:members}=await client.query(`SELECT role,scope_json FROM project_members WHERE org_id=$1 AND project_id=$2 AND user_id=$3 AND status='ACTIVE' FOR SHARE`,[ctx.orgId,projectId,ctx.userId]);
+      if(!members.length||Object.keys(members[0].scope_json??{}).length)throw new ForbiddenException('PROJECT_WIDE_BASELINE_AUTHORITY_REQUIRED');
+      projectRole=members[0].role;
+    }
+    if(!hasPermission({orgRole:role,projectRole},'checklist.manage').allowed)throw new ForbiddenException('BASELINE_AUTHORITY_REQUIRED');
+  }
 
   private async lockEditableProject(client: PoolClient, orgId: string, projectId: string): Promise<void> {
     // Every baseline writer shares closure's project lock. Check the lifecycle
@@ -178,18 +194,31 @@ export class ChecklistsService {
     }
 
     const applySnapshot = async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      await this.assertBaselineAuthority(client,ctx,projectId);
       // Serialize competing snapshot writers, including the first snapshot when
       // there is no existing checklist row to lock.
       await this.lockEditableProject(client, ctx.orgId, projectId);
       // Supersede prior ACTIVE snapshot if one exists (06 §3.5)
       const { rows: priorSnaps } = await client.query(
-        `SELECT id, version_no, resolved_payload_json FROM checklist_snapshots
+        `SELECT id, version_no, checksum, resolved_payload_json FROM checklist_snapshots
           WHERE org_id = $1 AND project_id = $2
           ORDER BY version_no DESC LIMIT 1
           FOR UPDATE`,
         [ctx.orgId, projectId],
       );
       assertLockedChecklistBaselineInvariant(priorSnaps[0]?.resolved_payload_json, resolved.payload);
+      const {rows:[lifecycle]}=await client.query('SELECT status FROM projects WHERE org_id=$1 AND id=$2',[ctx.orgId,projectId]);
+      const prior=priorSnaps[0];
+      if(prior?.checksum===resolved.checksum)return {snapshotId:prior.id,versionNo:prior.version_no,checksum:prior.checksum,
+        instantiatedRequirements:0,unchanged:true};
+      if(lifecycle.status!=='DRAFT'){
+        if(!changeRequestId)throw new ConflictException({code:'APPROVED_BASELINE_CHANGE_REQUIRED',baselineSnapshotId:prior?.id??null});
+        const {rows:requests}=await client.query(`SELECT * FROM requirement_change_requests WHERE org_id=$1 AND project_id=$2 AND id=$3 FOR UPDATE`,[ctx.orgId,projectId,changeRequestId]);
+        const approval=requests[0];
+        if(!approval||approval.status!=='APPROVED'||!approval.approved_by||approval.approved_by===approval.requested_by||
+          approval.baseline_snapshot_id!==prior?.id||approval.proposed_checksum!==resolved.checksum||approval.applied_snapshot_id)
+          throw new ConflictException({code:'BASELINE_APPROVAL_STALE_OR_MISMATCHED'});
+      }
 
       const nextVersionNo = (priorSnaps[0]?.version_no ?? 0) + 1;
       if (priorSnaps.length > 0) {
@@ -435,6 +464,10 @@ export class ChecklistsService {
         [ctx.orgId, projectId, JSON.stringify(activeKeys)],
       );
 
+      if(changeRequestId){
+        await client.query(`UPDATE requirement_change_requests SET status='APPLIED',applied_snapshot_id=$4,row_version=row_version+1
+          WHERE org_id=$1 AND project_id=$2 AND id=$3 AND status='APPROVED'`,[ctx.orgId,projectId,changeRequestId,snapshotId]);
+      }
       emit({
         eventType: 'CHECKLIST_SNAPSHOT_CREATED',
         projectId,
@@ -1058,6 +1091,65 @@ export class ChecklistsService {
     });
   }
 
+  async proposeSnapshotChangeInTransaction(ctx:TenantActorContext,projectId:string,baselineId:string,layers:ConfigLayerInput[],reason:string,
+    client:PoolClient,emit:(ev:DomainOutboxEvent)=>void){
+    await this.assertBaselineAuthority(client,ctx,projectId);
+    await this.lockEditableProject(client,ctx.orgId,projectId);
+    const {rows}=await client.query(`SELECT id,checksum,resolved_payload_json FROM checklist_snapshots
+      WHERE org_id=$1 AND project_id=$2 AND status='ACTIVE' ORDER BY version_no DESC LIMIT 1 FOR UPDATE`,[ctx.orgId,projectId]);
+    if(rows[0]?.id!==baselineId)throw new ConflictException({code:'BASELINE_VERSION_STALE'});
+    const resolved=resolveConfigurationHierarchy(layers);
+    if(resolved.conflicts.length)throw new UnprocessableEntityException({code:'CONFIGURATION_CONFLICT',conflicts:resolved.conflicts});
+    const requirements=resolved.payload.requirements;
+    if(!Array.isArray(requirements)||!requirements.length)throw new UnprocessableEntityException('CHECKLIST_REQUIREMENTS_MISSING');
+    assertLockedChecklistBaselineInvariant(rows[0].resolved_payload_json,resolved.payload);
+    if(rows[0].checksum===resolved.checksum)throw new ConflictException({code:'BASELINE_CHANGE_EMPTY'});
+    const before=rows[0].resolved_payload_json.requirements??[];
+    const oldByKey=new Map<string,any>(before.map((r:any)=>[r.key,r]));const newByKey=new Map<string,any>(requirements.map((r:any)=>[r.key,r]));
+    const impact={added:[...newByKey.keys()].filter(k=>!oldByKey.has(k)),removed:[...oldByKey.keys()].filter(k=>!newByKey.has(k)),
+      modified:[...newByKey.keys()].filter(k=>oldByKey.has(k)&&JSON.stringify(oldByKey.get(k))!==JSON.stringify(newByKey.get(k))),
+      acceptanceWillBeReevaluated:true};
+    const id=uuidv7();const {rows:created}=await client.query(`INSERT INTO requirement_change_requests
+      (id,org_id,project_id,change_type,reason,requested_by,status,baseline_snapshot_id,proposed_checksum,proposed_layers_json,impact_json)
+      VALUES($1,$2,$3,'MODIFY',$4,$5,'PENDING',$6,$7,$8,$9) RETURNING *`,
+      [id,ctx.orgId,projectId,reason.trim(),ctx.userId,baselineId,resolved.checksum,JSON.stringify(layers),JSON.stringify(impact)]);
+    emit({eventType:'BASELINE_CHANGE_REQUESTED',projectId,entityType:'REQUIREMENT_CHANGE_REQUEST',entityId:id,
+      afterJson:{baselineSnapshotId:baselineId,proposedChecksum:resolved.checksum,impact}});return created[0];
+  }
+
+  async applyChangeRequest(ctx:TenantActorContext,projectId:string,id:string){
+    requireProjectCommandId(projectId,'INVALID_PROJECT_ID');requireProjectCommandId(id,'INVALID_CHANGE_REQUEST_ID');
+    return withTenantTransaction(this.pool,ctx,async(client,emit)=>{
+      await this.assertBaselineAuthority(client,ctx,projectId);
+      await this.lockEditableProject(client,ctx.orgId,projectId);
+      const {rows}=await client.query('SELECT * FROM requirement_change_requests WHERE org_id=$1 AND project_id=$2 AND id=$3 FOR UPDATE',[ctx.orgId,projectId,id]);
+      const request=rows[0];if(!request)throw new NotFoundException('CHANGE_REQUEST_NOT_FOUND');
+      if(request.status==='APPLIED')return {snapshotId:request.applied_snapshot_id,unchanged:true};
+      if(request.status!=='APPROVED'||!Array.isArray(request.proposed_layers_json))throw new ConflictException('APPROVED_BASELINE_CHANGE_REQUIRED');
+      return this.createAndApplySnapshot(ctx,projectId,request.proposed_layers_json,id,request.reason,{client,emit});
+    });
+  }
+
+  async reviewBaseline(ctx:TenantActorContext,projectId:string,value:unknown){
+    const dto=projectCommandRecord(value,['snapshotId','checksum','reason'],'INVALID_BASELINE_REVIEW');
+    requireProjectCommandId(projectId,'INVALID_PROJECT_ID');requireProjectCommandId(dto.snapshotId,'INVALID_SNAPSHOT_ID');
+    if(typeof dto.checksum!=='string'||!/^[a-f0-9]{64}$/.test(dto.checksum)||typeof dto.reason!=='string'||dto.reason.trim().length<5||dto.reason.length>1000)
+      throw new UnprocessableEntityException('BASELINE_REVIEW_REASON_REQUIRED');
+    return withTenantTransaction(this.pool,ctx,async(client,emit)=>{
+      const {rows:members}=await client.query(`SELECT m.role FROM memberships m JOIN users u ON u.id=m.user_id AND u.status='ACTIVE'
+        WHERE m.org_id=$1 AND m.user_id=$2 AND m.status='ACTIVE' FOR SHARE OF m,u`,[ctx.orgId,ctx.userId]);
+      if(ctx.guestGrantId||!['R-OWNER','R-ADMIN'].includes(members[0]?.role))throw new ForbiddenException('BASELINE_REVIEW_AUTHORITY_REQUIRED');
+      await this.lockEditableProject(client,ctx.orgId,projectId);
+      const {rows}=await client.query(`SELECT id,checksum,created_by FROM checklist_snapshots WHERE org_id=$1 AND project_id=$2 AND id=$3 AND status='ACTIVE' FOR SHARE`,[ctx.orgId,projectId,dto.snapshotId]);
+      const snapshot=rows[0];if(!snapshot||snapshot.checksum!==dto.checksum)throw new ConflictException('BASELINE_REVIEW_STALE');
+      if(snapshot.created_by===ctx.userId)throw new ForbiddenException('BASELINE_SELF_REVIEW_FORBIDDEN');
+      const {rows:approved}=await client.query(`INSERT INTO project_baseline_approvals(id,org_id,project_id,snapshot_id,checksum,reviewer_user_id,reason)
+        VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(org_id,project_id,snapshot_id) DO NOTHING RETURNING *`,[uuidv7(),ctx.orgId,projectId,dto.snapshotId,dto.checksum,ctx.userId,dto.reason]);
+      if(approved.length)emit({eventType:'PROJECT_BASELINE_REVIEWED',projectId,entityType:'CHECKLIST_SNAPSHOT',entityId:snapshot.id,afterJson:{checksum:snapshot.checksum}});
+      return {snapshotId:snapshot.id,reviewed:true};
+    });
+  }
+
   /**
    * API-063: POST /projects/:projectId/requirements/:id/change-requests (WF-20)
    */
@@ -1067,26 +1159,24 @@ export class ChecklistsService {
     requirementId: string,
     dto: { changeType: 'ADD' | 'REMOVE' | 'MODIFY'; reason: string; deltaJson?: any },
   ) {
-    return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
-      const crId = uuidv7();
-      const res = await client.query(
-        `INSERT INTO requirement_change_requests (
-          id, org_id, project_id, requirement_id, change_type, reason,
-          delta_json, status, requested_by
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'PENDING', $8)
-        RETURNING *`,
-        [
-          crId,
-          ctx.orgId,
-          projectId,
-          requirementId,
-          dto.changeType,
-          dto.reason,
-          dto.deltaJson ? JSON.stringify(dto.deltaJson) : null,
-          ctx.userId,
-        ],
-      );
-      return res.rows[0];
+    const input=projectCommandRecord(dto,['changeType','reason','deltaJson'],'INVALID_BASELINE_CHANGE');
+    requireProjectCommandId(projectId,'INVALID_PROJECT_ID');requireProjectCommandId(requirementId,'INVALID_REQUIREMENT_ID');
+    if(!['ADD','REMOVE','MODIFY'].includes(String(input.changeType))||typeof input.reason!=='string'||input.reason.trim().length<5||input.reason.length>500)
+      throw new UnprocessableEntityException('INVALID_BASELINE_CHANGE');
+    let delta:Record<string,unknown>;try{delta=boundedJsonObject(input.deltaJson??{},32768);}catch{throw new UnprocessableEntityException('INVALID_BASELINE_DELTA');}
+    return withTenantTransaction(this.pool,ctx,async(client,emit)=>{
+      await this.lockEditableProject(client,ctx.orgId,projectId);
+      const {rows:requirements}=await client.query('SELECT requirement_key FROM requirements WHERE org_id=$1 AND project_id=$2 AND id=$3 AND superseded_at IS NULL',[ctx.orgId,projectId,requirementId]);
+      if(!requirements.length&&input.changeType!=='ADD')throw new NotFoundException('REQUIREMENT_NOT_FOUND');
+      const {rows}=await client.query(`SELECT id,resolved_payload_json FROM checklist_snapshots WHERE org_id=$1 AND project_id=$2 AND status='ACTIVE' ORDER BY version_no DESC LIMIT 1`,[ctx.orgId,projectId]);
+      if(!rows.length)throw new ConflictException('CHECKLIST_CONFIGURATION_REQUIRED');
+      if(Object.keys(rows[0].resolved_payload_json).some(k=>!['requirements','checklist.requirements'].includes(k)))throw new ConflictException('USE_PERSISTED_CONFIGURATION_CHANGE_WORKFLOW');
+      const existing=rows[0].resolved_payload_json.requirements??[];const key=requirements[0]?.requirement_key;
+      let proposed=existing;
+      if(input.changeType==='REMOVE')proposed=existing.filter((r:any)=>r.key!==key);
+      if(input.changeType==='MODIFY')proposed=existing.map((r:any)=>r.key===key?{...r,...delta,key:r.key}:r);
+      if(input.changeType==='ADD')proposed=[...existing,delta];
+      return this.proposeSnapshotChangeInTransaction(ctx,projectId,rows[0].id,[{level:'PROJECT',versionId:uuidv7(),payload:{requirements:proposed}}],input.reason as string,client,emit);
     });
   }
 
@@ -1133,6 +1223,9 @@ export class ChecklistsService {
       if (!['R-OWNER', 'R-ADMIN'].includes(approverRows[0]?.role)) {
         throw new ForbiddenException({ code: 'CHANGE_REVIEW_AUTHORITY_REQUIRED' });
       }
+      const {rows:targets}=await client.query('SELECT project_id FROM requirement_change_requests WHERE org_id=$1 AND id=$2',[ctx.orgId,changeRequestId]);
+      if(!targets.length)throw new NotFoundException('CHANGE_REQUEST_NOT_FOUND');
+      await this.lockEditableProject(client,ctx.orgId,targets[0].project_id);
       const crRes = await client.query(
         `SELECT * FROM requirement_change_requests WHERE org_id = $1 AND id = $2 FOR UPDATE`,
         [ctx.orgId, changeRequestId],
@@ -1143,6 +1236,10 @@ export class ChecklistsService {
       if (!['PENDING','SUBMITTED'].includes(cr.status)) {
         throw new ConflictException('CHANGE_REQUEST_ALREADY_DECIDED');
       }
+      await this.lockEditableProject(client,ctx.orgId,cr.project_id);
+      const {rows:baselines}=await client.query(`SELECT id FROM checklist_snapshots WHERE org_id=$1 AND project_id=$2 AND status='ACTIVE' ORDER BY version_no DESC LIMIT 1`,[ctx.orgId,cr.project_id]);
+      if(!cr.baseline_snapshot_id||cr.baseline_snapshot_id!==baselines[0]?.id||!cr.proposed_checksum||!Array.isArray(cr.proposed_layers_json))
+        throw new ConflictException('BASELINE_CHANGE_REQUIRES_VERSION_BOUND_PROPOSAL');
       if (cr.requested_by === ctx.userId) {
         throw new ForbiddenException({ code: 'CHANGE_REQUEST_SELF_APPROVAL_FORBIDDEN' });
       }

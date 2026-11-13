@@ -193,6 +193,8 @@ async function bootWorker() {
         console.error('SCHEDULER_AUTH_DELIVERY_FAILED');
       }
 
+      try{await scheduler.runConfiguredReminders();}catch{console.error('SCHEDULER_CONFIGURED_REMINDERS_FAILED');}
+
       // Notification delivery is independently scheduled: delivery ledger
       // outage must not block queued notifications or vice versa.
       try {

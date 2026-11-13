@@ -68,14 +68,20 @@ export async function evaluateReadinessInTransaction(
       );
 
       const { rows: snapshots } = await client.query(
-        `SELECT id, resolved_payload_json FROM checklist_snapshots
+        `SELECT id, resolved_payload_json,
+          (EXISTS(SELECT 1 FROM project_baseline_approvals b WHERE b.org_id=checklist_snapshots.org_id
+             AND b.project_id=checklist_snapshots.project_id AND b.snapshot_id=checklist_snapshots.id AND b.checksum=checklist_snapshots.checksum)
+           OR EXISTS(SELECT 1 FROM requirement_change_requests cr WHERE cr.org_id=checklist_snapshots.org_id
+             AND cr.project_id=checklist_snapshots.project_id AND cr.applied_snapshot_id=checklist_snapshots.id
+             AND cr.status='APPLIED' AND cr.approved_by<>cr.requested_by AND cr.proposed_checksum=checklist_snapshots.checksum)) AS reviewed
+          FROM checklist_snapshots
           WHERE org_id = $1 AND project_id = $2
             AND status = 'ACTIVE' LIMIT 1`,
         [orgId, projectId],
       );
       const rawConfig = snapshots[0]?.resolved_payload_json;
       const snapshotConfig = typeof rawConfig === 'string' ? JSON.parse(rawConfig) : rawConfig;
-      const configured = Array.isArray(snapshotConfig?.requirements) &&
+      const configured = snapshots[0]?.reviewed === true && Array.isArray(snapshotConfig?.requirements) &&
         snapshotConfig.requirements.length > 0 &&
         reqs.some((r: any) => r.mandatory === true);
       const missingMandatory: any[] = [];

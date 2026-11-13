@@ -216,14 +216,14 @@ describe('Phase 2 configuration fail-closed boundaries', () => {
         'policy.allowSelfApproval': true,
         'security.retention_days': null,
         'notifications.schedule': { hour: 9 },
-        'naming.pattern': 'APPROVED-*',
+        'naming.pattern': 'APPROVED-{projectCode}-{version}',
       }),
     });
     expect(result.payload['security.retention_days']).toBe(730);
     expect(result.payload['security.max_file_size_bytes']).toBeUndefined();
     expect(result.payload['policy.allowSelfApproval']).toBeUndefined();
     expect(result.payload['notifications.schedule']).toBeUndefined();
-    expect(result.payload['naming.pattern']).toBe('APPROVED-*');
+    expect(result.payload['naming.pattern']).toBe('APPROVED-{projectCode}-{version}');
     expect(result.conflicts.map(c => c.path)).toEqual(expect.arrayContaining([
       'security.max_file_size_bytes','policy.allowSelfApproval',
       'security.retention_days','notifications.schedule',
@@ -388,6 +388,7 @@ describe('PH2-G06-006: immutable active baseline against single-layer reimports'
     const orgId = '0192e3a0-1111-7000-8000-000000000002';
     const userId = '0192e3a0-1111-7000-8000-000000000003';
     const query = jest.fn(async (sql: string) => {
+      if (sql.includes('FROM memberships m JOIN users')) return {rows:[{role:'R-OWNER'}]};
       if (sql.includes('FROM projects WHERE org_id')) {
         return { rows: [{ id: projectId, status: 'ACTIVE', purged_at: null }] };
       }

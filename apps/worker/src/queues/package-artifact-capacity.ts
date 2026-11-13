@@ -21,7 +21,7 @@ export async function reservePackageArtifact(pool:Pool,input:ArtifactReservation
     const {rows:projects}=await client.query(`SELECT status,purged_at FROM projects
       WHERE org_id=$1 AND id=$2 FOR UPDATE`,[input.orgId,input.projectId]);
     if(!projects[0]||projects[0].purged_at||!['ACTIVE','HANDOVER'].includes(projects[0].status))throw new Error('PACKAGE_PROJECT_NOT_EDITABLE');
-    const effective=await resolveEffectiveEntitlements(client,input.orgId);
+    const effective=await resolveEffectiveEntitlements(client,input.orgId,{projectId:input.projectId});
     if(!effective.canConsume)throw new Error('PACKAGE_STORAGE_ENTITLEMENT_UNAVAILABLE');
     const occupied=await lockStorageCapacity(client,input.orgId);
     const {rows:packages}=await client.query(`SELECT build_object_id,requested_by FROM handover_packages

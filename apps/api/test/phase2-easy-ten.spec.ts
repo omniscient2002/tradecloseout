@@ -70,7 +70,7 @@ describe('Phase2 easiest ten: pre-database runtime boundaries',()=>{
   });
   it('B10 rejects a profile PATCH naming a different organisation through controller and service wrapper',async()=>{
     const pool=forbiddenPool();const service=new OrganisationsService(pool as any);
-    const controller=new OrganisationsController(service);
+    const controller=new OrganisationsController(service,{} as any);
     for(const call of [()=>service.updateOrganisation(ctx,ctx.userId,{rowVersion:1,displayName:'Valid name'}),
       ()=>controller.updateOrganisation({userContext:ctx},ctx.userId,{rowVersion:1,displayName:'Valid name'})]) {
       await expect(call()).rejects.toMatchObject(invalid('NOT_FOUND'));

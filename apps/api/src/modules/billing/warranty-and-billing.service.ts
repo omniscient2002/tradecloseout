@@ -554,7 +554,7 @@ export class WarrantyAndBillingService {
 
   async getSubscription(ctx: TenantActorContext) {
     return withTenantTransaction(this.pool, ctx, async (client) => {
-      const effective=await resolveEffectiveEntitlements(client,ctx.orgId);
+      const effective=await resolveEffectiveEntitlements(client,ctx.orgId,{operation:'READ'});
       const usage=await currentCapacityUsage(client,ctx.orgId);
       return {...effective,id:effective.subscriptionId,status:effective.subscriptionStatus||'INACTIVE',
         planName:effective.planName||'No Subscription',planTier:effective.planCode||'NONE',limitsJson:effective.limits,

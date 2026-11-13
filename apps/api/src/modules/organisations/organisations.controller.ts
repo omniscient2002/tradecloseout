@@ -1,3 +1,4 @@
+import {WorkAllocationService} from './work-allocation.service';
 // apps/api/src/modules/organisations/organisations.controller.ts
 // Organisations Controller (API-010..019, FR-ORG, WF-21, AUD-014)
 
@@ -20,7 +21,7 @@ import { PermissionGuard, RequirePermission } from '../../common/guards/permissi
 @Controller('api/v1/orgs/:orgId')
 @UseGuards(SessionCsrfGuard, PermissionGuard)
 export class OrganisationsController {
-  constructor(private readonly orgsService: OrganisationsService) {}
+  constructor(private readonly orgsService: OrganisationsService,private readonly allocation:WorkAllocationService) {}
 
   @Get('dashboard')
   @RequirePermission('org.read')
@@ -87,6 +88,11 @@ export class OrganisationsController {
     return this.orgsService.updateMemberRole(req.userContext, orgId, requireOrganisationUuid(targetUserId, 'userId'), dto);
   }
 
+  @Get('members/:userId/work-manifest') @RequirePermission('org.manage_members')
+  workManifest(@Req()req:any,@Param('userId')id:string){return this.allocation.manifest(req.userContext,id);}
+  @Post('work-allocations') @RequirePermission('org.manage_members')
+  allocateWork(@Req()req:any,@Body()dto:unknown){return this.allocation.allocate(req.userContext,dto);}
+
   @Get('members/:userId/offboarding-gap-report')
   @RequirePermission('org.manage')
   async getOffboardingGapReport(
@@ -118,6 +124,16 @@ export class OrganisationsController {
       reassignToUserId === undefined ? undefined : requireOrganisationUuid(reassignToUserId, 'reassignToUserId'));
 
   }
+
+  @Post('members/:userId/emergency-suspend') @RequirePermission('org.manage_members')
+  emergencySuspend(@Req()req:any,@Param('orgId')orgId:string,@Param('userId')id:string,@Body()dto:unknown){return this.orgsService.emergencySuspendMember(req.userContext,orgId,id,dto);}
+
+  @Post('members/:userId/reactivate')
+  @RequirePermission('org.manage_members')
+  reactivate(@Req()req:any,@Param('orgId')orgId:string,@Param('userId')id:string,@Body('rowVersion')version:unknown){return this.orgsService.reactivateMember(req.userContext,orgId,id,version);}
+
+  @Get('ownership-transfers') @RequirePermission('org.read')
+  listOwnership(@Req()req:any){return this.orgsService.listOwnershipTransfers(req.userContext);}
 
   @Post('ownership-transfers')
   @RequirePermission('org.transfer_ownership')

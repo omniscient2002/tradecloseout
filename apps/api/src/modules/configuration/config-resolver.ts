@@ -1,3 +1,4 @@
+import {isSupportedPackageNamingPattern,isSupportedReminderSchedule} from '@tradecloseout/shared';
 import { createHash } from 'crypto';
 
 export type ConfigLevel = 'PLATFORM' | 'TRADE' | 'ORG' | 'CLIENT_CONTRACT' | 'PROJECT';
@@ -155,6 +156,7 @@ function validateConfigValue(schema: FieldSchema, value: unknown): boolean {
   }
   if (schema.type === 'unkeyed_array') {
     if (!Array.isArray(value)) return false;
+    if(schema.path==='notifications.schedule')return isSupportedReminderSchedule(value);
     if (schema.path === 'notifications.extra_recipients') {
       return value.every(recipient => typeof recipient === 'string' &&
         /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient.trim()) &&
@@ -174,7 +176,7 @@ function validateConfigValue(schema: FieldSchema, value: unknown): boolean {
     return typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value);
   }
   if (schema.path === 'naming.pattern') {
-    return typeof value === 'string' && value.length > 0 && value.length <= 200;
+    return isSupportedPackageNamingPattern(value);
   }
   return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean';
 }

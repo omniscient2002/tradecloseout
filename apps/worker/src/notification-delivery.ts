@@ -59,7 +59,7 @@ export function hasConfiguredNotificationGateway(): boolean {
 }
 
 /** The gateway must deduplicate by notification ID, including after a DB rollback. */
-export async function deliverNotification(notification: QueuedNotification): Promise<boolean> {
+export async function deliverNotification(notification: QueuedNotification,onAccepted?:(messageId:string)=>Promise<void>): Promise<boolean> {
   if (notification.channel === 'IN_APP') return true;
   const projection = projectNotificationForGateway(notification);
   if (!projection) return false;
@@ -107,7 +107,13 @@ export async function deliverNotification(notification: QueuedNotification): Pro
   } finally { await reader.cancel().catch(()=>{}); }
   const acknowledgment=JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
   // HTTP 2xx is only provider acceptance, not proof of end-recipient delivery.
-  return Boolean(acknowledgment && typeof acknowledgment==='object' &&
+  const accepted=Boolean(acknowledgment && typeof acknowledgment==='object' &&
     (acknowledgment as {accepted?:unknown}).accepted===true &&
     (acknowledgment as {notificationId?:unknown}).notificationId===notification.id);
+  if(accepted&&onAccepted){
+    const messageId=(acknowledgment as {messageId?:unknown}).messageId;
+    if(typeof messageId!=='string'||!/^[A-Za-z0-9._:-]{1,128}$/.test(messageId))return false;
+    await onAccepted(messageId);
+  }
+  return accepted;
 }
