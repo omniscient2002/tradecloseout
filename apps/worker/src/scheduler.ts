@@ -1,4 +1,5 @@
 import {reconcileNotificationOutcomes} from './notification-reconciliation';
+import {reconcileUsageCounters} from './usage-reconciliation';
 import {overdueCurrentObligationSql} from '@tradecloseout/db';
 import {enqueueConfiguredReminders} from './configured-reminders';
 import { Pool } from 'pg';
@@ -14,6 +15,12 @@ export class TradeCloseoutScheduler {
     private readonly pool: Pool,
     private readonly redis: Redis,
   ) {}
+
+  async reconcileCapacityUsage(){
+    const outcome=await reconcileUsageCounters(this.pool);
+    if(outcome.failedOrgs)throw new Error('USAGE_RECONCILIATION_INCOMPLETE');
+    return outcome;
+  }
 
   async reconcileAuthenticationDeliveries():Promise<void> {
     await this.runWithLeaderLock('g01-delivery-receipts',90,async()=>{

@@ -98,6 +98,15 @@ async function bootWorker() {
     try {
       const periods = scheduler.getIndiaSchedulePeriods();
       await runWithSafePeriodLock(
+        `capacity-reconciliation:${periods.hourSlot}`,
+        `sched:done:capacity-reconciliation:${periods.hourSlot}`,
+        300,2*60*60,
+        async()=>{
+          const outcome=await scheduler.reconcileCapacityUsage();
+          if(outcome.repairedCounters)console.log(`[Scheduler] Repaired ${outcome.repairedCounters} capacity caches across ${outcome.scannedOrgs} organisations.`);
+        },
+      );
+      await runWithSafePeriodLock(
         `daily-expiry:${periods.day}`,
         `sched:done:daily-expiry:${periods.day}`,
         300,

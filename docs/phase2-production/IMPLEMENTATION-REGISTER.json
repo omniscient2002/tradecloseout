@@ -226,7 +226,7 @@
       "id": "PH2-G18-002",
       "title": "Enforce seats on every membership activation under one capacity lock",
       "engineeringStatus": "PARTIAL_CANDIDATE_IMPLEMENTATION",
-      "validationStatus": "FULL_VALIDATION_DEFERRED_BY_USER",
+      "validationStatus": "RELATED_FOCUSED_CHECKS_PASSED_FULL_VALIDATION_DEFERRED",
       "independentAcceptance": "UNCHANGED",
       "files": [
         "packages/db/src/entitlements.ts",
@@ -234,13 +234,14 @@
         "apps/api/src/modules/billing/project-offer.controller.ts"
       ],
       "requiredOutcome": "Integrate the seat correction with the authoritative entitlement resolver and a lock that exists even when no subscription row does. Define invited/active/suspended seat accounting and enforce signup/reactivation/import/admin activation consistently. Serialize plan edits and acceptances, preserve proof recovery on capacity rejection and make retries idempotent.",
-      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering."
+      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering.",
+      "usageReconciliationEvidence": "docs/phase2-production/USAGE-RECONCILIATION-2026-11-13.md"
     },
     {
       "id": "PH2-G18-003",
       "title": "Reserve storage atomically and treat zero as a real limit",
       "engineeringStatus": "PARTIAL_CANDIDATE_IMPLEMENTATION",
-      "validationStatus": "FULL_VALIDATION_DEFERRED_BY_USER",
+      "validationStatus": "RELATED_FOCUSED_CHECKS_PASSED_FULL_VALIDATION_DEFERRED",
       "independentAcceptance": "UNCHANGED",
       "files": [
         "packages/db/src/entitlements.ts",
@@ -248,13 +249,14 @@
         "apps/api/src/modules/billing/project-offer.controller.ts"
       ],
       "requiredOutcome": "Resolve an explicit validated limit, including zero, and reserve pending bytes atomically under an org usage lock. Reconcile reserved/committed bytes on complete, scanner success/failure, abort, expiry, delete and restore. Define safe over-quota recovery after downgrade; do not weaken scanning or immutable object verification.",
-      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering."
+      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering.",
+      "usageReconciliationEvidence": "docs/phase2-production/USAGE-RECONCILIATION-2026-11-13.md"
     },
     {
       "id": "PH2-G18-004",
       "title": "Align active-project usage with lifecycle and reopening",
       "engineeringStatus": "PARTIAL_CANDIDATE_IMPLEMENTATION",
-      "validationStatus": "FULL_VALIDATION_DEFERRED_BY_USER",
+      "validationStatus": "RELATED_FOCUSED_CHECKS_PASSED_FULL_VALIDATION_DEFERRED",
       "independentAcceptance": "UNCHANGED",
       "files": [
         "packages/db/src/entitlements.ts",
@@ -262,7 +264,8 @@
         "apps/api/src/modules/billing/project-offer.controller.ts"
       ],
       "requiredOutcome": "Define which lifecycle states consume capacity, including HANDOVER and SUSPENDED, then implement atomic transition deltas/reservations and a reconciliation job against canonical project state. Reopen/resume must use effective limits. Archive must exclude projects without deleting records; retries and rollback must not double-count.",
-      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering."
+      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering.",
+      "usageReconciliationEvidence": "docs/phase2-production/USAGE-RECONCILIATION-2026-11-13.md"
     },
     {
       "id": "PH2-G18-005",
@@ -637,7 +640,7 @@
       "id": "PH2-G05-007",
       "title": "Enforce capacity on every capacity-changing lifecycle transition",
       "engineeringStatus": "PARTIAL_CANDIDATE_IMPLEMENTATION",
-      "validationStatus": "FULL_VALIDATION_DEFERRED_BY_USER",
+      "validationStatus": "RELATED_FOCUSED_CHECKS_PASSED_FULL_VALIDATION_DEFERRED",
       "independentAcceptance": "UNCHANGED",
       "files": [
         "apps/api/src/modules/projects/projects.service.ts",
@@ -645,7 +648,8 @@
         "apps/web/src/app/(contractor)/projects/[projectId]/page.tsx"
       ],
       "requiredOutcome": "Implement the G18 effective entitlement and lifecycle reservation contract once, including reopen/resume/archive and safe over-limit retained reads. Reconcile canonical projects and usage, with reviewed period/state definitions and deterministic locks.",
-      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering."
+      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering.",
+      "usageReconciliationEvidence": "docs/phase2-production/USAGE-RECONCILIATION-2026-11-13.md"
     },
     {
       "id": "PH2-G05-008",
