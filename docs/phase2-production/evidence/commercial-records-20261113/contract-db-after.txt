@@ -1,0 +1,9 @@
+PASS test/phase2-contract-admission-db.spec.ts (6.889 s)
+PASS test/phase2-project-money-variations-db.spec.ts (5.886 s)
+PASS test/phase2-owner-digest-commercial-db.spec.ts
+
+Test Suites: 3 passed, 3 total
+Tests:       4 passed, 4 total
+Snapshots:   0 total
+Time:        16.207 s
+Ran all test suites matching /test\/phase2-contract-admission-db.spec.ts|test\/phase2-project-money-variations-db.spec.ts|test\/phase2-owner-digest-commercial-db.spec.ts/i.

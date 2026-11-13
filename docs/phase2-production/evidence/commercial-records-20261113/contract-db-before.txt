@@ -1,0 +1,41 @@
+FAIL test/phase2-contract-admission-db.spec.ts (5.918 s)
+  ✕ PH2-NEW-014: contract admission survives a real project lock and retains exact terms/history (2034 ms)
+
+  ● PH2-NEW-014: contract admission survives a real project lock and retains exact terms/history
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 7
+    + Received  + 1
+
+      Object {
+    -   "value": Object {
+    -     "contract_ref": "ADMITTED-C",
+    -     "party_id": "01a1d239-2961-766b-b4db-12f1ccd4e64c",
+    -     "retention_bps": 0,
+    -     "title": "Admitted contract",
+    -     "value_paise": "9007199254740993",
+    -   },
+    +   "error": [NotFoundException: CONTRACT_PARTY_NOT_FOUND],
+      }
+
+      32 |       input.contractRef='MUTATED';input.title=123;input.partyId=foreignParty;input.retentionBps=10000;input.completionDate='2026-01-01';
+      33 |       await blocker.query('COMMIT');
+    > 34 |       expect(await outcome).toMatchObject({value:{contract_ref:'ADMITTED-C',title:'Admitted contract',party_id:party,
+         |                             ^
+      35 |         value_paise:'9007199254740993',retention_bps:0}});
+      36 |     }finally{await blocker.query('ROLLBACK');blocker.release();await outcome;}
+      37 |     const row=(await admin.query(`SELECT commencement_date::text,completion_date::text FROM contracts WHERE org_id=$1 AND contract_ref='ADMITTED-C'`,[org])).rows[0];
+
+      at test/phase2-contract-admission-db.spec.ts:34:29
+      at async withDisposableDatabase (../../packages/db/test/helpers/disposable-database.ts:107:5)
+      at async Object.<anonymous> (test/phase2-contract-admission-db.spec.ts:7:3)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 1 total
+Snapshots:   0 total
+Time:        5.982 s
+Ran all test suites matching /test\/phase2-contract-admission-db.spec.ts/i.
+Error: ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL
+
+  × "pnpm recursive exec" failed in /tmp/tco-phase2-reaudit/apps/api

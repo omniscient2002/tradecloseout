@@ -1,0 +1,31 @@
+PASS test/phase2-contract-admission.spec.ts (5.688 s)
+  PH2-NEW-014: contract admission before SQL
+    ✓ rejects malformed or unsupported contract null (4 ms)
+    ✓ rejects malformed or unsupported contract [] (1 ms)
+    ✓ rejects malformed or unsupported contract 12 (1 ms)
+    ✓ rejects malformed or unsupported contract {"contractRef":"C1","title":"Synthetic contract","status":"ACTIVE"}
+    ✓ rejects malformed or unsupported contract {"contractRef":"C1","title":"Synthetic contract","warrantyTerms":"Unsupported terms"} (1 ms)
+    ✓ rejects malformed or unsupported contract {"contractRef":"C1","title":"Synthetic contract","orgId":"00000000-0000-4000-8000-000000000002"} (1 ms)
+    ✓ rejects malformed or unsupported contract {"contractRef":"C1","title":"Synthetic contract","value_paise":100}
+    ✓ rejects malformed or unsupported contract {"contractRef":"C\n1","title":"Synthetic contract"}
+    ✓ rejects malformed or unsupported contract {"contractRef":"C1","title":"Contracttitle"} (1 ms)
+    ✓ rejects malformed or unsupported contract {"contractRef":"C1","title":"Synthetic contract","retentionBps":null} (1 ms)
+    ✓ rejects malformed or unsupported contract {"contractRef":"C1","title":"Synthetic contract","retentionBps":"500"}
+    ✓ rejects malformed or unsupported contract {"contractRef":"C1","title":"Synthetic contract","retentionBps":10001} (1 ms)
+    ✓ rejects malformed or unsupported contract {"contractRef":"C1","title":"Synthetic contract","valuePaise":null}
+    ✓ rejects malformed or unsupported contract {"contractRef":"C1","title":"Synthetic contract","valuePaise":1.1} (1 ms)
+    ✓ rejects malformed or unsupported contract {"contractRef":"C1","title":"Synthetic contract","valuePaise":9007199254740992}
+    ✓ rejects malformed or unsupported contract {"contractRef":"C1","title":"Synthetic contract","valuePaise":"9223372036854775808"}
+    ✓ rejects malformed or unsupported contract {"contractRef":"C1","title":"Synthetic contract","partyId":"not-a-uuid"} (2 ms)
+    ✓ rejects malformed or unsupported contract {"contractRef":"C1","title":"Synthetic contract","commencementDate":"2027-02-30"} (5 ms)
+    ✓ rejects malformed or unsupported contract {"contractRef":"C1","title":"Synthetic contract","commencementDate":"2027-03-01","completionDate":"2027-02-01"} (2 ms)
+    ✓ rejects malformed project target null (1 ms)
+    ✓ rejects malformed project target "not-a-uuid" (1 ms)
+    ✓ rejects malformed project target "" (1 ms)
+    ✓ does not invoke an accessor to validate a contract (2 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       23 passed, 23 total
+Snapshots:   0 total
+Time:        5.765 s
+Ran all test suites matching /test\/phase2-contract-admission.spec.ts/i.

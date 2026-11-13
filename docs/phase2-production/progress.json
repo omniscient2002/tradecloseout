@@ -670,6 +670,13 @@
       "state": "CANDIDATE_FIX_TESTED",
       "evidenceLevel": "TARGETED_POSTGRESQL",
       "notes": "Bounded declared command fields and detached internal site/settings JSON before connection acquisition. Normalize one project name for row/response/history. Public contract remains narrow; exact money, dates and tenant-party checks retained. Real DB mutation/rollback regressions pass. Parent PH2-G05-002 remains independently unaccepted; see PROJECT-CREATE-ADMISSION-2026-11-13.md."
+    },
+    {
+      "id": "PH2-NEW-014",
+      "title": "Contract admission ignores unsupported fields and rereads caller-owned data after project lock waits",
+      "state": "CANDIDATE_FIX_TESTED",
+      "evidenceLevel": "TARGETED_POSTGRESQL",
+      "notes": "Data-only declared contract DTO, target UUID and bounded control-free text before SQL; preserve explicit zero, unknown and exact large money, retention/date policy and tenant-party checks. Actual project-lock mutation and rollback tests pass. Parent PH2-G05-002/005 independent states unchanged; see CONTRACT-ADMISSION-2026-11-13.md."
     }
   ],
   "candidateWork": [

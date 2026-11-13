@@ -1038,15 +1038,20 @@ export class ProjectsService {
       contractRef: string;
       title: string;
       partyId?: string;
-      valuePaise?: number | bigint;
+      valuePaise?: string | number | bigint;
       retentionBps?: number;
       commencementDate?: string;
       completionDate?: string;
     },
   ) {
+    requireProjectCommandId(projectId, 'INVALID_PROJECT_ID');
+    dto = projectCommandRecord(dto, [
+      'contractRef','title','partyId','valuePaise','retentionBps','commencementDate','completionDate',
+    ], 'INVALID_CONTRACT_INPUT') as typeof dto;
     if (!dto || typeof dto.contractRef !== 'string' || !dto.contractRef.trim() ||
-        dto.contractRef.trim().length > 120 || typeof dto.title !== 'string' ||
-        !dto.title.trim() || dto.title.trim().length > 200) {
+        dto.contractRef.trim().length > 120 || /[\u0000-\u001f\u007f]/.test(dto.contractRef) ||
+        typeof dto.title !== 'string' || !dto.title.trim() || dto.title.trim().length > 200 ||
+        /[\u0000-\u001f\u007f]/.test(dto.title)) {
       throw new UnprocessableEntityException({ code: 'INVALID_CONTRACT_INPUT' });
     }
     if (dto.partyId !== undefined &&

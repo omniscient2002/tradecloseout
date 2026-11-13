@@ -1,0 +1,25 @@
+{
+  "normalization": "Terminal carriage returns, trailing spaces and final blank lines only.",
+  "logs": {
+    "contract-before.txt": {
+      "rawSha256": "ee9450654154e96695e9ae7e378070a34dd37e7e283bd8071cf6f31f6a986423",
+      "storedSha256": "27f73a98523540b04369be89ebd045c11f81e4c1cb9ffdc1871d04def2c86100"
+    },
+    "contract-db-before.txt": {
+      "rawSha256": "85d456c9387b9a02b6733ef64fe430ed5839a92895d36509d3af88708d77b80e",
+      "storedSha256": "773ac2931762e7be3332c7939ce8cc58d269d6ddc1edb7280a6843d1a3b57248"
+    },
+    "contract-after.txt": {
+      "rawSha256": "91a658eb51e467c993dc0391eb952b600b1aaf3ac576858e1446873370ee81e6",
+      "storedSha256": "91a658eb51e467c993dc0391eb952b600b1aaf3ac576858e1446873370ee81e6"
+    },
+    "contract-db-after.txt": {
+      "rawSha256": "2fce959c36faf4e7b2598a401c0d1992375615aae49a12d2abce4122a977291a",
+      "storedSha256": "2fce959c36faf4e7b2598a401c0d1992375615aae49a12d2abce4122a977291a"
+    },
+    "contract-typecheck.txt": {
+      "rawSha256": "8935e75360eaccba7ec1fee2d68b076e23856327a92e0b3f4f7ff0f2147b6b54",
+      "storedSha256": "8935e75360eaccba7ec1fee2d68b076e23856327a92e0b3f4f7ff0f2147b6b54"
+    }
+  }
+}
