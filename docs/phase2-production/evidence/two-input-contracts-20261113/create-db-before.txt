@@ -1,0 +1,68 @@
+FAIL test/phase2-project-create-admission-db.spec.ts (8.336 s)
+  ✕ PH2-NEW-013: createProject snapshots admitted fields before obtaining a real database connection (2638 ms)
+  ✕ PH2-NEW-013: createDraftProject snapshots admitted fields before obtaining a real database connection (1894 ms)
+
+  ● PH2-NEW-013: createProject snapshots admitted fields before obtaining a real database connection
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 1
+    + Received  + 1
+
+      Object {
+        "value": Object {
+          "code": "PUBLIC-CREATE",
+    -     "name": "Admitted project",
+    +     "name": "  Admitted project  ",
+          "status": "DRAFT",
+        },
+      }
+
+      32 |         if(input.siteJson){input.siteJson.address.city='Mutated city';input.settingsJson.notes[0]='Mutated setting';}
+      33 |       }finally{release();}
+    > 34 |       const result=await outcome;expect(result).toMatchObject({value:{code,name:'Admitted project',status:'DRAFT'}});
+         |                                                 ^
+      35 |       const projectId=(result as any).value.projectId;
+      36 |       const stored=(await admin.query(`SELECT name,client_party_id,contract_value_paise,start_date::text,project_type,status,site_json,settings_json
+      37 |         FROM projects WHERE id=$1 AND org_id=$2`,[projectId,org])).rows[0];
+
+      at test/phase2-project-create-admission-db.spec.ts:34:49
+      at async withDisposableDatabase (../../packages/db/test/helpers/disposable-database.ts:107:5)
+      at async /tmp/tco-phase2-reaudit/apps/api/test/phase2-project-create-admission-db.spec.ts:7:3
+
+  ● PH2-NEW-013: createDraftProject snapshots admitted fields before obtaining a real database connection
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 5
+    + Received  + 1
+
+      Object {
+    -   "value": Object {
+    -     "code": "DIRECT-CREATE",
+    -     "name": "Admitted project",
+    -     "status": "DRAFT",
+    -   },
+    +   "error": [NotFoundException: PROJECT_PARTY_NOT_FOUND],
+      }
+
+      32 |         if(input.siteJson){input.siteJson.address.city='Mutated city';input.settingsJson.notes[0]='Mutated setting';}
+      33 |       }finally{release();}
+    > 34 |       const result=await outcome;expect(result).toMatchObject({value:{code,name:'Admitted project',status:'DRAFT'}});
+         |                                                 ^
+      35 |       const projectId=(result as any).value.projectId;
+      36 |       const stored=(await admin.query(`SELECT name,client_party_id,contract_value_paise,start_date::text,project_type,status,site_json,settings_json
+      37 |         FROM projects WHERE id=$1 AND org_id=$2`,[projectId,org])).rows[0];
+
+      at test/phase2-project-create-admission-db.spec.ts:34:49
+      at async withDisposableDatabase (../../packages/db/test/helpers/disposable-database.ts:107:5)
+      at async /tmp/tco-phase2-reaudit/apps/api/test/phase2-project-create-admission-db.spec.ts:7:3
+
+Test Suites: 1 failed, 1 total
+Tests:       2 failed, 2 total
+Snapshots:   0 total
+Time:        8.398 s
+Ran all test suites matching /test\/phase2-project-create-admission-db.spec.ts/i.
+Error: ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL
+
+  × "pnpm recursive exec" failed in /tmp/tco-phase2-reaudit/apps/api

@@ -1,0 +1,8 @@
+PASS test/phase2-variation-admission.spec.ts (5.184 s)
+PASS test/phase2-project-create-admission.spec.ts
+
+Test Suites: 2 passed, 2 total
+Tests:       43 passed, 43 total
+Snapshots:   0 total
+Time:        5.552 s, estimated 9 s
+Ran all test suites matching /test\/phase2-project-create-admission.spec.ts|test\/phase2-variation-admission.spec.ts/i.

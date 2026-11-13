@@ -1,0 +1,14 @@
+{
+  "originalBaselineSha": "a811a1a74bb73e97a81deef14cb93d64549bc42c",
+  "variationCheckpointSha": "04d5dae7b4460821d38bbedd61f144f784a28120",
+  "node": "22.23.5",
+  "pnpm": "12.4.1",
+  "files": {
+    "apps/api/src/modules/projects/projects.service.ts": "0416355327da394e4064ba30a0fe51d1e5bce90ebf63dfb11d1af9aa08568646",
+    "apps/api/src/modules/projects/project-command-input.ts": "b58be003ebca8e93f247fbc10503f3aa40b10ce03f87f83cd408066119fc2c58",
+    "apps/api/test/phase2-variation-admission.spec.ts": "befa9061f5d1a890b7fb0f4f185ab8309c9e8434c0cf6fb567daaa2736f76559",
+    "apps/api/test/phase2-variation-admission-db.spec.ts": "57c1bb2f20d234d9abea04bba67c1d3355b734fa9d317d199880eaa62f206df6",
+    "apps/api/test/phase2-project-create-admission.spec.ts": "3d82ca7adb794bd057722c00fc8e204c4a549cf983ab6ee609995e4c89ade7fc",
+    "apps/api/test/phase2-project-create-admission-db.spec.ts": "95b89d826a75b4f4af6361034ab587edc8c070b376016df428439db583d530c4"
+  }
+}

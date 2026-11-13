@@ -20,6 +20,42 @@
     "first-typecheck.txt": {
       "rawSha256": "8935e75360eaccba7ec1fee2d68b076e23856327a92e0b3f4f7ff0f2147b6b54",
       "storedSha256": "8935e75360eaccba7ec1fee2d68b076e23856327a92e0b3f4f7ff0f2147b6b54"
+    },
+    "create-before.txt": {
+      "rawSha256": "9069fe782090ceb3bc1a57a02275556b2a5bd7243658cb8e2ed09115e3f3fb0d",
+      "storedSha256": "d428a5125661b1c5ba9c3d0924738acbddb1bb2e9f3a3a65bda79dc4b2b15a0e"
+    },
+    "create-db-before.txt": {
+      "rawSha256": "a622a2eff6b304a963b720795da6619327f30ffc3d2ab754dacf29a769874684",
+      "storedSha256": "f0f87856af31eeb9f3f3e0c268fc146f26d051e2c9e35c6b0b2fcc5863c9bf97"
+    },
+    "create-after.txt": {
+      "rawSha256": "0a6320afb9ba9f69e88b337ae7e0e0331afc6dd079753918b31263e74e3bbc01",
+      "storedSha256": "0a6320afb9ba9f69e88b337ae7e0e0331afc6dd079753918b31263e74e3bbc01"
+    },
+    "targeted.txt": {
+      "rawSha256": "402e12069d4ef58e7e0f5a465a3deb2be60155c1fd8db2f45bfed5f256df21a9",
+      "storedSha256": "402e12069d4ef58e7e0f5a465a3deb2be60155c1fd8db2f45bfed5f256df21a9"
+    },
+    "typecheck.txt": {
+      "rawSha256": "8935e75360eaccba7ec1fee2d68b076e23856327a92e0b3f4f7ff0f2147b6b54",
+      "storedSha256": "8935e75360eaccba7ec1fee2d68b076e23856327a92e0b3f4f7ff0f2147b6b54"
+    },
+    "build.txt": {
+      "rawSha256": "d734ce6f600e34815d8481d1fb70c214ba5b4774bb6d826a62566d0b627599ad",
+      "storedSha256": "1e2d27e55d2690d4741e63ee1be8918a5d3693faee244714e4a4f3dbd7ddc10c"
+    },
+    "security.txt": {
+      "rawSha256": "f5ef0e5dfa403d8ecb292d20a8349064ebdf71155818ff59353d58f7a5e62ede",
+      "storedSha256": "f5ef0e5dfa403d8ecb292d20a8349064ebdf71155818ff59353d58f7a5e62ede"
+    },
+    "rbac.txt": {
+      "rawSha256": "9831d56c071ee2abce3611064d3cd0360192f7c9c495f2ef563bac20dd498ede",
+      "storedSha256": "9831d56c071ee2abce3611064d3cd0360192f7c9c495f2ef563bac20dd498ede"
+    },
+    "workspace.txt": {
+      "rawSha256": "62af8b5ee5308bff3dd72d41aa9fb3857d1218fbebd16b059ae68d7602b4a3e7",
+      "storedSha256": "62af8b5ee5308bff3dd72d41aa9fb3857d1218fbebd16b059ae68d7602b4a3e7"
     }
   }
 }

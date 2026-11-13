@@ -1,0 +1,401 @@
+FAIL test/phase2-project-create-admission.spec.ts
+  PH2-NEW-013: project creation admits a bounded detached contract
+    ✕ public create rejects malformed or unsupported input null (15 ms)
+    ✓ public create rejects malformed or unsupported input [] (1 ms)
+    ✓ public create rejects malformed or unsupported input 12 (1 ms)
+    ✓ public create rejects malformed or unsupported input "project"
+    ✕ public create rejects malformed or unsupported input {"code":"ADMISSION","name":"Synthetic project","status":"ACTIVE"} (2 ms)
+    ✕ public create rejects malformed or unsupported input {"code":"ADMISSION","name":"Synthetic project","orgId":"00000000-0000-4000-8000-000000000002"} (2 ms)
+    ✕ public create rejects malformed or unsupported input {"code":"ADMISSION","name":"Synthetic project","createdBy":"00000000-0000-4000-8000-000000000002"} (1 ms)
+    ✕ public create rejects malformed or unsupported input {"code":"ADMISSION","name":"Synthetic project","unexpected":true} (1 ms)
+    ✕ public create rejects malformed or unsupported input {"code":"ADMISSION","name":"Synthetic project","siteJson":{}} (1 ms)
+    ✕ public create rejects malformed or unsupported input {"code":"ADMISSION","name":"Synthetic project","settingsJson":{}} (1 ms)
+    ✕ direct draft create rejects malformed or unsupported input null (1 ms)
+    ✓ direct draft create rejects malformed or unsupported input []
+    ✓ direct draft create rejects malformed or unsupported input 12 (1 ms)
+    ✓ direct draft create rejects malformed or unsupported input "project"
+    ✕ direct draft create rejects malformed or unsupported input {"code":"ADMISSION","name":"Synthetic project","status":"ACTIVE"} (1 ms)
+    ✕ direct draft create rejects malformed or unsupported input {"code":"ADMISSION","name":"Synthetic project","unexpected":true} (2 ms)
+    ✕ validates siteJson as bounded JSON before connecting (1 ms)
+    ✕ validates settingsJson as bounded JSON before connecting (1 ms)
+    ✕ rejects envelope getters before invocation through createProject (1 ms)
+    ✕ rejects envelope getters before invocation through createDraftProject (1 ms)
+    ✕ rejects inherited, symbolic and hidden fields through createProject (1 ms)
+    ✕ rejects inherited, symbolic and hidden fields through createDraftProject (1 ms)
+
+  ● PH2-NEW-013: project creation admits a bounded detached contract › public create rejects malformed or unsupported input null
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [TypeError: Cannot read properties of null (reading 'code')]
+
+      11 |     'public create rejects malformed or unsupported input %j',async input=>{
+      12 |       const db=pool();
+    > 13 |       await expect(new ProjectsService(db as any).createProject(ctx,input as any)).rejects.toMatchObject({status:422});
+         |                                                                                            ^
+      14 |       expect(db.connect).not.toHaveBeenCalled();
+      15 |     });
+      16 |   it.each([null,[],12,'project',{...valid,status:'ACTIVE'},{...valid,unexpected:true}])(
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-project-create-admission.spec.ts:13:92
+
+  ● PH2-NEW-013: project creation admits a bounded detached contract › public create rejects malformed or unsupported input {"code":"ADMISSION","name":"Synthetic project","status":"ACTIVE"}
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [Error: DATABASE_REACHED]
+
+      11 |     'public create rejects malformed or unsupported input %j',async input=>{
+      12 |       const db=pool();
+    > 13 |       await expect(new ProjectsService(db as any).createProject(ctx,input as any)).rejects.toMatchObject({status:422});
+         |                                                                                            ^
+      14 |       expect(db.connect).not.toHaveBeenCalled();
+      15 |     });
+      16 |   it.each([null,[],12,'project',{...valid,status:'ACTIVE'},{...valid,unexpected:true}])(
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-project-create-admission.spec.ts:13:92
+
+  ● PH2-NEW-013: project creation admits a bounded detached contract › public create rejects malformed or unsupported input {"code":"ADMISSION","name":"Synthetic project","orgId":"00000000-0000-4000-8000-000000000002"}
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [Error: DATABASE_REACHED]
+
+      11 |     'public create rejects malformed or unsupported input %j',async input=>{
+      12 |       const db=pool();
+    > 13 |       await expect(new ProjectsService(db as any).createProject(ctx,input as any)).rejects.toMatchObject({status:422});
+         |                                                                                            ^
+      14 |       expect(db.connect).not.toHaveBeenCalled();
+      15 |     });
+      16 |   it.each([null,[],12,'project',{...valid,status:'ACTIVE'},{...valid,unexpected:true}])(
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-project-create-admission.spec.ts:13:92
+
+  ● PH2-NEW-013: project creation admits a bounded detached contract › public create rejects malformed or unsupported input {"code":"ADMISSION","name":"Synthetic project","createdBy":"00000000-0000-4000-8000-000000000002"}
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [Error: DATABASE_REACHED]
+
+      11 |     'public create rejects malformed or unsupported input %j',async input=>{
+      12 |       const db=pool();
+    > 13 |       await expect(new ProjectsService(db as any).createProject(ctx,input as any)).rejects.toMatchObject({status:422});
+         |                                                                                            ^
+      14 |       expect(db.connect).not.toHaveBeenCalled();
+      15 |     });
+      16 |   it.each([null,[],12,'project',{...valid,status:'ACTIVE'},{...valid,unexpected:true}])(
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-project-create-admission.spec.ts:13:92
+
+  ● PH2-NEW-013: project creation admits a bounded detached contract › public create rejects malformed or unsupported input {"code":"ADMISSION","name":"Synthetic project","unexpected":true}
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [Error: DATABASE_REACHED]
+
+      11 |     'public create rejects malformed or unsupported input %j',async input=>{
+      12 |       const db=pool();
+    > 13 |       await expect(new ProjectsService(db as any).createProject(ctx,input as any)).rejects.toMatchObject({status:422});
+         |                                                                                            ^
+      14 |       expect(db.connect).not.toHaveBeenCalled();
+      15 |     });
+      16 |   it.each([null,[],12,'project',{...valid,status:'ACTIVE'},{...valid,unexpected:true}])(
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-project-create-admission.spec.ts:13:92
+
+  ● PH2-NEW-013: project creation admits a bounded detached contract › public create rejects malformed or unsupported input {"code":"ADMISSION","name":"Synthetic project","siteJson":{}}
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [Error: DATABASE_REACHED]
+
+      11 |     'public create rejects malformed or unsupported input %j',async input=>{
+      12 |       const db=pool();
+    > 13 |       await expect(new ProjectsService(db as any).createProject(ctx,input as any)).rejects.toMatchObject({status:422});
+         |                                                                                            ^
+      14 |       expect(db.connect).not.toHaveBeenCalled();
+      15 |     });
+      16 |   it.each([null,[],12,'project',{...valid,status:'ACTIVE'},{...valid,unexpected:true}])(
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-project-create-admission.spec.ts:13:92
+
+  ● PH2-NEW-013: project creation admits a bounded detached contract › public create rejects malformed or unsupported input {"code":"ADMISSION","name":"Synthetic project","settingsJson":{}}
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [Error: DATABASE_REACHED]
+
+      11 |     'public create rejects malformed or unsupported input %j',async input=>{
+      12 |       const db=pool();
+    > 13 |       await expect(new ProjectsService(db as any).createProject(ctx,input as any)).rejects.toMatchObject({status:422});
+         |                                                                                            ^
+      14 |       expect(db.connect).not.toHaveBeenCalled();
+      15 |     });
+      16 |   it.each([null,[],12,'project',{...valid,status:'ACTIVE'},{...valid,unexpected:true}])(
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-project-create-admission.spec.ts:13:92
+
+  ● PH2-NEW-013: project creation admits a bounded detached contract › direct draft create rejects malformed or unsupported input null
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [TypeError: Cannot read properties of null (reading 'name')]
+
+      17 |     'direct draft create rejects malformed or unsupported input %j',async input=>{
+      18 |       const db=pool();
+    > 19 |       await expect(new ProjectsService(db as any).createDraftProject(ctx,input as any)).rejects.toMatchObject({status:422});
+         |                                                                                                 ^
+      20 |       expect(db.connect).not.toHaveBeenCalled();
+      21 |     });
+      22 |   it.each(['siteJson','settingsJson'])('validates %s as bounded JSON before connecting',async field=>{
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-project-create-admission.spec.ts:19:97
+
+  ● PH2-NEW-013: project creation admits a bounded detached contract › direct draft create rejects malformed or unsupported input {"code":"ADMISSION","name":"Synthetic project","status":"ACTIVE"}
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [Error: DATABASE_REACHED]
+
+      17 |     'direct draft create rejects malformed or unsupported input %j',async input=>{
+      18 |       const db=pool();
+    > 19 |       await expect(new ProjectsService(db as any).createDraftProject(ctx,input as any)).rejects.toMatchObject({status:422});
+         |                                                                                                 ^
+      20 |       expect(db.connect).not.toHaveBeenCalled();
+      21 |     });
+      22 |   it.each(['siteJson','settingsJson'])('validates %s as bounded JSON before connecting',async field=>{
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-project-create-admission.spec.ts:19:97
+
+  ● PH2-NEW-013: project creation admits a bounded detached contract › direct draft create rejects malformed or unsupported input {"code":"ADMISSION","name":"Synthetic project","unexpected":true}
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [Error: DATABASE_REACHED]
+
+      17 |     'direct draft create rejects malformed or unsupported input %j',async input=>{
+      18 |       const db=pool();
+    > 19 |       await expect(new ProjectsService(db as any).createDraftProject(ctx,input as any)).rejects.toMatchObject({status:422});
+         |                                                                                                 ^
+      20 |       expect(db.connect).not.toHaveBeenCalled();
+      21 |     });
+      22 |   it.each(['siteJson','settingsJson'])('validates %s as bounded JSON before connecting',async field=>{
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-project-create-admission.spec.ts:19:97
+
+  ● PH2-NEW-013: project creation admits a bounded detached contract › validates siteJson as bounded JSON before connecting
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [Error: DATABASE_REACHED]
+
+      26 |       const db=pool();
+      27 |       await expect(new ProjectsService(db as any).createDraftProject(ctx,{...valid,[field]:value} as any))
+    > 28 |         .rejects.toMatchObject({status:422});
+         |                  ^
+      29 |       expect(db.connect).not.toHaveBeenCalled();
+      30 |     }
+      31 |   });
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-project-create-admission.spec.ts:28:18
+
+  ● PH2-NEW-013: project creation admits a bounded detached contract › validates settingsJson as bounded JSON before connecting
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [Error: DATABASE_REACHED]
+
+      26 |       const db=pool();
+      27 |       await expect(new ProjectsService(db as any).createDraftProject(ctx,{...valid,[field]:value} as any))
+    > 28 |         .rejects.toMatchObject({status:422});
+         |                  ^
+      29 |       expect(db.connect).not.toHaveBeenCalled();
+      30 |     }
+      31 |   });
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-project-create-admission.spec.ts:28:18
+
+  ● PH2-NEW-013: project creation admits a bounded detached contract › rejects envelope getters before invocation through createProject
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [Error: DATABASE_REACHED]
+
+      33 |     const getter=jest.fn(()=> 'Synthetic project');
+      34 |     const input=Object.defineProperty({...valid},'name',{enumerable:true,get:getter});const db=pool();
+    > 35 |     await expect(new ProjectsService(db as any)[method](ctx,input)).rejects.toMatchObject({status:422});
+         |                                                                             ^
+      36 |     expect(getter).not.toHaveBeenCalled();expect(db.connect).not.toHaveBeenCalled();
+      37 |   });
+      38 |   it.each(['createProject','createDraftProject'] as const)('rejects inherited, symbolic and hidden fields through %s',async method=>{
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-project-create-admission.spec.ts:35:77
+
+  ● PH2-NEW-013: project creation admits a bounded detached contract › rejects envelope getters before invocation through createDraftProject
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [Error: DATABASE_REACHED]
+
+      33 |     const getter=jest.fn(()=> 'Synthetic project');
+      34 |     const input=Object.defineProperty({...valid},'name',{enumerable:true,get:getter});const db=pool();
+    > 35 |     await expect(new ProjectsService(db as any)[method](ctx,input)).rejects.toMatchObject({status:422});
+         |                                                                             ^
+      36 |     expect(getter).not.toHaveBeenCalled();expect(db.connect).not.toHaveBeenCalled();
+      37 |   });
+      38 |   it.each(['createProject','createDraftProject'] as const)('rejects inherited, symbolic and hidden fields through %s',async method=>{
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-project-create-admission.spec.ts:35:77
+
+  ● PH2-NEW-013: project creation admits a bounded detached contract › rejects inherited, symbolic and hidden fields through createProject
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [Error: DATABASE_REACHED]
+
+      39 |     for(const input of [Object.assign(Object.create({status:'ACTIVE'}),valid),{...valid,[Symbol('hidden')]:true},
+      40 |       Object.defineProperty({...valid},'status',{value:'ACTIVE'})]){
+    > 41 |       const db=pool();await expect(new ProjectsService(db as any)[method](ctx,input)).rejects.toMatchObject({status:422});
+         |                                                                                               ^
+      42 |       expect(db.connect).not.toHaveBeenCalled();
+      43 |     }
+      44 |   });
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-project-create-admission.spec.ts:41:95
+
+  ● PH2-NEW-013: project creation admits a bounded detached contract › rejects inherited, symbolic and hidden fields through createDraftProject
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [Error: DATABASE_REACHED]
+
+      39 |     for(const input of [Object.assign(Object.create({status:'ACTIVE'}),valid),{...valid,[Symbol('hidden')]:true},
+      40 |       Object.defineProperty({...valid},'status',{value:'ACTIVE'})]){
+    > 41 |       const db=pool();await expect(new ProjectsService(db as any)[method](ctx,input)).rejects.toMatchObject({status:422});
+         |                                                                                               ^
+      42 |       expect(db.connect).not.toHaveBeenCalled();
+      43 |     }
+      44 |   });
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-project-create-admission.spec.ts:41:95
+
+Test Suites: 1 failed, 1 total
+Tests:       16 failed, 6 passed, 22 total
+Snapshots:   0 total
+Time:        4.073 s
+Ran all test suites matching /test\/phase2-project-create-admission.spec.ts/i.
+Error: ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL
+
+  × "pnpm recursive exec" failed in /tmp/tco-phase2-reaudit/apps/api

@@ -663,6 +663,13 @@
       "state": "CANDIDATE_FIX_TESTED",
       "evidenceLevel": "TARGETED_POSTGRESQL",
       "notes": "Explicit exact signed paise, declared data-only fields and detached text/scope before project locks. Actual baseline DB reproduction stored missing amount as zero. Real lock-wait regression preserves admitted proposal and attributable draft history. Parent PH2-G05-002/005 remains independently unaccepted; see VARIATION-ADMISSION-2026-11-13.md."
+    },
+    {
+      "id": "PH2-NEW-013",
+      "title": "Project creation silently discards unsupported fields and retains unbounded mutable metadata",
+      "state": "CANDIDATE_FIX_TESTED",
+      "evidenceLevel": "TARGETED_POSTGRESQL",
+      "notes": "Bounded declared command fields and detached internal site/settings JSON before connection acquisition. Normalize one project name for row/response/history. Public contract remains narrow; exact money, dates and tenant-party checks retained. Real DB mutation/rollback regressions pass. Parent PH2-G05-002 remains independently unaccepted; see PROJECT-CREATE-ADMISSION-2026-11-13.md."
     }
   ],
   "candidateWork": [

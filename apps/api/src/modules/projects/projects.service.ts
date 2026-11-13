@@ -131,10 +131,21 @@ export class ProjectsService {
       projectType?: string;
     },
   ) {
+    // PH2-NEW-013: snapshot the complete internal command before validation
+    // or asynchronous database acquisition. Public creation has a narrower DTO.
+    input = projectCommandRecord(input, [
+      'code','name','clientPartyId','mcPartyId','consultantPartyId','startDate',
+      'targetHandoverDate','contractValuePaise','siteJson','settingsJson','projectType',
+    ], 'INVALID_PROJECT_INPUT') as typeof input;
+    for (const key of ['siteJson','settingsJson'] as const) {
+      try { input[key] = boundedJsonObject(input[key] === undefined ? {} : input[key], 32768); }
+      catch { throw new UnprocessableEntityException({code:'INVALID_PROJECT_JSON'}); }
+    }
     if (typeof input.name !== 'string' || input.name.trim().length < 2 ||
         input.name.trim().length > 200 || /[\u0000-\u001f\u007f]/.test(input.name)) {
       throw new UnprocessableEntityException({ code: 'INVALID_PROJECT_NAME' });
     }
+    input.name = input.name.trim();
     const contractValuePaise = exactPaise(input.contractValuePaise);
     for (const key of ['clientPartyId','mcPartyId','consultantPartyId'] as const) {
       const val = input[key];
@@ -165,7 +176,7 @@ export class ProjectsService {
       'PRIVATE_COMMERCIAL', 'GOVT_PWD', 'GOVERNMENT', 'CPWD', 'PSU',
       'INSTITUTIONAL', 'INDUSTRIAL', 'HOSPITAL', 'CLEANROOM',
     ]);
-    const projectType = input.projectType ?? 'PRIVATE_COMMERCIAL';
+    const projectType = input.projectType === undefined ? 'PRIVATE_COMMERCIAL' : input.projectType;
     if (!allowedProjectTypes.has(projectType)) {
       throw new UnprocessableEntityException({
         code: 'INVALID_PROJECT_TYPE',
@@ -251,6 +262,10 @@ export class ProjectsService {
       targetHandoverDate?: string;
     },
   ) {
+    dto = projectCommandRecord(dto, [
+      'code','name','projectType','clientPartyId','mcPartyId','consultantPartyId',
+      'contractValuePaise','startDate','targetHandoverDate',
+    ], 'INVALID_PROJECT_INPUT') as typeof dto;
     return this.createDraftProject(ctx, {
       code: dto.code,
       name: dto.name,
