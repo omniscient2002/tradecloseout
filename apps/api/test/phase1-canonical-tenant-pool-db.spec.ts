@@ -13,6 +13,13 @@ describe('PH1-G26-007: real API tenant/user/token pool transitions',()=>{
       for(const tenant of [a,b]) await admin.query(`INSERT INTO memberships(id,org_id,user_id,role)
         VALUES ($1,$2,$3,'R-OWNER')`,[randomUUID(),tenant.orgId,userId]);
       const single=new Pool({...app.options,max:1});
+      // pg-pool can resolve end() after removing an idle client from its list,
+      // before that client's socket has actually closed. Await physical close
+      // before the outer fixture drops this database with FORCE.
+      const disconnected:Promise<void>[]=[];
+      single.on('connect',client=>{
+        disconnected.push(new Promise<void>(resolve=>client.once('end',resolve)));
+      });
       const service=new TenantDbService(single);
       const pids=new Set<number>();
       const ctx={orgId:a.orgId,userId,actorType:'USER' as const,requestId:randomUUID()};
@@ -54,7 +61,10 @@ describe('PH1-G26-007: real API tenant/user/token pool transitions',()=>{
           expect((await client.query('SELECT id FROM projects WHERE org_id=$1',[a.orgId])).rowCount).toBe(0);
         });
         expect(pids.size).toBe(1);
-      }finally{await single.end();}
+      }finally{
+        await single.end();
+        await Promise.all(disconnected);
+      }
     });
   });
 });
