@@ -1289,9 +1289,9 @@ export default function ProjectWorkspacePage() {
                         <tr key={rev.id} className="hover:bg-slate-50/80">
                           <td className="py-3 px-4">
                             <div className="font-semibold text-slate-900">{rev.document_title || rev.title || "Technical Document"}</div>
-                            <div className="font-mono text-[11px] text-slate-500">Version: {rev.version_id || rev.id}</div>
+                            <div className="font-mono text-[11px] text-slate-500">Version: {rev.document_version_id || rev.id}</div>
                           </td>
-                          <td className="py-3 px-4 font-mono font-semibold text-slate-700">{rev.reviewer_role || "R-QC"}</td>
+                          <td className="py-3 px-4 font-mono font-semibold text-slate-700">{rev.reviewer_role || "Unconfigured"}</td>
                           <td className="py-3 px-4 text-slate-600">{rev.method || "IN_APP"}</td>
                           <td className="py-3 px-4">
                             <span className="rounded-full bg-slate-100 border border-slate-300 px-2 py-0.5 text-[10px] font-semibold text-slate-800">
@@ -1312,9 +1312,9 @@ export default function ProjectWorkspacePage() {
                             </span>
                           </td>
                           <td className="py-3 pr-4 text-right">
-                            {rev.version_id ? (
+                            {rev.document_version_id ? (
                               <button
-                                onClick={() => router.push(`/projects/${projectId}/review/${rev.version_id}`)}
+                                onClick={() => router.push(`/projects/${projectId}/review/${rev.document_version_id}?reviewId=${encodeURIComponent(rev.id)}`)}
                                 className="inline-flex items-center gap-1 text-blue-700 hover:text-blue-900 font-semibold text-xs cursor-pointer"
                               >
                                 <Eye className="h-3.5 w-3.5" />

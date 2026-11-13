@@ -3,7 +3,7 @@ import {useOrganisationReadOnly} from '@/components/organisation-access';
 import {useOrganisationDate} from '@/components/organisation-dates';
 
 import React, { useEffect, useState, useCallback } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter,useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   Check,
@@ -69,6 +69,7 @@ export default function DocumentReviewWorkbenchPage() {
   const formatDate=useOrganisationDate();
   const params = useParams<{ projectId: string; versionId: string }>();
   const router = useRouter();
+  const requestedReviewId=useSearchParams().get('reviewId');
   const projectId = params?.projectId;
   const versionId = params?.versionId;
 
@@ -130,7 +131,7 @@ export default function DocumentReviewWorkbenchPage() {
       const res = await apiFetch<VersionReviewDetailDto>(
         `/api/v1/projects/${encodeURIComponent(projectId)}/document-versions/${encodeURIComponent(
           versionId,
-        )}`,
+        )}${requestedReviewId?'?reviewId='+encodeURIComponent(requestedReviewId):''}`,
       );
       setDetail(res);
     } catch (err: any) {
@@ -138,7 +139,7 @@ export default function DocumentReviewWorkbenchPage() {
     } finally {
       setLoading(false);
     }
-  }, [projectId, versionId]);
+  }, [projectId, versionId,requestedReviewId]);
 
   useEffect(() => {
     loadVersionDetail();

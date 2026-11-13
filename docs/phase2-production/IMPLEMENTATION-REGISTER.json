@@ -417,7 +417,8 @@
       "requiredOutcome": "Use an explicit per-project/per-work allocation plan. Validate and lock current account, org/project membership, resource scope, reviewer stage/qualification and no-self-approval rules for every transferred operational responsibility. Recheck remaining work before removal and preserve immutable authorship.",
       "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering.",
       "continuationEvidence": "RESUME-IMPLEMENTATION-2026-11-13.md: related code and fixture checks; whole original outcome and independent acceptance remain unverified",
-      "qualificationEvidence": "docs/phase2-production/QUALIFICATION-IMPLEMENTATION-2026-11-13.md"
+      "qualificationEvidence": "docs/phase2-production/QUALIFICATION-IMPLEMENTATION-2026-11-13.md",
+      "reviewSelectionEvidence": "docs/phase2-production/REVIEW-SELECTION-2026-11-13.md"
     },
     {
       "id": "PH2-G03-005",
@@ -435,7 +436,8 @@
       "requiredOutcome": "Separate immutable created_by/submitted_by/requested_by provenance from explicit operational responsibility. Include submissions, packages, review stage/party authority, requirements and defects in one scoped manifest with eligible allocation options and unresolved reasons. Add independently authorized external delegation; preserve honest blocked states until available.",
       "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering.",
       "continuationEvidence": "RESUME-IMPLEMENTATION-2026-11-13.md: related code and fixture checks; whole original outcome and independent acceptance remain unverified",
-      "qualificationEvidence": "docs/phase2-production/QUALIFICATION-IMPLEMENTATION-2026-11-13.md"
+      "qualificationEvidence": "docs/phase2-production/QUALIFICATION-IMPLEMENTATION-2026-11-13.md",
+      "reviewSelectionEvidence": "docs/phase2-production/REVIEW-SELECTION-2026-11-13.md"
     },
     {
       "id": "PH2-G03-006",
@@ -708,7 +710,8 @@
         "apps/web/src/app/(contractor)/projects/[projectId]/page.tsx"
       ],
       "requiredOutcome": "Provide one typed shared list DTO (or explicit adapter), nullable-safe search/rendering, authoritative tenant display and exact decimal-to-paise input. Render recoverable API errors instead of silently falling back to a different dashboard shape. Support the complete lifecycle status vocabulary and scalable pagination.",
-      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering."
+      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering.",
+      "reviewSelectionEvidence": "docs/phase2-production/REVIEW-SELECTION-2026-11-13.md"
     },
     {
       "id": "PH2-G05-012",
@@ -823,7 +826,8 @@
       "requiredOutcome": "Require an approved, version-bound change request with impact analysis before every active-project baseline mutation. Use one locked applicator to update snapshots, revisions, requirements, exceptions, package acceptance and readiness coherently; preserve material-change invalidation already present. Decision alone must not bypass lifecycle or apply an incomplete delta.",
       "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering.",
       "qualificationEvidence": "docs/phase2-production/QUALIFICATION-IMPLEMENTATION-2026-11-13.md",
-      "obligationContextEvidence": "docs/phase2-production/OBLIGATION-CONTEXT-2026-11-13.md"
+      "obligationContextEvidence": "docs/phase2-production/OBLIGATION-CONTEXT-2026-11-13.md",
+      "reviewSelectionEvidence": "docs/phase2-production/REVIEW-SELECTION-2026-11-13.md"
     },
     {
       "id": "PH2-G06-007",

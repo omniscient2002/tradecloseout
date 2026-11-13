@@ -93,8 +93,9 @@ export class ReviewsController {
     @Req() req: any,
     @Param('projectId') projectId: string,
     @Param('versionId') versionId: string,
+    @Query('reviewId')reviewId?:string,
   ) {
-    return this.reviewsService.getVersionReviewDetail(req.userContext, projectId, versionId);
+    return this.reviewsService.getVersionReviewDetail(req.userContext, projectId, versionId,reviewId);
   }
 
   @Post([

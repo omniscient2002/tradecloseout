@@ -47,6 +47,9 @@ it('material changes invalidate exceptions and applicable review proof while pre
   expect(queue.find((row:any)=>row.id===firstReview.reviewId).requirement_id).toBe(req);
   expect(queue.find((row:any)=>row.id===otherReview.reviewId).requirement_id).toBe(otherReq);
   expect(await reviews.getVersionReviewDetail(technical,project,version)).toMatchObject({reviewId:firstReview.reviewId,requirementId:req});
+  expect(await reviews.getVersionReviewDetail(technical,project,version,firstReview.reviewId)).toMatchObject({reviewId:firstReview.reviewId,requirementId:req});
+  expect(await reviews.getVersionReviewDetail(technical,project,version,otherReview.reviewId)).toMatchObject({reviewId:null,requirementId:otherReq,comments:[]});
+  await expect(reviews.getVersionReviewDetail(technical,project,version,randomUUID())).rejects.toThrow('REVIEW_NOT_FOUND');
   const rowVersion=async()=>(await admin.query('SELECT row_version FROM document_versions WHERE id=$1',[version])).rows[0].row_version;
   await reviews.decideReview(technical,firstReview.reviewId,{decision:'APPROVE',expectedRowVersion:await rowVersion()});
   expect((await handover.evaluateProjectReadiness(owner,project)).readyWithoutOverride).toBe(true);

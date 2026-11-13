@@ -276,8 +276,10 @@ export class ReviewsService {
     });
   }
 
-  async getVersionReviewDetail(ctx: ExecutionContext, projectId: string, versionId: string) {
+  async getVersionReviewDetail(ctx: ExecutionContext, projectId: string, versionId: string,requestedReviewId?:string) {
+    if(requestedReviewId!==undefined)requireProjectCommandId(requestedReviewId,'INVALID_REVIEW_ID');
     if (ctx.actorType === 'GUEST' || ctx.guestGrantId) {
+      if(requestedReviewId)throw new NotFoundException('REVIEW_NOT_FOUND');
       // G02-017: project-authorized client/consultant *read* of a currently
       // approved verified contractor version. Never expose uploader name,
       // reviewer identity, private comments or internal companion notes.
@@ -348,16 +350,19 @@ export class ReviewsService {
       req=visibleRequirements[0];
       // Reading a document must never create or assign a review.
       const revRes = await client.query(
-        `SELECT id,status,requirement_id FROM reviews
+        `SELECT id,status,requirement_id,reviewer_subject_type,reviewer_subject_id FROM reviews
           WHERE org_id = $1 AND project_id = $2 AND document_version_id = $3
-            AND reviewer_subject_type = 'USER' AND reviewer_subject_id = $4
+            AND (($5::uuid IS NULL AND reviewer_subject_type = 'USER' AND reviewer_subject_id = $4) OR id=$5)
           ORDER BY CASE WHEN status IN('PENDING','IN_REVIEW') THEN 0 ELSE 1 END,created_at DESC,id DESC LIMIT 1`,
-        [ctx.orgId, projectId, versionId, ctx.userId],
+        [ctx.orgId, projectId, versionId, ctx.userId,requestedReviewId??null],
       );
       const assignedReview=revRes.rows[0];
+      if(requestedReviewId&&!assignedReview)throw new NotFoundException('REVIEW_NOT_FOUND');
       if(assignedReview?.requirement_id)req=visibleRequirements.find((r:any)=>r.id===assignedReview.requirement_id);
       const reviewVisible=!assignedReview?.requirement_id||!!req;
-      const historicalReviewId=reviewVisible?assignedReview?.id??null:null;
+      if(requestedReviewId&&!reviewVisible)throw new NotFoundException('REVIEW_NOT_FOUND');
+      const ownReview=!requestedReviewId||assignedReview?.reviewer_subject_type==='USER'&&assignedReview?.reviewer_subject_id===ctx.userId;
+      const historicalReviewId=reviewVisible&&ownReview?assignedReview?.id??null:null;
       const reviewId=reviewVisible&&['PENDING','IN_REVIEW'].includes(assignedReview?.status)?historicalReviewId:null;
 
       const commRes = historicalReviewId ? await client.query(
