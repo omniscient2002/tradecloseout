@@ -1,4 +1,6 @@
 "use client";
+import {useOrganisationDate} from '@/components/organisation-dates';
+
 
 import React, { useEffect, useState, useCallback } from "react";
 import { CreditCard, CheckCircle2, Download, Building, ShieldCheck, RefreshCw, Plus, FileText, AlertCircle } from "lucide-react";
@@ -91,18 +93,7 @@ export default function BillingPage() {
     }
   };
 
-  const formatDate = (isoDate: string) => {
-    try {
-      return new Intl.DateTimeFormat("en-IN", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-        timeZone: "Asia/Kolkata",
-      }).format(new Date(isoDate));
-    } catch {
-      return isoDate;
-    }
-  };
+  const formatDate=useOrganisationDate();
 
   const planName = subscription?.planName ?? subscription?.plan_name ?? null;
   const planTier = subscription?.planTier ?? subscription?.plan_tier ?? null;

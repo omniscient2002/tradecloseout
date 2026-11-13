@@ -1,4 +1,6 @@
 "use client";
+import {useOrganisationDate} from '@/components/organisation-dates';
+
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -191,15 +193,6 @@ function formatInrPaise(paiseStr: string): string {
   }).format(rupees);
 }
 
-function formatDateIst(isoDate: string | null): string {
-  if (!isoDate) return "—";
-  return new Intl.DateTimeFormat("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    timeZone: "Asia/Kolkata",
-  }).format(new Date(isoDate));
-}
 
 type TabKey = "overview" | "checklist" | "equipment" | "reviews" | "handover" | "warranties" | "reports";
 
@@ -218,6 +211,7 @@ const TABS: { id: TabKey; label: string; icon: React.ElementType }[] = [
 /* -------------------------------------------------------------------------- */
 
 export default function ProjectWorkspacePage() {
+  const formatDateIst=useOrganisationDate();
   const params = useParams<{ projectId: string }>();
   const router = useRouter();
   const projectId = Array.isArray(params?.projectId) ? params.projectId[0] : params?.projectId;

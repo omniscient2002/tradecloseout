@@ -1,4 +1,5 @@
 'use client';
+import {useOrganisationDate} from '@/components/organisation-dates';
 import {useEffect,useState} from 'react';
 import Link from 'next/link';
 import {apiFetch} from '../../../lib/api-client';
@@ -9,6 +10,7 @@ type Metric={channel:string;gateway_state:string;status:string;count:number;olde
 type Attempt={id:string;attempt_no:number;status:string;created_at:string};
 type Preferences={categories:string[];channels:string[];items:Preference[]};
 export default function NotificationsPage(){
+ const formatDate=useOrganisationDate();
  const [inbox,setInbox]=useState<Inbox|null>(null),[preferences,setPreferences]=useState<Preferences|null>(null);
  const [error,setError]=useState(''),[busy,setBusy]=useState(false),[operator,setOperator]=useState(false),[metrics,setMetrics]=useState<Metric[]>([]),[attempts,setAttempts]=useState<Attempt[]>([]),[reason,setReason]=useState('');
  async function load(cursor?:string){setBusy(true);setError('');try{
@@ -31,13 +33,13 @@ export default function NotificationsPage(){
  return <div className="mx-auto max-w-4xl p-6 space-y-6"><h1 className="text-2xl font-semibold">Notifications</h1>
   {error&&<p role="alert" className="text-red-800">{error} <button onClick={()=>void load()} className="underline">Reload</button></p>}
   <p aria-live="polite">{inbox?`${inbox.unreadCount} unread`:'Loading inbox…'}</p>
-  <ul className="space-y-3">{inbox?.items.map(n=><li key={n.id} className="rounded border bg-white p-4 flex justify-between gap-4"><div><Link href={n.link} className="font-medium underline">{n.title}</Link><p className="text-sm text-slate-600">{new Date(n.createdAt).toLocaleString()} · {n.channel} · {n.gatewayState}</p>{operator&&<div className="flex gap-3"><button disabled={busy} className="underline" onClick={()=>void inspect(n.id)}>Attempt history</button>{n.status==='FAILED'&&<button disabled={busy||reason.trim().length<5} className="underline" onClick={()=>void redrive(n.id)}>Redrive eligible failure</button>}</div>}</div>{!n.readAt&&<button disabled={busy} onClick={()=>void read(n.id)} className="underline disabled:opacity-50">Mark read</button>}</li>)}</ul>
+  <ul className="space-y-3">{inbox?.items.map(n=><li key={n.id} className="rounded border bg-white p-4 flex justify-between gap-4"><div><Link href={n.link} className="font-medium underline">{n.title}</Link><p className="text-sm text-slate-600">{formatDate(n.createdAt,true)} · {n.channel} · {n.gatewayState}</p>{operator&&<div className="flex gap-3"><button disabled={busy} className="underline" onClick={()=>void inspect(n.id)}>Attempt history</button>{n.status==='FAILED'&&<button disabled={busy||reason.trim().length<5} className="underline" onClick={()=>void redrive(n.id)}>Redrive eligible failure</button>}</div>}</div>{!n.readAt&&<button disabled={busy} onClick={()=>void read(n.id)} className="underline disabled:opacity-50">Mark read</button>}</li>)}</ul>
   {inbox?.items.length===0&&<p>No notifications are currently visible.</p>}
   {inbox?.nextCursor&&<button disabled={busy} className="rounded border p-2" onClick={()=>void load(inbox.nextCursor!)}>Load more</button>}
   {operator&&<section className="space-y-3 rounded border bg-white p-4"><h2 className="text-xl font-semibold">Delivery operations</h2><p>Gateway acceptance and recipient delivery are tracked separately. Uncertain sends require provider reconciliation before another send.</p>
    <label className="block">Reason for redrive<textarea value={reason} maxLength={500} onChange={e=>setReason(e.target.value)} className="block w-full border p-2"/></label>
    <ul>{metrics.map((m,i)=><li key={i}>{m.channel} · {m.gateway_state} · {m.count} messages · oldest {m.oldestAgeSeconds}s · {m.deadLetters} dead letters</li>)}</ul>
-   {attempts.length>0&&<ul>{attempts.map(a=><li key={a.id}>Attempt {a.attempt_no} · {a.status} · {new Date(a.created_at).toLocaleString()}</li>)}</ul>}
+   {attempts.length>0&&<ul>{attempts.map(a=><li key={a.id}>Attempt {a.attempt_no} · {a.status} · {formatDate(a.created_at,true)}</li>)}</ul>}
   </section>}
   <section className="space-y-3"><h2 className="text-xl font-semibold">Delivery preferences</h2><p>Account security notices remain enabled. Changes apply to future delivery attempts.</p>
    {preferences?.categories.map(category=><fieldset key={category} disabled={busy} className="rounded border bg-white p-3"><legend className="px-1">{category.replaceAll('_',' ')}</legend><div className="flex flex-wrap gap-5">{preferences.channels.map(channel=>{

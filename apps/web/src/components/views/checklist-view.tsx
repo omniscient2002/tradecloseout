@@ -1,4 +1,6 @@
 "use client";
+import {useOrganisationDate} from '@/components/organisation-dates';
+
 
 import React, { useState, useMemo } from "react";
 import clsx from "clsx";
@@ -53,15 +55,6 @@ const STATUS_TABS = [
   { id: "WAIVED", label: "Waived" },
 ];
 
-function formatDateIst(isoDate: string | null): string {
-  if (!isoDate) return "No due date";
-  return new Intl.DateTimeFormat("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    timeZone: "Asia/Kolkata",
-  }).format(new Date(isoDate));
-}
 
 export function ChecklistView({
   requirements,
@@ -74,6 +67,7 @@ export function ChecklistView({
   onExternalApprovalClick,
   onAddRequirementClick,
 }: ChecklistViewProps) {
+  const formatDateIst=useOrganisationDate();
   const [milestoneFilter, setMilestoneFilter] = useState<string>("");
   const [mandatoryOnly, setMandatoryOnly] = useState<boolean>(false);
 

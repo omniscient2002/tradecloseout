@@ -1,5 +1,5 @@
 import { NotFoundException, UnprocessableEntityException } from '@nestjs/common';
-import { isValidIndianGstin, IndianPanSchema, canonicalAuthenticationEmail } from '@tradecloseout/shared';
+import { isValidIndianGstin, IndianPanSchema, canonicalAuthenticationEmail,ORGANISATION_LOCALES,ORGANISATION_DATE_FORMATS,OrganisationDatePreferences } from '@tradecloseout/shared';
 
 // Fail before binding untrusted HTTP identifiers to uuid-typed PostgreSQL predicates.
 // Treat the current alias as an org-only route feature, never as a generic UUID.
@@ -17,7 +17,7 @@ const ALLOWED_STATES = new Set(
 const ENTITIES = new Set(['PROPRIETORSHIP','PARTNERSHIP','LLP','PRIVATE_LIMITED','PUBLIC_LIMITED','OTHER']);
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
 const PROFILE_KEYS = new Set([
-  'legalName','displayName','entityType','state','timeZone','gstin','pan',
+  'legalName','displayName','entityType','state','timeZone','locale','dateFormat','gstin','pan',
   'brandColor','accentColor','watermarkEnabled','allowSelfApproval',
   'defaultRetentionMonths','signatoryName','signatoryDesignation',
   'logoObjectId','addressJson','contactEmail','contactPhone','footerText',
@@ -29,6 +29,8 @@ export interface OrgProfilePatch {
   entityType?: string;
   state?: string;
   timeZone?: string;
+  locale?:OrganisationDatePreferences['locale'];
+  dateFormat?:OrganisationDatePreferences['dateFormat'];
   gstin?: string | null;
   pan?: string | null;
   brandColor?: string;
@@ -84,6 +86,10 @@ export function parseOrgProfilePatch(dto: unknown): {rowVersion: number; input: 
       try { new Intl.DateTimeFormat('en-IN', {timeZone: value}); }
       catch { bad(key, 'Expected an IANA time zone'); }
       result[key] = value;
+    } else if(key==='locale'||key==='dateFormat'){
+      const allowed:readonly string[]=key==='locale'?ORGANISATION_LOCALES:ORGANISATION_DATE_FORMATS;
+      if(typeof value!=='string'||!allowed.includes(value))bad(key,'Choose a supported English locale or date format');
+      result[key]=value;
     } else if (['brandColor','accentColor'].includes(key)) {
       if (value === null && key === 'accentColor') result[key] = null;
       else if (typeof value === 'string' && HEX_COLOR.test(value)) result[key] = value.toUpperCase();

@@ -369,7 +369,7 @@
       "id": "PH2-G03-002",
       "title": "Finish profile policy, defaults and generated-output integration",
       "engineeringStatus": "PARTIAL_CANDIDATE_IMPLEMENTATION",
-      "validationStatus": "FULL_VALIDATION_DEFERRED_BY_USER",
+      "validationStatus": "RELATED_FOCUSED_CHECKS_PASSED_FULL_VALIDATION_DEFERRED",
       "independentAcceptance": "UNCHANGED",
       "files": [
         "apps/api/src/modules/organisations/organisations.service.ts",
@@ -379,7 +379,8 @@
         "apps/web/src/app/(contractor)/onboarding/page.tsx"
       ],
       "requiredOutcome": "Choose one authoritative policy/default representation and update all readers/writers consistently. Round-trip timezone/date/language and supported signatories; safely resolve verified branding objects in generated indexes/covers. Preserve current no-self-approval controls until a reviewed policy intentionally changes them; do not enable self-approval merely to synchronize fields.",
-      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering."
+      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering.",
+      "profileDateEvidence": "docs/phase2-production/PROFILE-DATES-2026-11-13.md"
     },
     {
       "id": "PH2-G03-003",

@@ -41,6 +41,9 @@ export class OrganisationsController {
     return this.orgsService.getOrganisation(req.userContext, orgId);
   }
 
+  @Get('date-preferences') @RequirePermission('org.read')
+  datePreferences(@Req()req:any,@Param('orgId')orgId:string){return this.orgsService.getDatePreferences(req.userContext,orgId);}
+
   @Patch()
   @RequirePermission('org.manage')
   async updateOrganisation(

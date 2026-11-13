@@ -1,0 +1,33 @@
+import {randomUUID} from 'crypto';
+import {withDisposableDatabase} from '../../../packages/db/test/helpers/disposable-database';
+import {seedTenants} from '../../../packages/db/test/helpers/fixtures';
+import {OrganisationsService} from '../src/modules/organisations/organisations.service';
+import {parseOrgProfilePatch} from '../src/modules/organisations/organisation-validation';
+import {formatOrganisationDate} from '@tradecloseout/shared';
+jest.setTimeout(180000);
+it('round-trips scoped versioned presentation preferences and applies them without shifting calendar-only dates',async()=>{
+ await withDisposableDatabase(async({admin,app})=>{
+  const {userId,tenants:[a,b]}=await seedTenants(admin);
+  for(const tenant of [a,b])await admin.query("INSERT INTO memberships(id,org_id,user_id,role,status) VALUES($1,$2,$3,'R-OWNER','ACTIVE')",[randomUUID(),tenant.orgId,userId]);
+  const ctx:any={orgId:a.orgId,userId,actorType:'MEMBER',orgRole:'R-OWNER',requestId:randomUUID()},service=new OrganisationsService(app);
+  expect(await service.getDatePreferences(ctx,'current')).toEqual({locale:'en-IN',dateFormat:'DD MMM YYYY',timeZone:'Asia/Kolkata'});
+  const version=(await service.getOrganisation(ctx,'current')).row_version;
+  const patch=parseOrgProfilePatch({rowVersion:version,locale:'en-US',dateFormat:'MM/DD/YYYY',timeZone:'America/Los_Angeles'});
+  await service.updateOrgProfile(ctx,patch.rowVersion,patch.input);
+  const preferences=await service.getDatePreferences(ctx,'current');
+  expect(preferences).toEqual({locale:'en-US',dateFormat:'MM/DD/YYYY',timeZone:'America/Los_Angeles'});
+  expect((await service.getOrganisation(ctx,'current')).profile).toMatchObject({locale:'en-US',date_format:'MM/DD/YYYY'});
+  expect(formatOrganisationDate('2030-01-02T00:30:00Z',preferences)).toBe('01/01/2030');
+  expect(formatOrganisationDate('2030-01-02',preferences)).toBe('01/02/2030');
+  expect(formatOrganisationDate('2030-02-30',preferences)).toBe('—');
+  await expect(service.updateOrgProfile(ctx,version,{dateFormat:'YYYY-MM-DD'})).rejects.toMatchObject({response:{code:'PRECONDITION_FAILED'}});
+  await expect(service.getDatePreferences(ctx,b.orgId)).rejects.toThrow('ORGANISATION_NOT_FOUND');
+  expect(await service.getDatePreferences({...ctx,orgId:b.orgId},'current')).toEqual({locale:'en-IN',dateFormat:'DD MMM YYYY',timeZone:'Asia/Kolkata'});
+  for(const input of [{locale:'hi-IN'},{locale:null},{dateFormat:'custom'},{timeZone:'not/a/zone'}])expect(()=>parseOrgProfilePatch({rowVersion:version,...input})).toThrow();
+  const current=(await service.getOrganisation(ctx,'current')).row_version;
+  await service.updateOrgProfile(ctx,current,{displayName:'Presentation fixture'});
+  expect(await service.getDatePreferences(ctx,'current')).toEqual(preferences);
+  await admin.query("UPDATE memberships SET status='SUSPENDED' WHERE org_id=$1 AND user_id=$2",[a.orgId,userId]);
+  await expect(service.getDatePreferences(ctx,'current')).rejects.toThrow();
+ });
+});

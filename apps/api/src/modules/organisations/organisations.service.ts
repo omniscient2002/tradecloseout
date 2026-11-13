@@ -266,7 +266,7 @@ export class OrganisationsService {
       }
 
       const { rows: profileRows } = await client.query(
-        `SELECT gstin, pan, brand_color, signatory_name, signatory_designation, logo_object_id, accent_color, watermark_enabled, allow_self_approval, default_retention_months, address_json, contact_email, contact_phone, footer_text, row_version
+        `SELECT gstin, pan, locale,date_format,brand_color, signatory_name, signatory_designation, logo_object_id, accent_color, watermark_enabled, allow_self_approval, default_retention_months, address_json, contact_email, contact_phone, footer_text, row_version
            FROM org_profiles WHERE org_id = $1 LIMIT 1`,
         [orgId],
       );
@@ -282,6 +282,20 @@ export class OrganisationsService {
    * API-012: PATCH /api/v1/orgs/:orgId
    * Updates organisation legal profile, GSTIN/PAN (validated structurally), and branding (WF-02).
    */
+  async getDatePreferences(ctx:TenantActorContext,targetOrgId:string){
+    resolveOrganisationTarget(ctx.orgId,targetOrgId);
+    if(ctx.guestGrantId)throw new ForbiddenException('MEMBER_PRESENTATION_REQUIRED');
+    return withTenantTransaction(this.pool,ctx,async client=>{
+      const {rows}=await client.query(`SELECT o.timezone AS "timeZone",COALESCE(p.locale,'en-IN') AS locale,
+        COALESCE(p.date_format,'DD MMM YYYY') AS "dateFormat" FROM organisations o
+        JOIN memberships m ON m.org_id=o.id AND m.user_id=$2 AND m.status='ACTIVE'
+        JOIN users u ON u.id=m.user_id AND u.status='ACTIVE' LEFT JOIN org_profiles p ON p.org_id=o.id
+        WHERE o.id=$1 AND o.status='ACTIVE' FOR SHARE OF o,m,u`,[ctx.orgId,ctx.userId]);
+      if(!rows.length)throw new NotFoundException('ORGANISATION_NOT_FOUND');
+      return rows[0];
+    });
+  }
+
   async updateOrgProfile(
     ctx: TenantActorContext,
     expectedRowVersion: number,
@@ -293,7 +307,7 @@ export class OrganisationsService {
       state:'state', timeZone:'timezone', allowSelfApproval:'allow_self_approval',
     };
     const profileColumns: Record<string, string> = {
-      gstin:'gstin', pan:'pan', brandColor:'brand_color',
+      gstin:'gstin', pan:'pan',locale:'locale',dateFormat:'date_format',brandColor:'brand_color',
       signatoryName:'signatory_name', signatoryDesignation:'signatory_designation',
       logoObjectId:'logo_object_id', accentColor:'accent_color',
       watermarkEnabled:'watermark_enabled', allowSelfApproval:'allow_self_approval',

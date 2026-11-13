@@ -1,4 +1,6 @@
 "use client";
+import {useOrganisationDate} from '@/components/organisation-dates';
+
 
 import React, { useEffect, useState, useCallback } from "react";
 import { Hash, RefreshCw } from "lucide-react";
@@ -42,21 +44,8 @@ export default function AuditTrailPage() {
     fetchAuditEvents();
   }, [fetchAuditEvents]);
 
-  const formatDateIst = (isoDate: string) => {
-    try {
-      return new Intl.DateTimeFormat("en-IN", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-        timeZone: "Asia/Kolkata",
-      }).format(new Date(isoDate)) + " IST";
-    } catch {
-      return isoDate;
-    }
-  };
+  const formatDate=useOrganisationDate();
+  const formatDateIst=(value:string)=>formatDate(value,true);
 
   return (
     <div className="p-6 max-w-[1600px] mx-auto space-y-6 text-xs">

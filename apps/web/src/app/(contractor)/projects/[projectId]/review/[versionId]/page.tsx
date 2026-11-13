@@ -1,4 +1,5 @@
 "use client";
+import {useOrganisationDate} from '@/components/organisation-dates';
 
 import React, { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -63,6 +64,7 @@ interface VersionReviewDetailDto {
 }
 
 export default function DocumentReviewWorkbenchPage() {
+  const formatDate=useOrganisationDate();
   const params = useParams<{ projectId: string; versionId: string }>();
   const router = useRouter();
   const projectId = params?.projectId;
@@ -548,7 +550,7 @@ export default function DocumentReviewWorkbenchPage() {
             </button>
           </div>
 
-          {detail&&<section className="rounded border bg-white p-3 space-y-2 text-xs"><h3 className="font-semibold">Current requirement</h3><p>{detail.requirementTitle}</p>{detail.requirementDescription&&<p className="whitespace-pre-wrap">{detail.requirementDescription}</p>}<p>Document type: {detail.docTypeKey} · Reviewer role: {detail.reviewerRole??'Unconfigured'}</p><p>Due: {detail.dueAt?new Date(detail.dueAt).toLocaleString():'No deadline recorded'}</p>
+          {detail&&<section className="rounded border bg-white p-3 space-y-2 text-xs"><h3 className="font-semibold">Current requirement</h3><p>{detail.requirementTitle}</p>{detail.requirementDescription&&<p className="whitespace-pre-wrap">{detail.requirementDescription}</p>}<p>Document type: {detail.docTypeKey} · Reviewer role: {detail.reviewerRole??'Unconfigured'}</p><p>Due: {detail.dueAt?formatDate(detail.dueAt,true):'No deadline recorded'}</p>
            {Object.entries(detail.validityRule??{}).map(([key,value])=><p key={key}>{key}: {typeof value==='string'?value:JSON.stringify(value)}</p>)}
            {detail.requiresRequalification&&<p role="status" className="rounded bg-amber-50 p-2 text-amber-950">This obligation requires a current review. Earlier approvals remain historical.</p>}
           </section>}

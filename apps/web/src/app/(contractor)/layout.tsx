@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { api, apiFetch, setCsrfToken, watchAuthChanges } from "../../lib/api-client";
 import { setOfflineActorPartition } from "../../lib/offline-upload-queue";
+import {OrganisationDatesProvider} from '../../components/organisation-dates';
 
 const REAL_DECCAN_PERSONAS = [
   {
@@ -357,7 +358,7 @@ export default function ContractorLayout({ children }: { children: React.ReactNo
             {logoutError}
           </div>
         )}
-        {children}
+        <OrganisationDatesProvider key={user?.activeOrgId}>{children}</OrganisationDatesProvider>
       </main>
     </div>
   );

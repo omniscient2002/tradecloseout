@@ -78,6 +78,8 @@ export const orgProfiles = pgTable('org_profiles', {
     .primaryKey()
     .references(() => organisations.id, { onDelete: 'cascade' }),
   gstin: text('gstin'),
+  locale:text('locale').notNull().default('en-IN'),
+  dateFormat:text('date_format').notNull().default('DD MMM YYYY'),
   pan: text('pan'),
   addressJson: jsonb('address_json').notNull().default({}),
   logoObjectId: uuid('logo_object_id'),
