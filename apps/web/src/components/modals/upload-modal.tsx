@@ -25,8 +25,8 @@ export function UploadModal({
   onUploadSubmit,
 }: UploadModalProps) {
   const [file, setFile] = useState<File | null>(null);
-  const [revisionCode, setRevisionCode] = useState("Rev A");
-  const [issueDate, setIssueDate] = useState(new Date().toISOString().split("T")[0]);
+  const [revisionCode, setRevisionCode] = useState("");
+  const [issueDate, setIssueDate] = useState("");
   const [uploading, setUploading] = useState(false);
   const [autosaveRestored, setAutosaveRestored] = useState(false);
 
@@ -154,7 +154,7 @@ export function UploadModal({
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-semibold text-[#374151] mb-1">
-              Revision Code
+              Document revision
             </label>
             <input
               type="text"
@@ -194,7 +194,7 @@ export function UploadModal({
             disabled={!file || uploading}
             className="rounded-md bg-[#3157D5] px-4 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-[#2648B8] disabled:opacity-50 transition-all"
           >
-            {uploading ? "Uploading directly to S3..." : "Upload Document"}
+            {uploading ? "Uploading document…" : "Upload Document"}
           </button>
         </div>
       </form>

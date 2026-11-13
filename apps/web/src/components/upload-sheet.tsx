@@ -28,8 +28,8 @@ export function UploadSheet({
 }: UploadSheetProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [revisionCode, setRevisionCode] = useState('A');
-  const [issueDate, setIssueDate] = useState(new Date().toISOString().split('T')[0]);
+  const [revisionCode, setRevisionCode] = useState('');
+  const [issueDate, setIssueDate] = useState('');
   const [remarks, setRemarks] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [isOnline, setIsOnline] = useState(true);
@@ -205,7 +205,7 @@ export function UploadSheet({
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="px-2 py-0.5 rounded text-[11px] font-semibold tracking-wide uppercase bg-sky-100 text-sky-800">
-              SCR-023 Mobile Upload
+              Upload a document
             </span>
           </div>
           <h3 className="text-base font-semibold text-slate-900">{requirementTitle}</h3>
@@ -302,7 +302,7 @@ export function UploadSheet({
         {/* Metadata Grid */}
         <div className="grid grid-cols-2 gap-3 pt-1">
           <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1">Revision Code</label>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">Document revision</label>
             <input
               type="text"
               value={revisionCode}

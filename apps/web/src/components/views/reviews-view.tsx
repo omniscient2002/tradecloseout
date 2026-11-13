@@ -1,5 +1,6 @@
 "use client";
 
+import { roleLabel, humanLabel } from "../../lib/presentation";
 import React, { useState } from "react";
 import clsx from "clsx";
 import {
@@ -87,7 +88,7 @@ export function ReviewsView({
               <h1 className="text-base font-bold text-[#111827]">Consultant Review Inbox</h1>
             </div>
             <p className="text-xs text-[#667085] mt-1">
-              Authoritative review queue for Lead Consultant, QC Engineers, and Fire Officers. Compliant with ISO 19650 workflow stages.
+              Review submitted documents and record decisions for your project.
             </p>
           </div>
 
@@ -142,7 +143,7 @@ export function ReviewsView({
                     <div className="font-semibold text-[#111827] truncate">{item.title}</div>
 
                     <div className="flex items-center justify-between text-[11px] text-[#667085]">
-                      <span>Role: {item.reviewerRole || "R-QC"}</span>
+                      <span>Role: {roleLabel(item.reviewerRole)}</span>
                       {item.assetTag && (
                         <span className="font-mono text-[#3157D5]">Asset: {item.assetTag}</span>
                       )}
@@ -178,10 +179,10 @@ export function ReviewsView({
                     </div>
                     <div>
                       <span className="text-[10px] uppercase tracking-wider block text-[#9CA3AF]">
-                        Reviewer Role
+                        Reviewer
                       </span>
                       <span className="font-mono font-medium text-[#111827]">
-                        {selectedItem.reviewerRole || "R-QC"}
+                        {roleLabel(selectedItem.reviewerRole)}
                       </span>
                     </div>
                     <div>
@@ -189,7 +190,7 @@ export function ReviewsView({
                         Revision
                       </span>
                       <span className="font-mono font-medium text-[#3157D5]">
-                        {selectedItem.revisionCode || "Rev A"}
+                        {selectedItem.revisionCode || "Not recorded"}
                       </span>
                     </div>
                   </div>
@@ -212,7 +213,7 @@ export function ReviewsView({
                       <span>Step 2 Mandatory Waiver Countersignature Required</span>
                     </div>
                     <p className="text-xs text-[#7E22CE]">
-                      This mandatory requirement was initiated for waiver by the Project Manager. As designated Senior Officer / Approver, your cryptographic countersignature is required to waive this item for the handover package snapshot.
+                      This mandatory requirement was initiated for waiver by the Project Manager. As designated Senior Officer / Approver, your sign-off is required before this item can be waived for handover.
                     </p>
 
                     <div>

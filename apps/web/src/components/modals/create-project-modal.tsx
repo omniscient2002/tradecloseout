@@ -18,9 +18,9 @@ export function CreateProjectModal({
   onClose,
   onSubmit,
 }: CreateProjectModalProps) {
-  const [code, setCode] = useState("PRJ-002");
+  const [code, setCode] = useState("");
   const [name, setName] = useState("");
-  const [targetHandoverDate, setTargetHandoverDate] = useState("2026-12-31");
+  const [targetHandoverDate, setTargetHandoverDate] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -46,7 +46,7 @@ export function CreateProjectModal({
       open={open}
       onClose={onClose}
       title="Create New Project"
-      subtitle="Initialize an isolated closeout workspace with tenant RLS isolation"
+      subtitle="Set up a project and track its handover requirements."
       maxWidth="max-w-md"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -59,7 +59,7 @@ export function CreateProjectModal({
             required
             value={code}
             onChange={(e) => setCode(e.target.value)}
-            placeholder="PRJ-002"
+            placeholder="Your project reference"
             className="w-full rounded-md border border-[#E5E7EB] p-2 text-xs font-mono text-[#111827] focus:border-[#3157D5] focus:outline-none"
           />
           <span className="text-[10px] text-[#667085] mt-0.5 block">

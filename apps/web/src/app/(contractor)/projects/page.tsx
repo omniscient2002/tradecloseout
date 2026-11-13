@@ -1,5 +1,7 @@
 "use client";
 
+import { hasPermission } from "@tradecloseout/shared";
+import { displayDate, displayMoney, humanLabel } from "../../../lib/presentation";
 import React, { useEffect, useState, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -50,6 +52,9 @@ function ProjectsDirectoryContent() {
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [createModalOpen, setCreateModalOpen] = useState(initialNew);
 
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [canCreate, setCanCreate] = useState(false);
+
   // New Project Form
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
@@ -65,16 +70,11 @@ function ProjectsDirectoryContent() {
   const fetchProjects = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await apiFetch<any>("/api/v1/projects");
-      const list = Array.isArray(data) ? data : data?.projects || data?.data || [];
-      setProjects(list);
-    } catch (err: any) {
-      try {
-        const d = await apiFetch<any>("/api/v1/orgs/current/dashboard");
-        setProjects(d?.projects || []);
-      } catch (e) {
-        console.error(e);
-      }
+      const data = await apiFetch<{ projects: ProjectItem[] }>("/api/v1/orgs/current/dashboard");
+      setProjects(data.projects);
+      setLoadError(null);
+    } catch {
+      setLoadError("We could not load your projects. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -82,6 +82,7 @@ function ProjectsDirectoryContent() {
 
   useEffect(() => {
     fetchProjects();
+    apiFetch<{ orgRole: string }>("/api/v1/auth/me").then(user => setCanCreate(hasPermission({ orgRole: user.orgRole }, 'project.create').allowed)).catch(() => setCanCreate(false));
     apiFetch<any[]>("/api/v1/parties")
       .then((data) => setPartiesList(data || []))
       .catch(() => {});
@@ -117,7 +118,7 @@ function ProjectsDirectoryContent() {
     const matchSearch =
       p.code.toLowerCase().includes(search.toLowerCase()) ||
       p.name.toLowerCase().includes(search.toLowerCase()) ||
-      p.clientName.toLowerCase().includes(search.toLowerCase());
+      (p.clientName || "").toLowerCase().includes(search.toLowerCase());
     const matchStatus = statusFilter === "ALL" || p.status === statusFilter;
     return matchSearch && matchStatus;
   });
@@ -126,18 +127,18 @@ function ProjectsDirectoryContent() {
     <div className="p-6 max-w-[1600px] mx-auto space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-900">Projects Portfolio</h1>
+          <h1 className="text-xl font-bold text-slate-900">Projects</h1>
           <p className="text-xs text-slate-500">
-            All commercial HVAC and MEP projects contracted under Deccan EnviroTech MEP Pvt Ltd.
+            Manage your project documents, reviews, and handover progress.
           </p>
         </div>
-        <button
+        {canCreate && <button
           onClick={() => setCreateModalOpen(true)}
           className="inline-flex items-center gap-1.5 rounded-md bg-[#0F2942] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[#163A5F] transition-colors cursor-pointer"
         >
           <Plus className="h-3.5 w-3.5" />
           <span>New Project</span>
-        </button>
+        </button>}
       </div>
 
       {/* Filter and Search Bar */}
@@ -160,14 +161,15 @@ function ProjectsDirectoryContent() {
             className="px-2.5 py-1.5 text-xs rounded border border-slate-300 bg-white text-slate-800 focus:outline-none focus:border-blue-600"
           >
             <option value="ALL">All Statuses</option>
-            <option value="ACTIVE">ACTIVE</option>
-            <option value="HANDOVER">HANDOVER</option>
-            <option value="CLOSED">CLOSED</option>
-            <option value="DRAFT">DRAFT</option>
+            <option value="ACTIVE">Active</option>
+            <option value="HANDOVER">Handover in progress</option>
+            <option value="CLOSED">Closed</option>
+            <option value="DRAFT">Draft</option>
           </select>
         </div>
       </div>
 
+      {loadError && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{loadError} <button onClick={fetchProjects} className="font-semibold underline">Try again</button></div>}
       {/* Projects Grid */}
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -175,11 +177,11 @@ function ProjectsDirectoryContent() {
             <div key={i} className="h-48 animate-pulse rounded-xl bg-white border border-slate-200" />
           ))}
         </div>
-      ) : filtered.length === 0 ? (
+      ) : loadError ? null : filtered.length === 0 ? (
         <div className="text-center py-12 bg-white rounded-xl border border-slate-200 p-8">
           <FolderKanban className="h-8 w-8 text-slate-400 mx-auto mb-2" />
           <div className="text-sm font-semibold text-slate-800">No projects found</div>
-          <div className="text-xs text-slate-500 mt-1">Try adjusting your search or filters.</div>
+          <div className="text-xs text-slate-500 mt-1">{projects.length ? "Try adjusting your search or filters." : "Projects will appear when you create one or join a project team."}</div>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -211,7 +213,7 @@ function ProjectsDirectoryContent() {
                           : "bg-slate-100 text-slate-800 border-slate-300"
                       }`}
                     >
-                      {proj.status}
+                      {humanLabel(proj.status)}
                     </span>
                   </div>
 
@@ -235,7 +237,7 @@ function ProjectsDirectoryContent() {
                     <div style={{ width: `${pct}%` }} className="h-full bg-emerald-600 rounded-full" />
                   </div>
                   <div className="flex items-center justify-between pt-1 text-[11px]">
-                    <span className="font-mono text-slate-600">Retention: <strong>{formatInr(proj.retentionAtRiskPaise)}</strong></span>
+                    <span className="font-mono text-slate-600">Retention: <strong>{displayMoney(proj.retentionAtRiskPaise)}</strong></span>
                     <span className="inline-flex items-center gap-1 font-semibold text-blue-700">
                       <span>Open Workspace</span>
                       <ArrowUpRight className="h-3 w-3" />
@@ -249,7 +251,7 @@ function ProjectsDirectoryContent() {
       )}
 
       {/* Create Project Modal */}
-      {createModalOpen && (
+      {createModalOpen && canCreate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
           <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl border border-slate-200 text-xs">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -267,13 +269,13 @@ function ProjectsDirectoryContent() {
 
             <form onSubmit={handleCreateProject} className="mt-4 space-y-3">
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Project Code (e.g. HYD-PHARMA-10)</label>
+                <label className="block font-semibold text-slate-700 mb-1">Project reference</label>
                 <input
                   type="text"
                   required
                   value={code}
                   onChange={(e) => setCode(e.target.value.toUpperCase())}
-                  placeholder="HYD-BIO-09"
+                  placeholder="Your project reference"
                   className="w-full px-3 py-1.5 border border-slate-300 rounded font-mono text-xs focus:outline-none focus:border-blue-600"
                 />
               </div>
@@ -297,7 +299,7 @@ function ProjectsDirectoryContent() {
                   required
                   value={contractValue}
                   onChange={(e) => setContractValue(e.target.value)}
-                  placeholder="145000000"
+                  placeholder="Contract value in rupees"
                   className="w-full px-3 py-1.5 border border-slate-300 rounded text-xs focus:outline-none focus:border-blue-600"
                 />
               </div>
@@ -324,7 +326,7 @@ function ProjectsDirectoryContent() {
                     <option value="">-- Select Client Organization --</option>
                     {partiesList.map((p) => (
                       <option key={p.id} value={p.id}>
-                        {p.name} ({p.types?.join(", ") || "PARTY"})
+                        {p.name}
                       </option>
                     ))}
                   </select>

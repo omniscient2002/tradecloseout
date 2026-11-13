@@ -51,9 +51,8 @@ export function WaiverModal({
           <div className="flex items-start gap-2.5 p-3 rounded-lg bg-[#FAF5FF] border border-[#E9D5FF] text-xs text-[#6B21A8]">
             <ShieldOff className="h-4 w-4 shrink-0 mt-0.5 text-[#7E22CE]" />
             <div>
-              <strong className="block font-semibold">2-Step Mandatory Waiver Rule (WF-25 / RT-021)</strong>
-              Because this requirement is mandatory, initiating this waiver will set its status to{" "}
-              <code className="font-mono font-bold">PENDING_WAIVER</code>. It will require second-approver countersignature before it is formally waived.
+              <strong className="block font-semibold">Approval required for mandatory requirements</strong>
+              This requirement remains outstanding until the waiver has received all required approvals, including a second approver’s sign-off.
             </div>
           </div>
         )}

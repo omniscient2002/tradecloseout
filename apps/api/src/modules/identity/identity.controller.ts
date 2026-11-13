@@ -63,17 +63,21 @@ export class IdentityController {
     // Rate limit: max 5 OTP requests / hour / identifier (10 §10), atomic Lua increment and expiry
     const isProductionLike = process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging';
     const isExplicitDebug = process.env.ENABLE_DEBUG_OTP === 'true' && !isProductionLike;
-    const rateKey = `rl:otp:req:${rawId}`;
-    const count = Number(await this.redis.eval(
-      `local c = redis.call('INCR', KEYS[1])
-       if c == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
-       return c`,
-      1,
-      rateKey,
-      3600,
-    ));
-    if (count > 5 || !Number.isFinite(count)) {
-      throw new HttpExceptionWithRetry(429, 'RATE_LIMITED', 'Too many OTP requests. Try again later.', 300);
+    // Local development permits repeated persona switching. All other modes,
+    // including an unset NODE_ENV, retain the request limit.
+    if (process.env.NODE_ENV !== 'development') {
+      const rateKey = `rl:otp:req:${rawId}`;
+      const count = Number(await this.redis.eval(
+        `local c = redis.call('INCR', KEYS[1])
+         if c == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
+         return c`,
+        1,
+        rateKey,
+        3600,
+      ));
+      if (count > 5 || !Number.isFinite(count)) {
+        throw new HttpExceptionWithRetry(429, 'RATE_LIMITED', 'Too many OTP requests. Try again later.', 300);
+      }
     }
 
     const challengeId = uuidv7();

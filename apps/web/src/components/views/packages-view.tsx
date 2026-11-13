@@ -1,5 +1,6 @@
 "use client";
 
+import { humanLabel } from "../../lib/presentation";
 import React, { useState } from "react";
 import clsx from "clsx";
 import {
@@ -101,7 +102,7 @@ export function PackagesView({
                   <span className="font-medium text-[#111827]">{b.title}</span>
                 </div>
                 <span className="font-mono text-[10px] text-[#DC5252] bg-[#FEF2F2] px-2 py-0.5 rounded border border-[#FECACA]">
-                  {b.status}
+                  {humanLabel(b.status)}
                 </span>
               </div>
             ))}
@@ -114,7 +115,7 @@ export function PackagesView({
       <div className="rounded-xl border border-[#E5E7EB] bg-white p-5 shadow-2xs space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h2 className="text-sm font-bold text-[#111827]">Package Snapshot Actions</h2>
+            <h2 className="text-sm font-bold text-[#111827]">Handover package actions</h2>
             <p className="text-xs text-[#667085] mt-0.5">
               Request a package record. A download is offered only after a verified artifact exists.
             </p>
