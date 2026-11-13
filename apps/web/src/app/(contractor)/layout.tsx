@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import {
   Building2,
@@ -74,6 +74,8 @@ export default function ContractorLayout({ children }: { children: React.ReactNo
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [switching, setSwitching] = useState<string | null>(null);
   const [logoutError, setLogoutError] = useState<string | null>(null);
+  const [switchError, setSwitchError] = useState<string | null>(null);
+  const switchInFlight = useRef(false);
 
   useEffect(() => {
     apiFetch<any>("/api/v1/auth/me")
@@ -100,7 +102,9 @@ export default function ContractorLayout({ children }: { children: React.ReactNo
   };
 
   const handleQuickSwitch = async (persona: (typeof REAL_DECCAN_PERSONAS)[0]) => {
-    if (user?.name === persona.name) return;
+    if (user?.name === persona.name || switchInFlight.current) return;
+    switchInFlight.current = true;
+    setSwitchError(null);
     setSwitching(persona.id);
     try {
       const otpRes = await apiFetch<{ challengeId: string; debugOtp?: string; devOtpPreview?: string }>(
@@ -110,7 +114,8 @@ export default function ContractorLayout({ children }: { children: React.ReactNo
           body: JSON.stringify({ identifier: persona.email }),
         }
       );
-      const code = otpRes.debugOtp || otpRes.devOtpPreview || "123456";
+      const code = otpRes.debugOtp || otpRes.devOtpPreview;
+      if (!code) throw new Error("Sign in from the login page to enter the verification code sent to this account.");
       const verifyRes = await apiFetch<{ csrfToken?: string }>("/api/v1/auth/otp/verify", {
         method: "POST",
         body: JSON.stringify({ identifier: persona.email, otp: code, code }),
@@ -120,7 +125,9 @@ export default function ContractorLayout({ children }: { children: React.ReactNo
       }
       window.location.reload();
     } catch (err) {
-      console.error("Quick switch failed", err);
+      setSwitchError(err instanceof Error ? err.message : "Could not switch account. Please retry.");
+    } finally {
+      switchInFlight.current = false;
       setSwitching(null);
     }
   };
@@ -172,6 +179,7 @@ export default function ContractorLayout({ children }: { children: React.ReactNo
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900 flex flex-col font-sans">
+      {switchError && <div role="alert" className="border-b border-red-200 bg-red-50 px-6 py-3 text-sm text-red-800">{switchError}</div>}
       {/* Enterprise Top Navigation Bar */}
       <header className="sticky top-0 z-40 border-b border-slate-200 bg-white shadow-2xs">
         <div className="flex h-14 items-center justify-between px-4 sm:px-6">
