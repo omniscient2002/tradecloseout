@@ -1202,12 +1202,17 @@ export class ProjectsService {
     projectId: string,
     dto: { specNumber: string; title: string; division?: string; documentId?: string },
   ) {
+    requireProjectCommandId(projectId, 'INVALID_PROJECT_ID');
+    dto = projectCommandRecord(dto, ['specNumber','title','division','documentId'],
+      'INVALID_SPECIFICATION_INPUT') as typeof dto;
     if (!dto || typeof dto.specNumber !== 'string' ||
         !dto.specNumber.trim() || dto.specNumber.trim().length > 120 ||
+        /[\u0000-\u001f\u007f]/.test(dto.specNumber) ||
         typeof dto.title !== 'string' || !dto.title.trim() ||
-        dto.title.trim().length > 200 ||
+        dto.title.trim().length > 200 || /[\u0000-\u001f\u007f]/.test(dto.title) ||
         (dto.division !== undefined &&
-          (typeof dto.division !== 'string' || dto.division.length > 120)) ||
+          (typeof dto.division !== 'string' || dto.division.length > 120 ||
+           /[\u0000-\u001f\u007f]/.test(dto.division))) ||
         (dto.documentId !== undefined &&
           (typeof dto.documentId !== 'string' ||
            !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(dto.documentId)))) {
@@ -1235,7 +1240,7 @@ export class ProjectsService {
           projectId,
           dto.specNumber.trim(),
           dto.title.trim(),
-          dto.division || null,
+          dto.division?.trim() || null,
           dto.documentId || null,
           ctx.userId,
         ],

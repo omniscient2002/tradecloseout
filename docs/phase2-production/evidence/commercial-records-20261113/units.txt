@@ -1,0 +1,8 @@
+PASS test/phase2-contract-admission.spec.ts (13.876 s)
+PASS test/phase2-specification-admission.spec.ts
+
+Test Suites: 2 passed, 2 total
+Tests:       41 passed, 41 total
+Snapshots:   0 total
+Time:        14.362 s
+Ran all test suites matching /test\/phase2-specification-admission.spec.ts|test\/phase2-contract-admission.spec.ts/i.

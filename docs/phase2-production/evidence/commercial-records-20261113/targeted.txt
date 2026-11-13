@@ -1,0 +1,9 @@
+PASS test/phase2-specification-scope-db.spec.ts (20.876 s)
+PASS test/phase2-contract-admission-db.spec.ts
+PASS test/phase2-project-money-variations-db.spec.ts (6.922 s)
+
+Test Suites: 3 passed, 3 total
+Tests:       6 passed, 6 total
+Snapshots:   0 total
+Time:        31.577 s
+Ran all test suites matching /test\/phase2-specification-scope-db.spec.ts|test\/phase2-contract-admission-db.spec.ts|test\/phase2-project-money-variations-db.spec.ts/i.

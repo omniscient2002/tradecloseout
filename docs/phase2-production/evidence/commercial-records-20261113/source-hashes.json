@@ -1,0 +1,15 @@
+{
+  "baselineSha": "495dd76f1ef73ad2bad433ddce9153700cfa79f2",
+  "contractCheckpointSha": "e5bdac3233aded0e9da02946b964799642e25cec",
+  "node": "22.23.5",
+  "pnpm": "12.4.1",
+  "files": {
+    "apps/api/src/modules/projects/projects.service.ts": "5f5cc1f32e4777b4a2a78c6a20f624bc868489b9cf4737ae7fa3527bc1d265fd",
+    "packages/db/src/schema.ts": "6f4f9a59903955ee3a27dce1c725a85fcd7d33c5e530ef3358bde0608fdd2e34",
+    "packages/db/migrations/0054_specification_document_scope.sql": "d023776ea6fa5e83423c86e48e80105ee6b718410e2c10fdc56131093985c45c",
+    "apps/api/test/phase2-contract-admission.spec.ts": "d3e291e579a9d7f9151cd83d9cc6b0ddd75e53a0fa494754d1dc6f8049143f0b",
+    "apps/api/test/phase2-contract-admission-db.spec.ts": "5b67c0aacccdb2c5582fb0cdebc489828293b17f6fba161b8291f622f1b8730a",
+    "apps/api/test/phase2-specification-admission.spec.ts": "9c1c657dd7744d669b6e268f51912810f4b158ba321f0fd493f8d83fba920169",
+    "apps/api/test/phase2-specification-scope-db.spec.ts": "6122f9f0ab4f887b23d8919f0958d412ac6374195fbae05322f5a1adedfc8b62"
+  }
+}

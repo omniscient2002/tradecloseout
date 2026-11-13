@@ -10,6 +10,7 @@ import {
   jsonb,
   inet,
   uniqueIndex,
+  foreignKey,
   index,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
@@ -402,13 +403,21 @@ export const specificationRefs = pgTable('specification_refs', {
     .references(() => projects.id, { onDelete: 'cascade' }),
   contractId: uuid('contract_id').references(() => contracts.id),
   title: text('title').notNull(),
+  specNumber: text('spec_number'),
+  division: text('division'),
+  documentId: uuid('document_id'),
+  createdBy: uuid('created_by').references(() => users.id),
   issuer: text('issuer'),
   revision: text('revision'),
   issueDate: date('issue_date'),
   objectId: uuid('object_id'),
   notes: text('notes'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [foreignKey({
+  name: 'specification_document_scope_fk',
+  columns: [t.orgId, t.projectId, t.documentId],
+  foreignColumns: [documents.orgId, documents.projectId, documents.id],
+})]);
 
 /* ========================================================================== */
 /* 3.3 CONFIGURATION AND CHECKLISTS (08-DATA-MODEL-AND-ERD.md §3.3)           */

@@ -677,6 +677,13 @@
       "state": "CANDIDATE_FIX_TESTED",
       "evidenceLevel": "TARGETED_POSTGRESQL",
       "notes": "Data-only declared contract DTO, target UUID and bounded control-free text before SQL; preserve explicit zero, unknown and exact large money, retention/date policy and tenant-party checks. Actual project-lock mutation and rollback tests pass. Parent PH2-G05-002/005 independent states unchanged; see CONTRACT-ADMISSION-2026-11-13.md."
+    },
+    {
+      "id": "PH2-NEW-015",
+      "title": "Specification document links lack composite tenant/project protection and retain mutable admitted input",
+      "state": "CANDIDATE_FIX_TESTED",
+      "evidenceLevel": "TARGETED_POSTGRESQL",
+      "notes": "Declared detached specification command plus append-only migration 0054 composite document FK and ORM mapping. Restricted SQL and command mutation defects reproduced; real upgrade rejects inconsistent history without deleting it, then accepts an explicitly reconciled synthetic fixture. Parent PH2-G05-002/005 independent states unchanged; see SPECIFICATION-SCOPE-2026-11-13.md."
     }
   ],
   "candidateWork": [

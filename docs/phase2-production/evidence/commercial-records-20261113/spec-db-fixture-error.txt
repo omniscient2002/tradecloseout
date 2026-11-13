@@ -1,0 +1,49 @@
+FAIL test/phase2-specification-scope-db.spec.ts (8.29 s)
+  ✕ PH2-NEW-015: restricted runtime SQL cannot bind foreign-project or foreign-tenant documents (1898 ms)
+  ✕ PH2-NEW-015: the checked document and admitted fields are the persisted reference, with atomic history (1901 ms)
+  ○ skipped PH2-NEW-015: upgrade fails closed on inconsistent historical links, preserves records and validates a reconciled fixture
+
+  ● PH2-NEW-015: restricted runtime SQL cannot bind foreign-project or foreign-tenant documents
+
+    error: new row for relation "projects" violates check constraint "projects_code_check"
+
+      15 |     VALUES($1,'Synthetic specification tenant','Synthetic specification tenant','KA')`,[id]);
+      16 |   await admin.query(`INSERT INTO memberships(id,org_id,user_id,role,status) VALUES($1,$2,$3,'R-OWNER','ACTIVE')`,[uuidv7(),org,user]);
+    > 17 |   for(const [id,tenant] of [[project,org],[other,org],[foreignProject,foreign]])await admin.query(`INSERT INTO projects(id,org_id,code,name,status,created_by)
+         |                                                                                 ^
+      18 |     VALUES($1,$2,$3,'Synthetic project','ACTIVE',$4)`,[id,tenant,id.slice(-10),user]);
+      19 |   // Metadata-only references: no object/version or engineering approval is fabricated.
+      20 |   for(const [id,tenant,target,deleted] of [[document,org,project,false],[otherDocument,org,other,false],
+
+      at ../../node_modules/.pnpm/pg-pool@3.14.0_pg@8.23.1/node_modules/pg-pool/index.js:45:11
+      at async seed (test/phase2-specification-scope-db.spec.ts:17:81)
+      at async /tmp/tco-phase2-reaudit/apps/api/test/phase2-specification-scope-db.spec.ts:30:13
+      at async withDisposableDatabase (../../packages/db/test/helpers/disposable-database.ts:107:5)
+      at async Object.<anonymous> (test/phase2-specification-scope-db.spec.ts:29:3)
+
+  ● PH2-NEW-015: the checked document and admitted fields are the persisted reference, with atomic history
+
+    error: new row for relation "projects" violates check constraint "projects_code_check"
+
+      15 |     VALUES($1,'Synthetic specification tenant','Synthetic specification tenant','KA')`,[id]);
+      16 |   await admin.query(`INSERT INTO memberships(id,org_id,user_id,role,status) VALUES($1,$2,$3,'R-OWNER','ACTIVE')`,[uuidv7(),org,user]);
+    > 17 |   for(const [id,tenant] of [[project,org],[other,org],[foreignProject,foreign]])await admin.query(`INSERT INTO projects(id,org_id,code,name,status,created_by)
+         |                                                                                 ^
+      18 |     VALUES($1,$2,$3,'Synthetic project','ACTIVE',$4)`,[id,tenant,id.slice(-10),user]);
+      19 |   // Metadata-only references: no object/version or engineering approval is fabricated.
+      20 |   for(const [id,tenant,target,deleted] of [[document,org,project,false],[otherDocument,org,other,false],
+
+      at ../../node_modules/.pnpm/pg-pool@3.14.0_pg@8.23.1/node_modules/pg-pool/index.js:45:11
+      at async seed (test/phase2-specification-scope-db.spec.ts:17:81)
+      at async /tmp/tco-phase2-reaudit/apps/api/test/phase2-specification-scope-db.spec.ts:41:13
+      at async withDisposableDatabase (../../packages/db/test/helpers/disposable-database.ts:107:5)
+      at async Object.<anonymous> (test/phase2-specification-scope-db.spec.ts:40:3)
+
+Test Suites: 1 failed, 1 total
+Tests:       2 failed, 1 skipped, 3 total
+Snapshots:   0 total
+Time:        8.404 s
+Ran all test suites matching /test\/phase2-specification-scope-db.spec.ts/i with tests matching "restricted runtime|checked document".
+Error: ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL
+
+  × "pnpm recursive exec" failed in /tmp/tco-phase2-reaudit/apps/api

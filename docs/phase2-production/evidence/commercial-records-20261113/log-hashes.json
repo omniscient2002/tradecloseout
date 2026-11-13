@@ -20,6 +20,50 @@
     "contract-typecheck.txt": {
       "rawSha256": "8935e75360eaccba7ec1fee2d68b076e23856327a92e0b3f4f7ff0f2147b6b54",
       "storedSha256": "8935e75360eaccba7ec1fee2d68b076e23856327a92e0b3f4f7ff0f2147b6b54"
+    },
+    "spec-before.txt": {
+      "rawSha256": "15e81ab4356235e895f6bdf10490460efa42eef86cab34e7b67b5129bb288134",
+      "storedSha256": "b44291530a8b0f30557b85258b8039e2bf9a5c73a020a4ae1d2e032a1b8af395"
+    },
+    "spec-db-before.txt": {
+      "rawSha256": "30e94a409364f41d1a051da2ea723ab6bbb6d10783cea25ae5a3426824c9b17f",
+      "storedSha256": "7e3006f606e31752f2de9fc51f9f40adf7175e333b0c13cbce724209a55e88dc"
+    },
+    "spec-db-fixture-error.txt": {
+      "rawSha256": "b226ba4dbbdcca5c741217b7e8a21289d0f1315594a681de7179463de219d1fb",
+      "storedSha256": "044ffc1399aa7a5ca3f5dc8ad389b6374bc910ff2c45fa9615c13ba4a822adb4"
+    },
+    "units.txt": {
+      "rawSha256": "d946070a26d8481de0eccdee873ea2c976842308a32b197da76d6d09805663b1",
+      "storedSha256": "d946070a26d8481de0eccdee873ea2c976842308a32b197da76d6d09805663b1"
+    },
+    "targeted.txt": {
+      "rawSha256": "25989cb8538880f23666443cb603712f724098835e058a761ca03cc144f7177a",
+      "storedSha256": "25989cb8538880f23666443cb603712f724098835e058a761ca03cc144f7177a"
+    },
+    "typecheck.txt": {
+      "rawSha256": "8935e75360eaccba7ec1fee2d68b076e23856327a92e0b3f4f7ff0f2147b6b54",
+      "storedSha256": "8935e75360eaccba7ec1fee2d68b076e23856327a92e0b3f4f7ff0f2147b6b54"
+    },
+    "build.txt": {
+      "rawSha256": "c7f8d72abf933ebf51ab2883ffbc8606fce97eca46ce79c899096591f9f21e2a",
+      "storedSha256": "aa6b027823fc39c440a34a87d316b41650b7d92e85a5997099cb054d405384f5"
+    },
+    "migrate.txt": {
+      "rawSha256": "7270e737abe3f7e52c3318b65d16d2b15fdd715f08965ce5125aae99df391319",
+      "storedSha256": "7270e737abe3f7e52c3318b65d16d2b15fdd715f08965ce5125aae99df391319"
+    },
+    "security.txt": {
+      "rawSha256": "fac04daca6ec7a196435d3a5b6b96dbe71e5a1a912567af2c1ee89f1eb046208",
+      "storedSha256": "fac04daca6ec7a196435d3a5b6b96dbe71e5a1a912567af2c1ee89f1eb046208"
+    },
+    "rbac.txt": {
+      "rawSha256": "5b2024e40ed983b40329b8d85034ec8310e2fb7a8daaeb5e796ae5fb5f19c188",
+      "storedSha256": "5b2024e40ed983b40329b8d85034ec8310e2fb7a8daaeb5e796ae5fb5f19c188"
+    },
+    "workspace.txt": {
+      "rawSha256": "29fc860ff7ff88197c2db917428046f4fa757db3f1a8919cc9c58b659cce9ee2",
+      "storedSha256": "29fc860ff7ff88197c2db917428046f4fa757db3f1a8919cc9c58b659cce9ee2"
     }
   }
 }

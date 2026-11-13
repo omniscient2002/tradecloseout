@@ -1,0 +1,282 @@
+FAIL test/phase2-specification-admission.spec.ts (5.313 s)
+  PH2-NEW-015: specification reference admission
+    ✓ rejects malformed or unsupported reference null (7 ms)
+    ✓ rejects malformed or unsupported reference [] (1 ms)
+    ✓ rejects malformed or unsupported reference 3
+    ✕ rejects malformed or unsupported reference {"specNumber":"SPEC-1","title":"Synthetic reference","objectId":"00000000-0000-4000-8000-000000000002"} (16 ms)
+    ✕ rejects malformed or unsupported reference {"specNumber":"SPEC-1","title":"Synthetic reference","contractId":"00000000-0000-4000-8000-000000000002"} (2 ms)
+    ✕ rejects malformed or unsupported reference {"specNumber":"SPEC-1","title":"Synthetic reference","issuer":"Unsupported"} (2 ms)
+    ✕ rejects malformed or unsupported reference {"specNumber":"SPEC-1","title":"Synthetic reference","orgId":"00000000-0000-4000-8000-000000000002"} (1 ms)
+    ✕ rejects malformed or unsupported reference {"specNumber":"SPEC\n1","title":"Synthetic reference"} (1 ms)
+    ✕ rejects malformed or unsupported reference {"specNumber":"SPEC-1","title":"Reference\u0000title"} (1 ms)
+    ✕ rejects malformed or unsupported reference {"specNumber":"SPEC-1","title":"Synthetic reference","division":"23\n00"} (1 ms)
+    ✓ rejects malformed or unsupported reference {"specNumber":"SPEC-1","title":"Synthetic reference","division":null}
+    ✓ rejects malformed or unsupported reference {"specNumber":"SPEC-1","title":"Synthetic reference","division":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}
+    ✓ rejects malformed or unsupported reference {"specNumber":"SPEC-1","title":"Synthetic reference","documentId":"bad-id"}
+    ✓ rejects malformed or unsupported reference {"specNumber":"SPEC-1","title":"Synthetic reference","documentId":null}
+    ✕ rejects malformed project target null (1 ms)
+    ✕ rejects malformed project target "not-a-uuid" (1 ms)
+    ✕ rejects malformed project target "" (1 ms)
+    ✕ never invokes a specification field getter (1 ms)
+
+  ● PH2-NEW-015: specification reference admission › rejects malformed or unsupported reference {"specNumber":"SPEC-1","title":"Synthetic reference","objectId":"00000000-0000-4000-8000-000000000002"}
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [Error: DATABASE_REACHED]
+
+      10 |     {...valid,documentId:'bad-id'},{...valid,documentId:null}])('rejects malformed or unsupported reference %j',async dto=>{
+      11 |       const pool={connect:jest.fn().mockRejectedValue(new Error('DATABASE_REACHED'))};
+    > 12 |       await expect(new ProjectsService(pool as any).createSpecification(ctx,project,dto as any)).rejects.toMatchObject({status:422});
+         |                                                                                                          ^
+      13 |       expect(pool.connect).not.toHaveBeenCalled();
+      14 |     });
+      15 |   it.each([null,'not-a-uuid',''])('rejects malformed project target %j',async id=>{
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-specification-admission.spec.ts:12:106
+
+  ● PH2-NEW-015: specification reference admission › rejects malformed or unsupported reference {"specNumber":"SPEC-1","title":"Synthetic reference","contractId":"00000000-0000-4000-8000-000000000002"}
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [Error: DATABASE_REACHED]
+
+      10 |     {...valid,documentId:'bad-id'},{...valid,documentId:null}])('rejects malformed or unsupported reference %j',async dto=>{
+      11 |       const pool={connect:jest.fn().mockRejectedValue(new Error('DATABASE_REACHED'))};
+    > 12 |       await expect(new ProjectsService(pool as any).createSpecification(ctx,project,dto as any)).rejects.toMatchObject({status:422});
+         |                                                                                                          ^
+      13 |       expect(pool.connect).not.toHaveBeenCalled();
+      14 |     });
+      15 |   it.each([null,'not-a-uuid',''])('rejects malformed project target %j',async id=>{
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-specification-admission.spec.ts:12:106
+
+  ● PH2-NEW-015: specification reference admission › rejects malformed or unsupported reference {"specNumber":"SPEC-1","title":"Synthetic reference","issuer":"Unsupported"}
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [Error: DATABASE_REACHED]
+
+      10 |     {...valid,documentId:'bad-id'},{...valid,documentId:null}])('rejects malformed or unsupported reference %j',async dto=>{
+      11 |       const pool={connect:jest.fn().mockRejectedValue(new Error('DATABASE_REACHED'))};
+    > 12 |       await expect(new ProjectsService(pool as any).createSpecification(ctx,project,dto as any)).rejects.toMatchObject({status:422});
+         |                                                                                                          ^
+      13 |       expect(pool.connect).not.toHaveBeenCalled();
+      14 |     });
+      15 |   it.each([null,'not-a-uuid',''])('rejects malformed project target %j',async id=>{
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-specification-admission.spec.ts:12:106
+
+  ● PH2-NEW-015: specification reference admission › rejects malformed or unsupported reference {"specNumber":"SPEC-1","title":"Synthetic reference","orgId":"00000000-0000-4000-8000-000000000002"}
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [Error: DATABASE_REACHED]
+
+      10 |     {...valid,documentId:'bad-id'},{...valid,documentId:null}])('rejects malformed or unsupported reference %j',async dto=>{
+      11 |       const pool={connect:jest.fn().mockRejectedValue(new Error('DATABASE_REACHED'))};
+    > 12 |       await expect(new ProjectsService(pool as any).createSpecification(ctx,project,dto as any)).rejects.toMatchObject({status:422});
+         |                                                                                                          ^
+      13 |       expect(pool.connect).not.toHaveBeenCalled();
+      14 |     });
+      15 |   it.each([null,'not-a-uuid',''])('rejects malformed project target %j',async id=>{
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-specification-admission.spec.ts:12:106
+
+  ● PH2-NEW-015: specification reference admission › rejects malformed or unsupported reference {"specNumber":"SPEC\n1","title":"Synthetic reference"}
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [Error: DATABASE_REACHED]
+
+      10 |     {...valid,documentId:'bad-id'},{...valid,documentId:null}])('rejects malformed or unsupported reference %j',async dto=>{
+      11 |       const pool={connect:jest.fn().mockRejectedValue(new Error('DATABASE_REACHED'))};
+    > 12 |       await expect(new ProjectsService(pool as any).createSpecification(ctx,project,dto as any)).rejects.toMatchObject({status:422});
+         |                                                                                                          ^
+      13 |       expect(pool.connect).not.toHaveBeenCalled();
+      14 |     });
+      15 |   it.each([null,'not-a-uuid',''])('rejects malformed project target %j',async id=>{
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-specification-admission.spec.ts:12:106
+
+  ● PH2-NEW-015: specification reference admission › rejects malformed or unsupported reference {"specNumber":"SPEC-1","title":"Reference\u0000title"}
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [Error: DATABASE_REACHED]
+
+      10 |     {...valid,documentId:'bad-id'},{...valid,documentId:null}])('rejects malformed or unsupported reference %j',async dto=>{
+      11 |       const pool={connect:jest.fn().mockRejectedValue(new Error('DATABASE_REACHED'))};
+    > 12 |       await expect(new ProjectsService(pool as any).createSpecification(ctx,project,dto as any)).rejects.toMatchObject({status:422});
+         |                                                                                                          ^
+      13 |       expect(pool.connect).not.toHaveBeenCalled();
+      14 |     });
+      15 |   it.each([null,'not-a-uuid',''])('rejects malformed project target %j',async id=>{
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-specification-admission.spec.ts:12:106
+
+  ● PH2-NEW-015: specification reference admission › rejects malformed or unsupported reference {"specNumber":"SPEC-1","title":"Synthetic reference","division":"23\n00"}
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [Error: DATABASE_REACHED]
+
+      10 |     {...valid,documentId:'bad-id'},{...valid,documentId:null}])('rejects malformed or unsupported reference %j',async dto=>{
+      11 |       const pool={connect:jest.fn().mockRejectedValue(new Error('DATABASE_REACHED'))};
+    > 12 |       await expect(new ProjectsService(pool as any).createSpecification(ctx,project,dto as any)).rejects.toMatchObject({status:422});
+         |                                                                                                          ^
+      13 |       expect(pool.connect).not.toHaveBeenCalled();
+      14 |     });
+      15 |   it.each([null,'not-a-uuid',''])('rejects malformed project target %j',async id=>{
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-specification-admission.spec.ts:12:106
+
+  ● PH2-NEW-015: specification reference admission › rejects malformed project target null
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [Error: DATABASE_REACHED]
+
+      15 |   it.each([null,'not-a-uuid',''])('rejects malformed project target %j',async id=>{
+      16 |     const pool={connect:jest.fn().mockRejectedValue(new Error('DATABASE_REACHED'))};
+    > 17 |     await expect(new ProjectsService(pool as any).createSpecification(ctx,id as any,valid)).rejects.toMatchObject({status:422});
+         |                                                                                                     ^
+      18 |     expect(pool.connect).not.toHaveBeenCalled();
+      19 |   });
+      20 |   it('never invokes a specification field getter',async()=>{
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-specification-admission.spec.ts:17:101
+
+  ● PH2-NEW-015: specification reference admission › rejects malformed project target "not-a-uuid"
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [Error: DATABASE_REACHED]
+
+      15 |   it.each([null,'not-a-uuid',''])('rejects malformed project target %j',async id=>{
+      16 |     const pool={connect:jest.fn().mockRejectedValue(new Error('DATABASE_REACHED'))};
+    > 17 |     await expect(new ProjectsService(pool as any).createSpecification(ctx,id as any,valid)).rejects.toMatchObject({status:422});
+         |                                                                                                     ^
+      18 |     expect(pool.connect).not.toHaveBeenCalled();
+      19 |   });
+      20 |   it('never invokes a specification field getter',async()=>{
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-specification-admission.spec.ts:17:101
+
+  ● PH2-NEW-015: specification reference admission › rejects malformed project target ""
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [Error: DATABASE_REACHED]
+
+      15 |   it.each([null,'not-a-uuid',''])('rejects malformed project target %j',async id=>{
+      16 |     const pool={connect:jest.fn().mockRejectedValue(new Error('DATABASE_REACHED'))};
+    > 17 |     await expect(new ProjectsService(pool as any).createSpecification(ctx,id as any,valid)).rejects.toMatchObject({status:422});
+         |                                                                                                     ^
+      18 |     expect(pool.connect).not.toHaveBeenCalled();
+      19 |   });
+      20 |   it('never invokes a specification field getter',async()=>{
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at test/phase2-specification-admission.spec.ts:17:101
+
+  ● PH2-NEW-015: specification reference admission › never invokes a specification field getter
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "status": 422,
+    - }
+    + [Error: DATABASE_REACHED]
+
+      22 |     const dto=Object.defineProperty({...valid},'title',{enumerable:true,get:getter});
+      23 |     const pool={connect:jest.fn().mockRejectedValue(new Error('DATABASE_REACHED'))};
+    > 24 |     await expect(new ProjectsService(pool as any).createSpecification(ctx,project,dto)).rejects.toMatchObject({status:422});
+         |                                                                                                 ^
+      25 |     expect(getter).not.toHaveBeenCalled();expect(pool.connect).not.toHaveBeenCalled();
+      26 |   });
+      27 | });
+
+      at Object.toMatchObject (../../node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at Object.<anonymous> (test/phase2-specification-admission.spec.ts:24:97)
+
+Test Suites: 1 failed, 1 total
+Tests:       11 failed, 7 passed, 18 total
+Snapshots:   0 total
+Time:        5.384 s
+Ran all test suites matching /test\/phase2-specification-admission.spec.ts/i.
+Error: ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL
+
+  × "pnpm recursive exec" failed in /tmp/tco-phase2-reaudit/apps/api
