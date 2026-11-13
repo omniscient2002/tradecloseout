@@ -6,11 +6,13 @@ import {
   CanActivate,
   ExecutionContext,
   ForbiddenException,
+  BadRequestException,
   SetMetadata,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Pool } from 'pg';
 import { hasPermission } from '@tradecloseout/shared';
+import { validateRouteIdentifiers } from './route-identifiers';
 
 export const REQUIRE_PERMISSION_KEY = 'require_permission';
 export const RequirePermission = (permission: string) => SetMetadata(REQUIRE_PERMISSION_KEY, permission);
@@ -26,10 +28,18 @@ export class PermissionGuard implements CanActivate {
     );
 
     if (!requiredPermission) {
-      return true; // No permission required
+      throw new ForbiddenException({ code: 'PERMISSION_POLICY_REQUIRED' });
     }
 
     const request = context.switchToHttp().getRequest();
+    validateRouteIdentifiers(request.params);
+    if (requiredPermission === 'review.decide' && request.body && Object.hasOwn(request.body, 'reviewIds')) {
+      const ids = request.body.reviewIds;
+      if (!Array.isArray(ids) || !ids.length || ids.length > 100 || new Set(ids).size !== ids.length ||
+          ids.some(id => typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id))) {
+        throw new BadRequestException({ code: 'INVALID_REVIEW_IDS' });
+      }
+    }
     const user = request.user;
     if (!user) {
       throw new ForbiddenException('UNAUTHENTICATED');

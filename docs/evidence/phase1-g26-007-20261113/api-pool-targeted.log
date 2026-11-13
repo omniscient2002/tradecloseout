@@ -1,0 +1,9 @@
+PASS test/phase1-canonical-tenant-pool-db.spec.ts (5.45 s)
+  PH1-G26-007: real API tenant/user/token pool transitions
+    ✓ reuses one restricted backend without retaining tenant, user, actor or token after COMMIT and ROLLBACK (1549 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       1 passed, 1 total
+Snapshots:   0 total
+Time:        5.51 s
+Ran all test suites matching /test\/phase1-canonical-tenant-pool-db.spec.ts/i.

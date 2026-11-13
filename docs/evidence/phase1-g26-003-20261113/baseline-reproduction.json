@@ -1,0 +1,865 @@
+{
+  "baseline": "b221170f3853b8994e0638f0509183db0f091c10",
+  "represented": 72,
+  "columnDrift": 34,
+  "typeDrift": 4,
+  "nullabilityDrift": 15,
+  "queryFailures": 9,
+  "results": [
+    {
+      "exportName": "adminAuditEvents",
+      "table": "admin_audit_events",
+      "extra": [],
+      "missing": [],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "approvalOverrides",
+      "table": "approval_overrides",
+      "extra": [],
+      "missing": [
+        "overridden_by",
+        "justification",
+        "previous_status",
+        "new_status"
+      ],
+      "types": [],
+      "nullability": [
+        "project_id",
+        "actor_id",
+        "reason",
+        "new_decision"
+      ],
+      "query": "PASS"
+    },
+    {
+      "exportName": "archiveExports",
+      "table": "archive_exports",
+      "extra": [],
+      "missing": [],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "assetCategories",
+      "table": "asset_categories",
+      "extra": [],
+      "missing": [
+        "created_at"
+      ],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "assetIdentityRevisions",
+      "table": "asset_identity_revisions",
+      "extra": [],
+      "missing": [],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "assets",
+      "table": "assets",
+      "extra": [],
+      "missing": [],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "checklistSnapshots",
+      "table": "checklist_snapshots",
+      "extra": [],
+      "missing": [],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "clientProfiles",
+      "table": "client_profiles",
+      "extra": [],
+      "missing": [],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "configVersions",
+      "table": "config_versions",
+      "extra": [],
+      "missing": [],
+      "types": [],
+      "nullability": [
+        "created_by"
+      ],
+      "query": "PASS"
+    },
+    {
+      "exportName": "contracts",
+      "table": "contracts",
+      "extra": [],
+      "missing": [
+        "contract_ref",
+        "title",
+        "party_id",
+        "milestones_json",
+        "commencement_date",
+        "completion_date"
+      ],
+      "types": [],
+      "nullability": [
+        "reference",
+        "value_paise",
+        "created_by"
+      ],
+      "query": "PASS"
+    },
+    {
+      "exportName": "creditNotes",
+      "table": "credit_notes",
+      "extra": [],
+      "missing": [],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "defects",
+      "table": "defects",
+      "extra": [],
+      "missing": [
+        "mandatory",
+        "remedied_by",
+        "remedied_at"
+      ],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "deletionRequests",
+      "table": "deletion_requests",
+      "extra": [],
+      "missing": [],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "documentAssets",
+      "table": "document_assets",
+      "extra": [],
+      "missing": [],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "documentContracts",
+      "table": "document_contracts",
+      "extra": [],
+      "missing": [
+        "created_at"
+      ],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "documentEvents",
+      "table": "document_events",
+      "extra": [],
+      "missing": [],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "documentRequirements",
+      "table": "document_requirements",
+      "extra": [],
+      "missing": [],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "documentVersions",
+      "table": "document_versions",
+      "extra": [
+        "external_comment"
+      ],
+      "missing": [
+        "uploader_comment"
+      ],
+      "types": [],
+      "nullability": [],
+      "query": "42703: column \"external_comment\" does not exist"
+    },
+    {
+      "exportName": "documents",
+      "table": "documents",
+      "extra": [],
+      "missing": [],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "evidenceCompanionRules",
+      "table": "evidence_companion_rules",
+      "extra": [],
+      "missing": [],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "evidenceRevalidations",
+      "table": "evidence_revalidations",
+      "extra": [],
+      "missing": [
+        "row_version",
+        "scope_key"
+      ],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "guestGrants",
+      "table": "guest_grants",
+      "extra": [
+        "user_id",
+        "revoked_at"
+      ],
+      "missing": [
+        "target_email",
+        "target_phone_e164",
+        "failed_otp_count",
+        "otp_attempts_count",
+        "cooldown_until"
+      ],
+      "types": [],
+      "nullability": [],
+      "query": "42703: column \"user_id\" does not exist"
+    },
+    {
+      "exportName": "handoverPackages",
+      "table": "handover_packages",
+      "extra": [],
+      "missing": [
+        "title",
+        "created_by"
+      ],
+      "types": [],
+      "nullability": [
+        "snapshot_id",
+        "snapshot_checksum",
+        "requested_by"
+      ],
+      "query": "PASS"
+    },
+    {
+      "exportName": "idempotencyKeys",
+      "table": "idempotency_keys",
+      "extra": [],
+      "missing": [],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "invitations",
+      "table": "invitations",
+      "extra": [
+        "phone"
+      ],
+      "missing": [
+        "phone_e164"
+      ],
+      "types": [
+        {
+          "name": "email",
+          "orm": "text",
+          "sql": "citext"
+        }
+      ],
+      "nullability": [],
+      "query": "42703: column \"phone\" does not exist"
+    },
+    {
+      "exportName": "invoiceLines",
+      "table": "invoice_lines",
+      "extra": [],
+      "missing": [],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "invoiceTds",
+      "table": "invoice_tds",
+      "extra": [],
+      "missing": [
+        "certificate_object_id",
+        "status"
+      ],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "invoices",
+      "table": "invoices",
+      "extra": [],
+      "missing": [],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "jobExecutions",
+      "table": "job_executions",
+      "extra": [],
+      "missing": [],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "legalHolds",
+      "table": "legal_holds",
+      "extra": [],
+      "missing": [],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "memberships",
+      "table": "memberships",
+      "extra": [],
+      "missing": [],
+      "types": [],
+      "nullability": [
+        "joined_at"
+      ],
+      "query": "PASS"
+    },
+    {
+      "exportName": "notificationPreferences",
+      "table": "notification_preferences",
+      "extra": [],
+      "missing": [],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "notificationTemplates",
+      "table": "notification_templates",
+      "extra": [],
+      "missing": [],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "notifications",
+      "table": "notifications",
+      "extra": [],
+      "missing": [
+        "project_id"
+      ],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "orgProfiles",
+      "table": "org_profiles",
+      "extra": [],
+      "missing": [
+        "logo_url",
+        "accent_color",
+        "watermark_enabled",
+        "allow_self_approval",
+        "default_retention_months",
+        "footer_text",
+        "contact_email",
+        "contact_phone"
+      ],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "organisations",
+      "table": "organisations",
+      "extra": [],
+      "missing": [
+        "trade",
+        "timezone"
+      ],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "outboxEvents",
+      "table": "outbox_events",
+      "extra": [],
+      "missing": [
+        "attempts"
+      ],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "packageItems",
+      "table": "package_items",
+      "extra": [],
+      "missing": [],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "packageLayouts",
+      "table": "package_layouts",
+      "extra": [],
+      "missing": [],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "packageRequirements",
+      "table": "package_requirements",
+      "extra": [],
+      "missing": [],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "parties",
+      "table": "parties",
+      "extra": [],
+      "missing": [
+        "phone_e164"
+      ],
+      "types": [
+        {
+          "name": "email",
+          "orm": "text",
+          "sql": "citext"
+        }
+      ],
+      "nullability": [
+        "created_by"
+      ],
+      "query": "PASS"
+    },
+    {
+      "exportName": "partyContacts",
+      "table": "party_contacts",
+      "extra": [
+        "phone"
+      ],
+      "missing": [
+        "phone_e164"
+      ],
+      "types": [
+        {
+          "name": "email",
+          "orm": "text",
+          "sql": "citext"
+        }
+      ],
+      "nullability": [],
+      "query": "42703: column \"phone\" does not exist"
+    },
+    {
+      "exportName": "paymentEvents",
+      "table": "payment_events",
+      "extra": [],
+      "missing": [],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "plans",
+      "table": "plans",
+      "extra": [],
+      "missing": [],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "procurementOrderLines",
+      "table": "procurement_order_lines",
+      "extra": [],
+      "missing": [],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "procurementOrders",
+      "table": "procurement_orders",
+      "extra": [],
+      "missing": [],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "projectMembers",
+      "table": "project_members",
+      "extra": [
+        "added_at",
+        "removed_at"
+      ],
+      "missing": [
+        "created_at",
+        "updated_at"
+      ],
+      "types": [],
+      "nullability": [],
+      "query": "42703: column \"added_at\" does not exist"
+    },
+    {
+      "exportName": "projects",
+      "table": "projects",
+      "extra": [],
+      "missing": [
+        "project_type",
+        "retention_bps"
+      ],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "requirementChangeRequests",
+      "table": "requirement_change_requests",
+      "extra": [
+        "updated_at"
+      ],
+      "missing": [
+        "requirement_id",
+        "change_type",
+        "delta_json",
+        "title",
+        "justification",
+        "decided_at"
+      ],
+      "types": [],
+      "nullability": [
+        "requested_by"
+      ],
+      "query": "42703: column \"updated_at\" does not exist"
+    },
+    {
+      "exportName": "requirementRevisions",
+      "table": "requirement_revisions",
+      "extra": [],
+      "missing": [],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "requirements",
+      "table": "requirements",
+      "extra": [],
+      "missing": [
+        "asset_id",
+        "milestone_key"
+      ],
+      "types": [],
+      "nullability": [
+        "reviewer_role"
+      ],
+      "query": "PASS"
+    },
+    {
+      "exportName": "retentionPolicies",
+      "table": "retention_policies",
+      "extra": [],
+      "missing": [],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "reviewComments",
+      "table": "review_comments",
+      "extra": [
+        "pin_x",
+        "pin_y"
+      ],
+      "missing": [],
+      "types": [],
+      "nullability": [],
+      "query": "42703: column \"pin_x\" does not exist"
+    },
+    {
+      "exportName": "reviews",
+      "table": "reviews",
+      "extra": [
+        "updated_at"
+      ],
+      "missing": [],
+      "types": [],
+      "nullability": [],
+      "query": "42703: column \"updated_at\" does not exist"
+    },
+    {
+      "exportName": "securityEvents",
+      "table": "security_events",
+      "extra": [],
+      "missing": [
+        "cert_in_reportable",
+        "detected_at",
+        "report_due_at",
+        "reported_to_cert_in_at"
+      ],
+      "types": [],
+      "nullability": [
+        "request_id"
+      ],
+      "query": "PASS"
+    },
+    {
+      "exportName": "sessions",
+      "table": "sessions",
+      "extra": [],
+      "missing": [
+        "guest_grant_id",
+        "mfa_verified"
+      ],
+      "types": [],
+      "nullability": [
+        "active_org_id"
+      ],
+      "query": "PASS"
+    },
+    {
+      "exportName": "specificationRefs",
+      "table": "specification_refs",
+      "extra": [],
+      "missing": [
+        "spec_number",
+        "division",
+        "document_id",
+        "created_by"
+      ],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "storageObjects",
+      "table": "storage_objects",
+      "extra": [],
+      "missing": [
+        "av_scanned_at"
+      ],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "submissionEvents",
+      "table": "submission_events",
+      "extra": [],
+      "missing": [],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "submissionRecipients",
+      "table": "submission_recipients",
+      "extra": [],
+      "missing": [
+        "party_id",
+        "role",
+        "name",
+        "email",
+        "is_required_approver"
+      ],
+      "types": [],
+      "nullability": [
+        "project_id",
+        "recipient_party_id",
+        "recipient_role"
+      ],
+      "query": "PASS"
+    },
+    {
+      "exportName": "submissions",
+      "table": "submissions",
+      "extra": [],
+      "missing": [
+        "submitted_at",
+        "submitted_by",
+        "cover_note",
+        "updated_at"
+      ],
+      "types": [],
+      "nullability": [
+        "created_by"
+      ],
+      "query": "PASS"
+    },
+    {
+      "exportName": "subscriptions",
+      "table": "subscriptions",
+      "extra": [
+        "created_at"
+      ],
+      "missing": [],
+      "types": [],
+      "nullability": [],
+      "query": "42703: column \"created_at\" does not exist"
+    },
+    {
+      "exportName": "supplierDocumentObligations",
+      "table": "supplier_document_obligations",
+      "extra": [],
+      "missing": [],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "templatePacks",
+      "table": "template_packs",
+      "extra": [],
+      "missing": [],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "transmittalItems",
+      "table": "transmittal_items",
+      "extra": [],
+      "missing": [],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "transmittals",
+      "table": "transmittals",
+      "extra": [],
+      "missing": [],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "usageCounters",
+      "table": "usage_counters",
+      "extra": [],
+      "missing": [],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "userIdentities",
+      "table": "user_identities",
+      "extra": [],
+      "missing": [],
+      "types": [
+        {
+          "name": "value",
+          "orm": "text",
+          "sql": "citext"
+        }
+      ],
+      "nullability": [
+        "verified_at"
+      ],
+      "query": "PASS"
+    },
+    {
+      "exportName": "users",
+      "table": "users",
+      "extra": [],
+      "missing": [
+        "email_display",
+        "phone_display",
+        "locale",
+        "mfa_totp_secret",
+        "mfa_enabled_at",
+        "mfa_totp_last_step"
+      ],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "variations",
+      "table": "variations",
+      "extra": [],
+      "missing": [
+        "variation_ref",
+        "title",
+        "cost_delta_paise",
+        "scope_delta_json",
+        "requested_by"
+      ],
+      "types": [],
+      "nullability": [
+        "reference",
+        "description",
+        "created_by"
+      ],
+      "query": "PASS"
+    },
+    {
+      "exportName": "waivers",
+      "table": "waivers",
+      "extra": [],
+      "missing": [
+        "is_mandatory_item",
+        "requested_by",
+        "second_approved_at",
+        "created_at"
+      ],
+      "types": [],
+      "nullability": [],
+      "query": "PASS"
+    },
+    {
+      "exportName": "warrantyEvents",
+      "table": "warranty_events",
+      "extra": [],
+      "missing": [
+        "row_version"
+      ],
+      "types": [],
+      "nullability": [
+        "created_by"
+      ],
+      "query": "PASS"
+    }
+  ]
+}

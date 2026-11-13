@@ -1,0 +1,333 @@
+$ node --import tsx --test test/*.spec.ts
+TAP version 13
+# Subtest: PH1-G27-003: nested credentials are removed from audit metadata without mutating the input
+ok 1 - PH1-G27-003: nested credentials are removed from audit metadata without mutating the input
+  ---
+  duration_ms: 10.561001
+  type: 'test'
+  ...
+# Subtest: PH1-G27-003: signed URLs and credential values are scrubbed without sensitive key names
+ok 2 - PH1-G27-003: signed URLs and credential values are scrubbed without sensitive key names
+  ---
+  duration_ms: 0.595715
+  type: 'test'
+  ...
+# Subtest: PH1-G27-003: redaction terminates on circular structures and bounded nesting
+ok 3 - PH1-G27-003: redaction terminates on circular structures and bounded nesting
+  ---
+  duration_ms: 0.461685
+  type: 'test'
+  ...
+# Subtest: PH1-G27-003/004: forged envelope identity rejects and rolls back its transaction
+ok 4 - PH1-G27-003/004: forged envelope identity rejects and rolls back its transaction
+  ---
+  duration_ms: 6.663458
+  type: 'test'
+  ...
+# Subtest: PH1-G27-003/004: emitted V1 event preserves provenance, nested redaction and audit
+ok 5 - PH1-G27-003/004: emitted V1 event preserves provenance, nested redaction and audit
+  ---
+  duration_ms: 1.075757
+  type: 'test'
+  ...
+# Subtest: Disposable PostgreSQL migration, isolation and audit regression tests
+    # Subtest: DB-02: upgrading the 0005 baseline converges to the fresh schema
+    ok 1 - DB-02: upgrading the 0005 baseline converges to the fresh schema
+      ---
+      duration_ms: 2413.369494
+      type: 'test'
+      ...
+    # Subtest: DB-01: fresh ledger matches every actual SQL checksum, reruns and concurrent runners do not change it
+    ok 2 - DB-01: fresh ledger matches every actual SQL checksum, reruns and concurrent runners do not change it
+      ---
+      duration_ms: 270.106395
+      type: 'test'
+      ...
+    # Subtest: DB-03: mismatched and unknown ledger entries reject migration
+    ok 3 - DB-03: mismatched and unknown ledger entries reject migration
+      ---
+      duration_ms: 412.999768
+      type: 'test'
+      ...
+    # Subtest: DB-06/07: real runtime role reads own tenant and rejects an otherwise valid foreign write with RLS SQLSTATE
+    ok 4 - DB-06/07: real runtime role reads own tenant and rejects an otherwise valid foreign write with RLS SQLSTATE
+      ---
+      duration_ms: 10.444541
+      type: 'test'
+      ...
+    # Subtest: DB-10: tenant-table inventory catches disabled RLS as well as unforced RLS
+    ok 5 - DB-10: tenant-table inventory catches disabled RLS as well as unforced RLS
+      ---
+      duration_ms: 2.99258
+      type: 'test'
+      ...
+    # Subtest: PH1-G26-001/G27-001: runtime cannot access or mutate audit child partitions
+    ok 6 - PH1-G26-001/G27-001: runtime cannot access or mutate audit child partitions
+      ---
+      duration_ms: 202.964125
+      type: 'test'
+      ...
+    # Subtest: PH1-G26-002/G24-007: storage reconciliation persists typed BIGINT values
+    ok 7 - PH1-G26-002/G24-007: storage reconciliation persists typed BIGINT values
+      ---
+      duration_ms: 23.631052
+      type: 'test'
+      ...
+    # Subtest: PH1-G26-011: actual PostgreSQL rejects invalid package usage and persists only bounded counters
+    ok 8 - PH1-G26-011: actual PostgreSQL rejects invalid package usage and persists only bounded counters
+      ---
+      duration_ms: 23.504311
+      type: 'test'
+      ...
+    # Subtest: PH1-G26-002: storage reconciliation rejects underflow and overflow without corrupting the counter
+    ok 9 - PH1-G26-002: storage reconciliation rejects underflow and overflow without corrupting the counter
+      ---
+      duration_ms: 12.274591
+      type: 'test'
+      ...
+    # Subtest: DB-08: direct cross-project procurement insert fails the intended composite FK
+    ok 10 - DB-08: direct cross-project procurement insert fails the intended composite FK
+      ---
+      duration_ms: 13.665244
+      type: 'test'
+      ...
+    # Subtest: DB-07: shared catalogue rows are readable, foreign rows and global writes are blocked
+    ok 11 - DB-07: shared catalogue rows are readable, foreign rows and global writes are blocked
+      ---
+      duration_ms: 6.713968
+      type: 'test'
+      ...
+    # Subtest: PH1-G26-008: caller-forged audit sequence is ignored and concurrent inserts retain chain order
+    ok 12 - PH1-G26-008: caller-forged audit sequence is ignored and concurrent inserts retain chain order
+      ---
+      duration_ms: 24.306436
+      type: 'test'
+      ...
+    # Subtest: AUDIT-02/03/04: nonempty chain rejects update/delete and detects privileged payload tampering
+    ok 13 - AUDIT-02/03/04: nonempty chain rejects update/delete and detects privileged payload tampering
+      ---
+      duration_ms: 24.065753
+      type: 'test'
+      ...
+    # Subtest: N30: canonical tenant alias validation rejects conflicting tenant settings
+    ok 14 - N30: canonical tenant alias validation rejects conflicting tenant settings
+      ---
+      duration_ms: 4.321621
+      type: 'test'
+      ...
+    1..14
+ok 6 - Disposable PostgreSQL migration, isolation and audit regression tests
+  ---
+  duration_ms: 6737.210342
+  type: 'test'
+  ...
+# Subtest: PH1-G26-001: fresh PG16 parent access and every existing/default child are tenant-safe and immutable
+ok 7 - PH1-G26-001: fresh PG16 parent access and every existing/default child are tenant-safe and immutable
+  ---
+  duration_ms: 3524.11684
+  type: 'test'
+  ...
+# Subtest: PH1-G26-001: future direct partitions and ATTACH are protected by defaults and migrator-only RLS provisioning
+ok 8 - PH1-G26-001: future direct partitions and ATTACH are protected by defaults and migrator-only RLS provisioning
+  ---
+  duration_ms: 2397.821173
+  type: 'test'
+  ...
+# Subtest: PH1-G26-001: real upgrade from pre-hardening SQL preserves older events and revokes existing partition access
+ok 9 - PH1-G26-001: real upgrade from pre-hardening SQL preserves older events and revokes existing partition access
+  ---
+  duration_ms: 1829.740804
+  type: 'test'
+  ...
+# Subtest: PH1-G26-008: forged sequence/hash/time cannot override trusted position, registry is protected
+ok 10 - PH1-G26-008: forged sequence/hash/time cannot override trusted position, registry is protected
+  ---
+  duration_ms: 3371.313822
+  type: 'test'
+  ...
+# Subtest: PH1-G26-008: two transactions serialize same tenant, distinct tenants progress independently, rollback never registers a gap
+ok 11 - PH1-G26-008: two transactions serialize same tenant, distinct tenants progress independently, rollback never registers a gap
+  ---
+  duration_ms: 2118.456186
+  type: 'test'
+  ...
+# Subtest: PH1-G26-008: legacy upgrade preserves original hashes and adds positions without rewriting history
+ok 12 - PH1-G26-008: legacy upgrade preserves original hashes and adds positions without rewriting history
+  ---
+  duration_ms: 1764.344007
+  type: 'test'
+  ...
+# Subtest: PH1-G26-008: forward migration refuses a historically altered hash instead of silently backfilling
+ok 13 - PH1-G26-008: forward migration refuses a historically altered hash instead of silently backfilling
+  ---
+  duration_ms: 1529.698902
+  type: 'test'
+  ...
+# Subtest: PH1-G26-007: canonical tenant acceptance on fresh PostgreSQL 16
+    # Subtest: both legacy spellings, equal UUID values, absent and malformed context
+    ok 1 - both legacy spellings, equal UUID values, absent and malformed context
+      ---
+      duration_ms: 20.819499
+      type: 'test'
+      ...
+    # Subtest: catalogue proof and real restricted SELECT/UPDATE/DELETE on EVERY tenant table and partition
+    ok 2 - catalogue proof and real restricted SELECT/UPDATE/DELETE on EVERY tenant table and partition
+      ---
+      duration_ms: 1231.962491
+      type: 'test'
+      ...
+    # Subtest: self memberships discovered across orgs; writes require the active tenant
+    ok 3 - self memberships discovered across orgs; writes require the active tenant
+      ---
+      duration_ms: 5.869826
+      type: 'test'
+      ...
+    # Subtest: explicit organisation bootstrap works with the legacy single alias, without a self-write exception
+    ok 4 - explicit organisation bootstrap works with the legacy single alias, without a self-write exception
+      ---
+      duration_ms: 4.966702
+      type: 'test'
+      ...
+    # Subtest: guest bootstrap remains read-only, active and unexpired; invitations stay tenant-scoped
+    ok 5 - guest bootstrap remains read-only, active and unexpired; invitations stay tenant-scoped
+      ---
+      duration_ms: 15.747576
+      type: 'test'
+      ...
+    # Subtest: real WITH CHECK on valid inserts and tenant transfers; shared catalogue stays immutable globally
+    ok 6 - real WITH CHECK on valid inserts and tenant transfers; shared catalogue stays immutable globally
+      ---
+      duration_ms: 9.443188
+      type: 'test'
+      ...
+    # Subtest: all custom SECURITY DEFINER functions and future partition provisioner preserve their boundaries
+    ok 7 - all custom SECURITY DEFINER functions and future partition provisioner preserve their boundaries
+      ---
+      duration_ms: 36.350673
+      type: 'test'
+      ...
+    # Subtest: real single-connection pool clears transaction context after commit, rollback and a SQL error
+    ok 8 - real single-connection pool clears transaction context after commit, rollback and a SQL error
+      ---
+      duration_ms: 21.451802
+      type: 'test'
+      ...
+    1..8
+ok 14 - PH1-G26-007: canonical tenant acceptance on fresh PostgreSQL 16
+  ---
+  duration_ms: 4653.427393
+  type: 'test'
+  ...
+# Inventoried and executed 15 restricted operations on each of 77 actual tenant relations: admin_audit_events, approval_overrides, archive_exports, asset_categories, asset_identity_revisions, assets, audit_chain_positions, audit_events, audit_events_2026_10, audit_events_2026_11, audit_events_2026_12, audit_events_default, bulk_import_jobs, checklist_snapshots, client_profiles, config_versions, contracts, credit_notes, defects, deletion_requests, digital_signatures, document_assets, document_contracts, document_events, document_requirements, document_versions, documents, evidence_companion_rules, evidence_revalidations, guest_grants, handover_packages, idempotency_keys, invitations, invoice_lines, invoice_tds, invoices, job_executions, legal_holds, memberships, notification_preferences, notification_templates, notifications, org_profiles, outbox_events, package_items, package_layouts, package_requirements, parties, party_contacts, payment_events, procurement_order_lines, procurement_orders, project_members, projects, quality_inspections, requirement_change_requests, requirement_revisions, requirements, retention_policies, review_comments, reviews, seasonal_commissioning_schedules, security_events, specification_refs, storage_objects, submission_events, submission_recipients, submissions, subscriptions, supplier_document_obligations, tab_worksheets, transmittal_items, transmittals, usage_counters, variations, waivers, warranty_events
+# Subtest: PH1-G26-007: reproduce both defects before a real populated 0045→0046 upgrade, preserving original ledger
+ok 15 - PH1-G26-007: reproduce both defects before a real populated 0045→0046 upgrade, preserving original ledger
+  ---
+  duration_ms: 2131.466972
+  type: 'test'
+  ...
+# REPRODUCED on original 0045: conflicting aliases exposed 2 projects; user-only context deleted 2 own cross-org memberships (rolled back).
+# Subtest: PH1-G27-004: V1 event never spreads domain identity over authoritative envelope
+ok 16 - PH1-G27-004: V1 event never spreads domain identity over authoritative envelope
+  ---
+  duration_ms: 3.144244
+  type: 'test'
+  ...
+# Subtest: PH1-G27-004: all forged reserved fields fail producer closed
+ok 17 - PH1-G27-004: all forged reserved fields fail producer closed
+  ---
+  duration_ms: 1.582216
+  type: 'test'
+  ...
+# Subtest: PH1-G27-004: unknown versions, missing mandatory fields and V1 nested identity are denied
+ok 18 - PH1-G27-004: unknown versions, missing mandatory fields and V1 nested identity are denied
+  ---
+  duration_ms: 1.273946
+  type: 'test'
+  ...
+# Subtest: PH1-G27-004: pending legacy row is supported only if every supplied row identity matches
+ok 19 - PH1-G27-004: pending legacy row is supported only if every supplied row identity matches
+  ---
+  duration_ms: 0.796342
+  type: 'test'
+  ...
+# Subtest: PH1-G27-004: a submission can reference its package without impersonating a package event
+ok 20 - PH1-G27-004: a submission can reference its package without impersonating a package event
+  ---
+  duration_ms: 0.440606
+  type: 'test'
+  ...
+# Subtest: PH1-G27-004: archived exportId and packageId cannot redirect a queued resource
+ok 21 - PH1-G27-004: archived exportId and packageId cannot redirect a queued resource
+  ---
+  duration_ms: 0.492584
+  type: 'test'
+  ...
+# Subtest: PH1-G26-011: bounded usage counters preserve valid consumption and refunds
+ok 22 - PH1-G26-011: bounded usage counters preserve valid consumption and refunds
+  ---
+  duration_ms: 3.989017
+  type: 'test'
+  ...
+# Subtest: PH1-G26-011: counter underflow, overflow and plan-limit violations deny without updating
+ok 23 - PH1-G26-011: counter underflow, overflow and plan-limit violations deny without updating
+  ---
+  duration_ms: 1.556649
+  type: 'test'
+  ...
+# Subtest: PH1-G26-011: malformed limits or deltas fail before database writes
+ok 24 - PH1-G26-011: malformed limits or deltas fail before database writes
+  ---
+  duration_ms: 1.039664
+  type: 'test'
+  ...
+# Subtest: PH1-G26-006: bounded transaction settings are local and clean rollback returns healthy client
+ok 25 - PH1-G26-006: bounded transaction settings are local and clean rollback returns healthy client
+  ---
+  duration_ms: 2.257209
+  type: 'test'
+  ...
+# Subtest: PH1-G26-006: rollback failure preserves primary error and destroys poisoned client
+ok 26 - PH1-G26-006: rollback failure preserves primary error and destroys poisoned client
+  ---
+  duration_ms: 0.40408
+  type: 'test'
+  ...
+# Subtest: PH1-G26-006: ambiguous COMMIT failure discards client even if ROLLBACK succeeds
+ok 27 - PH1-G26-006: ambiguous COMMIT failure discards client even if ROLLBACK succeeds
+  ---
+  duration_ms: 0.399205
+  type: 'test'
+  ...
+# Subtest: PH1-G26-006: failed BEGIN discards client without assuming a transaction exists
+ok 28 - PH1-G26-006: failed BEGIN discards client without assuming a transaction exists
+  ---
+  duration_ms: 0.365858
+  type: 'test'
+  ...
+# Subtest: PH1-G26-006: savepoints use valid bounded non-colliding SQL identifiers
+ok 29 - PH1-G26-006: savepoints use valid bounded non-colliding SQL identifiers
+  ---
+  duration_ms: 0.706122
+  type: 'test'
+  ...
+# Subtest: PH1-G26-006: failed savepoint cleanup preserves the primary SQL failure
+ok 30 - PH1-G26-006: failed savepoint cleanup preserves the primary SQL failure
+  ---
+  duration_ms: 0.349799
+  type: 'test'
+  ...
+# Subtest: PH1-G26-006: successful savepoint rollback releases it and rethrows original error
+ok 31 - PH1-G26-006: successful savepoint rollback releases it and rethrows original error
+  ---
+  duration_ms: 0.363808
+  type: 'test'
+  ...
+1..31
+# tests 53
+# suites 0
+# pass 53
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 9212.680458

@@ -2,6 +2,7 @@
 // Equipment / Assets Service with Dynamic Requirement Instantiation (API-070..076, WF-07, FR-AST-001..012, AUD-002)
 
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -13,6 +14,7 @@ import { Pool, PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { withTenantTransaction, TenantActorContext, DomainOutboxEvent } from '@tradecloseout/db';
 import { AssetTagSchema } from '@tradecloseout/shared';
+import { assetProjectAuthority, assetResourceAuthority, assetScopeSql, assertAssetCreationScope } from './asset-authority';
 import { ResolvedRequirementSpec } from '../checklists/checklists.service';
 
 export interface CreateAssetInput {
@@ -35,6 +37,25 @@ export interface CreateAssetInput {
 export class AssetsService {
   constructor(private readonly pool: Pool) {}
 
+  private validateAssetInput(input: unknown, create = false): void {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) throw new BadRequestException({ code: 'INVALID_ASSET_INPUT' });
+    const dto = input as Record<string, unknown>;
+    for (const key of ['tag','name','categoryKey','make','model','serialNo','location','reason','refrigerant','installDate','warrantyStart','warrantyEnd','warrantyStartBasis','replacesAssetId']) {
+      if (dto[key] !== undefined && (typeof dto[key] !== 'string' || (dto[key] as string).length > 2000)) throw new BadRequestException({ code: 'INVALID_ASSET_INPUT' });
+    }
+    if ((create || dto.tag !== undefined) && !AssetTagSchema.safeParse(dto.tag).success) throw new BadRequestException({ code: 'INVALID_ASSET_INPUT' });
+    if ((create || dto.name !== undefined) && (typeof dto.name !== 'string' || !dto.name.trim())) throw new BadRequestException({ code: 'INVALID_ASSET_INPUT' });
+    if (create && (typeof dto.categoryKey !== 'string' || !/^[A-Za-z0-9_.:-]{1,80}$/.test(dto.categoryKey))) throw new BadRequestException({ code: 'INVALID_ASSET_INPUT' });
+    for (const field of ['installDate','warrantyStart','warrantyEnd']) {
+      const value = dto[field];
+      if (value !== undefined && (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(Date.parse(value)) || new Date(value).toISOString().slice(0,10) !== value)) throw new BadRequestException({ code: 'INVALID_ASSET_INPUT' });
+    }
+    if (dto.warrantyStartBasis !== undefined && !['COMMISSIONING','HANDOVER','ACCEPTANCE','SUPPLY'].includes(dto.warrantyStartBasis as string)) throw new BadRequestException({ code: 'INVALID_ASSET_INPUT' });
+    if (dto.replacesAssetId !== undefined && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(dto.replacesAssetId as string)) throw new BadRequestException({ code: 'INVALID_ASSET_INPUT' });
+    if (dto.status !== undefined && !['ACTIVE','REPLACED','RETIRED'].includes(dto.status as string)) throw new BadRequestException({ code: 'INVALID_ASSET_INPUT' });
+    if (dto.changeType !== undefined && !['CLERICAL_CORRECTION','RELOCATION','SUBSTITUTION','REPLACEMENT','TAG_REUSE'].includes(dto.changeType as string)) throw new BadRequestException({ code: 'INVALID_ASSET_INPUT' });
+  }
+
   /**
    * API-071: POST /api/v1/projects/:id/assets
    * Registers an equipment unit and automatically instantiates asset-scoped requirements
@@ -45,102 +66,105 @@ export class AssetsService {
     projectId: string,
     input: CreateAssetInput,
   ) {
+    this.validateAssetInput(input, true);
+    return withTenantTransaction(this.pool, ctx, (client, emit) => this.createAssetInTransaction(client, ctx, projectId, input, emit));
+  }
+
+  private async createAssetInTransaction(client: PoolClient, ctx: TenantActorContext, projectId: string, input: CreateAssetInput, emit: (ev: DomainOutboxEvent) => void) {
+    this.validateAssetInput(input, true);
     const tagParse = AssetTagSchema.safeParse(input.tag);
-    if (!tagParse.success) {
-      throw new UnprocessableEntityException({
-        code: 'VALIDATION_FAILED',
-        detail: tagParse.error.issues[0]?.message ?? 'Invalid asset tag.',
+    if (!tagParse.success) throw new BadRequestException({ code: 'INVALID_ASSET_INPUT' });
+    const authority = await assetProjectAuthority(client, ctx, projectId, true);
+    assertAssetCreationScope(authority.scope, input.categoryKey);
+    const normalizedTag = tagParse.data;
+
+    if (input.replacesAssetId) await assetResourceAuthority(client, ctx, projectId, input.replacesAssetId, true, authority);
+
+    // Check case-insensitive tag uniqueness per project (FR-AST-004)
+    const { rows: dupRows } = await client.query(
+      `SELECT id FROM assets
+        WHERE org_id = $1 AND project_id = $2 AND upper(tag) = upper($3)
+          AND deleted_at IS NULL
+        LIMIT 1`,
+      [ctx.orgId, projectId, normalizedTag],
+    );
+    if (dupRows.length > 0) {
+      throw new ConflictException({
+        code: 'DUPLICATE_ASSET_TAG',
+        title: 'Equipment tag already exists',
+        detail: `An equipment record with tag '${normalizedTag}' already exists in this project.`,
       });
     }
 
-    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
-      const normalizedTag = tagParse.data;
-
-      // Check case-insensitive tag uniqueness per project (FR-AST-004)
-      const { rows: dupRows } = await client.query(
-        `SELECT id FROM assets
-          WHERE org_id = $1 AND project_id = $2 AND upper(tag) = upper($3)
-            AND deleted_at IS NULL
-          LIMIT 1`,
-        [ctx.orgId, projectId, normalizedTag],
-      );
-      if (dupRows.length > 0) {
-        throw new ConflictException({
-          code: 'DUPLICATE_ASSET_TAG',
-          title: 'Equipment tag already exists',
-          detail: `An equipment record with tag '${normalizedTag}' already exists in this project.`,
-        });
-      }
-
-      const assetId = uuidv7();
-      const { rows: insertedRows } = await client.query(
-        `INSERT INTO assets
-          (id, org_id, project_id, tag, name, category_key, make, model, serial_no,
-           location, refrigerant, install_date, warranty_start, warranty_start_basis,
-           warranty_end, status, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'ACTIVE', $16)
-         RETURNING *`,
-        [
-          assetId,
-          ctx.orgId,
-          projectId,
-          normalizedTag,
-          input.name.trim(),
-          input.categoryKey,
-          input.make ?? null,
-          input.model ?? null,
-          input.serialNo ?? null,
-          input.location ?? null,
-          input.refrigerant ?? null,
-          input.installDate ?? null,
-          input.warrantyStart ?? null,
-          input.warrantyStartBasis ?? 'HANDOVER',
-          input.warrantyEnd ?? null,
-          ctx.userId,
-        ],
-      );
-
-      // If this asset replaces an older unit, link replacement lineage (FR-AST-006 / FR-AST-011)
-      if (input.replacesAssetId) {
-        await client.query(
-          `UPDATE assets
-              SET status = 'REPLACED',
-                  replaced_by_asset_id = $4,
-                  row_version = row_version + 1,
-                  updated_at = now()
-            WHERE org_id = $1 AND project_id = $2 AND id = $3`,
-          [ctx.orgId, projectId, input.replacesAssetId, assetId],
-        );
-      }
-
-      // Instantiate asset-scoped requirements from active snapshot (AUD-002 / FR-AST-005)
-      const instantiatedCount = await this.instantiateAssetRequirements(
-        client,
-        ctx,
-        projectId,
+    const assetId = uuidv7();
+    const { rows: insertedRows } = await client.query(
+      `INSERT INTO assets
+        (id, org_id, project_id, tag, name, category_key, make, model, serial_no,
+         location, refrigerant, install_date, warranty_start, warranty_start_basis,
+         warranty_end, status, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'ACTIVE', $16)
+       RETURNING *`,
+      [
         assetId,
+        ctx.orgId,
+        projectId,
+        normalizedTag,
+        input.name.trim(),
         input.categoryKey,
+        input.make ?? null,
+        input.model ?? null,
+        input.serialNo ?? null,
+        input.location ?? null,
+        input.refrigerant ?? null,
+        input.installDate ?? null,
+        input.warrantyStart ?? null,
+        input.warrantyStartBasis ?? 'HANDOVER',
+        input.warrantyEnd ?? null,
+        ctx.userId,
+      ],
+    );
+
+    // If this asset replaces an older unit, link replacement lineage (FR-AST-006 / FR-AST-011)
+    if (input.replacesAssetId) {
+      await client.query(
+        `UPDATE assets
+            SET status = 'REPLACED',
+                replaced_by_asset_id = $4,
+                row_version = row_version + 1,
+                updated_at = now()
+          WHERE org_id = $1 AND project_id = $2 AND id = $3`,
+        [ctx.orgId, projectId, input.replacesAssetId, assetId],
       );
+    }
 
-      emit({
-        eventType: 'ASSET_CREATED',
-        projectId,
-        entityType: 'ASSET',
-        entityId: assetId,
-        afterJson: {
-          tag: normalizedTag,
-          categoryKey: input.categoryKey,
-          instantiatedRequirements: instantiatedCount,
-        },
-      });
+    // Instantiate asset-scoped requirements from active snapshot (AUD-002 / FR-AST-005)
+    const instantiatedCount = await this.instantiateAssetRequirements(
+      client,
+      ctx,
+      projectId,
+      assetId,
+      input.categoryKey,
+    );
 
-      return {
-        ...insertedRows[0],
-        assetId,
+    emit({
+      eventType: 'ASSET_CREATED',
+      projectId,
+      entityType: 'ASSET',
+      entityId: assetId,
+      afterJson: {
         tag: normalizedTag,
+        categoryKey: input.categoryKey,
         instantiatedRequirements: instantiatedCount,
-      };
+      },
     });
+
+    return {
+      ...insertedRows[0],
+      assetId,
+      tag: normalizedTag,
+      instantiatedRequirements: instantiatedCount,
+    };
+
   }
 
   /**
@@ -149,6 +173,7 @@ export class AssetsService {
    */
   async deleteOrRetireAsset(ctx: TenantActorContext, projectId: string, assetId: string) {
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      const authority = await assetResourceAuthority(client, ctx, projectId, assetId, true);
       const { rows: approvedDocs } = await client.query(
         `SELECT da.document_id
            FROM document_assets da
@@ -199,11 +224,14 @@ export class AssetsService {
    */
   async listAssets(ctx: TenantActorContext, projectId: string) {
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+      const authority = await assetProjectAuthority(client, ctx, projectId, false);
+      const params: unknown[] = [ctx.orgId, projectId];
+      const scopeSql = assetScopeSql(authority.scope, params);
       const res = await client.query(
         `SELECT * FROM assets
-         WHERE org_id = $1 AND project_id = $2 AND deleted_at IS NULL
+         WHERE org_id = $1 AND project_id = $2 AND deleted_at IS NULL${scopeSql}
          ORDER BY tag ASC`,
-        [ctx.orgId, projectId],
+        params,
       );
       return res.rows;
     });
@@ -214,6 +242,7 @@ export class AssetsService {
    */
   async getAsset(ctx: TenantActorContext, projectId: string, assetId: string) {
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+      const authority = await assetResourceAuthority(client, ctx, projectId, assetId, false);
       const res = await client.query(
         `SELECT * FROM assets
           WHERE org_id = $1 AND project_id = $2 AND id = $3 AND deleted_at IS NULL`,
@@ -246,7 +275,9 @@ export class AssetsService {
       reason?: string;
     },
   ) {
+    this.validateAssetInput(dto);
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
+      const authority = await assetResourceAuthority(client, ctx, projectId, assetId, true);
       // 1. Fetch current asset
       const curRes = await client.query(
         `SELECT * FROM assets WHERE org_id = $1 AND project_id = $2 AND id = $3 AND deleted_at IS NULL FOR UPDATE`,
@@ -439,6 +470,7 @@ export class AssetsService {
    */
   async getAssetIdentityHistory(ctx: TenantActorContext, projectId: string, assetId: string) {
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+      const authority = await assetResourceAuthority(client, ctx, projectId, assetId, false);
       const revsRes = await client.query(
         `SELECT air.*, u.name as created_by_name
          FROM asset_identity_revisions air
@@ -478,7 +510,12 @@ export class AssetsService {
     revalidationId: string,
     dto: { status: 'CONFIRMED' | 'MISMATCH' | 'EXEMPT'; notes?: string; expectedRowVersion?: number },
   ) {
+    if (!dto || !['CONFIRMED','MISMATCH','EXEMPT'].includes(dto.status) || (dto.notes !== undefined && (typeof dto.notes !== 'string' || dto.notes.length > 2000))) throw new BadRequestException({ code: 'INVALID_REVALIDATION_INPUT' });
+    if (dto.expectedRowVersion == null) throw new ConflictException({ code: 'PRECONDITION_REQUIRED', detail: 'expectedRowVersion is mandatory for revalidating evidence.' });
+    if (!Number.isSafeInteger(dto.expectedRowVersion) || dto.expectedRowVersion < 1) throw new BadRequestException({ code: 'INVALID_REVALIDATION_INPUT' });
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit) => {
+      const authority = await assetResourceAuthority(client, ctx, projectId, assetId, true);
+      if (!['R-OWNER','R-ADMIN','R-PM','R-QC'].includes(authority.orgRole) && !['R-PM','R-QC'].includes(authority.projectRole || '')) throw new ForbiddenException({ code: 'QUALIFIED_REVALIDATOR_REQUIRED' });
       // 1. Fetch current revalidation and ensure qualified verifier cannot self-approve (F01, V04)
       const current = await client.query(
         `SELECT er.*, dv.uploaded_by AS uploader_user_id
@@ -568,14 +605,22 @@ export class AssetsService {
     dryRun = false,
     options: { conflictStrategy?: 'SKIP' | 'FAIL' | 'UPDATE'; atomic?: boolean } = {},
   ) {
+    if (!options || typeof options !== 'object' || Array.isArray(options) || !Array.isArray(items) || items.length > 1000 || !['SKIP','FAIL','UPDATE'].includes(options.conflictStrategy || 'SKIP') || (options.atomic !== undefined && typeof options.atomic !== 'boolean')) throw new BadRequestException({ code: 'INVALID_ASSET_IMPORT' });
+    for (const item of items) {
+      if (!item || typeof item !== 'object' || Array.isArray(item) || Object.values(item).some(value => value !== undefined && (typeof value !== 'string' || value.length > 2000))) throw new BadRequestException({ code: 'INVALID_ASSET_IMPORT' });
+    }
     const conflictStrategy = options.conflictStrategy || 'SKIP';
     const isAtomic = options.atomic !== false;
 
     // 1. Fetch existing tags in project to detect collisions
     const existingTags = await withTenantTransaction(this.pool, ctx, async (client) => {
+      const authority = await assetProjectAuthority(client, ctx, projectId, true);
+      for (const item of items) if (item.categoryKey) assertAssetCreationScope(authority.scope, item.categoryKey);
+      const params: unknown[] = [ctx.orgId, projectId];
+      const scopeSql = assetScopeSql(authority.scope, params);
       const { rows } = await client.query(
-        `SELECT upper(tag) AS tag FROM assets WHERE org_id = $1 AND project_id = $2 AND deleted_at IS NULL`,
-        [ctx.orgId, projectId],
+        `SELECT upper(tag) AS tag FROM assets WHERE org_id = $1 AND project_id = $2 AND deleted_at IS NULL${scopeSql}`,
+        params,
       );
       return new Set(rows.map((r) => r.tag));
     });
@@ -594,7 +639,7 @@ export class AssetsService {
       const item = items[i];
       const rowNumber = i + 1;
 
-      if (!item.tag || !item.name || !item.categoryKey) {
+      if (!AssetTagSchema.safeParse(item.tag).success || !item.name?.trim() || !item.categoryKey || !/^[A-Za-z0-9_.:-]{1,80}$/.test(item.categoryKey)) {
         results.push({
           rowNumber,
           tag: item.tag || 'UNKNOWN',
@@ -678,7 +723,7 @@ export class AssetsService {
             }
           }
 
-          const asset = await this.createAsset(ctx, projectId, item);
+          const asset = await this.createAssetInTransaction(client, ctx, projectId, item, emit);
           created.push(asset);
         }
 
@@ -831,6 +876,7 @@ export class AssetsService {
    */
   async getEquipmentPassport(ctx: TenantActorContext, projectId: string, assetId: string) {
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+      const authority = await assetResourceAuthority(client, ctx, projectId, assetId, false);
       const assetRes = await client.query(
         `SELECT * FROM assets
           WHERE org_id = $1 AND project_id = $2 AND id = $3 AND deleted_at IS NULL`,
@@ -1051,11 +1097,14 @@ export class AssetsService {
     query: { filename?: string; text?: string; tagCandidate?: string },
   ) {
     return withTenantTransaction(this.pool, ctx, async (client: PoolClient) => {
+      const authority = await assetProjectAuthority(client, ctx, projectId, false);
+      const params: unknown[] = [ctx.orgId, projectId];
+      const scopeSql = assetScopeSql(authority.scope, params);
       const { rows: assetList } = await client.query(
         `SELECT id, tag, name, category_key, make, model, serial_no, location
          FROM assets
-         WHERE org_id = $1 AND project_id = $2 AND deleted_at IS NULL`,
-        [ctx.orgId, projectId],
+         WHERE org_id = $1 AND project_id = $2 AND deleted_at IS NULL${scopeSql}`,
+        params,
       );
 
       const targetText = [query.filename, query.text, query.tagCandidate]
@@ -1081,7 +1130,8 @@ export class AssetsService {
         const upperModel = a.model ? a.model.toUpperCase() : null;
 
         // 1. Exact Tag Boundary Match (e.g. "CH-01")
-        const tagRegex = new RegExp(`(^|[^A-Z0-9])${upperTag}([^A-Z0-9]|$)`, 'i');
+        const escapedTag = upperTag.split('').map((char: string) => /[A-Z0-9_-]/.test(char) ? char : String.fromCharCode(92) + char).join('');
+        const tagRegex = new RegExp(`(^|[^A-Z0-9])${escapedTag}([^A-Z0-9]|$)`, 'i');
         if (tagRegex.test(targetText)) {
           candidates.push({
             assetId: a.id,

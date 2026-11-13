@@ -1,0 +1,26 @@
+{
+  "source_commit": "5c5b9b248141327c6bd3ed124f9d56b33564e6c0",
+  "files": {
+    "apps/api/src/common/filters/problem-json.filter.ts": "eded859293fad02b4da8779d5e91c59723ce4da8b42eafa6a3ab7ead8cb9a002",
+    "apps/api/src/common/guards/permission.guard.ts": "8ab8e9daf681adb4dde8975b8e9d135a8463d54cc836e6ae658253dc61317705",
+    "apps/api/src/common/guards/route-identifiers.ts": "99af7bfdde50cabfe213b7297387ebd4615a1405732b16ef70909edc8729b334",
+    "apps/api/src/common/guards/session-csrf.guard.ts": "fb00800518f5f2087e6d29d47e3f152e545db071f08d84addc4630618e7fdf69",
+    "apps/api/src/common/interceptors/idempotency.interceptor.ts": "ab59076ea926c5da72eba261c530d8f467df6cc31e8398ad3c8bbeeb26d6a672",
+    "apps/api/src/common/middleware/request-correlation.middleware.ts": "0852e8d15e80d7bab0a5c783f6e91156f8b9fbe055742b861987e1c86d47ea3a",
+    "apps/api/src/main.ts": "edc9d12f112b11eba69201dc1430a6f68fad87bbe9ab0c0718bc461d5bb6987a",
+    "apps/api/src/modules/identity/mfa-enrollment-store.ts": "4064c6574e530da56b25152ae8a00a19948b8ae6b260aed2222ef9fd8f2ffa15",
+    "apps/api/src/modules/identity/mfa.controller.ts": "c5a871c624c8e7703431e430095309d4979255cdefa2b91b39f95dd58c4d07a3",
+    "apps/api/test/phase1-easy-boundaries.spec.ts": "d4e05255bfb955cf56f6d80e19ca830a4393a707b9380ad85c66b02aebbc54cc",
+    "apps/api/test/phase1-easy-database.spec.ts": "e473b7b90338a8cb70f77d1a909ff914b827cbdbdf47989f1d0936ee9e3e4618",
+    "apps/api/test/phase1-problem-error-redaction.spec.ts": "73ae4e73557c026362489246ad002e10588f12bf2deab5cec4e32223a0d22f1a",
+    "apps/api/test/phase1-session-authority-http.spec.ts": "aadebcdabebc627cb0eb0393c83705e6580aa95f82afbb6ee4c9b618c8ea4414",
+    "apps/worker/package.json": "90e97da999055928fbf1ad93990111114c5ecb81061eb2bbf1b5d7ab32da12a5",
+    "apps/worker/src/main.ts": "53d132f048d7d65107d6d5f3f8089b3c6f4f173a56e187956e7397102c69c4d6",
+    "apps/worker/src/notification-delivery.ts": "ec5c00b1e09ccd13e085d402d8eccc62bf033cfc109badbe74337b593e1bf20b",
+    "apps/worker/src/pdf-dependency.ts": "49320d49f5d662c0060dd15a1e08bcc72f26ad1ae66e7da28cf6b9b8bc13b5a4",
+    "apps/worker/src/scheduler.ts": "826ab21e1ace26d281c4502eb6752be1e9c8cf0e67439fd7c0f0057e2a9efc24",
+    "apps/worker/test/phase1-easy-boundaries.spec.ts": "24792993e43105a77edc1606434266e5a9f8f8fc38d6f6df5aa4595ee1ba3004",
+    "apps/worker/test/worker-integration.spec.ts": "7261d5718a4bf1a8a3618a7fbbe5771884656bf8df09adc2437658807bc0c65e",
+    "packages/db/src/schema.ts": "d6b8ed80d8a098b8bd460f9cfaf9a94cd1b042ad3a383f9fc808ae75cf1ef363"
+  }
+}

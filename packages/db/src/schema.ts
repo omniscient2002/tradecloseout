@@ -1,1715 +1,1152 @@
-import {
-  pgTable,
-  uuid,
-  text,
-  integer,
-  bigint,
-  boolean,
-  date,
-  timestamp,
-  jsonb,
-  inet,
-  uniqueIndex,
-  index,
-} from 'drizzle-orm/pg-core';
+/**
+ * Column projections of the append-only PostgreSQL migrations.
+ * Regenerate with: node --import tsx packages/db/scripts/generate-orm.ts --write
+ * SQL owns constraint/index/trigger/RLS/ACL DDL; single-column PK metadata is mirrored.
+ * Do not use schema push or
+ * migration generation from these projections. See docs/engineering/phase1-orm-contract.md.
+ */
+import { pgTable, uuid, text, integer, bigint, boolean, date, timestamp, jsonb, inet, numeric, customType } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
-/* ========================================================================== */
-/* 3.1 IDENTITY AND TENANCY (08-DATA-MODEL-AND-ERD.md §3.1)                   */
-/* ========================================================================== */
+const citext = customType<{ data: string; driverData: string }>({ dataType: () => 'citext' });
 
-export const users = pgTable('users', {
-  id: uuid('id').primaryKey(), // UUIDv7
-  name: text('name').notNull(),
-  status: text('status').notNull().default('ACTIVE'), // ACTIVE | SUSPENDED | DELETED
-  lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
-  rowVersion: integer('row_version').notNull().default(1),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+export const adminAuditEvents = pgTable("admin_audit_events", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id"),
+  adminUserId: uuid("admin_user_id").notNull(),
+  action: text("action").notNull(),
+  reason: text("reason").notNull(),
+  entityType: text("entity_type").notNull(),
+  entityId: uuid("entity_id"),
+  beforeJson: jsonb("before_json"),
+  afterJson: jsonb("after_json"),
+  ip: inet("ip"),
+  requestId: text("request_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
 });
 
-export const userIdentities = pgTable(
-  'user_identities',
-  {
-    id: uuid('id').primaryKey(),
-    userId: uuid('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    type: text('type').notNull(), // EMAIL | PHONE
-    value: text('value').notNull(), // normalised lowercase email or E.164 +91 phone
-    verifiedAt: timestamp('verified_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    typeValueUq: uniqueIndex('user_identities_type_value_uq').on(t.type, t.value),
-    userIdIdx: index('user_identities_user_id_idx').on(t.userId),
-  }),
-);
-
-export const organisations = pgTable(
-  'organisations',
-  {
-    id: uuid('id').primaryKey(),
-    legalName: text('legal_name').notNull(),
-    displayName: text('display_name').notNull(),
-    entityType: text('entity_type').notNull(), // PROPRIETORSHIP | PARTNERSHIP | LLP | PRIVATE_LIMITED | PUBLIC_LIMITED | OTHER
-    status: text('status').notNull().default('PENDING'), // PENDING | ACTIVE | SUSPENDED | CANCELLED | DELETED
-    country: text('country').notNull().default('IN'),
-    state: text('state').notNull(),
-    allowSelfApproval: boolean('allow_self_approval').notNull().default(false),
-    allowGenericReview: boolean('allow_generic_review').notNull().default(false),
-    docControllerOrgWideDownload: boolean('document_controller_org_wide_download')
-      .notNull()
-      .default(false),
-    rowVersion: integer('row_version').notNull().default(1),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-);
-
-export const orgProfiles = pgTable('org_profiles', {
-  orgId: uuid('org_id')
-    .primaryKey()
-    .references(() => organisations.id, { onDelete: 'cascade' }),
-  gstin: text('gstin'),
-  pan: text('pan'),
-  addressJson: jsonb('address_json').notNull().default({}),
-  logoObjectId: uuid('logo_object_id'),
-  signatoryName: text('signatory_name'),
-  signatoryDesignation: text('signatory_designation'),
-  brandColor: text('brand_color').notNull().default('#0F2942'),
-  defaultTimezone: text('default_timezone').notNull().default('Asia/Kolkata'),
-  defaultLocale: text('default_locale').notNull().default('en-IN'),
-  rowVersion: integer('row_version').notNull().default(1),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+export const approvalOverrides = pgTable("approval_overrides", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  projectId: uuid("project_id"),
+  reviewId: uuid("review_id").notNull(),
+  actorId: uuid("actor_id"),
+  overriddenBy: uuid("overridden_by"),
+  reason: text("reason"),
+  justification: text("justification"),
+  previousDecision: text("previous_decision"),
+  previousStatus: text("previous_status"),
+  newDecision: text("new_decision"),
+  newStatus: text("new_status"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
 });
 
-export const sessions = pgTable(
-  'sessions',
-  {
-    id: uuid('id').primaryKey(),
-    userId: uuid('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    tokenHash: text('token_hash').notNull(),
-    csrfTokenHash: text('csrf_token_hash').notNull(),
-    activeOrgId: uuid('active_org_id')
-      .notNull()
-      .references(() => organisations.id, { onDelete: 'cascade' }),
-    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-    revokedAt: timestamp('revoked_at', { withTimezone: true }),
-    ip: inet('ip'),
-    userAgent: text('user_agent'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    tokenHashUq: uniqueIndex('sessions_token_hash_uq').on(t.tokenHash),
-    userActiveIdx: index('sessions_user_active_idx').on(t.userId, t.activeOrgId),
-  }),
-);
-
-export const memberships = pgTable(
-  'memberships',
-  {
-    id: uuid('id').primaryKey(),
-    orgId: uuid('org_id')
-      .notNull()
-      .references(() => organisations.id, { onDelete: 'cascade' }),
-    userId: uuid('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    role: text('role').notNull(), // R-OWNER | R-ADMIN | R-BILLING | R-PM | R-SITE | R-DOC | R-PROC | R-QC | R-SAFETY | R-REVIEWER | R-AUDITOR
-    status: text('status').notNull().default('INVITED'), // INVITED | ACTIVE | SUSPENDED | REMOVED | EXPIRED | REVOKED
-    joinedAt: timestamp('joined_at', { withTimezone: true }),
-    rowVersion: integer('row_version').notNull().default(1),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    orgUserUq: uniqueIndex('memberships_org_user_uq').on(t.orgId, t.userId),
-  }),
-);
-
-export const invitations = pgTable(
-  'invitations',
-  {
-    id: uuid('id').primaryKey(),
-    orgId: uuid('org_id')
-      .notNull()
-      .references(() => organisations.id, { onDelete: 'cascade' }),
-    email: text('email'),
-    phone: text('phone'),
-    role: text('role').notNull(),
-    tokenHash: text('token_hash').notNull(),
-    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-    status: text('status').notNull().default('PENDING'), // PENDING | ACCEPTED | EXPIRED | REVOKED
-    invitedBy: uuid('invited_by')
-      .notNull()
-      .references(() => users.id),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    tokenHashUq: uniqueIndex('invitations_token_hash_uq').on(t.tokenHash),
-  }),
-);
-
-/* ========================================================================== */
-/* 3.2 PARTIES AND PROJECTS (08-DATA-MODEL-AND-ERD.md §3.2)                   */
-/* ========================================================================== */
-
-export const parties = pgTable(
-  'parties',
-  {
-    id: uuid('id').primaryKey(),
-    orgId: uuid('org_id')
-      .notNull()
-      .references(() => organisations.id),
-    name: text('name').notNull(),
-    types: text('types').array().notNull(), // CLIENT | MC | CONSULTANT | SUPPLIER_OEM | SUB_SUBCONTRACTOR | LAB | INSURER | OTHER
-    gstin: text('gstin'),
-    email: text('email'),
-    phone: text('phone'),
-    addressJson: jsonb('address_json').notNull().default({}),
-    notes: text('notes'),
-    status: text('status').notNull().default('ACTIVE'),
-    rowVersion: integer('row_version').notNull().default(1),
-    createdBy: uuid('created_by').notNull().references(() => users.id),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-    deletedAt: timestamp('deleted_at', { withTimezone: true }),
-    deletedBy: uuid('deleted_by'),
-  },
-  (t) => ({
-    orgNameIdx: index('parties_org_name_idx').on(t.orgId, sql`lower(${t.name})`),
-    orgGstinIdx: index('parties_org_gstin_idx').on(t.orgId, t.gstin),
-  }),
-);
-
-export const partyContacts = pgTable('party_contacts', {
-  id: uuid('id').primaryKey(),
-  orgId: uuid('org_id')
-    .notNull()
-    .references(() => organisations.id),
-  partyId: uuid('party_id')
-    .notNull()
-    .references(() => parties.id, { onDelete: 'cascade' }),
-  name: text('name').notNull(),
-  email: text('email'),
-  phone: text('phone'),
-  designation: text('designation'),
-  isPrimary: boolean('is_primary').notNull().default(false),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+export const archiveExports = pgTable("archive_exports", {
+  id: uuid("id").notNull().primaryKey().default(sql.raw("gen_random_uuid()")),
+  orgId: uuid("org_id").notNull(),
+  projectId: uuid("project_id").notNull(),
+  schemaVersion: text("schema_version").notNull().default(sql.raw("'2.0'::text")),
+  status: text("status").notNull().default(sql.raw("'PENDING'::text")),
+  archiveSha256: text("archive_sha256"),
+  totalObjects: integer("total_objects").notNull().default(sql.raw("0")),
+  totalBytes: bigint("total_bytes", { mode: 'bigint' }).notNull().default(sql.raw("0")),
+  manifestJson: jsonb("manifest_json").notNull().default(sql.raw("'{}'::jsonb")),
+  verificationReceiptJson: jsonb("verification_receipt_json").notNull().default(sql.raw("'{}'::jsonb")),
+  createdBy: uuid("created_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
 });
 
-export const projects = pgTable(
-  'projects',
-  {
-    id: uuid('id').primaryKey(),
-    orgId: uuid('org_id')
-      .notNull()
-      .references(() => organisations.id),
-    code: text('code').notNull(),
-    name: text('name').notNull(),
-    clientPartyId: uuid('client_party_id').references(() => parties.id),
-    mcPartyId: uuid('mc_party_id').references(() => parties.id),
-    consultantPartyId: uuid('consultant_party_id').references(() => parties.id),
-    status: text('status').notNull().default('DRAFT'), // DRAFT | ACTIVE | SUSPENDED | HANDOVER | CLOSED | CANCELLED | ARCHIVED
-    siteJson: jsonb('site_json').notNull().default({}),
-    startDate: date('start_date'),
-    targetHandoverDate: date('target_handover_date'),
-    contractValuePaise: bigint('contract_value_paise', { mode: 'bigint' }),
-    currency: text('currency').notNull().default('INR'),
-    settingsJson: jsonb('settings_json').notNull().default({}),
-    reopenCount: integer('reopen_count').notNull().default(0),
-    rowVersion: integer('row_version').notNull().default(1),
-    createdBy: uuid('created_by')
-      .notNull()
-      .references(() => users.id),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-    closedAt: timestamp('closed_at', { withTimezone: true }),
-    archivedAt: timestamp('archived_at', { withTimezone: true }),
-    purgedAt: timestamp('purged_at', { withTimezone: true }),
-  },
-  (t) => ({
-    orgCodeUq: uniqueIndex('projects_org_code_uq').on(t.orgId, sql`upper(${t.code})`),
-    orgIdIdUq: uniqueIndex('projects_org_id_id_uq').on(t.orgId, t.id),
-  }),
-);
-
-export const projectMembers = pgTable(
-  'project_members',
-  {
-    id: uuid('id').primaryKey(),
-    orgId: uuid('org_id')
-      .notNull()
-      .references(() => organisations.id),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.id, { onDelete: 'cascade' }),
-    userId: uuid('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    role: text('role').notNull(),
-    scopeJson: jsonb('scope_json').notNull().default({}),
-    status: text('status').notNull().default('ACTIVE'),
-    addedBy: uuid('added_by').notNull().references(() => users.id),
-    addedAt: timestamp('added_at', { withTimezone: true }).notNull().defaultNow(),
-    removedAt: timestamp('removed_at', { withTimezone: true }),
-  },
-  (t) => ({
-    projUserUq: uniqueIndex('project_members_proj_user_uq').on(t.projectId, t.userId),
-  }),
-);
-
-export const guestGrants = pgTable(
-  'guest_grants',
-  {
-    id: uuid('id').primaryKey(),
-    orgId: uuid('org_id')
-      .notNull()
-      .references(() => organisations.id),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.id, { onDelete: 'cascade' }),
-    partyId: uuid('party_id')
-      .notNull()
-      .references(() => parties.id),
-    userId: uuid('user_id').references(() => users.id),
-    role: text('role').notNull(), // R-CONSULT | R-CLIENT | R-MC | R-SUPPLIER-OEM | R-SUBCONTRACTOR | R-SUPPLIER-UP | R-LAB | R-OEM-SERVICE
-    grantType: text('grant_type').notNull(), // SUPPLIER_UPLOAD | SUPPLIER_CONTRIBUTOR | CONSULTANT_REVIEW | CLIENT_VIEW | MC_VIEW | AUDITOR_READ
-    capabilities: text('capabilities').array().notNull(),
-    scopeJson: jsonb('scope_json').notNull().default({}), // e.g. { requirementIds: [...] }
-    otpRequired: boolean('otp_required').notNull().default(true), // Default true per 05 §6.2
-    tokenHash: text('token_hash').notNull(),
-    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-    status: text('status').notNull().default('ACTIVE'), // ACTIVE | EXPIRED | REVOKED
-    createdBy: uuid('created_by').notNull().references(() => users.id),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    revokedAt: timestamp('revoked_at', { withTimezone: true }),
-  },
-  (t) => ({
-    tokenHashUq: uniqueIndex('guest_grants_token_hash_uq').on(t.tokenHash),
-  }),
-);
-
-export const contracts = pgTable(
-  'contracts',
-  {
-    id: uuid('id').primaryKey(),
-    orgId: uuid('org_id')
-      .notNull()
-      .references(() => organisations.id),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.id, { onDelete: 'cascade' }),
-    reference: text('reference').notNull(),
-    parentContractId: uuid('parent_contract_id'),
-    type: text('type').notNull(), // ITEM_RATE | PERCENTAGE_RATE | LUMP_SUM | EPC | OTHER
-    valuePaise: bigint('value_paise', { mode: 'bigint' }).notNull().default(0n),
-    retentionBps: integer('retention_bps').notNull().default(0), // 0..10000
-    dlpMonths: integer('dlp_months').notNull().default(12),
-    warrantyTerms: text('warranty_terms'),
-    startDate: date('start_date'),
-    endDate: date('end_date'),
-    status: text('status').notNull().default('ACTIVE'), // ACTIVE | SUPERSEDED
-    rowVersion: integer('row_version').notNull().default(1),
-    createdBy: uuid('created_by').notNull().references(() => users.id),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    projRefUq: uniqueIndex('contracts_project_ref_uq').on(t.projectId, t.reference),
-    orgProjIdUq: uniqueIndex('contracts_org_proj_id_uq').on(t.orgId, t.projectId, t.id),
-  }),
-);
-
-export const specificationRefs = pgTable('specification_refs', {
-  id: uuid('id').primaryKey(),
-  orgId: uuid('org_id')
-    .notNull()
-    .references(() => organisations.id),
-  projectId: uuid('project_id')
-    .notNull()
-    .references(() => projects.id, { onDelete: 'cascade' }),
-  contractId: uuid('contract_id').references(() => contracts.id),
-  title: text('title').notNull(),
-  issuer: text('issuer'),
-  revision: text('revision'),
-  issueDate: date('issue_date'),
-  objectId: uuid('object_id'),
-  notes: text('notes'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+export const assetCategories = pgTable("asset_categories", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id"),
+  key: text("key").notNull(),
+  name: text("name").notNull(),
+  parentKey: text("parent_key"),
+  metadataSchemaJson: jsonb("metadata_schema_json").notNull().default(sql.raw("'{}'::jsonb")),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
 });
 
-/* ========================================================================== */
-/* 3.3 CONFIGURATION AND CHECKLISTS (08-DATA-MODEL-AND-ERD.md §3.3)           */
-/* ========================================================================== */
-
-export const templatePacks = pgTable(
-  'template_packs',
-  {
-    id: uuid('id').primaryKey(),
-    trade: text('trade').notNull(), // HVAC
-    code: text('code').notNull(), // TPL-HVAC-IN-001
-    name: text('name').notNull(),
-    version: integer('version').notNull(),
-    schemaVersion: integer('schema_version').notNull().default(1),
-    payloadJson: jsonb('payload_json').notNull(),
-    status: text('status').notNull().default('ACTIVE'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    tradeVerUq: uniqueIndex('template_packs_trade_ver_uq').on(t.trade, t.version),
-  }),
-);
-
-export const configVersions = pgTable(
-  'config_versions',
-  {
-    id: uuid('id').primaryKey(),
-    orgId: uuid('org_id').references(() => organisations.id),
-    level: text('level').notNull(), // PLATFORM | TRADE | ORG | CLIENT_CONTRACT | PROJECT
-    scopeType: text('scope_type').notNull(),
-    scopeId: uuid('scope_id').notNull(), // Sentinel 00000000-0000-0000-0000-000000000000 when unscoped
-    versionNo: integer('version_no').notNull(),
-    schemaVersion: integer('schema_version').notNull().default(1),
-    payloadJson: jsonb('payload_json').notNull(),
-    checksum: text('checksum').notNull(),
-    status: text('status').notNull().default('DRAFT'), // DRAFT | ACTIVE | ARCHIVED
-    sourcePackId: uuid('source_pack_id').references(() => templatePacks.id),
-    createdBy: uuid('created_by').notNull().references(() => users.id),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    publishedAt: timestamp('published_at', { withTimezone: true }),
-  },
-  (t) => ({
-    levelScopeVerUq: uniqueIndex('config_versions_level_scope_ver_uq').on(
-      t.level,
-      t.scopeType,
-      t.scopeId,
-      t.versionNo,
-    ),
-  }),
-);
-
-export const clientProfiles = pgTable('client_profiles', {
-  id: uuid('id').primaryKey(),
-  orgId: uuid('org_id')
-    .notNull()
-    .references(() => organisations.id),
-  name: text('name').notNull(),
-  clientPartyId: uuid('client_party_id').references(() => parties.id),
-  payloadJson: jsonb('payload_json').notNull().default({}),
-  status: text('status').notNull().default('ACTIVE'),
-  rowVersion: integer('row_version').notNull().default(1),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+export const assetIdentityRevisions = pgTable("asset_identity_revisions", {
+  id: uuid("id").notNull().primaryKey().default(sql.raw("gen_random_uuid()")),
+  orgId: uuid("org_id").notNull(),
+  projectId: uuid("project_id").notNull(),
+  assetId: uuid("asset_id").notNull(),
+  revisionNo: integer("revision_no").notNull(),
+  tag: text("tag").notNull(),
+  name: text("name").notNull(),
+  make: text("make"),
+  model: text("model"),
+  serialNo: text("serial_no"),
+  location: text("location"),
+  changeType: text("change_type").notNull().default(sql.raw("'CLERICAL_CORRECTION'::text")),
+  reason: text("reason").notNull(),
+  effectiveFrom: timestamp("effective_from", { withTimezone: true }).notNull().default(sql.raw("now()")),
+  effectiveTo: timestamp("effective_to", { withTimezone: true }),
+  createdBy: uuid("created_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
 });
 
-export const checklistSnapshots = pgTable(
-  'checklist_snapshots',
-  {
-    id: uuid('id').primaryKey(),
-    orgId: uuid('org_id')
-      .notNull()
-      .references(() => organisations.id),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.id, { onDelete: 'cascade' }),
-    versionNo: integer('version_no').notNull(),
-    status: text('status').notNull().default('DRAFT'), // DRAFT | ACTIVE | SUPERSEDED | ARCHIVED
-    resolvedPayloadJson: jsonb('resolved_payload_json').notNull(),
-    provenanceJson: jsonb('provenance_json').notNull(),
-    sourceJson: jsonb('source_json').notNull(),
-    checksum: text('checksum').notNull(),
-    createdBy: uuid('created_by').notNull().references(() => users.id),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    projVerUq: uniqueIndex('checklist_snapshots_proj_ver_uq').on(t.projectId, t.versionNo),
-    orgProjIdUq: uniqueIndex('checklist_snapshots_org_proj_id_uq').on(t.orgId, t.projectId, t.id),
-  }),
-);
-
-export const requirements = pgTable(
-  'requirements',
-  {
-    id: uuid('id').primaryKey(),
-    orgId: uuid('org_id')
-      .notNull()
-      .references(() => organisations.id),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.id, { onDelete: 'cascade' }),
-    currentSnapshotId: uuid('current_snapshot_id')
-      .notNull()
-      .references(() => checklistSnapshots.id),
-    requirementKey: text('requirement_key').notNull(),
-    scopeKey: text('scope_key').notNull().default('project'), // 'project' or 'asset:{uuid}' (AUD-002)
-    groupKey: text('group_key').notNull(),
-    title: text('title').notNull(),
-    description: text('description'),
-    docTypeKey: text('doc_type_key').notNull(),
-    mandatory: boolean('mandatory').notNull().default(true),
-    ownerUserId: uuid('owner_user_id').references(() => users.id),
-    ownerPartyId: uuid('owner_party_id').references(() => parties.id),
-    reviewerRole: text('reviewer_role'), // Enforced per requirement by FR-REV-002 / AUD-005
-    dueAt: timestamp('due_at', { withTimezone: true }), // NULL => never MISSING (FR-CHK-010)
-    status: text('status').notNull().default('NOT_STARTED'),
-    validityRuleJson: jsonb('validity_rule_json').notNull().default({}),
-    metadataJson: jsonb('metadata_json').notNull().default({}),
-    supersededAt: timestamp('superseded_at', { withTimezone: true }),
-    rowVersion: integer('row_version').notNull().default(1),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    orgProjIdUq: uniqueIndex('requirements_org_proj_id_uq').on(t.orgId, t.projectId, t.id),
-    projStatusIdx: index('requirements_proj_status_idx').on(t.orgId, t.projectId, t.status),
-  }),
-);
-
-export const requirementChangeRequests = pgTable('requirement_change_requests', {
-  id: uuid('id').primaryKey(),
-  orgId: uuid('org_id')
-    .notNull()
-    .references(() => organisations.id),
-  projectId: uuid('project_id')
-    .notNull()
-    .references(() => projects.id, { onDelete: 'cascade' }),
-  requestedBy: uuid('requested_by').references(() => users.id),
-  reason: text('reason').notNull(),
-  itemsJson: jsonb('items_json').notNull(),
-  impactJson: jsonb('impact_json').notNull().default({}),
-  status: text('status').notNull().default('DRAFT'), // DRAFT | SUBMITTED | APPROVED | REJECTED | APPLIED
-  approvedBy: uuid('approved_by').references(() => users.id),
-  appliedSnapshotId: uuid('applied_snapshot_id').references(() => checklistSnapshots.id),
-  rowVersion: integer('row_version').notNull().default(1),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+export const assets = pgTable("assets", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  projectId: uuid("project_id").notNull(),
+  tag: text("tag").notNull(),
+  name: text("name").notNull(),
+  categoryKey: text("category_key").notNull(),
+  make: text("make"),
+  model: text("model"),
+  serialNo: text("serial_no"),
+  location: text("location"),
+  capacityJson: jsonb("capacity_json").notNull().default(sql.raw("'{}'::jsonb")),
+  refrigerant: text("refrigerant"),
+  installDate: date("install_date"),
+  warrantyStart: date("warranty_start"),
+  warrantyStartBasis: text("warranty_start_basis").notNull().default(sql.raw("'HANDOVER'::text")),
+  warrantyEnd: date("warranty_end"),
+  status: text("status").notNull().default(sql.raw("'ACTIVE'::text")),
+  replacedByAssetId: uuid("replaced_by_asset_id"),
+  metadataJson: jsonb("metadata_json").notNull().default(sql.raw("'{}'::jsonb")),
+  rowVersion: integer("row_version").notNull().default(sql.raw("1")),
+  createdBy: uuid("created_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
 });
 
-export const requirementRevisions = pgTable('requirement_revisions', {
-  id: uuid('id').primaryKey(),
-  orgId: uuid('org_id')
-    .notNull()
-    .references(() => organisations.id),
-  projectId: uuid('project_id')
-    .notNull()
-    .references(() => projects.id, { onDelete: 'cascade' }),
-  requirementId: uuid('requirement_id')
-    .notNull()
-    .references(() => requirements.id),
-  snapshotId: uuid('snapshot_id')
-    .notNull()
-    .references(() => checklistSnapshots.id),
-  changeRequestId: uuid('change_request_id').references(() => requirementChangeRequests.id),
-  fieldDiffJson: jsonb('field_diff_json').notNull(),
-  reason: text('reason').notNull(),
-  changedBy: uuid('changed_by')
-    .notNull()
-    .references(() => users.id),
-  effectiveFrom: timestamp('effective_from', { withTimezone: true }).notNull().defaultNow(),
+export const checklistSnapshots = pgTable("checklist_snapshots", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  projectId: uuid("project_id").notNull(),
+  versionNo: integer("version_no").notNull(),
+  status: text("status").notNull().default(sql.raw("'DRAFT'::text")),
+  resolvedPayloadJson: jsonb("resolved_payload_json").notNull(),
+  provenanceJson: jsonb("provenance_json").notNull(),
+  sourceJson: jsonb("source_json").notNull(),
+  checksum: text("checksum").notNull(),
+  createdBy: uuid("created_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
 });
 
-export const waivers = pgTable('waivers', {
-  id: uuid('id').primaryKey(),
-  orgId: uuid('org_id')
-    .notNull()
-    .references(() => organisations.id),
-  projectId: uuid('project_id')
-    .notNull()
-    .references(() => projects.id, { onDelete: 'cascade' }),
-  requirementId: uuid('requirement_id')
-    .notNull()
-    .references(() => requirements.id),
-  type: text('type').notNull(), // WAIVE | NOT_APPLICABLE
-  reason: text('reason').notNull(),
-  evidenceObjectId: uuid('evidence_object_id'),
-  approvedBy: uuid('approved_by')
-    .notNull()
-    .references(() => users.id),
-  secondApprovedBy: uuid('second_approved_by').references(() => users.id), // Mandatory when requirement.mandatory = true (FR-CHK-016)
-  approvedAt: timestamp('approved_at', { withTimezone: true }).notNull().defaultNow(),
-  status: text('status').notNull().default('ACTIVE'),
+export const clientProfiles = pgTable("client_profiles", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  name: text("name").notNull(),
+  clientPartyId: uuid("client_party_id"),
+  payloadJson: jsonb("payload_json").notNull(),
+  status: text("status").notNull().default(sql.raw("'ACTIVE'::text")),
+  rowVersion: integer("row_version").notNull().default(sql.raw("1")),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
 });
 
-/* ========================================================================== */
-/* 3.4 ASSETS / EQUIPMENT REGISTER (08-DATA-MODEL-AND-ERD.md §3.4)            */
-/* ========================================================================== */
-
-export const assetCategories = pgTable(
-  'asset_categories',
-  {
-    id: uuid('id').primaryKey(),
-    orgId: uuid('org_id').references(() => organisations.id), // NULL = platform default
-    key: text('key').notNull(),
-    name: text('name').notNull(),
-    parentKey: text('parent_key'),
-    metadataSchemaJson: jsonb('metadata_schema_json').notNull().default({}),
-  },
-  (t) => ({
-    orgKeyUq: uniqueIndex('asset_categories_org_key_uq').on(t.orgId, t.key),
-  }),
-);
-
-export const assets = pgTable(
-  'assets',
-  {
-    id: uuid('id').primaryKey(),
-    orgId: uuid('org_id')
-      .notNull()
-      .references(() => organisations.id),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.id, { onDelete: 'cascade' }),
-    tag: text('tag').notNull(),
-    name: text('name').notNull(),
-    categoryKey: text('category_key').notNull(),
-    make: text('make'),
-    model: text('model'),
-    serialNo: text('serial_no'),
-    location: text('location'),
-    capacityJson: jsonb('capacity_json').notNull().default({}),
-    refrigerant: text('refrigerant'),
-    installDate: date('install_date'),
-    warrantyStart: date('warranty_start'),
-    warrantyStartBasis: text('warranty_start_basis').notNull().default('HANDOVER'), // COMMISSIONING | HANDOVER | ACCEPTANCE | SUPPLY
-    warrantyEnd: date('warranty_end'),
-    status: text('status').notNull().default('ACTIVE'), // ACTIVE | REPLACED | RETIRED
-    replacedByAssetId: uuid('replaced_by_asset_id'),
-    metadataJson: jsonb('metadata_json').notNull().default({}),
-    rowVersion: integer('row_version').notNull().default(1),
-    createdBy: uuid('created_by').notNull().references(() => users.id),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-    deletedAt: timestamp('deleted_at', { withTimezone: true }),
-  },
-  (t) => ({
-    projTagUq: uniqueIndex('assets_proj_tag_uq').on(t.projectId, sql`upper(${t.tag})`),
-    orgProjIdUq: uniqueIndex('assets_org_proj_id_uq').on(t.orgId, t.projectId, t.id),
-  }),
-);
-
-/* ========================================================================== */
-/* 3.5 STORAGE AND DOCUMENTS (08-DATA-MODEL-AND-ERD.md §3.5)                  */
-/* ========================================================================== */
-
-export const storageObjects = pgTable(
-  'storage_objects',
-  {
-    id: uuid('id').primaryKey(),
-    orgId: uuid('org_id')
-      .notNull()
-      .references(() => organisations.id),
-    provider: text('provider').notNull().default('S3'),
-    bucket: text('bucket').notNull(),
-    objectKey: text('object_key').notNull(),
-    originalFilename: text('original_filename').notNull().default('document'),
-    s3UploadId: text('s3_upload_id'),
-    mime: text('mime').notNull(),
-    sizeBytes: bigint('size_bytes', { mode: 'bigint' }).notNull(),
-    expectedSha256: text('expected_sha256'),
-    observedSizeBytes: bigint('observed_size_bytes', { mode: 'bigint' }),
-    providerVersionId: text('provider_version_id'),
-    sha256: text('sha256'), // Observed digest; required once READY (08 §8 Rule 16)
-    status: text('status').notNull().default('PENDING'), // PENDING | READY | QUARANTINED | FAILED | DELETED
-    retentionClass: text('retention_class').notNull().default('PROJECT_PLUS_8Y'),
-    createdBy: uuid('created_by').references(() => users.id),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    providerBucketKeyUq: uniqueIndex('storage_objects_bucket_key_uq').on(
-      t.provider,
-      t.bucket,
-      t.objectKey,
-    ),
-    orgShaIdx: index('storage_objects_org_sha_idx').on(t.orgId, t.sha256),
-  }),
-);
-
-export const documents = pgTable(
-  'documents',
-  {
-    id: uuid('id').primaryKey(),
-    orgId: uuid('org_id')
-      .notNull()
-      .references(() => organisations.id),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.id, { onDelete: 'cascade' }),
-    title: text('title').notNull(),
-    docTypeKey: text('doc_type_key').notNull(),
-    categoryKey: text('category_key').notNull(),
-    status: text('status').notNull().default('ACTIVE'), // ACTIVE | SUPERSEDED | ARCHIVED
-    latestVersionId: uuid('latest_version_id'),
-    currentApprovedVersionId: uuid('current_approved_version_id'),
-    language: text('language').notNull().default('en'),
-    metadataJson: jsonb('metadata_json').notNull().default({}),
-    retentionClass: text('retention_class').notNull().default('PROJECT_PLUS_8Y'),
-    rowVersion: integer('row_version').notNull().default(1),
-    createdBy: uuid('created_by').notNull().references(() => users.id),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-    deletedAt: timestamp('deleted_at', { withTimezone: true }),
-    deletedBy: uuid('deleted_by'),
-  },
-  (t) => ({
-    orgProjIdUq: uniqueIndex('documents_org_proj_id_uq').on(t.orgId, t.projectId, t.id),
-    projStatusIdx: index('documents_proj_status_idx').on(t.orgId, t.projectId, t.status),
-  }),
-);
-
-export const documentVersions = pgTable(
-  'document_versions',
-  {
-    id: uuid('id').primaryKey(),
-    orgId: uuid('org_id')
-      .notNull()
-      .references(() => organisations.id),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.id, { onDelete: 'cascade' }),
-    documentId: uuid('document_id')
-      .notNull()
-      .references(() => documents.id, { onDelete: 'cascade' }),
-    versionNo: integer('version_no').notNull(),
-    revisionCode: text('revision_code').notNull(), // Reserved even when soft-deleted (AUD-P-04)
-    objectId: uuid('object_id')
-      .notNull()
-      .references(() => storageObjects.id),
-    fileStatus: text('file_status').notNull().default('PENDING_UPLOAD'), // PENDING_UPLOAD | UPLOADING | PROCESSING | READY | QUARANTINED | FAILED | ARCHIVED
-    reviewStatus: text('review_status').notNull().default('NOT_SUBMITTED'), // NOT_SUBMITTED | IN_REVIEW | APPROVED | CHANGES_REQUESTED | REJECTED | SUPERSEDED
-    supersedesVersionId: uuid('supersedes_version_id'),
-    supersededAt: timestamp('superseded_at', { withTimezone: true }),
-    issueDate: date('issue_date').notNull(),
-    expiryDate: date('expiry_date'),
-    validityBasis: text('validity_basis').notNull().default('REVISION_BASED'),
-    externalComment: text('external_comment'),
-    internalNote: text('internal_note'), // Never exposed to guests (FR-DOC-024 / 05 §6.4)
-    metadataJson: jsonb('metadata_json').notNull().default({}),
-    checksJson: jsonb('checks_json').notNull().default({}),
-    uploadedBy: uuid('uploaded_by').references(() => users.id),
-    uploadedByGuestGrantId: uuid('uploaded_by_grant_id').references(() => guestGrants.id),
-    submittedAt: timestamp('submitted_at', { withTimezone: true }),
-    rowVersion: integer('row_version').notNull().default(1),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-    deletedAt: timestamp('deleted_at', { withTimezone: true }),
-  },
-  (t) => ({
-    docVerNoUq: uniqueIndex('document_versions_doc_ver_no_uq').on(t.documentId, t.versionNo),
-    docRevCodeUq: uniqueIndex('document_versions_doc_rev_code_uq').on(
-      t.documentId,
-      t.revisionCode,
-    ),
-    orgProjIdUq: uniqueIndex('document_versions_org_proj_id_uq').on(
-      t.orgId,
-      t.projectId,
-      t.id,
-    ),
-  }),
-);
-
-export const documentRequirements = pgTable(
-  'document_requirements',
-  {
-    id: uuid('id').primaryKey(),
-    orgId: uuid('org_id')
-      .notNull()
-      .references(() => organisations.id),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.id, { onDelete: 'cascade' }),
-    documentId: uuid('document_id')
-      .notNull()
-      .references(() => documents.id, { onDelete: 'cascade' }),
-    requirementId: uuid('requirement_id')
-      .notNull()
-      .references(() => requirements.id, { onDelete: 'cascade' }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    docReqUq: uniqueIndex('document_requirements_doc_req_uq').on(t.documentId, t.requirementId),
-  }),
-);
-
-export const documentAssets = pgTable(
-  'document_assets',
-  {
-    id: uuid('id').primaryKey(),
-    orgId: uuid('org_id')
-      .notNull()
-      .references(() => organisations.id),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.id, { onDelete: 'cascade' }),
-    documentId: uuid('document_id')
-      .notNull()
-      .references(() => documents.id, { onDelete: 'cascade' }),
-    assetId: uuid('asset_id')
-      .notNull()
-      .references(() => assets.id, { onDelete: 'cascade' }),
-    isPrimary: boolean('is_primary').notNull().default(true),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    docAssetUq: uniqueIndex('document_assets_doc_asset_uq').on(t.documentId, t.assetId),
-  }),
-);
-
-export const assetIdentityRevisions = pgTable(
-  'asset_identity_revisions',
-  {
-    id: uuid('id').primaryKey(),
-    orgId: uuid('org_id')
-      .notNull()
-      .references(() => organisations.id),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.id, { onDelete: 'cascade' }),
-    assetId: uuid('asset_id')
-      .notNull()
-      .references(() => assets.id, { onDelete: 'cascade' }),
-    revisionNo: integer('revision_no').notNull(),
-    tag: text('tag').notNull(),
-    name: text('name').notNull(),
-    make: text('make'),
-    model: text('model'),
-    serialNo: text('serial_no'),
-    location: text('location'),
-    changeType: text('change_type').notNull().default('CLERICAL_CORRECTION'),
-    reason: text('reason').notNull(),
-    effectiveFrom: timestamp('effective_from', { withTimezone: true }).notNull().defaultNow(),
-    effectiveTo: timestamp('effective_to', { withTimezone: true }),
-    createdBy: uuid('created_by').references(() => users.id),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    assetRevUq: uniqueIndex('asset_identity_rev_uq').on(t.assetId, t.revisionNo),
-  }),
-);
-
-export const evidenceRevalidations = pgTable(
-  'evidence_revalidations',
-  {
-    id: uuid('id').primaryKey(),
-    orgId: uuid('org_id')
-      .notNull()
-      .references(() => organisations.id),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.id, { onDelete: 'cascade' }),
-    assetId: uuid('asset_id')
-      .notNull()
-      .references(() => assets.id, { onDelete: 'cascade' }),
-    identityRevisionId: uuid('identity_revision_id')
-      .notNull()
-      .references(() => assetIdentityRevisions.id, { onDelete: 'cascade' }),
-    documentVersionId: uuid('document_version_id')
-      .notNull()
-      .references(() => documentVersions.id, { onDelete: 'cascade' }),
-    status: text('status').notNull().default('PENDING'),
-    revalidationNotes: text('revalidation_notes'),
-    reviewedBy: uuid('reviewed_by').references(() => users.id),
-    reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    docRevUq: uniqueIndex('evidence_reval_doc_rev_uq').on(t.identityRevisionId, t.documentVersionId),
-  }),
-);
-
-export const evidenceCompanionRules = pgTable(
-  'evidence_companion_rules',
-  {
-    id: uuid('id').primaryKey(),
-    orgId: uuid('org_id')
-      .notNull()
-      .references(() => organisations.id),
-    ruleCode: text('rule_code').notNull(),
-    ruleName: text('rule_name').notNull(),
-    primaryDocType: text('primary_doc_type').notNull(),
-    companionDocType: text('companion_doc_type').notNull(),
-    description: text('description'),
-    isMandatory: boolean('is_mandatory').notNull().default(true),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    orgCodeUq: uniqueIndex('companion_rules_org_code_uq').on(t.orgId, t.ruleCode),
-  }),
-);
-
-export const procurementOrders = pgTable(
-  'procurement_orders',
-  {
-    id: uuid('id').primaryKey(),
-    orgId: uuid('org_id')
-      .notNull()
-      .references(() => organisations.id),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.id, { onDelete: 'cascade' }),
-    poNumber: text('po_number').notNull(),
-    supplierPartyId: uuid('supplier_party_id')
-      .notNull()
-      .references(() => parties.id),
-    status: text('status').notNull().default('ISSUED'),
-    orderedAt: date('ordered_at').notNull().defaultNow(),
-    promisedDeliveryAt: date('promised_delivery_at'),
-    totalAmountPaise: bigint('total_amount_paise', { mode: 'bigint' }),
-    notes: text('notes'),
-    createdBy: uuid('created_by').references(() => users.id),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    orgProjPoUq: uniqueIndex('procurement_orders_org_proj_po_uq').on(
-      t.orgId,
-      t.projectId,
-      t.poNumber,
-    ),
-  }),
-);
-
-export const procurementOrderLines = pgTable(
-  'procurement_order_lines',
-  {
-    id: uuid('id').primaryKey(),
-    orgId: uuid('org_id')
-      .notNull()
-      .references(() => organisations.id),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.id, { onDelete: 'cascade' }),
-    poId: uuid('po_id')
-      .notNull()
-      .references(() => procurementOrders.id, { onDelete: 'cascade' }),
-    lineNo: integer('line_no').notNull(),
-    assetCategoryKey: text('asset_category_key').notNull(),
-    description: text('description').notNull(),
-    quantity: integer('quantity').notNull().default(1),
-    assetId: uuid('asset_id').references(() => assets.id),
-    make: text('make'),
-    model: text('model'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    poLineUq: uniqueIndex('po_lines_po_line_uq').on(t.poId, t.lineNo),
-  }),
-);
-
-export const supplierDocumentObligations = pgTable(
-  'supplier_document_obligations',
-  {
-    id: uuid('id').primaryKey(),
-    orgId: uuid('org_id')
-      .notNull()
-      .references(() => organisations.id),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.id, { onDelete: 'cascade' }),
-    poLineId: uuid('po_line_id')
-      .notNull()
-      .references(() => procurementOrderLines.id, { onDelete: 'cascade' }),
-    docTypeKey: text('doc_type_key').notNull(),
-    stageKey: text('stage_key').notNull().default('FAT'),
-    title: text('title').notNull(),
-    dueDate: date('due_date'),
-    supplierPartyId: uuid('supplier_party_id').references(() => parties.id),
-    status: text('status').notNull().default('PENDING'),
-    requirementId: uuid('requirement_id').references(() => requirements.id),
-    documentVersionId: uuid('document_version_id').references(() => documentVersions.id),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-);
-
-export const documentContracts = pgTable(
-  'document_contracts',
-  {
-    id: uuid('id').primaryKey(),
-    orgId: uuid('org_id')
-      .notNull()
-      .references(() => organisations.id),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.id, { onDelete: 'cascade' }),
-    documentId: uuid('document_id')
-      .notNull()
-      .references(() => documents.id, { onDelete: 'cascade' }),
-    contractId: uuid('contract_id')
-      .notNull()
-      .references(() => contracts.id, { onDelete: 'cascade' }),
-  },
-  (t) => ({
-    docContractUq: uniqueIndex('document_contracts_doc_contract_uq').on(
-      t.documentId,
-      t.contractId,
-    ),
-  }),
-);
-
-export const documentEvents = pgTable('document_events', {
-  id: uuid('id').primaryKey(),
-  orgId: uuid('org_id')
-    .notNull()
-    .references(() => organisations.id),
-  projectId: uuid('project_id')
-    .notNull()
-    .references(() => projects.id, { onDelete: 'cascade' }),
-  documentId: uuid('document_id')
-    .notNull()
-    .references(() => documents.id, { onDelete: 'cascade' }),
-  eventType: text('event_type').notNull(),
-  payloadJson: jsonb('payload_json').notNull().default({}),
-  actorId: uuid('actor_id'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+export const configVersions = pgTable("config_versions", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id"),
+  level: text("level").notNull(),
+  scopeType: text("scope_type").notNull(),
+  scopeId: uuid("scope_id").notNull().default(sql.raw("'00000000-0000-0000-0000-000000000000'::uuid")),
+  versionNo: integer("version_no").notNull(),
+  schemaVersion: integer("schema_version").notNull().default(sql.raw("1")),
+  payloadJson: jsonb("payload_json").notNull(),
+  checksum: text("checksum").notNull(),
+  sourcePackId: uuid("source_pack_id"),
+  status: text("status").notNull().default(sql.raw("'DRAFT'::text")),
+  createdBy: uuid("created_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+  publishedAt: timestamp("published_at", { withTimezone: true }),
 });
 
-/* ========================================================================== */
-/* 3.6 REVIEW AND APPROVAL (08-DATA-MODEL-AND-ERD.md §3.6)                    */
-/* ========================================================================== */
-
-export const reviews = pgTable(
-  'reviews',
-  {
-    id: uuid('id').primaryKey(),
-    orgId: uuid('org_id')
-      .notNull()
-      .references(() => organisations.id),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.id, { onDelete: 'cascade' }),
-    documentVersionId: uuid('document_version_id')
-      .notNull()
-      .references(() => documentVersions.id, { onDelete: 'cascade' }),
-    stageKey: text('stage_key').notNull().default('DEFAULT'),
-    reviewerSubjectType: text('reviewer_subject_type').notNull(), // USER | PARTY (AUD-A-07)
-    reviewerSubjectId: uuid('reviewer_subject_id').notNull(),
-    reviewerUserId: uuid('reviewer_user_id').references(() => users.id),
-    reviewerPartyId: uuid('reviewer_party_id').references(() => parties.id),
-    method: text('method').notNull().default('IN_APP'), // IN_APP | EXTERNAL (AUD-010 / WF-23)
-    externalMethod: text('external_method'), // STAMPED_PDF | EMAIL | PORTAL | PHYSICAL
-    externalApproverName: text('external_approver_name'),
-    externalApproverRole: text('external_approver_role'),
-    externalReference: text('external_reference'),
-    evidenceObjectId: uuid('evidence_object_id').references(() => storageObjects.id),
-    externalProofVersionId: uuid('external_proof_version_id').references(() => documentVersions.id),
-    status: text('status').notNull().default('PENDING'), // PENDING | IN_REVIEW | APPROVED | CHANGES_REQUESTED | REJECTED | CANCELLED
-    decision: text('decision'), // APPROVE | REQUEST_CHANGES | REJECT
-    comment: text('comment'),
-    dueAt: timestamp('due_at', { withTimezone: true }),
-    decidedAt: timestamp('decided_at', { withTimezone: true }),
-    occurredAt: timestamp('occurred_at', { withTimezone: true }),
-    occurredAtPrecision: text('occurred_at_precision').notNull().default('INSTANT'),
-    recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull().defaultNow(),
-    backdatingReason: text('backdating_reason'),
-    onBehalfOfUserId: uuid('on_behalf_of_user_id').references(() => users.id),
-    isOverride: boolean('is_override').notNull().default(false),
-    rowVersion: integer('row_version').notNull().default(1),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    verStageSubjectUq: uniqueIndex('reviews_ver_stage_subject_uq').on(
-      t.documentVersionId,
-      t.stageKey,
-      t.reviewerSubjectType,
-      t.reviewerSubjectId,
-    ),
-  }),
-);
-
-export const reviewComments = pgTable('review_comments', {
-  id: uuid('id').primaryKey(),
-  orgId: uuid('org_id')
-    .notNull()
-    .references(() => organisations.id),
-  projectId: uuid('project_id')
-    .notNull()
-    .references(() => projects.id, { onDelete: 'cascade' }),
-  reviewId: uuid('review_id')
-    .notNull()
-    .references(() => reviews.id, { onDelete: 'cascade' }),
-  pageNo: integer('page_no'),
-  pinX: integer('pin_x'),
-  pinY: integer('pin_y'),
-  body: text('body').notNull(),
-  visibility: text('visibility').notNull().default('EXTERNAL'), // INTERNAL | EXTERNAL
-  createdBy: uuid('created_by').references(() => users.id),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+export const contracts = pgTable("contracts", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  projectId: uuid("project_id").notNull(),
+  parentContractId: uuid("parent_contract_id"),
+  reference: text("reference").default(sql.raw("''::text")),
+  contractRef: text("contract_ref"),
+  title: text("title"),
+  partyId: uuid("party_id"),
+  type: text("type").notNull().default(sql.raw("'ITEM_RATE'::text")),
+  valuePaise: bigint("value_paise", { mode: 'bigint' }),
+  retentionBps: integer("retention_bps").notNull().default(sql.raw("500")),
+  dlpMonths: integer("dlp_months").notNull().default(sql.raw("12")),
+  warrantyTerms: text("warranty_terms"),
+  milestonesJson: jsonb("milestones_json").notNull().default(sql.raw("'[]'::jsonb")),
+  startDate: date("start_date"),
+  endDate: date("end_date"),
+  commencementDate: date("commencement_date"),
+  completionDate: date("completion_date"),
+  status: text("status").notNull().default(sql.raw("'ACTIVE'::text")),
+  rowVersion: integer("row_version").notNull().default(sql.raw("1")),
+  createdBy: uuid("created_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
 });
 
-export const approvalOverrides = pgTable('approval_overrides', {
-  id: uuid('id').primaryKey(),
-  orgId: uuid('org_id')
-    .notNull()
-    .references(() => organisations.id),
-  projectId: uuid('project_id')
-    .notNull()
-    .references(() => projects.id, { onDelete: 'cascade' }),
-  reviewId: uuid('review_id')
-    .notNull()
-    .references(() => reviews.id),
-  actorId: uuid('actor_id')
-    .notNull()
-    .references(() => users.id),
-  reason: text('reason').notNull(),
-  previousDecision: text('previous_decision'),
-  newDecision: text('new_decision').notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+export const creditNotes = pgTable("credit_notes", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  invoiceId: uuid("invoice_id").notNull(),
+  number: text("number").notNull(),
+  amountPaise: bigint("amount_paise", { mode: 'bigint' }).notNull(),
+  reason: text("reason").notNull(),
+  approvedBy: uuid("approved_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
 });
 
-/* ========================================================================== */
-/* 3.7 HANDOVER PACKAGES AND SUBMISSIONS (08-DATA-MODEL-AND-ERD.md §3.7)      */
-/* ========================================================================== */
-
-export const handoverPackages = pgTable(
-  'handover_packages',
-  {
-    id: uuid('id').primaryKey(),
-    orgId: uuid('org_id')
-      .notNull()
-      .references(() => organisations.id),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.id, { onDelete: 'cascade' }),
-    versionNo: integer('version_no').notNull(),
-    status: text('status').notNull().default('DRAFT'), // DRAFT | QUEUED | GENERATING | READY | FAILED | SUBMITTED | ACCEPTED | REJECTED | SUPERSEDED
-    scopeJson: jsonb('scope_json').notNull().default({}),
-    snapshotId: uuid('snapshot_id')
-      .notNull()
-      .references(() => checklistSnapshots.id),
-    snapshotChecksum: text('snapshot_checksum').notNull(), // Required per FR-HND-021 / 08 §8 Rule 17
-    overrideReason: text('override_reason'),
-    pdfObjectId: uuid('pdf_object_id').references(() => storageObjects.id),
-    zipObjectId: uuid('zip_object_id').references(() => storageObjects.id),
-    manifestObjectId: uuid('manifest_object_id').references(() => storageObjects.id),
-    checksum: text('checksum'),
-    requestedBy: uuid('requested_by')
-      .notNull()
-      .references(() => users.id),
-    errorCode: text('error_code'),
-    errorDetail: text('error_detail'),
-    rowVersion: integer('row_version').notNull().default(1),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    projVerUq: uniqueIndex('handover_packages_proj_ver_uq').on(t.projectId, t.versionNo),
-    orgProjIdUq: uniqueIndex('handover_packages_org_proj_id_uq').on(
-      t.orgId,
-      t.projectId,
-      t.id,
-    ),
-  }),
-);
-
-export const packageItems = pgTable('package_items', {
-  id: uuid('id').primaryKey(),
-  orgId: uuid('org_id')
-    .notNull()
-    .references(() => organisations.id),
-  projectId: uuid('project_id')
-    .notNull()
-    .references(() => projects.id, { onDelete: 'cascade' }),
-  packageId: uuid('package_id')
-    .notNull()
-    .references(() => handoverPackages.id, { onDelete: 'cascade' }),
-  documentVersionId: uuid('document_version_id')
-    .notNull()
-    .references(() => documentVersions.id),
-  sectionKey: text('section_key').notNull(),
-  sortOrder: integer('sort_order').notNull(),
-  pageStart: integer('page_start'),
-  pageEnd: integer('page_end'),
-  included: boolean('included').notNull().default(true),
-  exclusionReason: text('exclusion_reason'),
+export const defects = pgTable("defects", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  projectId: uuid("project_id").notNull(),
+  assetId: uuid("asset_id"),
+  requirementId: uuid("requirement_id"),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  severity: text("severity").notNull().default(sql.raw("'MEDIUM'::text")),
+  mandatory: boolean("mandatory").notNull().default(sql.raw("true")),
+  assignedUserId: uuid("assigned_user_id"),
+  assignedPartyId: uuid("assigned_party_id"),
+  raisedBy: uuid("raised_by").notNull(),
+  raisedAt: timestamp("raised_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+  dueAt: timestamp("due_at", { withTimezone: true }),
+  status: text("status").notNull().default(sql.raw("'OPEN'::text")),
+  closureEvidenceObjectId: uuid("closure_evidence_object_id"),
+  closedBy: uuid("closed_by"),
+  closedAt: timestamp("closed_at", { withTimezone: true }),
+  rowVersion: integer("row_version").notNull().default(sql.raw("1")),
+  occurredAt: timestamp("occurred_at", { withTimezone: true }),
+  occurredAtPrecision: text("occurred_at_precision").notNull().default(sql.raw("'INSTANT'::text")),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+  backdatingReason: text("backdating_reason"),
+  remediedBy: uuid("remedied_by"),
+  remediedAt: timestamp("remedied_at", { withTimezone: true }),
 });
 
-export const packageRequirements = pgTable('package_requirements', {
-  id: uuid('id').primaryKey(),
-  orgId: uuid('org_id')
-    .notNull()
-    .references(() => organisations.id),
-  projectId: uuid('project_id')
-    .notNull()
-    .references(() => projects.id, { onDelete: 'cascade' }),
-  packageId: uuid('package_id')
-    .notNull()
-    .references(() => handoverPackages.id, { onDelete: 'cascade' }),
-  requirementId: uuid('requirement_id')
-    .notNull()
-    .references(() => requirements.id),
-  requirementKey: text('requirement_key').notNull(),
-  scopeKey: text('scope_key').notNull(),
-  title: text('title').notNull(),
-  docTypeKey: text('doc_type_key').notNull(),
-  mandatory: boolean('mandatory').notNull(),
-  statusAtGeneration: text('status_at_generation').notNull(),
-  dueAtAtGeneration: timestamp('due_at_at_generation', { withTimezone: true }),
-  assetTag: text('asset_tag'),
-  decision: text('decision'),
-  decidedBy: text('decided_by'),
-  decidedAt: timestamp('decided_at', { withTimezone: true }),
-  decisionMethod: text('decision_method'),
+export const deletionRequests = pgTable("deletion_requests", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  subjectType: text("subject_type").notNull(),
+  subjectId: uuid("subject_id").notNull(),
+  status: text("status").notNull().default(sql.raw("'REQUESTED'::text")),
+  requestedAt: timestamp("requested_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+  acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  ownerUserId: uuid("owner_user_id").notNull(),
 });
 
-export const transmittals = pgTable('transmittals', {
-  id: uuid('id').primaryKey(),
-  orgId: uuid('org_id').notNull().references(() => organisations.id, { onDelete: 'cascade' }),
-  projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
-  transmittalNo: text('transmittal_no').notNull(),
-  status: text('status').notNull().default('DRAFT'),
-  notes: text('notes'),
-  createdBy: uuid('created_by').notNull().references(() => users.id),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-}, (t) => ({
-  orgProjectIdUq: uniqueIndex('transmittals_org_project_id_uq').on(t.orgId, t.projectId, t.id),
-  projectNumberUq: uniqueIndex('transmittals_project_number_uq').on(t.orgId, t.projectId, t.transmittalNo),
-  projectCreatedIdx: index('transmittals_project_created_idx').on(t.orgId, t.projectId, t.createdAt),
-}));
-
-export const transmittalItems = pgTable('transmittal_items', {
-  id: uuid('id').primaryKey(),
-  orgId: uuid('org_id').notNull().references(() => organisations.id, { onDelete: 'cascade' }),
-  projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
-  transmittalId: uuid('transmittal_id').notNull().references(() => transmittals.id, { onDelete: 'cascade' }),
-  documentVersionId: uuid('document_version_id').notNull().references(() => documentVersions.id),
-  sortOrder: integer('sort_order').notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-}, (t) => ({
-  documentVersionUq: uniqueIndex('transmittal_items_version_uq').on(t.orgId, t.projectId, t.transmittalId, t.documentVersionId),
-}));
-
-export const archiveExports = pgTable(
-  'archive_exports',
-  {
-    id: uuid('id').primaryKey(),
-    orgId: uuid('org_id')
-      .notNull()
-      .references(() => organisations.id),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.id, { onDelete: 'cascade' }),
-    schemaVersion: text('schema_version').notNull().default('2.0'),
-    status: text('status').notNull().default('PENDING'),
-    archiveSha256: text('archive_sha256'),
-    totalObjects: integer('total_objects').notNull().default(0),
-    totalBytes: bigint('total_bytes', { mode: 'bigint' }).notNull().default(sql`0`),
-    manifestJson: jsonb('manifest_json').notNull().default({}),
-    verificationReceiptJson: jsonb('verification_receipt_json').notNull().default({}),
-    createdBy: uuid('created_by').references(() => users.id),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    completedAt: timestamp('completed_at', { withTimezone: true }),
-  },
-  (t) => ({
-    orgProjStatusIdx: index('idx_archive_exports_proj').on(t.orgId, t.projectId, t.status),
-  }),
-);
-
-export const submissions = pgTable(
-  'submissions',
-  {
-    id: uuid('id').primaryKey(),
-    orgId: uuid('org_id')
-      .notNull()
-      .references(() => organisations.id),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.id, { onDelete: 'cascade' }),
-    packageId: uuid('package_id').references(() => handoverPackages.id),
-    method: text('method').notNull(), // PORTAL | EMAIL | PHYSICAL
-    reference: text('reference'),
-    status: text('status').notNull().default('DRAFT'), // DRAFT | SENT | ACKNOWLEDGED | ACCEPTED | REJECTED | WITHDRAWN
-    sentAt: timestamp('sent_at', { withTimezone: true }),
-    acknowledgedAt: timestamp('acknowledged_at', { withTimezone: true }),
-    decidedAt: timestamp('decided_at', { withTimezone: true }),
-    notes: text('notes'),
-    rowVersion: integer('row_version').notNull().default(1),
-    createdBy: uuid('created_by').notNull().references(() => users.id),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    orgProjIdUq: uniqueIndex('submissions_org_proj_id_uq').on(t.orgId, t.projectId, t.id),
-  }),
-);
-
-export const submissionRecipients = pgTable('submission_recipients', {
-  id: uuid('id').primaryKey(),
-  orgId: uuid('org_id')
-    .notNull()
-    .references(() => organisations.id),
-  projectId: uuid('project_id')
-    .notNull()
-    .references(() => projects.id, { onDelete: 'cascade' }),
-  submissionId: uuid('submission_id')
-    .notNull()
-    .references(() => submissions.id, { onDelete: 'cascade' }),
-  recipientPartyId: uuid('recipient_party_id')
-    .notNull()
-    .references(() => parties.id),
-  recipientRole: text('recipient_role').notNull(), // CLIENT | MC | CONSULTANT | OTHER (AUD-020 / FR-HND-019)
-  status: text('status').notNull().default('SENT'),
-  decision: text('decision'), // ACCEPT | ACCEPT_WITH_EXCEPTIONS | REJECT
-  remarks: text('remarks'),
-  decidedAt: timestamp('decided_at', { withTimezone: true }),
+export const documentAssets = pgTable("document_assets", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  projectId: uuid("project_id").notNull(),
+  documentId: uuid("document_id").notNull(),
+  assetId: uuid("asset_id").notNull(),
+  isPrimary: boolean("is_primary").notNull().default(sql.raw("false")),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
 });
 
-export const submissionEvents = pgTable('submission_events', {
-  id: uuid('id').primaryKey(),
-  orgId: uuid('org_id')
-    .notNull()
-    .references(() => organisations.id),
-  projectId: uuid('project_id')
-    .notNull()
-    .references(() => projects.id, { onDelete: 'cascade' }),
-  submissionId: uuid('submission_id')
-    .notNull()
-    .references(() => submissions.id, { onDelete: 'cascade' }),
-  eventType: text('event_type').notNull(),
-  payloadJson: jsonb('payload_json').notNull().default({}),
-  actorId: uuid('actor_id'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+export const documentContracts = pgTable("document_contracts", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  projectId: uuid("project_id").notNull(),
+  documentId: uuid("document_id").notNull(),
+  contractId: uuid("contract_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
 });
 
-export const packageLayouts = pgTable('package_layouts', {
-  id: uuid('id').primaryKey(),
-  orgId: uuid('org_id')
-    .notNull()
-    .references(() => organisations.id),
-  key: text('key').notNull(),
-  name: text('name').notNull(),
-  payloadJson: jsonb('payload_json').notNull(),
-  status: text('status').notNull().default('ACTIVE'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+export const documentEvents = pgTable("document_events", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  projectId: uuid("project_id").notNull(),
+  documentId: uuid("document_id").notNull(),
+  eventType: text("event_type").notNull(),
+  payloadJson: jsonb("payload_json").notNull().default(sql.raw("'{}'::jsonb")),
+  actorId: uuid("actor_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
 });
 
-/* ========================================================================== */
-/* 3.8 NOTIFICATIONS, AUDIT, JOBS & OUTBOX (08-DATA-MODEL-AND-ERD.md §3.8)    */
-/* ========================================================================== */
-
-export const notificationTemplates = pgTable(
-  'notification_templates',
-  {
-    id: uuid('id').primaryKey(),
-    orgId: uuid('org_id').references(() => organisations.id),
-    key: text('key').notNull(),
-    channel: text('channel').notNull(), // IN_APP | EMAIL | SMS | WHATSAPP
-    locale: text('locale').notNull().default('en'),
-    subject: text('subject'),
-    body: text('body').notNull(),
-    status: text('status').notNull().default('ACTIVE'),
-  },
-  (t) => ({
-    orgKeyChanLocUq: uniqueIndex('notification_templates_uq').on(
-      t.orgId,
-      t.key,
-      t.channel,
-      t.locale,
-    ),
-  }),
-);
-
-export const notifications = pgTable('notifications', {
-  id: uuid('id').primaryKey(),
-  orgId: uuid('org_id')
-    .notNull()
-    .references(() => organisations.id),
-  recipientUserId: uuid('recipient_user_id').references(() => users.id),
-  recipientPartyId: uuid('recipient_party_id').references(() => parties.id),
-  channel: text('channel').notNull(), // IN_APP | EMAIL | SMS | WHATSAPP
-  eventKey: text('event_key').notNull(),
-  payloadJson: jsonb('payload_json').notNull().default({}),
-  status: text('status').notNull().default('QUEUED'), // QUEUED | SENT | FAILED | READ
-  dedupKey: text('dedup_key').notNull(),
-  sentAt: timestamp('sent_at', { withTimezone: true }),
-  readAt: timestamp('read_at', { withTimezone: true }),
-  error: text('error'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+export const documentRequirements = pgTable("document_requirements", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  projectId: uuid("project_id").notNull(),
+  documentId: uuid("document_id").notNull(),
+  requirementId: uuid("requirement_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
 });
 
-export const notificationPreferences = pgTable('notification_preferences', {
-  id: uuid('id').primaryKey(),
-  orgId: uuid('org_id')
-    .notNull()
-    .references(() => organisations.id),
-  userId: uuid('user_id')
-    .notNull()
-    .references(() => users.id, { onDelete: 'cascade' }),
-  category: text('category').notNull(),
-  channel: text('channel').notNull(),
-  enabled: boolean('enabled').notNull().default(true),
-  digest: text('digest').notNull().default('IMMEDIATE'), // IMMEDIATE | DAILY | WEEKLY
+export const documents = pgTable("documents", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  projectId: uuid("project_id").notNull(),
+  title: text("title").notNull(),
+  docTypeKey: text("doc_type_key").notNull(),
+  categoryKey: text("category_key").notNull(),
+  status: text("status").notNull().default(sql.raw("'ACTIVE'::text")),
+  latestVersionId: uuid("latest_version_id"),
+  currentApprovedVersionId: uuid("current_approved_version_id"),
+  language: text("language").notNull().default(sql.raw("'en'::text")),
+  metadataJson: jsonb("metadata_json").notNull().default(sql.raw("'{}'::jsonb")),
+  retentionClass: text("retention_class").notNull().default(sql.raw("'PROJECT_PLUS_8Y'::text")),
+  rowVersion: integer("row_version").notNull().default(sql.raw("1")),
+  createdBy: uuid("created_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  deletedBy: uuid("deleted_by"),
 });
 
-export const securityEvents = pgTable('security_events', {
-  id: uuid('id').primaryKey(),
-  orgId: uuid('org_id').references(() => organisations.id),
-  actorUserId: uuid('actor_user_id').references(() => users.id),
-  eventType: text('event_type').notNull(),
-  detailJson: jsonb('detail_json').notNull().default({}),
-  ip: inet('ip'),
-  userAgent: text('user_agent'),
-  requestId: text('request_id'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+export const documentVersions = pgTable("document_versions", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  projectId: uuid("project_id").notNull(),
+  documentId: uuid("document_id").notNull(),
+  versionNo: integer("version_no").notNull(),
+  revisionCode: text("revision_code").notNull(),
+  objectId: uuid("object_id").notNull(),
+  fileStatus: text("file_status").notNull().default(sql.raw("'PENDING_UPLOAD'::text")),
+  reviewStatus: text("review_status").notNull().default(sql.raw("'NOT_SUBMITTED'::text")),
+  supersedesVersionId: uuid("supersedes_version_id"),
+  supersededAt: timestamp("superseded_at", { withTimezone: true }),
+  issueDate: date("issue_date").notNull(),
+  expiryDate: date("expiry_date"),
+  validityBasis: text("validity_basis").notNull().default(sql.raw("'NONE'::text")),
+  uploaderComment: text("uploader_comment"),
+  internalNote: text("internal_note"),
+  metadataJson: jsonb("metadata_json").notNull().default(sql.raw("'{}'::jsonb")),
+  checksJson: jsonb("checks_json").notNull().default(sql.raw("'{}'::jsonb")),
+  uploadedBy: uuid("uploaded_by"),
+  uploadedByGuestGrantId: uuid("uploaded_by_grant_id"),
+  submittedAt: timestamp("submitted_at", { withTimezone: true }),
+  rowVersion: integer("row_version").notNull().default(sql.raw("1")),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
 });
 
-export const adminAuditEvents = pgTable('admin_audit_events', {
-  id: uuid('id').primaryKey(),
-  orgId: uuid('org_id').references(() => organisations.id),
-  adminUserId: uuid('admin_user_id')
-    .notNull()
-    .references(() => users.id),
-  action: text('action').notNull(),
-  reason: text('reason').notNull(),
-  entityType: text('entity_type').notNull(),
-  entityId: uuid('entity_id'),
-  beforeJson: jsonb('before_json'),
-  afterJson: jsonb('after_json'),
-  ip: inet('ip'),
-  requestId: text('request_id'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+export const evidenceCompanionRules = pgTable("evidence_companion_rules", {
+  id: uuid("id").notNull().primaryKey().default(sql.raw("gen_random_uuid()")),
+  orgId: uuid("org_id").notNull(),
+  ruleCode: text("rule_code").notNull(),
+  ruleName: text("rule_name").notNull(),
+  primaryDocType: text("primary_doc_type").notNull(),
+  companionDocType: text("companion_doc_type").notNull(),
+  description: text("description"),
+  isMandatory: boolean("is_mandatory").notNull().default(sql.raw("true")),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
 });
 
-export const jobExecutions = pgTable('job_executions', {
-  id: uuid('id').primaryKey(),
-  orgId: uuid('org_id').references(() => organisations.id),
-  jobType: text('job_type').notNull(),
-  jobId: text('job_id').notNull(),
-  status: text('status').notNull(),
-  attempts: integer('attempts').notNull().default(1),
-  startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
-  finishedAt: timestamp('finished_at', { withTimezone: true }),
-  error: text('error'),
+export const evidenceRevalidations = pgTable("evidence_revalidations", {
+  id: uuid("id").notNull().primaryKey().default(sql.raw("gen_random_uuid()")),
+  orgId: uuid("org_id").notNull(),
+  projectId: uuid("project_id").notNull(),
+  assetId: uuid("asset_id").notNull(),
+  identityRevisionId: uuid("identity_revision_id").notNull(),
+  documentVersionId: uuid("document_version_id").notNull(),
+  status: text("status").notNull().default(sql.raw("'PENDING'::text")),
+  revalidationNotes: text("revalidation_notes"),
+  reviewedBy: uuid("reviewed_by"),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+  rowVersion: integer("row_version").notNull().default(sql.raw("1")),
+  scopeKey: text("scope_key"),
 });
 
-export const idempotencyKeys = pgTable(
-  'idempotency_keys',
-  {
-    id: uuid('id').primaryKey(),
-    orgId: uuid('org_id')
-      .notNull()
-      .references(() => organisations.id),
-    key: text('key').notNull(),
-    endpoint: text('endpoint').notNull(),
-    requestHash: text('request_hash').notNull(),
-    responseStatus: integer('response_status').notNull(),
-    responseJson: jsonb('response_json').notNull(),
-    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    orgKeyEndpointUq: uniqueIndex('idempotency_keys_org_key_ep_uq').on(
-      t.orgId,
-      t.key,
-      t.endpoint,
-    ),
-  }),
-);
-
-export const outboxEvents = pgTable('outbox_events', {
-  id: uuid('id').primaryKey(),
-  orgId: uuid('org_id')
-    .notNull()
-    .references(() => organisations.id),
-  projectId: uuid('project_id'),
-  eventType: text('event_type').notNull(),
-  payloadJson: jsonb('payload_json').notNull(),
-  dispatchedAt: timestamp('dispatched_at', { withTimezone: true }),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+export const guestGrants = pgTable("guest_grants", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  projectId: uuid("project_id").notNull(),
+  partyId: uuid("party_id").notNull(),
+  targetEmail: citext("target_email"),
+  targetPhoneE164: text("target_phone_e164"),
+  grantType: text("grant_type").notNull(),
+  role: text("role").notNull(),
+  capabilities: text("capabilities").array().notNull(),
+  scopeJson: jsonb("scope_json").notNull().default(sql.raw("'{}'::jsonb")),
+  otpRequired: boolean("otp_required").notNull().default(sql.raw("true")),
+  tokenHash: text("token_hash").notNull(),
+  failedOtpCount: integer("failed_otp_count").notNull().default(sql.raw("0")),
+  otpAttemptsCount: integer("otp_attempts_count").notNull().default(sql.raw("0")),
+  cooldownUntil: timestamp("cooldown_until", { withTimezone: true }),
+  status: text("status").notNull().default(sql.raw("'ACTIVE'::text")),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdBy: uuid("created_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
 });
 
-/* ========================================================================== */
-/* 3.10 BILLING, GST, E-INVOICE & TDS (08-DATA-MODEL-AND-ERD.md §3.10)        */
-/* ========================================================================== */
-
-export const plans = pgTable(
-  'plans',
-  {
-    id: uuid('id').primaryKey(),
-    code: text('code').notNull(), // STARTER | GROWTH | SCALE
-    name: text('name').notNull(),
-    limitsJson: jsonb('limits_json').notNull(), // { maxActiveProjects, maxSeats, maxStorageBytes, maxPackageGenerationsPerMonth }
-    pricePaise: bigint('price_paise', { mode: 'bigint' }).notNull(),
-    interval: text('interval').notNull(), // MONTH | YEAR
-    status: text('status').notNull().default('ACTIVE'),
-  },
-  (t) => ({
-    codeUq: uniqueIndex('plans_code_uq').on(t.code),
-  }),
-);
-
-export const subscriptions = pgTable('subscriptions', {
-  id: uuid('id').primaryKey(),
-  orgId: uuid('org_id')
-    .notNull()
-    .references(() => organisations.id),
-  planId: uuid('plan_id')
-    .notNull()
-    .references(() => plans.id),
-  status: text('status').notNull().default('TRIAL'), // TRIAL | ACTIVE | PAST_DUE | SUSPENDED | CANCELLED
-  provider: text('provider').notNull().default('RAZORPAY'),
-  providerRef: text('provider_ref'),
-  currentPeriodStart: timestamp('current_period_start', { withTimezone: true }).notNull(),
-  currentPeriodEnd: timestamp('current_period_end', { withTimezone: true }).notNull(),
-  cancelAt: timestamp('cancel_at', { withTimezone: true }),
-  rowVersion: integer('row_version').notNull().default(1),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+export const handoverPackages = pgTable("handover_packages", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  projectId: uuid("project_id").notNull(),
+  versionNo: integer("version_no").notNull().default(sql.raw("1")),
+  title: text("title"),
+  status: text("status").notNull().default(sql.raw("'DRAFT'::text")),
+  scopeJson: jsonb("scope_json").notNull().default(sql.raw("'{}'::jsonb")),
+  snapshotId: uuid("snapshot_id"),
+  snapshotChecksum: text("snapshot_checksum"),
+  pdfObjectId: uuid("pdf_object_id"),
+  zipObjectId: uuid("zip_object_id"),
+  manifestObjectId: uuid("manifest_object_id"),
+  checksum: text("checksum"),
+  overrideReason: text("override_reason"),
+  errorCode: text("error_code"),
+  errorDetail: text("error_detail"),
+  requestedBy: uuid("requested_by"),
+  createdBy: uuid("created_by"),
+  rowVersion: integer("row_version").notNull().default(sql.raw("1")),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
 });
 
-export const invoices = pgTable(
-  'invoices',
-  {
-    id: uuid('id').primaryKey(),
-    orgId: uuid('org_id')
-      .notNull()
-      .references(() => organisations.id),
-    subscriptionId: uuid('subscription_id').references(() => subscriptions.id),
-    number: text('number').notNull(),
-    status: text('status').notNull().default('ISSUED'), // DRAFT | ISSUED | PAID | VOID
-    subtotalPaise: bigint('subtotal_paise', { mode: 'bigint' }).notNull(),
-    taxPaise: bigint('tax_paise', { mode: 'bigint' }).notNull(),
-    totalPaise: bigint('total_paise', { mode: 'bigint' }).notNull(),
-    taxRateBps: integer('tax_rate_bps').notNull(), // Configurable, e.g. 1800
-    sac: text('sac').notNull(), // Configurable SAC code
-    buyerGstin: text('buyer_gstin'),
-    placeOfSupply: text('place_of_supply').notNull(),
-    irn: text('irn'), // e-Invoice IRN (inactive until CA confirms per AUD-013)
-    qrPayload: text('qr_payload'),
-    einvoiceStatus: text('einvoice_status').notNull().default('NOT_APPLICABLE'),
-    issuedAt: timestamp('issued_at', { withTimezone: true }).notNull().defaultNow(),
-    paidAt: timestamp('paid_at', { withTimezone: true }),
-    pdfObjectId: uuid('pdf_object_id').references(() => storageObjects.id),
-  },
-  (t) => ({
-    numberUq: uniqueIndex('invoices_number_uq').on(t.number),
-  }),
-);
-
-export const invoiceLines = pgTable('invoice_lines', {
-  id: uuid('id').primaryKey(),
-  orgId: uuid('org_id')
-    .notNull()
-    .references(() => organisations.id),
-  invoiceId: uuid('invoice_id')
-    .notNull()
-    .references(() => invoices.id, { onDelete: 'cascade' }),
-  description: text('description').notNull(),
-  quantity: integer('quantity').notNull().default(1),
-  unitPaise: bigint('unit_paise', { mode: 'bigint' }).notNull(),
-  taxRateBps: integer('tax_rate_bps').notNull(),
-  amountPaise: bigint('amount_paise', { mode: 'bigint' }).notNull(),
+export const idempotencyKeys = pgTable("idempotency_keys", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  key: text("key").notNull(),
+  endpoint: text("endpoint").notNull(),
+  requestHash: text("request_hash").notNull(),
+  responseStatus: integer("response_status").notNull(),
+  responseJson: jsonb("response_json").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
 });
 
-export const invoiceTds = pgTable('invoice_tds', {
-  id: uuid('id').primaryKey(),
-  orgId: uuid('org_id')
-    .notNull()
-    .references(() => organisations.id),
-  invoiceId: uuid('invoice_id')
-    .notNull()
-    .references(() => invoices.id, { onDelete: 'cascade' }),
-  section: text('section').notNull(), // e.g. 194J / 194C
-  rateBps: integer('rate_bps').notNull(),
-  amountPaise: bigint('amount_paise', { mode: 'bigint' }).notNull(),
-  certificateReference: text('certificate_reference'),
-  deductedAt: date('deducted_at').notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+export const invitations = pgTable("invitations", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  email: citext("email"),
+  phoneE164: text("phone_e164"),
+  role: text("role").notNull(),
+  tokenHash: text("token_hash").notNull(),
+  status: text("status").notNull().default(sql.raw("'PENDING'::text")),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  invitedBy: uuid("invited_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
 });
 
-export const paymentEvents = pgTable(
-  'payment_events',
-  {
-    id: uuid('id').primaryKey(),
-    orgId: uuid('org_id').references(() => organisations.id),
-    provider: text('provider').notNull().default('RAZORPAY'),
-    eventId: text('event_id').notNull(),
-    type: text('type').notNull(),
-    payloadJson: jsonb('payload_json').notNull(),
-    processedAt: timestamp('processed_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    eventIdUq: uniqueIndex('payment_events_event_id_uq').on(t.eventId),
-  }),
-);
-
-export const usageCounters = pgTable(
-  'usage_counters',
-  {
-    id: uuid('id').primaryKey(),
-    orgId: uuid('org_id')
-      .notNull()
-      .references(() => organisations.id),
-    metric: text('metric').notNull(), // ACTIVE_PROJECTS | SEATS | STORAGE_BYTES | PACKAGE_GENERATIONS
-    period: text('period').notNull(), // ALL_TIME or YYYY-MM
-    value: bigint('value', { mode: 'bigint' }).notNull().default(0n),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    orgMetricPeriodUq: uniqueIndex('usage_counters_org_metric_period_uq').on(
-      t.orgId,
-      t.metric,
-      t.period,
-    ),
-  }),
-);
-
-export const creditNotes = pgTable(
-  'credit_notes',
-  {
-    id: uuid('id').primaryKey(),
-    orgId: uuid('org_id')
-      .notNull()
-      .references(() => organisations.id),
-    invoiceId: uuid('invoice_id')
-      .notNull()
-      .references(() => invoices.id),
-    number: text('number').notNull(),
-    amountPaise: bigint('amount_paise', { mode: 'bigint' }).notNull(),
-    reason: text('reason').notNull(),
-    approvedBy: uuid('approved_by')
-      .notNull()
-      .references(() => users.id),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    numberUq: uniqueIndex('credit_notes_number_uq').on(t.number),
-  }),
-);
-
-/* ========================================================================== */
-/* 3.11 WARRANTY, DEFECTS & VARIATIONS (08-DATA-MODEL-AND-ERD.md §3.11)       */
-/* ========================================================================== */
-
-export const warrantyEvents = pgTable('warranty_events', {
-  id: uuid('id').primaryKey(),
-  orgId: uuid('org_id')
-    .notNull()
-    .references(() => organisations.id),
-  projectId: uuid('project_id')
-    .notNull()
-    .references(() => projects.id, { onDelete: 'cascade' }),
-  assetId: uuid('asset_id')
-    .notNull()
-    .references(() => assets.id, { onDelete: 'cascade' }),
-  eventType: text('event_type').notNull(), // REGISTRATION | CONFIRMATION | CLAIM | EXTENSION
-  status: text('status').notNull().default('RECORDED'), // RECORDED | CONFIRMED | DISPUTED | CLAIMED
-  oemReference: text('oem_reference').notNull(),
-  registeredAt: date('registered_at').notNull(),
-  warrantyStart: date('warranty_start').notNull(),
-  warrantyEnd: date('warranty_end').notNull(),
-  basis: text('basis').notNull(), // COMMISSIONING | HANDOVER | ACCEPTANCE | SUPPLY
-  evidenceObjectId: uuid('evidence_object_id').references(() => storageObjects.id),
-  notes: text('notes'),
-  occurredAt: timestamp('occurred_at', { withTimezone: true }),
-  occurredAtPrecision: text('occurred_at_precision').notNull().default('DATE'),
-  recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull().defaultNow(),
-  backdatingReason: text('backdating_reason'),
-  createdBy: uuid('created_by').notNull().references(() => users.id),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+export const invoiceLines = pgTable("invoice_lines", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  invoiceId: uuid("invoice_id").notNull(),
+  description: text("description").notNull(),
+  quantity: integer("quantity").notNull().default(sql.raw("1")),
+  unitPaise: bigint("unit_paise", { mode: 'bigint' }).notNull(),
+  taxRateBps: integer("tax_rate_bps").notNull(),
+  amountPaise: bigint("amount_paise", { mode: 'bigint' }).notNull(),
 });
 
-export const defects = pgTable('defects', {
-  id: uuid('id').primaryKey(),
-  orgId: uuid('org_id')
-    .notNull()
-    .references(() => organisations.id),
-  projectId: uuid('project_id')
-    .notNull()
-    .references(() => projects.id, { onDelete: 'cascade' }),
-  assetId: uuid('asset_id').references(() => assets.id),
-  requirementId: uuid('requirement_id').references(() => requirements.id),
-  title: text('title').notNull(),
-  description: text('description').notNull(),
-  severity: text('severity').notNull().default('MAJOR'), // CRITICAL | MAJOR | MINOR
-  assignedUserId: uuid('assigned_user_id').references(() => users.id),
-  assignedPartyId: uuid('assigned_party_id').references(() => parties.id),
-  raisedBy: uuid('raised_by')
-    .notNull()
-    .references(() => users.id),
-  raisedAt: timestamp('raised_at', { withTimezone: true }).notNull().defaultNow(),
-  dueAt: timestamp('due_at', { withTimezone: true }),
-  status: text('status').notNull().default('OPEN'), // OPEN | IN_PROGRESS | RECTIFIED | CLOSED | WAIVED
-  closureEvidenceObjectId: uuid('closure_evidence_object_id').references(
-    () => storageObjects.id,
-  ),
-  closedAt: timestamp('closed_at', { withTimezone: true }),
-  closedBy: uuid('closed_by').references(() => users.id),
-  occurredAt: timestamp('occurred_at', { withTimezone: true }),
-  occurredAtPrecision: text('occurred_at_precision').notNull().default('INSTANT'),
-  recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull().defaultNow(),
-  backdatingReason: text('backdating_reason'),
-  rowVersion: integer('row_version').notNull().default(1),
+export const invoices = pgTable("invoices", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  subscriptionId: uuid("subscription_id"),
+  number: text("number").notNull(),
+  status: text("status").notNull().default(sql.raw("'ISSUED'::text")),
+  subtotalPaise: bigint("subtotal_paise", { mode: 'bigint' }).notNull(),
+  taxPaise: bigint("tax_paise", { mode: 'bigint' }).notNull(),
+  totalPaise: bigint("total_paise", { mode: 'bigint' }).notNull(),
+  taxRateBps: integer("tax_rate_bps").notNull().default(sql.raw("1800")),
+  sac: text("sac").notNull().default(sql.raw("'998315'::text")),
+  placeOfSupply: text("place_of_supply").notNull(),
+  buyerGstin: text("buyer_gstin"),
+  irn: text("irn"),
+  qrPayload: text("qr_payload"),
+  einvoiceStatus: text("einvoice_status").notNull().default(sql.raw("'NOT_APPLICABLE'::text")),
+  pdfObjectId: uuid("pdf_object_id"),
+  issuedAt: timestamp("issued_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+  paidAt: timestamp("paid_at", { withTimezone: true }),
 });
 
-export const variations = pgTable('variations', {
-  id: uuid('id').primaryKey(),
-  orgId: uuid('org_id')
-    .notNull()
-    .references(() => organisations.id),
-  projectId: uuid('project_id')
-    .notNull()
-    .references(() => projects.id, { onDelete: 'cascade' }),
-  contractId: uuid('contract_id')
-    .notNull()
-    .references(() => contracts.id),
-  reference: text('reference').notNull(),
-  description: text('description').notNull(),
-  valuePaiseDelta: bigint('value_paise_delta', { mode: 'bigint' }).notNull().default(0n),
-  timeDaysDelta: integer('time_days_delta').notNull().default(0),
-  status: text('status').notNull().default('DRAFT'), // DRAFT | SUBMITTED | APPROVED | REJECTED | SUPERSEDED
-  approvedBy: uuid('approved_by').references(() => users.id),
-  approvedAt: timestamp('approved_at', { withTimezone: true }),
-  changeRequestId: uuid('change_request_id').references(() => requirementChangeRequests.id),
-  rowVersion: integer('row_version').notNull().default(1),
-  createdBy: uuid('created_by').notNull().references(() => users.id),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+export const invoiceTds = pgTable("invoice_tds", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  invoiceId: uuid("invoice_id").notNull(),
+  section: text("section").notNull().default(sql.raw("'194J'::text")),
+  rateBps: integer("rate_bps").notNull(),
+  amountPaise: bigint("amount_paise", { mode: 'bigint' }).notNull(),
+  certificateReference: text("certificate_reference"),
+  certificateObjectId: uuid("certificate_object_id"),
+  status: text("status").notNull().default(sql.raw("'PENDING_CERTIFICATE'::text")),
+  deductedAt: date("deducted_at").notNull().default(sql.raw("CURRENT_DATE")),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
 });
 
-/* ========================================================================== */
-/* 3.12 RETENTION, LEGAL HOLDS & DSR (08-DATA-MODEL-AND-ERD.md §3.12)         */
-/* ========================================================================== */
-
-export const retentionPolicies = pgTable('retention_policies', {
-  id: uuid('id').primaryKey(),
-  orgId: uuid('org_id').references(() => organisations.id),
-  code: text('code').notNull(), // PROJECT_PLUS_8Y
-  entityType: text('entity_type').notNull(),
-  retentionMonths: integer('retention_months').notNull().default(96),
-  basis: text('basis').notNull().default('PROJECT_CLOSURE'),
-  status: text('status').notNull().default('ACTIVE'),
+export const jobExecutions = pgTable("job_executions", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id"),
+  jobType: text("job_type").notNull(),
+  jobId: text("job_id").notNull(),
+  status: text("status").notNull(),
+  attempts: integer("attempts").notNull().default(sql.raw("1")),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+  error: text("error"),
 });
 
-export const legalHolds = pgTable('legal_holds', {
-  id: uuid('id').primaryKey(),
-  orgId: uuid('org_id')
-    .notNull()
-    .references(() => organisations.id),
-  projectId: uuid('project_id')
-    .notNull()
-    .references(() => projects.id),
-  reason: text('reason').notNull(),
-  createdBy: uuid('created_by')
-    .notNull()
-    .references(() => users.id),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  releasedAt: timestamp('released_at', { withTimezone: true }),
+export const legalHolds = pgTable("legal_holds", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  projectId: uuid("project_id").notNull(),
+  reason: text("reason").notNull(),
+  createdBy: uuid("created_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+  releasedAt: timestamp("released_at", { withTimezone: true }),
 });
 
-export const deletionRequests = pgTable('deletion_requests', {
-  id: uuid('id').primaryKey(),
-  orgId: uuid('org_id')
-    .notNull()
-    .references(() => organisations.id),
-  subjectType: text('subject_type').notNull(), // ORG | USER
-  subjectId: uuid('subject_id').notNull(),
-  status: text('status').notNull().default('REQUESTED'), // REQUESTED | ACKNOWLEDGED | COMPLETED | REJECTED
-  requestedAt: timestamp('requested_at', { withTimezone: true }).notNull().defaultNow(),
-  acknowledgedAt: timestamp('acknowledged_at', { withTimezone: true }),
-  completedAt: timestamp('completed_at', { withTimezone: true }),
-  ownerUserId: uuid('owner_user_id')
-    .notNull()
-    .references(() => users.id),
+export const memberships = pgTable("memberships", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  userId: uuid("user_id").notNull(),
+  role: text("role").notNull(),
+  status: text("status").notNull().default(sql.raw("'ACTIVE'::text")),
+  joinedAt: timestamp("joined_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+  rowVersion: integer("row_version").notNull().default(sql.raw("1")),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+});
+
+export const notificationPreferences = pgTable("notification_preferences", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  userId: uuid("user_id").notNull(),
+  category: text("category").notNull(),
+  channel: text("channel").notNull(),
+  enabled: boolean("enabled").notNull().default(sql.raw("true")),
+  digest: text("digest").notNull().default(sql.raw("'IMMEDIATE'::text")),
+});
+
+export const notifications = pgTable("notifications", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  projectId: uuid("project_id"),
+  recipientUserId: uuid("recipient_user_id"),
+  recipientPartyId: uuid("recipient_party_id"),
+  channel: text("channel").notNull(),
+  eventKey: text("event_key").notNull(),
+  payloadJson: jsonb("payload_json").notNull().default(sql.raw("'{}'::jsonb")),
+  status: text("status").notNull().default(sql.raw("'QUEUED'::text")),
+  dedupKey: text("dedup_key").notNull(),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+  readAt: timestamp("read_at", { withTimezone: true }),
+  error: text("error"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+});
+
+export const notificationTemplates = pgTable("notification_templates", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id"),
+  key: text("key").notNull(),
+  channel: text("channel").notNull(),
+  locale: text("locale").notNull().default(sql.raw("'en'::text")),
+  subject: text("subject"),
+  body: text("body").notNull(),
+  status: text("status").notNull().default(sql.raw("'ACTIVE'::text")),
+});
+
+export const organisations = pgTable("organisations", {
+  id: uuid("id").notNull().primaryKey(),
+  legalName: text("legal_name").notNull(),
+  displayName: text("display_name").notNull(),
+  entityType: text("entity_type").notNull().default(sql.raw("'PRIVATE_LIMITED'::text")),
+  trade: text("trade").notNull().default(sql.raw("'HVAC'::text")),
+  country: text("country").notNull().default(sql.raw("'IN'::text")),
+  state: text("state").notNull(),
+  timezone: text("timezone").notNull().default(sql.raw("'Asia/Kolkata'::text")),
+  allowSelfApproval: boolean("allow_self_approval").notNull().default(sql.raw("false")),
+  docControllerOrgWideDownload: boolean("doc_controller_org_wide_download").notNull().default(sql.raw("false")),
+  status: text("status").notNull().default(sql.raw("'ACTIVE'::text")),
+  rowVersion: integer("row_version").notNull().default(sql.raw("1")),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+});
+
+export const orgProfiles = pgTable("org_profiles", {
+  orgId: uuid("org_id").notNull().primaryKey(),
+  gstin: text("gstin"),
+  pan: text("pan"),
+  addressJson: jsonb("address_json").notNull().default(sql.raw("'{}'::jsonb")),
+  logoObjectId: uuid("logo_object_id"),
+  logoUrl: text("logo_url"),
+  brandColor: text("brand_color").notNull().default(sql.raw("'#0F172A'::text")),
+  accentColor: text("accent_color"),
+  watermarkEnabled: boolean("watermark_enabled").notNull().default(sql.raw("false")),
+  allowSelfApproval: boolean("allow_self_approval").notNull().default(sql.raw("false")),
+  defaultRetentionMonths: integer("default_retention_months").notNull().default(sql.raw("96")),
+  footerText: text("footer_text"),
+  signatoryName: text("signatory_name"),
+  signatoryDesignation: text("signatory_designation"),
+  contactEmail: citext("contact_email"),
+  contactPhone: text("contact_phone"),
+  rowVersion: integer("row_version").notNull().default(sql.raw("1")),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+});
+
+export const outboxEvents = pgTable("outbox_events", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  projectId: uuid("project_id"),
+  eventType: text("event_type").notNull(),
+  payloadJson: jsonb("payload_json").notNull(),
+  dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
+  attempts: integer("attempts").notNull().default(sql.raw("0")),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+});
+
+export const packageItems = pgTable("package_items", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  projectId: uuid("project_id").notNull(),
+  packageId: uuid("package_id").notNull(),
+  documentVersionId: uuid("document_version_id").notNull(),
+  sectionKey: text("section_key").notNull(),
+  sortOrder: integer("sort_order").notNull(),
+  pageStart: integer("page_start"),
+  pageEnd: integer("page_end"),
+  included: boolean("included").notNull().default(sql.raw("true")),
+  exclusionReason: text("exclusion_reason"),
+});
+
+export const packageLayouts = pgTable("package_layouts", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  key: text("key").notNull(),
+  name: text("name").notNull(),
+  payloadJson: jsonb("payload_json").notNull(),
+  status: text("status").notNull().default(sql.raw("'ACTIVE'::text")),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+});
+
+export const packageRequirements = pgTable("package_requirements", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  projectId: uuid("project_id").notNull(),
+  packageId: uuid("package_id").notNull(),
+  requirementId: uuid("requirement_id").notNull(),
+  requirementKey: text("requirement_key").notNull(),
+  scopeKey: text("scope_key").notNull(),
+  title: text("title").notNull(),
+  docTypeKey: text("doc_type_key").notNull(),
+  mandatory: boolean("mandatory").notNull(),
+  statusAtGeneration: text("status_at_generation").notNull(),
+  dueAtAtGeneration: timestamp("due_at_at_generation", { withTimezone: true }),
+  assetTag: text("asset_tag"),
+  decision: text("decision"),
+  decidedBy: text("decided_by"),
+  decidedAt: timestamp("decided_at", { withTimezone: true }),
+  decisionMethod: text("decision_method"),
+});
+
+export const parties = pgTable("parties", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  name: text("name").notNull(),
+  types: text("types").array().notNull(),
+  gstin: text("gstin"),
+  email: citext("email"),
+  phone: text("phone"),
+  phoneE164: text("phone_e164"),
+  addressJson: jsonb("address_json").notNull().default(sql.raw("'{}'::jsonb")),
+  notes: text("notes"),
+  status: text("status").notNull().default(sql.raw("'ACTIVE'::text")),
+  rowVersion: integer("row_version").notNull().default(sql.raw("1")),
+  createdBy: uuid("created_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  deletedBy: uuid("deleted_by"),
+});
+
+export const partyContacts = pgTable("party_contacts", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  partyId: uuid("party_id").notNull(),
+  name: text("name").notNull(),
+  email: citext("email"),
+  phoneE164: text("phone_e164"),
+  designation: text("designation"),
+  isPrimary: boolean("is_primary").notNull().default(sql.raw("false")),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+});
+
+export const paymentEvents = pgTable("payment_events", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id"),
+  provider: text("provider").notNull().default(sql.raw("'RAZORPAY'::text")),
+  eventId: text("event_id").notNull(),
+  type: text("type").notNull(),
+  payloadJson: jsonb("payload_json").notNull(),
+  processedAt: timestamp("processed_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+});
+
+export const plans = pgTable("plans", {
+  id: uuid("id").notNull().primaryKey(),
+  code: text("code").notNull(),
+  name: text("name").notNull(),
+  limitsJson: jsonb("limits_json").notNull(),
+  pricePaise: bigint("price_paise", { mode: 'bigint' }).notNull(),
+  interval: text("interval").notNull(),
+  status: text("status").notNull().default(sql.raw("'ACTIVE'::text")),
+});
+
+export const procurementOrderLines = pgTable("procurement_order_lines", {
+  id: uuid("id").notNull().primaryKey().default(sql.raw("gen_random_uuid()")),
+  orgId: uuid("org_id").notNull(),
+  projectId: uuid("project_id").notNull(),
+  poId: uuid("po_id").notNull(),
+  lineNo: integer("line_no").notNull(),
+  assetCategoryKey: text("asset_category_key").notNull(),
+  description: text("description").notNull(),
+  quantity: integer("quantity").notNull().default(sql.raw("1")),
+  assetId: uuid("asset_id"),
+  make: text("make"),
+  model: text("model"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+});
+
+export const procurementOrders = pgTable("procurement_orders", {
+  id: uuid("id").notNull().primaryKey().default(sql.raw("gen_random_uuid()")),
+  orgId: uuid("org_id").notNull(),
+  projectId: uuid("project_id").notNull(),
+  poNumber: text("po_number").notNull(),
+  supplierPartyId: uuid("supplier_party_id").notNull(),
+  status: text("status").notNull().default(sql.raw("'ISSUED'::text")),
+  orderedAt: date("ordered_at").notNull().default(sql.raw("CURRENT_DATE")),
+  promisedDeliveryAt: date("promised_delivery_at"),
+  totalAmountPaise: bigint("total_amount_paise", { mode: 'bigint' }),
+  notes: text("notes"),
+  createdBy: uuid("created_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+});
+
+export const projectMembers = pgTable("project_members", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  projectId: uuid("project_id").notNull(),
+  userId: uuid("user_id").notNull(),
+  role: text("role").notNull(),
+  scopeJson: jsonb("scope_json").notNull().default(sql.raw("'{}'::jsonb")),
+  status: text("status").notNull().default(sql.raw("'ACTIVE'::text")),
+  addedBy: uuid("added_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+});
+
+export const projects = pgTable("projects", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  code: text("code").notNull(),
+  name: text("name").notNull(),
+  projectType: text("project_type").notNull().default(sql.raw("'PRIVATE_COMMERCIAL'::text")),
+  clientPartyId: uuid("client_party_id"),
+  mcPartyId: uuid("mc_party_id"),
+  consultantPartyId: uuid("consultant_party_id"),
+  siteJson: jsonb("site_json").notNull().default(sql.raw("'{}'::jsonb")),
+  startDate: date("start_date"),
+  targetHandoverDate: date("target_handover_date"),
+  currency: text("currency").notNull().default(sql.raw("'INR'::text")),
+  status: text("status").notNull().default(sql.raw("'DRAFT'::text")),
+  settingsJson: jsonb("settings_json").notNull().default(sql.raw("'{}'::jsonb")),
+  reopenCount: integer("reopen_count").notNull().default(sql.raw("0")),
+  closedAt: timestamp("closed_at", { withTimezone: true }),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+  purgedAt: timestamp("purged_at", { withTimezone: true }),
+  rowVersion: integer("row_version").notNull().default(sql.raw("1")),
+  createdBy: uuid("created_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+  contractValuePaise: bigint("contract_value_paise", { mode: 'bigint' }),
+  retentionBps: integer("retention_bps").notNull().default(sql.raw("500")),
+});
+
+export const requirementChangeRequests = pgTable("requirement_change_requests", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  projectId: uuid("project_id").notNull(),
+  requirementId: uuid("requirement_id"),
+  changeType: text("change_type"),
+  deltaJson: jsonb("delta_json").default(sql.raw("'{}'::jsonb")),
+  title: text("title"),
+  justification: text("justification"),
+  requestedBy: uuid("requested_by").notNull(),
+  reason: text("reason").notNull().default(sql.raw("'Change request submitted'::text")),
+  itemsJson: jsonb("items_json").notNull().default(sql.raw("'[]'::jsonb")),
+  impactJson: jsonb("impact_json").notNull().default(sql.raw("'{}'::jsonb")),
+  status: text("status").notNull().default(sql.raw("'DRAFT'::text")),
+  approvedBy: uuid("approved_by"),
+  decidedAt: timestamp("decided_at", { withTimezone: true }),
+  appliedSnapshotId: uuid("applied_snapshot_id"),
+  rowVersion: integer("row_version").notNull().default(sql.raw("1")),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+});
+
+export const requirementRevisions = pgTable("requirement_revisions", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  projectId: uuid("project_id").notNull(),
+  requirementId: uuid("requirement_id").notNull(),
+  snapshotId: uuid("snapshot_id").notNull(),
+  changeRequestId: uuid("change_request_id"),
+  fieldDiffJson: jsonb("field_diff_json").notNull(),
+  reason: text("reason").notNull(),
+  changedBy: uuid("changed_by").notNull(),
+  effectiveFrom: timestamp("effective_from", { withTimezone: true }).notNull().default(sql.raw("now()")),
+});
+
+export const requirements = pgTable("requirements", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  projectId: uuid("project_id").notNull(),
+  currentSnapshotId: uuid("current_snapshot_id").notNull(),
+  requirementKey: text("requirement_key").notNull(),
+  scopeKey: text("scope_key").notNull().default(sql.raw("'project'::text")),
+  assetId: uuid("asset_id"),
+  groupKey: text("group_key").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  docTypeKey: text("doc_type_key").notNull(),
+  milestoneKey: text("milestone_key").notNull().default(sql.raw("'HANDOVER'::text")),
+  mandatory: boolean("mandatory").notNull().default(sql.raw("true")),
+  ownerUserId: uuid("owner_user_id"),
+  ownerPartyId: uuid("owner_party_id"),
+  reviewerRole: text("reviewer_role").notNull().default(sql.raw("'R-QC'::text")),
+  dueAt: timestamp("due_at", { withTimezone: true }),
+  status: text("status").notNull().default(sql.raw("'NOT_STARTED'::text")),
+  validityRuleJson: jsonb("validity_rule_json").notNull().default(sql.raw("'{}'::jsonb")),
+  metadataJson: jsonb("metadata_json").notNull().default(sql.raw("'{}'::jsonb")),
+  supersededAt: timestamp("superseded_at", { withTimezone: true }),
+  rowVersion: integer("row_version").notNull().default(sql.raw("1")),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+});
+
+export const retentionPolicies = pgTable("retention_policies", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id"),
+  code: text("code").notNull(),
+  entityType: text("entity_type").notNull(),
+  retentionMonths: integer("retention_months").notNull().default(sql.raw("96")),
+  basis: text("basis").notNull().default(sql.raw("'PROJECT_CLOSURE'::text")),
+  status: text("status").notNull().default(sql.raw("'ACTIVE'::text")),
+});
+
+export const reviewComments = pgTable("review_comments", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  projectId: uuid("project_id").notNull(),
+  reviewId: uuid("review_id").notNull(),
+  pageNo: integer("page_no"),
+  body: text("body").notNull(),
+  visibility: text("visibility").notNull().default(sql.raw("'EXTERNAL'::text")),
+  createdBy: uuid("created_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+});
+
+export const reviews = pgTable("reviews", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  projectId: uuid("project_id").notNull(),
+  documentVersionId: uuid("document_version_id").notNull(),
+  stageKey: text("stage_key").notNull().default(sql.raw("'DEFAULT'::text")),
+  reviewerSubjectType: text("reviewer_subject_type").notNull(),
+  reviewerSubjectId: uuid("reviewer_subject_id").notNull(),
+  reviewerUserId: uuid("reviewer_user_id"),
+  reviewerPartyId: uuid("reviewer_party_id"),
+  method: text("method").notNull().default(sql.raw("'IN_APP'::text")),
+  externalMethod: text("external_method"),
+  externalApproverName: text("external_approver_name"),
+  externalReference: text("external_reference"),
+  evidenceObjectId: uuid("evidence_object_id"),
+  status: text("status").notNull().default(sql.raw("'PENDING'::text")),
+  decision: text("decision"),
+  comment: text("comment"),
+  dueAt: timestamp("due_at", { withTimezone: true }),
+  decidedAt: timestamp("decided_at", { withTimezone: true }),
+  onBehalfOfUserId: uuid("on_behalf_of_user_id"),
+  isOverride: boolean("is_override").notNull().default(sql.raw("false")),
+  rowVersion: integer("row_version").notNull().default(sql.raw("1")),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+  occurredAt: timestamp("occurred_at", { withTimezone: true }),
+  occurredAtPrecision: text("occurred_at_precision").notNull().default(sql.raw("'INSTANT'::text")),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+  backdatingReason: text("backdating_reason"),
+  externalApproverRole: text("external_approver_role"),
+  externalProofVersionId: uuid("external_proof_version_id"),
+});
+
+export const securityEvents = pgTable("security_events", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id"),
+  actorUserId: uuid("actor_user_id"),
+  eventType: text("event_type").notNull(),
+  detailJson: jsonb("detail_json").notNull().default(sql.raw("'{}'::jsonb")),
+  ip: inet("ip"),
+  userAgent: text("user_agent"),
+  requestId: text("request_id").notNull(),
+  certInReportable: boolean("cert_in_reportable").notNull().default(sql.raw("false")),
+  detectedAt: timestamp("detected_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+  reportDueAt: timestamp("report_due_at", { withTimezone: true }),
+  reportedToCertInAt: timestamp("reported_to_cert_in_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+});
+
+export const sessions = pgTable("sessions", {
+  id: uuid("id").notNull().primaryKey(),
+  userId: uuid("user_id").notNull(),
+  tokenHash: text("token_hash").notNull(),
+  csrfTokenHash: text("csrf_token_hash").notNull(),
+  activeOrgId: uuid("active_org_id"),
+  guestGrantId: uuid("guest_grant_id"),
+  mfaVerified: boolean("mfa_verified").notNull().default(sql.raw("false")),
+  ip: inet("ip"),
+  userAgent: text("user_agent"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+});
+
+export const specificationRefs = pgTable("specification_refs", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  projectId: uuid("project_id").notNull(),
+  contractId: uuid("contract_id"),
+  title: text("title").notNull(),
+  specNumber: text("spec_number"),
+  division: text("division"),
+  documentId: uuid("document_id"),
+  issuer: text("issuer"),
+  revision: text("revision"),
+  issueDate: date("issue_date"),
+  objectId: uuid("object_id"),
+  notes: text("notes"),
+  createdBy: uuid("created_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+});
+
+export const storageObjects = pgTable("storage_objects", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  provider: text("provider").notNull().default(sql.raw("'S3'::text")),
+  bucket: text("bucket").notNull(),
+  objectKey: text("object_key").notNull(),
+  s3UploadId: text("s3_upload_id"),
+  mime: text("mime").notNull(),
+  sizeBytes: bigint("size_bytes", { mode: 'bigint' }).notNull(),
+  sha256: text("sha256"),
+  status: text("status").notNull().default(sql.raw("'PENDING'::text")),
+  retentionClass: text("retention_class").notNull().default(sql.raw("'PROJECT_PLUS_8Y'::text")),
+  avScannedAt: timestamp("av_scanned_at", { withTimezone: true }),
+  createdBy: uuid("created_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+  expectedSha256: text("expected_sha256"),
+  originalFilename: text("original_filename").notNull().default(sql.raw("'document'::text")),
+  observedSizeBytes: bigint("observed_size_bytes", { mode: 'bigint' }),
+  providerVersionId: text("provider_version_id"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+});
+
+export const submissionEvents = pgTable("submission_events", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  projectId: uuid("project_id").notNull(),
+  submissionId: uuid("submission_id").notNull(),
+  eventType: text("event_type").notNull(),
+  payloadJson: jsonb("payload_json").notNull().default(sql.raw("'{}'::jsonb")),
+  actorId: uuid("actor_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+});
+
+export const submissionRecipients = pgTable("submission_recipients", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  projectId: uuid("project_id"),
+  submissionId: uuid("submission_id").notNull(),
+  partyId: uuid("party_id"),
+  recipientPartyId: uuid("recipient_party_id"),
+  recipientRole: text("recipient_role"),
+  role: text("role"),
+  name: text("name"),
+  email: text("email"),
+  isRequiredApprover: boolean("is_required_approver").notNull().default(sql.raw("true")),
+  status: text("status").notNull().default(sql.raw("'SENT'::text")),
+  decision: text("decision"),
+  remarks: text("remarks"),
+  decidedAt: timestamp("decided_at", { withTimezone: true }),
+});
+
+export const submissions = pgTable("submissions", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  projectId: uuid("project_id").notNull(),
+  packageId: uuid("package_id"),
+  method: text("method").notNull().default(sql.raw("'PORTAL'::text")),
+  reference: text("reference"),
+  status: text("status").notNull().default(sql.raw("'DRAFT'::text")),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+  acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
+  decidedAt: timestamp("decided_at", { withTimezone: true }),
+  submittedAt: timestamp("submitted_at", { withTimezone: true }),
+  submittedBy: uuid("submitted_by"),
+  coverNote: text("cover_note"),
+  notes: text("notes"),
+  rowVersion: integer("row_version").notNull().default(sql.raw("1")),
+  createdBy: uuid("created_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+});
+
+export const subscriptions = pgTable("subscriptions", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  planId: uuid("plan_id").notNull(),
+  status: text("status").notNull().default(sql.raw("'TRIAL'::text")),
+  provider: text("provider").notNull().default(sql.raw("'RAZORPAY'::text")),
+  providerRef: text("provider_ref"),
+  currentPeriodStart: timestamp("current_period_start", { withTimezone: true }).notNull(),
+  currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }).notNull(),
+  cancelAt: timestamp("cancel_at", { withTimezone: true }),
+  rowVersion: integer("row_version").notNull().default(sql.raw("1")),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+});
+
+export const supplierDocumentObligations = pgTable("supplier_document_obligations", {
+  id: uuid("id").notNull().primaryKey().default(sql.raw("gen_random_uuid()")),
+  orgId: uuid("org_id").notNull(),
+  projectId: uuid("project_id").notNull(),
+  poLineId: uuid("po_line_id").notNull(),
+  docTypeKey: text("doc_type_key").notNull(),
+  stageKey: text("stage_key").notNull().default(sql.raw("'FAT'::text")),
+  title: text("title").notNull(),
+  dueDate: date("due_date"),
+  supplierPartyId: uuid("supplier_party_id"),
+  status: text("status").notNull().default(sql.raw("'PENDING'::text")),
+  requirementId: uuid("requirement_id"),
+  documentVersionId: uuid("document_version_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+});
+
+export const templatePacks = pgTable("template_packs", {
+  id: uuid("id").notNull().primaryKey(),
+  trade: text("trade").notNull(),
+  code: text("code").notNull(),
+  name: text("name").notNull(),
+  version: integer("version").notNull(),
+  schemaVersion: integer("schema_version").notNull().default(sql.raw("1")),
+  payloadJson: jsonb("payload_json").notNull(),
+  status: text("status").notNull().default(sql.raw("'ACTIVE'::text")),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+});
+
+export const transmittalItems = pgTable("transmittal_items", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  projectId: uuid("project_id").notNull(),
+  transmittalId: uuid("transmittal_id").notNull(),
+  documentVersionId: uuid("document_version_id").notNull(),
+  sortOrder: integer("sort_order").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+});
+
+export const transmittals = pgTable("transmittals", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  projectId: uuid("project_id").notNull(),
+  transmittalNo: text("transmittal_no").notNull(),
+  status: text("status").notNull().default(sql.raw("'DRAFT'::text")),
+  notes: text("notes"),
+  createdBy: uuid("created_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+});
+
+export const usageCounters = pgTable("usage_counters", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  metric: text("metric").notNull(),
+  period: text("period").notNull().default(sql.raw("'ALL_TIME'::text")),
+  value: bigint("value", { mode: 'bigint' }).notNull().default(sql.raw("0")),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+});
+
+export const userIdentities = pgTable("user_identities", {
+  id: uuid("id").notNull().primaryKey(),
+  userId: uuid("user_id").notNull(),
+  type: text("type").notNull(),
+  value: citext("value").notNull(),
+  verifiedAt: timestamp("verified_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+});
+
+export const users = pgTable("users", {
+  id: uuid("id").notNull().primaryKey(),
+  name: text("name").notNull(),
+  emailDisplay: citext("email_display"),
+  phoneDisplay: text("phone_display"),
+  locale: text("locale").notNull().default(sql.raw("'en'::text")),
+  mfaTotpSecret: text("mfa_totp_secret"),
+  mfaEnabledAt: timestamp("mfa_enabled_at", { withTimezone: true }),
+  status: text("status").notNull().default(sql.raw("'ACTIVE'::text")),
+  lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+  rowVersion: integer("row_version").notNull().default(sql.raw("1")),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+  mfaTotpLastStep: bigint("mfa_totp_last_step", { mode: 'bigint' }).notNull().default(sql.raw("'-1'::integer")),
+});
+
+export const variations = pgTable("variations", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  projectId: uuid("project_id").notNull(),
+  contractId: uuid("contract_id").notNull(),
+  reference: text("reference").default(sql.raw("''::text")),
+  variationRef: text("variation_ref"),
+  title: text("title"),
+  description: text("description").default(sql.raw("''::text")),
+  costDeltaPaise: bigint("cost_delta_paise", { mode: 'bigint' }).notNull().default(sql.raw("0")),
+  valuePaiseDelta: bigint("value_paise_delta", { mode: 'bigint' }).notNull().default(sql.raw("0")),
+  timeDaysDelta: integer("time_days_delta").notNull().default(sql.raw("0")),
+  scopeDeltaJson: jsonb("scope_delta_json").notNull().default(sql.raw("'{}'::jsonb")),
+  status: text("status").notNull().default(sql.raw("'DRAFT'::text")),
+  requestedBy: uuid("requested_by"),
+  createdBy: uuid("created_by"),
+  approvedBy: uuid("approved_by"),
+  approvedAt: timestamp("approved_at", { withTimezone: true }),
+  changeRequestId: uuid("change_request_id"),
+  rowVersion: integer("row_version").notNull().default(sql.raw("1")),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+});
+
+export const waivers = pgTable("waivers", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  projectId: uuid("project_id").notNull(),
+  requirementId: uuid("requirement_id").notNull(),
+  type: text("type").notNull(),
+  isMandatoryItem: boolean("is_mandatory_item").notNull().default(sql.raw("true")),
+  reason: text("reason").notNull(),
+  evidenceObjectId: uuid("evidence_object_id"),
+  requestedBy: uuid("requested_by").notNull(),
+  approvedBy: uuid("approved_by").notNull(),
+  secondApprovedBy: uuid("second_approved_by"),
+  approvedAt: timestamp("approved_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+  secondApprovedAt: timestamp("second_approved_at", { withTimezone: true }),
+  status: text("status").notNull().default(sql.raw("'ACTIVE'::text")),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+});
+
+export const warrantyEvents = pgTable("warranty_events", {
+  id: uuid("id").notNull().primaryKey(),
+  orgId: uuid("org_id").notNull(),
+  projectId: uuid("project_id").notNull(),
+  assetId: uuid("asset_id").notNull(),
+  eventType: text("event_type").notNull(),
+  oemReference: text("oem_reference").notNull(),
+  registeredAt: date("registered_at").notNull(),
+  warrantyStart: date("warranty_start").notNull(),
+  warrantyEnd: date("warranty_end").notNull(),
+  basis: text("basis").notNull(),
+  status: text("status").notNull().default(sql.raw("'RECORDED'::text")),
+  evidenceObjectId: uuid("evidence_object_id"),
+  notes: text("notes"),
+  rowVersion: integer("row_version").notNull().default(sql.raw("1")),
+  createdBy: uuid("created_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+  occurredAt: timestamp("occurred_at", { withTimezone: true }),
+  occurredAtPrecision: text("occurred_at_precision").notNull().default(sql.raw("'DATE'::text")),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().default(sql.raw("now()")),
+  backdatingReason: text("backdating_reason"),
 });

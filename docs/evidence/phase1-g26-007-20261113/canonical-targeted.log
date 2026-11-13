@@ -1,0 +1,67 @@
+TAP version 13
+# Subtest: PH1-G26-007: canonical tenant acceptance on fresh PostgreSQL 16
+    # Subtest: both legacy spellings, equal UUID values, absent and malformed context
+    ok 1 - both legacy spellings, equal UUID values, absent and malformed context
+      ---
+      duration_ms: 14.594675
+      type: 'test'
+      ...
+    # Subtest: catalogue proof and real restricted SELECT/UPDATE/DELETE on EVERY tenant table and partition
+    ok 2 - catalogue proof and real restricted SELECT/UPDATE/DELETE on EVERY tenant table and partition
+      ---
+      duration_ms: 889.511415
+      type: 'test'
+      ...
+    # Subtest: self memberships discovered across orgs; writes require the active tenant
+    ok 3 - self memberships discovered across orgs; writes require the active tenant
+      ---
+      duration_ms: 4.757965
+      type: 'test'
+      ...
+    # Subtest: guest bootstrap remains read-only, active and unexpired; invitations stay tenant-scoped
+    ok 4 - guest bootstrap remains read-only, active and unexpired; invitations stay tenant-scoped
+      ---
+      duration_ms: 13.936209
+      type: 'test'
+      ...
+    # Subtest: real WITH CHECK on valid inserts and tenant transfers; shared catalogue stays immutable globally
+    ok 5 - real WITH CHECK on valid inserts and tenant transfers; shared catalogue stays immutable globally
+      ---
+      duration_ms: 9.978161
+      type: 'test'
+      ...
+    # Subtest: all custom SECURITY DEFINER functions and future partition provisioner preserve their boundaries
+    ok 6 - all custom SECURITY DEFINER functions and future partition provisioner preserve their boundaries
+      ---
+      duration_ms: 34.283921
+      type: 'test'
+      ...
+    # Subtest: real single-connection pool clears transaction context after commit, rollback and a SQL error
+    ok 7 - real single-connection pool clears transaction context after commit, rollback and a SQL error
+      ---
+      duration_ms: 19.096389
+      type: 'test'
+      ...
+    1..7
+ok 1 - PH1-G26-007: canonical tenant acceptance on fresh PostgreSQL 16
+  ---
+  duration_ms: 2420.601832
+  type: 'test'
+  ...
+# Inventoried and executed 15 restricted operations on each of 77 actual tenant relations: admin_audit_events, approval_overrides, archive_exports, asset_categories, asset_identity_revisions, assets, audit_chain_positions, audit_events, audit_events_2026_10, audit_events_2026_11, audit_events_2026_12, audit_events_default, bulk_import_jobs, checklist_snapshots, client_profiles, config_versions, contracts, credit_notes, defects, deletion_requests, digital_signatures, document_assets, document_contracts, document_events, document_requirements, document_versions, documents, evidence_companion_rules, evidence_revalidations, guest_grants, handover_packages, idempotency_keys, invitations, invoice_lines, invoice_tds, invoices, job_executions, legal_holds, memberships, notification_preferences, notification_templates, notifications, org_profiles, outbox_events, package_items, package_layouts, package_requirements, parties, party_contacts, payment_events, procurement_order_lines, procurement_orders, project_members, projects, quality_inspections, requirement_change_requests, requirement_revisions, requirements, retention_policies, review_comments, reviews, seasonal_commissioning_schedules, security_events, specification_refs, storage_objects, submission_events, submission_recipients, submissions, subscriptions, supplier_document_obligations, tab_worksheets, transmittal_items, transmittals, usage_counters, variations, waivers, warranty_events
+# Subtest: PH1-G26-007: reproduce both defects before a real populated 0045→0046 upgrade, preserving original ledger
+ok 2 - PH1-G26-007: reproduce both defects before a real populated 0045→0046 upgrade, preserving original ledger
+  ---
+  duration_ms: 1415.019486
+  type: 'test'
+  ...
+# REPRODUCED on original 0045: conflicting aliases exposed 2 projects; user-only context deleted 2 own cross-org memberships (rolled back).
+1..2
+# tests 9
+# suites 0
+# pass 9
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 4070.917371

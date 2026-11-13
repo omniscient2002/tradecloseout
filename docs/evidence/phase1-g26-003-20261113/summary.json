@@ -1,0 +1,70 @@
+{
+  "sourceCommit": "39369323f8970320838eea246d61d6c6aa239ae7",
+  "baselineCommit": "b221170f3853b8994e0638f0509183db0f091c10",
+  "runtime": "Node 22.23.5 / pnpm 12.4.1 / task-owned PG16 + Redis7 / tc_app without SUPERUSER or BYPASSRLS",
+  "results": {
+    "tables": 72,
+    "columns": 925,
+    "runtimeQueries": 70,
+    "denied": [
+      "transmittal_items",
+      "transmittals"
+    ]
+  },
+  "upgradedResults": {
+    "tables": 72,
+    "columns": 925,
+    "runtimeQueries": 70,
+    "denied": [
+      "transmittal_items",
+      "transmittals"
+    ]
+  },
+  "sqlOnlyTables": {
+    "audit_chain_positions": "Protected registry; runtime has only the tenant-checked function.",
+    "audit_events": "Partitioned append-only ledger written through the trusted audit transaction.",
+    "billing_tax_configs": "Raw-SQL billing configuration, no ORM consumer.",
+    "bulk_import_jobs": "Raw-SQL staged import workflow, no ORM consumer.",
+    "digital_signatures": "Disabled signing integration; no ORM consumer.",
+    "invoice_sequences": "Raw-SQL serialized invoice numbering.",
+    "mfa_attempt_budgets": "Dedicated committed attempt-budget transactions.",
+    "mfa_enrollment_proposals": "Dedicated session-generation-bound enrollment store.",
+    "mfa_recovery_codes": "Dedicated one-use recovery store.",
+    "otp_challenges": "Dedicated identity challenge store.",
+    "quality_inspections": "Raw-SQL inspection workflow, no ORM consumer.",
+    "schema_migrations": "Migration administrator ledger; never an application ORM model.",
+    "seasonal_commissioning_schedules": "Raw-SQL aftercare workflow, no ORM consumer.",
+    "tab_worksheets": "Raw-SQL TAB worksheet workflow, no ORM consumer."
+  },
+  "catalogCounts": {
+    "columns": 1065,
+    "relations": 91,
+    "constraints": 532,
+    "indexes": 175,
+    "policies": 163,
+    "grants": 965,
+    "triggers": 21,
+    "functions": 8,
+    "functionGrants": 14,
+    "schemaGrants": 6,
+    "defaultPrivileges": 2
+  },
+  "uncompressedCatalogSha256": "8a1ae727c9ef4eb91805aeda56e9e360d7b3cd113243f4d24dcaf5dbc4ccfb7e",
+  "verification": {
+    "typecheck": "PASS",
+    "strictTestAndGeneratorTypecheck": "PASS",
+    "build": "PASS",
+    "migrations": "PASS",
+    "ormAcceptance": "4 PASS",
+    "generatorCheck": "PASS",
+    "workspace": "430 API / 57 DB / 56 worker / 44 shared / 6 archive browser + PDF PASS",
+    "security": "15 PASS",
+    "rbac": "8 PASS"
+  },
+  "limitations": [
+    "Independent per-ID acceptance pending",
+    "No full authenticated application browser journey",
+    "No live provider acceptance or production deployment",
+    "No schema/permission/migration changes"
+  ]
+}

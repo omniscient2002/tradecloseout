@@ -1,0 +1,23 @@
+{
+  "packages/db/src/schema.ts": "6598bfe8282dad58dc22cb2917045377e51022940258bfeb189b98507815e9b0",
+  "packages/db/scripts/generate-orm.ts": "2b83fdcecd54b02eb951262f94a5a46cfdf26428aad2dcd57810eacf2be9b059",
+  "packages/db/test/helpers/schema-catalog.ts": "fa999373e19cfe5cbbdf9bd54a372266ca370877903bf18f5962fcb2ed74e29b",
+  "packages/db/test/phase1-orm-contract.spec.ts": "3af725829cf8402374ce177a19626854a59bbc857d699bbb65123c5b0021c480",
+  "docs/evidence/phase1-g26-003-20261113/README.md": "0b8bebc82fecde50b561e3b389821909930548a81e65a0609901e1045b859991",
+  "docs/evidence/phase1-g26-003-20261113/baseline-reproduction.json": "0c3a7deebcee630b42d54db50849bf32dee7b67b44a06b3d591cb78748071be2",
+  "docs/evidence/phase1-g26-003-20261113/build.log": "d974821e603d189caf045d8f6cb1bd1bbf14a0a2a518a121e4a2e08298dd4005",
+  "docs/evidence/phase1-g26-003-20261113/catalog.json.gz": "3c34717aa10829dfe2624d3809ba0bbc7bc0ed3751bf97015f77fccc0b3636a6",
+  "docs/evidence/phase1-g26-003-20261113/generator-check.log": "10bdaf03dab085ecd7cd9883775d7986f97a287133e0ece3f0b28bc999faa3bd",
+  "docs/evidence/phase1-g26-003-20261113/initial-fixture-failures.log": "1341935b44355961218df3bc4a867e18548cf14e62daf9291564343618de6479",
+  "docs/evidence/phase1-g26-003-20261113/initial-fixture-type-errors.log": "93147e0a6bf099ccf03ca19fe54ca52eaf608c3d0f87268425b280589f207fd5",
+  "docs/evidence/phase1-g26-003-20261113/install.log": "1bc2a0a3de005dee31cefeb3388fb4c3d380dd244539c233b993efe6a119754c",
+  "docs/evidence/phase1-g26-003-20261113/migrations.log": "7f3ce8187f023c4d806e9cb5037e10b5968f7b684691caecb857876a8fe933fb",
+  "docs/evidence/phase1-g26-003-20261113/orm-acceptance.log": "90282fd039556086aa26d531122a04be9d12502db4159e430c0f81ad8f7cac2a",
+  "docs/evidence/phase1-g26-003-20261113/rbac.log": "6cd716c816154276ca762ff9bcc9038d766aba3e6d887eccb7729d7002e94c39",
+  "docs/evidence/phase1-g26-003-20261113/second-fixture-failures.log": "c3c565213a6eaf38436109a34ae38db0cc393e65fc94e7f6db4758fa915ba4ab",
+  "docs/evidence/phase1-g26-003-20261113/security.log": "a0fe690f7586a36a75aaaa3ff42cdeb946203c7eb395065a1f145ac963c0f0bd",
+  "docs/evidence/phase1-g26-003-20261113/summary.json": "5329b7dd4737f8eac309c665c709c9cc0e505bec75bbe9f2b18c246f7fb28884",
+  "docs/evidence/phase1-g26-003-20261113/test-types-strict.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "docs/evidence/phase1-g26-003-20261113/typecheck.log": "8935e75360eaccba7ec1fee2d68b076e23856327a92e0b3f4f7ff0f2147b6b54",
+  "docs/evidence/phase1-g26-003-20261113/workspace.log": "5043c6f794f9a60dd131e5e14e2f9d9a1cbd5c26d972123c9c9cce31d0a45938"
+}

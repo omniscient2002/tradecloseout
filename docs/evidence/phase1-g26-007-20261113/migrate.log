@@ -1,0 +1,33 @@
+$ pnpm --filter @tradecloseout/db migrate
+$ tsx ./src/run-migrations.ts
+Applying PostgreSQL migrations from /tmp/tco-g26-007-closure/packages/db/migrations...
+  - Migration already applied: 0000_complete_v021_schema_and_rls.sql (skipped)
+  - Migration already applied: 0001_rls_and_constraints.sql (skipped)
+  - Migration already applied: 0002_create_missing_tables.sql (skipped)
+  - Migration already applied: 0003_v021_redteam_patches.sql (skipped)
+  - Migration already applied: 0004_perfect_10_hardening.sql (skipped)
+  - Migration already applied: 0005_add_project_contract_columns.sql (skipped)
+  - Migration already applied: 0006_discovery_and_lifecycle_foundations.sql (skipped)
+  - Migration already applied: 0007_procurement_and_vendor_obligations.sql (skipped)
+  - Migration already applied: 0008_external_review_authority.sql (skipped)
+  - Migration already applied: 0009_storage_object_verification.sql (skipped)
+  - Migration already applied: 0010_transmittal_records.sql (skipped)
+  - Migration already applied: 0011_guest_grant_token_lookup.sql (skipped)
+  - Migration already applied: 0012_external_review_proof_version.sql (skipped)
+  - Migration already applied: 0013_reconcile_tenant_policies_and_composite_constraints.sql (skipped)
+  - Migration already applied: 0014_protect_remaining_tenant_tables.sql (skipped)
+  - Migration already applied: 0015_document_versions_updated_at.sql (skipped)
+  - Migration already applied: 0016_canonical_tenant_alias_validation.sql (skipped)
+  - Migration already applied: 0017_hvac_commissioning_tab_and_inspections.sql (skipped)
+  - Migration already applied: 0018_revalidation_concurrency_and_commissioning_composite_fks.sql (skipped)
+  - Migration already applied: 0019_defect_remedy_lifecycle.sql (skipped)
+  - Migration already applied: 0020_project_type_domain_alignment.sql (skipped)
+  - Migration already applied: 0021_phase1_audit_partition_boundary.sql (skipped)
+  - Migration already applied: 0022_phase1_audit_sequence_trusted_order.sql (skipped)
+  - Migration already applied: 0041_phase1_mfa_enrollment_proposals.sql (skipped)
+  - Migration already applied: 0042_phase1_mfa_attempt_budgets.sql (skipped)
+  - Migration already applied: 0043_phase1_future_audit_partition_provision.sql (skipped)
+  - Migration already applied: 0044_phase1_audit_chain_position_registry.sql (skipped)
+  - Migration already applied: 0045_phase1_audit_legacy_chain_rls_backfill.sql (skipped)
+  ✓ Applied migration: 0046_phase1_canonical_tenant_boundary.sql
+✓ All migrations applied successfully.
