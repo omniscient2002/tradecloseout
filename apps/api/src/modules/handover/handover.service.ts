@@ -1,3 +1,4 @@
+import {requirementQualificationSql} from '@tradecloseout/db';
 import {resolveEffectiveEntitlements} from '@tradecloseout/db/entitlements';
 import {
   ConflictException,
@@ -114,7 +115,7 @@ export class HandoverService {
               AND d.doc_type_key = r.doc_type_key
                 JOIN document_versions dv
                   ON dv.org_id = d.org_id AND dv.project_id = d.project_id
-                 AND dv.document_id = d.id AND dv.id = d.current_approved_version_id
+                 AND dv.document_id = d.id AND dv.id = d.current_approved_version_id AND ${requirementQualificationSql('r','dv')}
                  AND dv.deleted_at IS NULL AND dv.superseded_at IS NULL
                  AND dv.review_status = 'APPROVED' AND dv.file_status = 'READY'
                  AND (dv.expiry_date IS NULL OR dv.expiry_date >= CURRENT_DATE)
@@ -124,7 +125,7 @@ export class HandoverService {
                  AND so.observed_size_bytes = so.size_bytes
                  AND so.provider_version_id IS NOT NULL
                WHERE dr.org_id = r.org_id AND dr.project_id = r.project_id
-                 AND dr.requirement_id = r.id
+                 AND dr.requirement_id = r.id AND ${requirementQualificationSql('r','dv')}
                  AND NOT EXISTS (
                    SELECT 1 FROM evidence_revalidations er
                     WHERE er.org_id = dv.org_id AND er.project_id = dv.project_id
@@ -216,7 +217,7 @@ export class HandoverService {
               AND d.doc_type_key = r.doc_type_key
              JOIN document_versions dv
                ON dv.org_id = d.org_id AND dv.project_id = d.project_id
-              AND dv.document_id = d.id AND dv.id = d.current_approved_version_id
+              AND dv.document_id = d.id AND dv.id = d.current_approved_version_id AND ${requirementQualificationSql('r','dv')}
               AND dv.deleted_at IS NULL AND dv.superseded_at IS NULL
               AND dv.review_status = 'APPROVED' AND dv.file_status = 'READY'
              JOIN storage_objects so
@@ -225,7 +226,7 @@ export class HandoverService {
               AND so.observed_size_bytes = so.size_bytes
               AND so.provider_version_id IS NOT NULL
              WHERE dr.org_id = r.org_id AND dr.project_id = r.project_id
-               AND dr.requirement_id = r.id
+               AND dr.requirement_id = r.id AND ${requirementQualificationSql('r','dv')}
                AND NOT EXISTS (
                  SELECT 1 FROM evidence_revalidations er
                   WHERE er.org_id = dv.org_id AND er.project_id = dv.project_id
@@ -633,7 +634,7 @@ export class HandoverService {
               AND d.doc_type_key = r.doc_type_key
            JOIN document_versions dv
              ON dv.org_id = d.org_id AND dv.project_id = d.project_id
-            AND dv.document_id = d.id AND dv.id = d.current_approved_version_id
+            AND dv.document_id = d.id AND dv.id = d.current_approved_version_id AND ${requirementQualificationSql('r','dv')}
             AND dv.deleted_at IS NULL AND dv.superseded_at IS NULL
            JOIN storage_objects so
              ON so.org_id = dv.org_id AND so.id = dv.object_id

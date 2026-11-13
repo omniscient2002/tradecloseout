@@ -106,7 +106,8 @@ describe('review authority and expiry', () => {
       externalApproverName: 'Reviewer', externalApproverRole: 'Consultant', externalReference: 'R-1',
       decidedAt: '2026-01-01', proofVersionId: 'proof-1',
     }, 1)).rejects.toMatchObject({ status: 412 });
-    expect(query).toHaveBeenCalledTimes(1);
+    expect(query.mock.calls[0][0]).toContain('SELECT project_id FROM document_versions');
+    expect(query.mock.calls.some(([sql]) => /INSERT|UPDATE document_versions/.test(sql))).toBe(false);
   });
 
   it('rejects unknown authority-bearing fields in the external response DTO', async () => {

@@ -31,12 +31,15 @@ import { ExternalApprovalDto } from './dto/external-approval.dto';
 export class ReviewsController {
   constructor(private readonly reviewsService: ReviewsService) {}
 
+  @Get('requirements/:id/reviewers') @RequirePermission('document.upload')
+  reviewers(@Req()req:any,@Param('id')id:string,@Query('documentVersionId')versionId:string){return this.reviewsService.listReviewCandidates(req.userContext,id,versionId);}
+
   @Post('requirements/:id/submit-review')
   @RequirePermission('document.upload')
   async submitReview(
     @Req() req: any,
     @Param('id') id: string,
-    @Body() dto: { documentVersionId: string; remarks?: string },
+    @Body() dto: { documentVersionId: string; remarks?: string;reviewerUserId?:string },
   ) {
     return this.reviewsService.submitReview(req.userContext, id, dto);
   }
@@ -59,6 +62,7 @@ export class ReviewsController {
 
   @Post('reviews/:id/decisions')
   @RequirePermission('review.decide')
+  @RequireIdempotency()
   async decideReview(
     @Req() req: any,
     @Param('id') id: string,

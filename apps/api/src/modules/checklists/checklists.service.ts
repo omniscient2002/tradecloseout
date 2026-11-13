@@ -1,3 +1,4 @@
+import {configPayloadChecksum} from '../configuration/configuration-identity';
 // apps/api/src/modules/checklists/checklists.service.ts
 // Checklists, Snapshots, Two-Approver Waivers & Controlled Changes Service (API-050..066, WF-06, WF-20, FR-CHK-004..016, AUD-002, AUD-008)
 
@@ -37,9 +38,18 @@ export interface ResolvedRequirementSpec {
   assetId?: string;
   reviewerRole?: string;
   dueOffsetDays?: number;
+  dueDate?:string;
   validityRule?: Record<string, unknown>;
 }
 
+function obligationDefinition(spec:Record<string,any>,reviewerRole:string):Record<string,unknown>{
+  const clean=(value:any):any=>Array.isArray(value)?value.map(clean):value&&typeof value==='object'?
+    Object.fromEntries(Object.entries(value).filter(([key])=>key!=='provenanceLevel').map(([key,value])=>[key,clean(value)])):value;
+  return clean({...spec,reviewerRole,validityRule:spec.validityRule??{}});
+}
+function validDueDate(value:unknown):value is string{
+  return typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(Date.parse(value))&&new Date(value).toISOString().slice(0,10)===value;
+}
 /**
  * PH2-G06-001/006: the configuration resolver sees each requested layer,
  * not the previously accepted project snapshot. A new single-layer import
@@ -47,7 +57,7 @@ export interface ResolvedRequirementSpec {
  * Compare immutable obligation semantics (not volatile provenance metadata)
  * before the active snapshot is superseded.
  */
-export function assertLockedChecklistBaselineInvariant(previous: unknown, proposed: unknown): void {
+export function assertLockedChecklistBaselineInvariant(previous: unknown, proposed: unknown, reviewedMandatoryChange=false): void {
   if (previous == null) return;
   let oldPayload: Record<string, unknown>;
   try {
@@ -87,7 +97,7 @@ export function assertLockedChecklistBaselineInvariant(previous: unknown, propos
     if (!item || typeof item !== 'object' || Array.isArray(item)) {
       throw new ConflictException({ code: 'ACTIVE_CHECKLIST_SNAPSHOT_INVALID' });
     }
-    if (item.locked !== true && item.mandatory !== true) continue;
+    if (item.locked !== true && (item.mandatory !== true||reviewedMandatoryChange)) continue;
     if (typeof item.key !== 'string' || !item.key.trim() ||
         !nextByKey.has(item.key) ||
         JSON.stringify(canonical(item)) !== JSON.stringify(canonical(nextByKey.get(item.key)))) {
@@ -102,6 +112,46 @@ export function assertLockedChecklistBaselineInvariant(previous: unknown, propos
 @Injectable()
 export class ChecklistsService {
   constructor(private readonly pool: Pool) {}
+
+  private async persistProjectInput(client:PoolClient,ctx:TenantActorContext,projectId:string,payload:Record<string,unknown>,kind:'CONSULTANT_IMPORT'|'MANUAL_REQUIREMENT'|'CHANGE_PROPOSAL',reason:string):Promise<ConfigLayerInput>{
+    const id=uuidv7();await client.query(`INSERT INTO project_configuration_inputs(id,org_id,project_id,source_kind,payload_json,checksum,created_by,reason)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,[id,ctx.orgId,projectId,kind,JSON.stringify(payload),configPayloadChecksum(payload),ctx.userId,reason]);
+    return {level:'PROJECT',versionId:id,schemaVersion:'v1.0',payload};
+  }
+  private async assertPersistedLayers(client:PoolClient,ctx:TenantActorContext,projectId:string,layers:ConfigLayerInput[]){
+    const manifest:Array<{level:string;versionId:string;schemaVersion:number;checksum:string;sourceKind:string}>=[];
+    for(const layer of layers){
+      requireProjectCommandId(layer.versionId,'CONFIGURATION_SOURCE_ID_INVALID');
+      const {rows:versions}=await client.query(`SELECT * FROM config_versions WHERE id=$2 AND (org_id=$1 OR org_id IS NULL AND level='PLATFORM') FOR SHARE`,[ctx.orgId,layer.versionId]);
+      if(versions[0]){
+        const version=versions[0];
+        if(version.level!==layer.level||version.status!=='ACTIVE'||version.schema_version!==1||!version.published_at||
+          configPayloadChecksum(version.payload_json)!==version.checksum||configPayloadChecksum(layer.payload)!==version.checksum)
+          throw new ConflictException('CONFIGURATION_SOURCE_STALE_OR_MISMATCHED');
+        if(version.level==='ORG'&&version.scope_id!==ctx.orgId||version.level==='PROJECT'&&version.scope_id!==projectId||!['PLATFORM','ORG','CLIENT_CONTRACT','PROJECT'].includes(version.level))
+          throw new ConflictException('CONFIGURATION_SOURCE_SCOPE_MISMATCH');
+        if(version.level==='CLIENT_CONTRACT'&&!(await client.query("SELECT id FROM contracts WHERE org_id=$1 AND project_id=$2 AND id=$3 AND status='ACTIVE' FOR SHARE",[ctx.orgId,projectId,version.scope_id])).rows.length)
+          throw new ConflictException('CONFIGURATION_SOURCE_SCOPE_MISMATCH');
+        manifest.push({level:layer.level,versionId:layer.versionId,schemaVersion:1,checksum:version.checksum,sourceKind:'CONFIGURATION_VERSION'});continue;
+      }
+      if(layer.level!=='PROJECT')throw new ConflictException('PERSISTED_CONFIGURATION_SOURCE_REQUIRED');
+      // These inputs are append-only; acquiring UPDATE privilege merely to read-lock them is unnecessary.
+      const {rows:inputs}=await client.query('SELECT * FROM project_configuration_inputs WHERE org_id=$1 AND project_id=$2 AND id=$3',[ctx.orgId,projectId,layer.versionId]);
+      if(inputs[0]){
+        const input=inputs[0];if(input.schema_version!==1||configPayloadChecksum(input.payload_json)!==input.checksum||configPayloadChecksum(layer.payload)!==input.checksum)
+          throw new ConflictException('CONFIGURATION_SOURCE_STALE_OR_MISMATCHED');
+        manifest.push({level:layer.level,versionId:layer.versionId,schemaVersion:1,checksum:input.checksum,sourceKind:input.source_kind});continue;
+      }
+      const {rows:packs}=await client.query('SELECT * FROM lock_reviewed_hvac_template_pack($1,$2)',[layer.versionId,projectId]);
+      if(!packs.length||configPayloadChecksum(packs[0].payload_json)!==configPayloadChecksum(layer.payload))throw new ConflictException('PERSISTED_CONFIGURATION_SOURCE_REQUIRED');
+      manifest.push({level:layer.level,versionId:layer.versionId,schemaVersion:1,checksum:configPayloadChecksum(layer.payload),sourceKind:'REVIEWED_HVAC_PACK'});
+    }
+    return manifest;
+  }
+  private assertLegacyRequirementOnlyPayload(payload:Record<string,unknown>|undefined){
+    if(payload&&Object.keys(payload).some(key=>!['requirements','checklist.requirements'].includes(key)))
+      throw new ConflictException('USE_PERSISTED_CONFIGURATION_CHANGE_WORKFLOW');
+  }
 
   private async assertBaselineAuthority(client:PoolClient,ctx:TenantActorContext,projectId:string){
     if(ctx.guestGrantId||!['MEMBER','USER','ADMIN'].includes(ctx.actorType))throw new ForbiddenException('BASELINE_AUTHORITY_REQUIRED');
@@ -175,7 +225,7 @@ export class ChecklistsService {
     }
     const seenKeys = new Set<string>();
     for (const spec of reqSpecs) {
-      if (!spec.key?.trim() || !spec.title?.trim() || !spec.docTypeKey?.trim() ||
+      if (typeof spec.key!=='string'||!spec.key.trim()||typeof spec.title!=='string'||!spec.title.trim()||typeof spec.docTypeKey!=='string'||!spec.docTypeKey.trim()||typeof spec.groupKey!=='string'||!spec.groupKey.trim()||typeof spec.mandatory!=='boolean'||
           !['PROJECT', 'ASSET_CATEGORY', 'ASSET'].includes(spec.scopeType) ||
           (spec.scopeType === 'ASSET_CATEGORY' && !spec.assetCategoryKey) ||
           (spec.scopeType === 'ASSET' && !spec.assetId)) {
@@ -184,6 +234,7 @@ export class ChecklistsService {
           detail: 'Requirements need a key, title, document type, and an explicit valid scope.',
         });
       }
+      if(spec.dueDate!==undefined&&!validDueDate(spec.dueDate)||spec.dueOffsetDays!==undefined&&(!Number.isSafeInteger(spec.dueOffsetDays)||Math.abs(spec.dueOffsetDays)>36500)||spec.dueDate!==undefined&&spec.dueOffsetDays!==undefined)throw new UnprocessableEntityException('INVALID_REQUIREMENT_DUE_BASIS');
       if (seenKeys.has(spec.key)) {
         throw new UnprocessableEntityException({
           code: 'DUPLICATE_CHECKLIST_KEY',
@@ -206,12 +257,13 @@ export class ChecklistsService {
           FOR UPDATE`,
         [ctx.orgId, projectId],
       );
-      assertLockedChecklistBaselineInvariant(priorSnaps[0]?.resolved_payload_json, resolved.payload);
+      if(!changeRequestId)assertLockedChecklistBaselineInvariant(priorSnaps[0]?.resolved_payload_json, resolved.payload);
       const {rows:[lifecycle]}=await client.query('SELECT status FROM projects WHERE org_id=$1 AND id=$2',[ctx.orgId,projectId]);
       const prior=priorSnaps[0];
+      const sourceManifest=await this.assertPersistedLayers(client,ctx,projectId,layers);
       if(prior?.checksum===resolved.checksum)return {snapshotId:prior.id,versionNo:prior.version_no,checksum:prior.checksum,
         instantiatedRequirements:0,unchanged:true};
-      if(lifecycle.status!=='DRAFT'){
+      if(lifecycle.status!=='DRAFT'||changeRequestId){
         if(!changeRequestId)throw new ConflictException({code:'APPROVED_BASELINE_CHANGE_REQUIRED',baselineSnapshotId:prior?.id??null});
         const {rows:requests}=await client.query(`SELECT * FROM requirement_change_requests WHERE org_id=$1 AND project_id=$2 AND id=$3 FOR UPDATE`,[ctx.orgId,projectId,changeRequestId]);
         const approval=requests[0];
@@ -220,6 +272,8 @@ export class ChecklistsService {
           throw new ConflictException({code:'BASELINE_APPROVAL_STALE_OR_MISMATCHED'});
       }
 
+      assertLockedChecklistBaselineInvariant(prior?.resolved_payload_json,resolved.payload,!!changeRequestId);
+      const previousSpecs=new Map<string,any>((prior?.resolved_payload_json?.requirements??[]).map((spec:any)=>[spec.key,spec]));
       const nextVersionNo = (priorSnaps[0]?.version_no ?? 0) + 1;
       if (priorSnaps.length > 0) {
         await client.query(
@@ -243,7 +297,7 @@ export class ChecklistsService {
           nextVersionNo,
           JSON.stringify(resolved.payload),
           JSON.stringify(resolved.provenance),
-          JSON.stringify(layers.map((l) => ({ level: l.level, versionId: l.versionId }))),
+          JSON.stringify(sourceManifest),
           resolved.checksum,
           ctx.userId,
         ],
@@ -307,7 +361,7 @@ export class ChecklistsService {
       // Reconcile against persistent requirements table + write requirement_revisions (07 §6.3, 08 §5.4)
       for (const inst of targetInstances) {
         const { rows: existingRows } = await client.query(
-          `SELECT id, title, doc_type_key, mandatory, reviewer_role
+          `SELECT id,title,description,group_key,doc_type_key,mandatory,reviewer_role,due_at,validity_rule_json,obligation_definition_json
              FROM requirements
             WHERE org_id = $1 AND project_id = $2
               AND requirement_key = $3 AND scope_key = $4
@@ -327,7 +381,7 @@ export class ChecklistsService {
           });
         }
 
-        const dueAtSql =
+        const dueAtSql = inst.spec.dueDate?inst.spec.dueDate+'T18:29:59.999Z':
           typeof inst.spec.dueOffsetDays === 'number'
             ? new Date(Date.now() + inst.spec.dueOffsetDays * 86_400_000).toISOString()
             : null;
@@ -338,8 +392,8 @@ export class ChecklistsService {
           await client.query(
             `INSERT INTO requirements
               (id, org_id, project_id, current_snapshot_id, requirement_key, scope_key,
-               asset_id, group_key, title, description, doc_type_key, mandatory, reviewer_role, due_at, status)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'NOT_STARTED')`,
+               asset_id, group_key, title, description, doc_type_key, mandatory, reviewer_role, due_at, status,validity_rule_json,obligation_definition_json,qualification_required_since)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'NOT_STARTED',$15,$16,now())`,
             [
               reqId,
               ctx.orgId,
@@ -355,6 +409,8 @@ export class ChecklistsService {
               inst.spec.mandatory,
               reviewerRole,
               dueAtSql,
+              JSON.stringify(inst.spec.validityRule??{}),
+              JSON.stringify(obligationDefinition(inst.spec,reviewerRole)),
             ],
           );
 
@@ -377,11 +433,21 @@ export class ChecklistsService {
           );
         } else {
           const ex = existingRows[0];
-          const semanticChange =
+          const priorSpec=previousSpecs.get(inst.spec.key);
+          const definition=obligationDefinition(inst.spec,reviewerRole);
+          const previousDefinition=ex.obligation_definition_json??(priorSpec?obligationDefinition(priorSpec,ex.reviewer_role):null);
+          const semanticChange = previousDefinition===null||configPayloadChecksum(previousDefinition)!==configPayloadChecksum(definition)||
             ex.title !== inst.spec.title ||
             ex.doc_type_key !== inst.spec.docTypeKey ||
             ex.mandatory !== inst.spec.mandatory ||
             ex.reviewer_role !== reviewerRole;
+          if(semanticChange){
+            await client.query(`UPDATE reviews SET status='CANCELLED',row_version=row_version+1 WHERE org_id=$1 AND project_id=$2
+              AND status IN('PENDING','IN_REVIEW') AND (requirement_id IS NULL OR requirement_id=$3) AND document_version_id IN(SELECT dv.id FROM document_versions dv JOIN document_requirements dr
+                ON dr.org_id=dv.org_id AND dr.project_id=dv.project_id AND dr.document_id=dv.document_id WHERE dr.org_id=$1 AND dr.project_id=$2 AND dr.requirement_id=$3)`,[ctx.orgId,projectId,ex.id]);
+            await client.query(`UPDATE document_versions SET row_version=row_version+1 WHERE org_id=$1 AND project_id=$2 AND document_id IN(
+              SELECT document_id FROM document_requirements WHERE org_id=$1 AND project_id=$2 AND requirement_id=$3)`,[ctx.orgId,projectId,ex.id]);
+          }
           // An exception is valid for the obligation that was approved, not
           // for a materially different document, scope, or approval policy.
           // Keep the historical waiver record but remove its ACTIVE effect.
@@ -393,6 +459,7 @@ export class ChecklistsService {
               [ctx.orgId, projectId, ex.id],
             );
           }
+          const dueChanged=priorSpec?.dueDate!==inst.spec.dueDate||priorSpec?.dueOffsetDays!==inst.spec.dueOffsetDays;
           await client.query(
             `UPDATE requirements
                 SET current_snapshot_id = $4,
@@ -400,7 +467,9 @@ export class ChecklistsService {
                     doc_type_key = $6,
                     mandatory = $7,
                     reviewer_role = $8,
-                    status = CASE WHEN $9::boolean AND status IN ('WAIVED','NOT_APPLICABLE','PENDING_WAIVER') THEN 'NOT_STARTED' ELSE status END,
+                    status = CASE WHEN $9::boolean THEN 'NOT_STARTED' ELSE status END,
+                    group_key=$10,description=$11,validity_rule_json=$12,obligation_definition_json=$13,due_at=$14,
+                    qualification_required_since=CASE WHEN $9::boolean THEN now() ELSE qualification_required_since END,
                     row_version = row_version + 1,
                     updated_at = now()
               WHERE org_id = $1 AND project_id = $2 AND id = $3`,
@@ -413,7 +482,7 @@ export class ChecklistsService {
               inst.spec.docTypeKey,
               inst.spec.mandatory,
               reviewerRole,
-              semanticChange,
+              semanticChange,inst.spec.groupKey,inst.spec.description??null,JSON.stringify(inst.spec.validityRule??{}),JSON.stringify(definition),dueChanged?dueAtSql:ex.due_at,
             ],
           );
 
@@ -464,6 +533,21 @@ export class ChecklistsService {
         [ctx.orgId, projectId, JSON.stringify(activeKeys)],
       );
 
+      await client.query(`UPDATE waivers w SET status='SUPERSEDED' FROM requirements r WHERE w.org_id=$1 AND w.project_id=$2
+        AND r.org_id=w.org_id AND r.project_id=w.project_id AND r.id=w.requirement_id AND r.superseded_at IS NOT NULL
+        AND w.status IN('ACTIVE','PENDING_SECOND_APPROVAL')`,[ctx.orgId,projectId]);
+      await client.query(`WITH cancelled AS (
+        UPDATE reviews rv SET status='CANCELLED',row_version=rv.row_version+1
+        WHERE rv.org_id=$1 AND rv.project_id=$2 AND rv.status IN('PENDING','IN_REVIEW') AND EXISTS(
+          SELECT 1 FROM requirements r JOIN document_requirements dr ON dr.org_id=r.org_id AND dr.project_id=r.project_id AND dr.requirement_id=r.id
+          JOIN document_versions dv ON dv.org_id=dr.org_id AND dv.project_id=dr.project_id AND dv.document_id=dr.document_id
+          WHERE r.org_id=rv.org_id AND r.project_id=rv.project_id AND r.superseded_at IS NOT NULL
+            AND dv.id=rv.document_version_id AND (rv.requirement_id IS NULL OR rv.requirement_id=r.id))
+        RETURNING document_version_id)
+        UPDATE document_versions SET row_version=row_version+1 WHERE org_id=$1 AND project_id=$2 AND id IN(SELECT document_version_id FROM cancelled)`,[ctx.orgId,projectId]);
+      await client.query("UPDATE handover_packages SET baseline_obsoleted_at=now() WHERE org_id=$1 AND project_id=$2 AND snapshot_id<>$3 AND baseline_obsoleted_at IS NULL",[ctx.orgId,projectId,snapshotId]);
+      await client.query(`UPDATE submissions s SET baseline_obsoleted_at=now() FROM handover_packages hp WHERE s.org_id=$1 AND s.project_id=$2
+        AND hp.org_id=s.org_id AND hp.project_id=s.project_id AND hp.id=s.package_id AND hp.snapshot_id<>$3 AND s.baseline_obsoleted_at IS NULL`,[ctx.orgId,projectId,snapshotId]);
       if(changeRequestId){
         await client.query(`UPDATE requirement_change_requests SET status='APPLIED',applied_snapshot_id=$4,row_version=row_version+1
           WHERE org_id=$1 AND project_id=$2 AND id=$3 AND status='APPROVED'`,[ctx.orgId,projectId,changeRequestId,snapshotId]);
@@ -574,31 +658,16 @@ export class ChecklistsService {
    * Reapply the existing explicit checklist configuration. We intentionally do
    * not substitute a fake one-item handover dossier when no template exists.
    */
-  async createSnapshot(ctx: TenantActorContext, projectId: string, dto?: { comment?: string }) {
-    return withTenantTransaction(this.pool, ctx, async (client: PoolClient, emit: (ev: DomainOutboxEvent) => void) => {
-      // Lock BEFORE reading the baseline, so reapply cannot overwrite a
-      // concurrent consultant import with a stale snapshot.
-      await this.lockEditableProject(client, ctx.orgId, projectId);
-      const { rows } = await client.query(
-        `SELECT resolved_payload_json FROM checklist_snapshots
-           WHERE org_id = $1 AND project_id = $2 AND status = 'ACTIVE'
-           ORDER BY version_no DESC LIMIT 1`,
-        [ctx.orgId, projectId],
-      );
-      const existing = rows[0]?.resolved_payload_json;
-      const payload = typeof existing === 'string' ? JSON.parse(existing) : existing;
-      if (!Array.isArray(payload?.requirements) || payload.requirements.length === 0) {
-        throw new UnprocessableEntityException({
-          code: 'CHECKLIST_CONFIGURATION_REQUIRED',
-          detail: 'Import a consultant checklist or configure a real HVAC template before creating a snapshot.',
-        });
-      }
-      return this.createAndApplySnapshot(
-        ctx, projectId,
-        [{ level: 'PROJECT', versionId: uuidv7(), payload: { requirements: payload.requirements } }],
-        undefined, dto?.comment || 'Reapply configured checklist',
-        { client, emit },
-      );
+  async createSnapshot(ctx:TenantActorContext,projectId:string,dto?:{comment?:string}){
+    requireProjectCommandId(projectId,'INVALID_PROJECT_ID');
+    return withTenantTransaction(this.pool,ctx,async client=>{
+      await this.assertBaselineAuthority(client,ctx,projectId);await this.lockEditableProject(client,ctx.orgId,projectId);
+      const {rows}=await client.query(`SELECT id,version_no,checksum,resolved_payload_json FROM checklist_snapshots
+        WHERE org_id=$1 AND project_id=$2 AND status='ACTIVE' ORDER BY version_no DESC LIMIT 1`,[ctx.orgId,projectId]);
+      const current=rows[0];if(!current||!Array.isArray(current.resolved_payload_json?.requirements)||!current.resolved_payload_json.requirements.length)
+        throw new UnprocessableEntityException({code:'CHECKLIST_CONFIGURATION_REQUIRED',detail:'Configure explicit requirements before creating a snapshot.'});
+      if(configPayloadChecksum(current.resolved_payload_json)!==current.checksum)throw new ConflictException('ACTIVE_CHECKLIST_CHECKSUM_INVALID');
+      return {snapshotId:current.id,versionNo:current.version_no,checksum:current.checksum,instantiatedRequirements:0,unchanged:true};
     });
   }
 
@@ -645,6 +714,7 @@ export class ChecklistsService {
     const existingReqs: ResolvedRequirementSpec[] =
       Array.isArray(existingPayload?.requirements) ? existingPayload.requirements : [];
 
+    this.assertLegacyRequirementOnlyPayload(existingPayload);
     const newReqs: ResolvedRequirementSpec[] = dto.requirements.map((r, idx) => {
       const title = r.title?.trim();
       const docTypeKey = r.docTypeKey?.trim();
@@ -687,10 +757,11 @@ export class ChecklistsService {
       ...existingReqs.filter((r) => !newKeys.has(r.key)),
       ...newReqs,
     ];
+    const layer=await this.persistProjectInput(client,ctx,projectId,{requirements:combinedReqs},'CONSULTANT_IMPORT',dto.profileName||'Consultant Checklist Import');
     return this.createAndApplySnapshot(
       ctx,
       projectId,
-      [{ level: 'PROJECT', versionId: uuidv7(), payload: { requirements: combinedReqs } }],
+      [layer],
       undefined,
       dto.profileName || 'Consultant Checklist Import',
       { client, emit },
@@ -1043,6 +1114,7 @@ export class ChecklistsService {
           detail: 'Configure the project checklist before adding requirements.',
         });
       }
+      this.assertLegacyRequirementOnlyPayload(snapshot);
       const key = dto.key.trim();
       if (snapshot.requirements.some((r: ResolvedRequirementSpec) => r.key === key)) {
         throw new ConflictException({
@@ -1071,11 +1143,12 @@ export class ChecklistsService {
         scopeType,
         ...(assetId ? { assetId } : {}),
         reviewerRole: 'R-QC',
+        ...(dto.dueDate?{dueDate:dto.dueDate}:{}),
       };
+      const layer=await this.persistProjectInput(client,ctx,projectId,{requirements:[...snapshot.requirements,extra]},'MANUAL_REQUIREMENT','Manual contractual requirement addition');
       const applied = await this.createAndApplySnapshot(
         ctx, projectId,
-        [{ level: 'PROJECT', versionId: uuidv7(),
-           payload: { requirements: [...snapshot.requirements, extra] } }],
+        [layer],
         undefined,
         'Manual contractual requirement addition',
         { client, emit },
@@ -1098,17 +1171,19 @@ export class ChecklistsService {
     const {rows}=await client.query(`SELECT id,checksum,resolved_payload_json FROM checklist_snapshots
       WHERE org_id=$1 AND project_id=$2 AND status='ACTIVE' ORDER BY version_no DESC LIMIT 1 FOR UPDATE`,[ctx.orgId,projectId]);
     if(rows[0]?.id!==baselineId)throw new ConflictException({code:'BASELINE_VERSION_STALE'});
+    await this.assertPersistedLayers(client,ctx,projectId,layers);
     const resolved=resolveConfigurationHierarchy(layers);
     if(resolved.conflicts.length)throw new UnprocessableEntityException({code:'CONFIGURATION_CONFLICT',conflicts:resolved.conflicts});
     const requirements=resolved.payload.requirements;
     if(!Array.isArray(requirements)||!requirements.length)throw new UnprocessableEntityException('CHECKLIST_REQUIREMENTS_MISSING');
-    assertLockedChecklistBaselineInvariant(rows[0].resolved_payload_json,resolved.payload);
+    assertLockedChecklistBaselineInvariant(rows[0].resolved_payload_json,resolved.payload,true);
     if(rows[0].checksum===resolved.checksum)throw new ConflictException({code:'BASELINE_CHANGE_EMPTY'});
     const before=rows[0].resolved_payload_json.requirements??[];
     const oldByKey=new Map<string,any>(before.map((r:any)=>[r.key,r]));const newByKey=new Map<string,any>(requirements.map((r:any)=>[r.key,r]));
     const impact={added:[...newByKey.keys()].filter(k=>!oldByKey.has(k)),removed:[...oldByKey.keys()].filter(k=>!newByKey.has(k)),
       modified:[...newByKey.keys()].filter(k=>oldByKey.has(k)&&JSON.stringify(oldByKey.get(k))!==JSON.stringify(newByKey.get(k))),
-      acceptanceWillBeReevaluated:true};
+      changedRequirements:[...new Set([...oldByKey.keys(),...newByKey.keys()])].filter(key=>configPayloadChecksum(oldByKey.get(key)??null)!==configPayloadChecksum(newByKey.get(key)??null)).map(key=>({key,before:oldByKey.get(key)??null,after:newByKey.get(key)??null})),
+      qualificationWillBeReevaluated:true,acceptanceWillBeReevaluated:true};
     const id=uuidv7();const {rows:created}=await client.query(`INSERT INTO requirement_change_requests
       (id,org_id,project_id,change_type,reason,requested_by,status,baseline_snapshot_id,proposed_checksum,proposed_layers_json,impact_json)
       VALUES($1,$2,$3,'MODIFY',$4,$5,'PENDING',$6,$7,$8,$9) RETURNING *`,
@@ -1176,7 +1251,8 @@ export class ChecklistsService {
       if(input.changeType==='REMOVE')proposed=existing.filter((r:any)=>r.key!==key);
       if(input.changeType==='MODIFY')proposed=existing.map((r:any)=>r.key===key?{...r,...delta,key:r.key}:r);
       if(input.changeType==='ADD')proposed=[...existing,delta];
-      return this.proposeSnapshotChangeInTransaction(ctx,projectId,rows[0].id,[{level:'PROJECT',versionId:uuidv7(),payload:{requirements:proposed}}],input.reason as string,client,emit);
+      const layer=await this.persistProjectInput(client,ctx,projectId,{requirements:proposed},'CHANGE_PROPOSAL',input.reason as string);
+      return this.proposeSnapshotChangeInTransaction(ctx,projectId,rows[0].id,[layer],input.reason as string,client,emit);
     });
   }
 
@@ -1205,6 +1281,7 @@ export class ChecklistsService {
     changeRequestId: string,
     dto: { decision: 'APPROVED' | 'REJECTED'; comment?: string },
   ) {
+    requireProjectCommandId(changeRequestId,'INVALID_CHANGE_REQUEST_ID');
     if (!dto || !['APPROVED', 'REJECTED'].includes(dto.decision) ||
         (dto.comment !== undefined &&
           (typeof dto.comment !== 'string' || dto.comment.length > 2000))) {
@@ -1232,15 +1309,19 @@ export class ChecklistsService {
       );
       if (!crRes.rows.length) throw new NotFoundException('CHANGE_REQUEST_NOT_FOUND');
       const cr = crRes.rows[0];
+      if(dto.decision==='APPROVED'){
+        if(!Array.isArray(cr.proposed_layers_json))throw new ConflictException('VERSIONED_CHANGE_PROPOSAL_REQUIRED');
+        await this.assertPersistedLayers(client,ctx,cr.project_id,cr.proposed_layers_json);
+      }
 
       if (!['PENDING','SUBMITTED'].includes(cr.status)) {
         throw new ConflictException('CHANGE_REQUEST_ALREADY_DECIDED');
       }
       await this.lockEditableProject(client,ctx.orgId,cr.project_id);
       const {rows:baselines}=await client.query(`SELECT id FROM checklist_snapshots WHERE org_id=$1 AND project_id=$2 AND status='ACTIVE' ORDER BY version_no DESC LIMIT 1`,[ctx.orgId,cr.project_id]);
-      if(!cr.baseline_snapshot_id||cr.baseline_snapshot_id!==baselines[0]?.id||!cr.proposed_checksum||!Array.isArray(cr.proposed_layers_json))
+      if(dto.decision==='APPROVED'&&(!cr.baseline_snapshot_id||cr.baseline_snapshot_id!==baselines[0]?.id||!cr.proposed_checksum||!Array.isArray(cr.proposed_layers_json)))
         throw new ConflictException('BASELINE_CHANGE_REQUIRES_VERSION_BOUND_PROPOSAL');
-      if (cr.requested_by === ctx.userId) {
+      if (dto.decision==='APPROVED'&&cr.requested_by === ctx.userId) {
         throw new ForbiddenException({ code: 'CHANGE_REQUEST_SELF_APPROVAL_FORBIDDEN' });
       }
 

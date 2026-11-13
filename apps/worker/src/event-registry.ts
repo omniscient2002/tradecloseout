@@ -34,6 +34,7 @@ export const OUTBOX_EVENT_REGISTRY: Record<string, OutboxEventRegistration> = {
   PROJECT_RESUMED: {type:'PROJECT_RESUMED',category:'INFORMATIONAL',version:1,description:'Audited project lifecycle transition'},
   PROJECT_SUSPENDED: {type:'PROJECT_SUSPENDED',category:'INFORMATIONAL',version:1,description:'Audited project lifecycle transition'},
   PROJECT_BASELINE_REVIEWED: {type:'PROJECT_BASELINE_REVIEWED',category:'INFORMATIONAL',version:1,description:'Versioned configuration and independent review history'},
+  REQUIREMENT_CHANGE_DECIDED:{type:'REQUIREMENT_CHANGE_DECIDED',category:'INFORMATIONAL',version:1,description:'Independent baseline change decision recorded'},
   BASELINE_CHANGE_REQUESTED: {type:'BASELINE_CHANGE_REQUESTED',category:'INFORMATIONAL',version:1,description:'Versioned configuration and independent review history'},
   CONFIGURATION_VERSION_ARCHIVED: {type:'CONFIGURATION_VERSION_ARCHIVED',category:'INFORMATIONAL',version:1,description:'Versioned configuration and independent review history'},
   CONFIGURATION_VERSION_PUBLISHED: {type:'CONFIGURATION_VERSION_PUBLISHED',category:'INFORMATIONAL',version:1,description:'Versioned configuration and independent review history'},

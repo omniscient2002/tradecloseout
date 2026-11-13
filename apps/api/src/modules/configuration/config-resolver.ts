@@ -142,7 +142,9 @@ function validKeyedItem(item:Record<string,unknown>):boolean {
     if(Object.hasOwn(item,field)&&(typeof item[field]!=='string'||!(item[field] as string).trim()))return false;
   }
   if(Object.hasOwn(item,'scopeType')&&!['PROJECT','ASSET_CATEGORY','ASSET'].includes(item.scopeType as string))return false;
-  if(Object.hasOwn(item,'dueOffsetDays')&&!Number.isSafeInteger(item.dueOffsetDays))return false;
+  if(Object.hasOwn(item,'dueOffsetDays')&&(!Number.isSafeInteger(item.dueOffsetDays)||Math.abs(Number(item.dueOffsetDays))>36500))return false;
+  if(Object.hasOwn(item,'dueDate')&&(typeof item.dueDate!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(item.dueDate)||!Number.isFinite(Date.parse(item.dueDate))||new Date(item.dueDate).toISOString().slice(0,10)!==item.dueDate))return false;
+  if(Object.hasOwn(item,'dueDate')&&Object.hasOwn(item,'dueOffsetDays'))return false;
   if(Object.hasOwn(item,'validityRule')&&!isConfigRecord(item.validityRule))return false;
   return true;
 }
@@ -420,7 +422,7 @@ function mergeKeyedObjects(
       continue;
     }
     if (patch.$remove === true) {
-      if (current?.locked === true) {
+      if (current?.locked === true||current?.mandatory===true) {
         conflicts.push({
           path: `${keyField}:${k}`,
           level,
@@ -437,7 +439,7 @@ function mergeKeyedObjects(
       // A locked record protects its *whole* obligation, including reviewer,
       // document type, scope and mandatory status. A child may only restate
       // identical values; it cannot replace semantics while retaining locked.
-      if (current.locked === true) {
+      if (current.locked === true||current.mandatory===true) {
         if (Object.entries(patch).some(
           ([field, value]) => field !== 'provenanceLevel' &&
             JSON.stringify(sortDeepKeys(value)) !== JSON.stringify(sortDeepKeys(current[field])),

@@ -1,3 +1,6 @@
+import {hasPermission} from '@tradecloseout/shared';
+import {requirementQualificationSql} from '@tradecloseout/db';
+import {projectCommandRecord,requireProjectCommandId} from '../projects/project-command-input';
 // apps/api/src/modules/reviews/reviews.service.ts
 // Atomic review queue, row-locked approvals, comments & external approvals (AUD-005, AUD-007, RT-009, RT-022, FR-REV-001..017)
 
@@ -14,7 +17,7 @@ import {
 import { PoolClient } from 'pg';
 import { uuidv7 } from 'uuidv7';
 import { STANDARD_COMPANION_RULES } from '@tradecloseout/db';
-import { assertCurrentProjectAuthority } from '@tradecloseout/db/tenant-tx';
+import { assertCurrentProjectAuthority,assertMemberResourceScope } from '@tradecloseout/db/tenant-tx';
 import { TenantDbService, ExecutionContext } from '../../database/tenant-db.service';
 import { ExternalApprovalDto } from './dto/external-approval.dto';
 import { isProductionEnvironment } from '../identity/auth-security';
@@ -67,89 +70,91 @@ export class ReviewsService {
     }
   }
 
+  private async recordRequirementQualifications(client:PoolClient,ctx:ExecutionContext,projectId:string,versionId:string,reviewId:string,external=false){
+    const {rows}=await client.query(`SELECT r.id,r.group_key,r.created_at,r.reviewer_role FROM requirements r JOIN document_requirements dr
+      ON dr.org_id=r.org_id AND dr.project_id=r.project_id AND dr.requirement_id=r.id JOIN document_versions dv
+      ON dv.org_id=dr.org_id AND dv.project_id=dr.project_id AND dv.document_id=dr.document_id
+      WHERE r.org_id=$1 AND r.project_id=$2 AND dv.id=$3 AND r.superseded_at IS NULL
+       AND EXISTS(SELECT 1 FROM reviews assigned WHERE assigned.org_id=r.org_id AND assigned.project_id=r.project_id AND assigned.id=$4
+        AND (assigned.requirement_id IS NULL OR assigned.requirement_id=r.id)) ORDER BY r.id`,[ctx.orgId,projectId,versionId,reviewId]);
+    for(const requirement of rows){
+      if(external&&!['R-CONSULTANT','R-REVIEWER'].includes(requirement.reviewer_role))continue;
+      assertMemberResourceScope(ctx,'requirement',{id:requirement.id,groupKey:requirement.group_key,createdAt:requirement.created_at?.toISOString?.()??String(requirement.created_at)},true);
+      await client.query(`INSERT INTO requirement_evidence_qualifications(id,org_id,project_id,requirement_id,document_version_id,review_id,snapshot_id,obligation_fingerprint,reviewer_role,created_by,created_at)
+        SELECT $1,r.org_id,r.project_id,r.id,$4,$5,r.current_snapshot_id,requirement_obligation_fingerprint(r),r.reviewer_role,$6,clock_timestamp()
+        FROM requirements r WHERE r.org_id=$2 AND r.project_id=$3 AND r.id=$7
+        ON CONFLICT(org_id,requirement_id,document_version_id,review_id) DO NOTHING`,[uuidv7(),ctx.orgId,projectId,versionId,reviewId,ctx.userId,requirement.id]);
+    }
+  }
+
   /**
    * API-062 POST /requirements/:id/submit-review
    * Submits a document version against a checklist requirement for review.
    */
-  async submitReview(
-    ctx: ExecutionContext,
-    requirementId: string,
-    dto: { documentVersionId: string; remarks?: string },
-  ) {
-    return this.db.withTenantContext(ctx, async (client: PoolClient) => {
-      // 1. Fetch requirement
-      const reqRes = await client.query(
-        `SELECT * FROM requirements WHERE org_id = $1 AND id = $2 AND superseded_at IS NULL`,
-        [ctx.orgId, requirementId],
-      );
-      if (!reqRes.rows.length) {
-        throw new NotFoundException('REQUIREMENT_NOT_FOUND');
-      }
-      const req = reqRes.rows[0];
-
-      // 2. Fetch document version
-      const verRes = await client.query(
-        `SELECT dv.*, d.id AS doc_id, d.project_id AS document_project_id,
-                d.latest_version_id AS document_latest_version_id
-           FROM document_versions dv
-           JOIN documents d ON d.id = dv.document_id
-          WHERE dv.org_id = $1 AND dv.id = $2`,
-        [ctx.orgId, dto.documentVersionId],
-      );
-      if (!verRes.rows.length) {
-        throw new NotFoundException('DOCUMENT_VERSION_NOT_FOUND');
-      }
-      const version = verRes.rows[0];
-      if (version.project_id !== req.project_id || version.document_project_id !== req.project_id) {
-        throw new NotFoundException('VERSION_NOT_IN_REQUIREMENT_PROJECT');
-      }
-      if (version.file_status !== 'READY') {
-        throw new ConflictException('FILE_NOT_READY_FOR_REVIEW');
-      }
-      if (version.document_latest_version_id && version.document_latest_version_id !== version.id) {
-        throw new ConflictException('VERSION_SUPERSEDED');
-      }
-
-      // Link document to requirement if not linked
-      await client.query(
-        `INSERT INTO document_requirements (id, org_id, project_id, document_id, requirement_id)
-         VALUES ($1, $2, $3, $4, $5)
-         ON CONFLICT (document_id, requirement_id) DO NOTHING`,
-        [uuidv7(), ctx.orgId, req.project_id, version.doc_id, requirementId],
-      );
-
-      // Create review record
-      const reviewId = uuidv7();
-      const reviewRes = await client.query(
-        `INSERT INTO reviews (
-          id, org_id, project_id, document_version_id, stage_key,
-          reviewer_subject_type, reviewer_subject_id, method, status, created_at
-        ) VALUES (
-          $1, $2, $3, $4, 'SUBMISSION_REVIEW',
-          'USER', $5, 'IN_APP', 'IN_REVIEW', now()
-        ) RETURNING *`,
-        [reviewId, ctx.orgId, req.project_id, version.id, ctx.userId],
-      );
-
-      // Transition version and requirement status
-      await client.query(
-        `UPDATE document_versions SET review_status = 'IN_REVIEW', updated_at = now() WHERE org_id = $1 AND id = $2`,
-        [ctx.orgId, version.id],
-      );
-      await client.query(
-        `UPDATE requirements SET status = 'IN_REVIEW', updated_at = now() WHERE org_id = $1 AND id = $2`,
-        [ctx.orgId, requirementId],
-      );
-
-      await client.query(`INSERT INTO outbox_events(id,org_id,project_id,event_type,payload_json) VALUES($1,$2,$3,'DOCUMENT_SUBMITTED_FOR_REVIEW',$4)`,
-        [uuidv7(),ctx.orgId,req.project_id,JSON.stringify({entityType:'DOCUMENT_VERSION',entityId:version.id,documentVersionId:version.id})]);
-
-      return {
-        reviewId,
-        requirementId,
-        versionId: version.id,
-        status: 'IN_REVIEW',
-      };
+  private async reviewCandidates(client:PoolClient,ctx:ExecutionContext,requirement:any,version:any){
+    const {rows}=await client.query(`SELECT m.user_id,u.name,m.role,pm.role AS project_role,pm.scope_json FROM memberships m
+      JOIN users u ON u.id=m.user_id AND u.status='ACTIVE' LEFT JOIN project_members pm ON pm.org_id=m.org_id
+       AND pm.project_id=$2 AND pm.user_id=m.user_id AND pm.status='ACTIVE'
+      WHERE m.org_id=$1 AND m.status='ACTIVE' AND m.user_id IS DISTINCT FROM $3 AND (m.role=$4 OR pm.role=$4)
+       AND (m.role IN('R-OWNER','R-ADMIN') OR pm.id IS NOT NULL) ORDER BY m.user_id`,[ctx.orgId,requirement.project_id,version.uploaded_by,requirement.reviewer_role]);
+    return rows.filter(candidate=>{
+      if(!hasPermission({orgRole:candidate.role,projectRole:candidate.project_role},'review.decide').allowed)return false;
+      const authority={orgId:ctx.orgId,userId:candidate.user_id,actorType:'USER' as const,orgRole:candidate.role,projectRole:candidate.project_role,projectScope:candidate.scope_json??{}};
+      try{
+        assertMemberResourceScope(authority,'requirement',{id:requirement.id,groupKey:requirement.group_key,createdAt:requirement.created_at?.toISOString?.()??String(requirement.created_at)},true);
+        assertMemberResourceScope(authority,'document',{id:version.document_id,docTypeKey:version.doc_type_key,createdAt:version.document_created_at?.toISOString?.()??String(version.document_created_at)},true);
+        return true;
+      }catch{return false;}
+    });
+  }
+  async listReviewCandidates(ctx:ExecutionContext,requirementId:string,versionId:string){
+    requireProjectCommandId(requirementId,'INVALID_REQUIREMENT_ID');requireProjectCommandId(versionId,'INVALID_DOCUMENT_VERSION_ID');
+    return this.db.withTenantContext(ctx,async client=>{
+      const {rows}=await client.query('SELECT * FROM requirements WHERE org_id=$1 AND id=$2 AND superseded_at IS NULL',[ctx.orgId,requirementId]);
+      const requirement=rows[0];if(!requirement)throw new NotFoundException('REQUIREMENT_NOT_FOUND');
+      await assertCurrentProjectAuthority(client,{...ctx,projectId:requirement.project_id});
+      assertMemberResourceScope(ctx,'requirement',{id:requirement.id,groupKey:requirement.group_key},false);
+      const {rows:versions}=await client.query(`SELECT dv.*,d.doc_type_key,d.created_at AS document_created_at FROM document_versions dv JOIN documents d
+       ON d.org_id=dv.org_id AND d.project_id=dv.project_id AND d.id=dv.document_id WHERE dv.org_id=$1 AND dv.project_id=$2 AND dv.id=$3 AND dv.deleted_at IS NULL AND d.deleted_at IS NULL`,[ctx.orgId,requirement.project_id,versionId]);
+      if(!versions.length||versions[0].doc_type_key!==requirement.doc_type_key)throw new NotFoundException('VERSION_NOT_IN_REQUIREMENT_PROJECT');
+      assertMemberResourceScope(ctx,'document',{id:versions[0].document_id,docTypeKey:versions[0].doc_type_key},false);
+      return {items:(await this.reviewCandidates(client,ctx,requirement,versions[0])).map(candidate=>({userId:candidate.user_id,name:candidate.name,role:candidate.role,projectRole:candidate.project_role}))};
+    });
+  }
+  async submitReview(ctx:ExecutionContext,requirementId:string,value:{documentVersionId:string;remarks?:string;reviewerUserId?:string}){
+    requireProjectCommandId(requirementId,'INVALID_REQUIREMENT_ID');
+    const dto=projectCommandRecord(value,['documentVersionId','remarks','reviewerUserId'],'INVALID_REVIEW_REQUEST');
+    requireProjectCommandId(dto.documentVersionId,'INVALID_DOCUMENT_VERSION_ID');if(dto.reviewerUserId!==undefined)requireProjectCommandId(dto.reviewerUserId,'INVALID_REVIEWER_ID');
+    if(dto.remarks!==undefined&&(typeof dto.remarks!=='string'||dto.remarks.length>2000))throw new UnprocessableEntityException('INVALID_REVIEW_REQUEST');
+    return this.db.withTenantContext(ctx,async client=>{
+      const {rows:initial}=await client.query('SELECT project_id FROM requirements WHERE org_id=$1 AND id=$2 AND superseded_at IS NULL',[ctx.orgId,requirementId]);
+      if(!initial.length)throw new NotFoundException('REQUIREMENT_NOT_FOUND');
+      await assertCurrentProjectAuthority(client,{...ctx,projectId:initial[0].project_id,projectWrite:true});
+      const {rows:requirements}=await client.query('SELECT * FROM requirements WHERE org_id=$1 AND id=$2 AND superseded_at IS NULL FOR UPDATE',[ctx.orgId,requirementId]);const requirement=requirements[0];
+      assertMemberResourceScope(ctx,'requirement',{id:requirement.id,groupKey:requirement.group_key,createdAt:requirement.created_at?.toISOString?.()??String(requirement.created_at)},true);
+      const {rows:versions}=await client.query(`SELECT dv.*,d.doc_type_key,d.created_at AS document_created_at,d.latest_version_id FROM document_versions dv
+        JOIN documents d ON d.org_id=dv.org_id AND d.project_id=dv.project_id AND d.id=dv.document_id
+        WHERE dv.org_id=$1 AND dv.project_id=$2 AND dv.id=$3 AND dv.deleted_at IS NULL AND d.deleted_at IS NULL FOR UPDATE OF dv,d`,[ctx.orgId,requirement.project_id,dto.documentVersionId]);
+      const version=versions[0];if(!version||version.doc_type_key!==requirement.doc_type_key)throw new NotFoundException('VERSION_NOT_IN_REQUIREMENT_PROJECT');
+      if(version.latest_version_id&&version.latest_version_id!==version.id)throw new ConflictException('VERSION_SUPERSEDED');
+      if(version.file_status!=='READY')throw new ConflictException('FILE_NOT_READY_FOR_REVIEW');
+      await this.assertVerifiedReviewEvidence(client,ctx.orgId,version);
+      assertMemberResourceScope(ctx,'document',{id:version.document_id,docTypeKey:version.doc_type_key,createdAt:version.document_created_at?.toISOString?.()??String(version.document_created_at)},true);
+      const candidates=await this.reviewCandidates(client,ctx,requirement,version);
+      const selected=dto.reviewerUserId?candidates.find(candidate=>candidate.user_id===dto.reviewerUserId):candidates.length===1?candidates[0]:null;
+      if(!selected)throw new UnprocessableEntityException('ELIGIBLE_REVIEWER_SELECTION_REQUIRED');
+      await client.query("SELECT m.id FROM memberships m JOIN users u ON u.id=m.user_id AND u.status='ACTIVE' WHERE m.org_id=$1 AND m.user_id=$2 AND m.status='ACTIVE' FOR SHARE OF m,u",[ctx.orgId,selected.user_id]);
+      await client.query("SELECT id FROM project_members WHERE org_id=$1 AND project_id=$2 AND user_id=$3 AND status='ACTIVE' FOR SHARE",[ctx.orgId,requirement.project_id,selected.user_id]);
+      const {rows:pending}=await client.query(`SELECT id,reviewer_subject_id FROM reviews WHERE org_id=$1 AND project_id=$2 AND document_version_id=$3
+        AND requirement_id=$4 AND status IN('PENDING','IN_REVIEW') FOR UPDATE`,[ctx.orgId,requirement.project_id,version.id,requirementId]);
+      if(pending.length){if(pending[0].reviewer_subject_id!==selected.user_id)throw new ConflictException('REVIEW_ALREADY_ASSIGNED');return {reviewId:pending[0].id,requirementId,documentVersionId:version.id,status:'IN_REVIEW'};}
+      await client.query('INSERT INTO document_requirements(id,org_id,project_id,document_id,requirement_id) VALUES($1,$2,$3,$4,$5) ON CONFLICT(document_id,requirement_id) DO NOTHING',[uuidv7(),ctx.orgId,requirement.project_id,version.document_id,requirementId]);
+      const reviewId=uuidv7();await client.query(`INSERT INTO reviews(id,org_id,project_id,document_version_id,stage_key,reviewer_subject_type,reviewer_subject_id,reviewer_user_id,method,status,requirement_id)
+        VALUES($1,$2,$3,$4,$5,'USER',$6,$6,'IN_APP','IN_REVIEW',$7)`,[reviewId,ctx.orgId,requirement.project_id,version.id,'REQUIREMENT:'+reviewId,selected.user_id,requirementId]);
+      await client.query("UPDATE document_versions SET review_status='IN_REVIEW',row_version=row_version+1,submitted_at=now(),updated_at=now() WHERE org_id=$1 AND id=$2",[ctx.orgId,version.id]);
+      await client.query("UPDATE requirements SET status='IN_REVIEW',row_version=row_version+1,updated_at=now() WHERE org_id=$1 AND id=$2",[ctx.orgId,requirementId]);
+      await client.query(`INSERT INTO outbox_events(id,org_id,project_id,event_type,payload_json) VALUES($1,$2,$3,'DOCUMENT_SUBMITTED_FOR_REVIEW',$4)`,[uuidv7(),ctx.orgId,requirement.project_id,JSON.stringify({entityType:'REVIEW',entityId:reviewId,documentVersionId:version.id})]);
+      return {reviewId,requirementId,documentVersionId:version.id,status:'IN_REVIEW',reviewerUserId:selected.user_id};
     });
   }
 
@@ -165,10 +170,11 @@ export class ReviewsService {
                d.title AS document_title, d.category_key,
                req.id AS requirement_id, req.title AS requirement_title, req.reviewer_role
           FROM reviews r
-          JOIN document_versions dv ON dv.id = r.document_version_id
-          JOIN documents d ON d.id = dv.document_id
-          LEFT JOIN document_requirements dr ON dr.document_id = d.id
-          LEFT JOIN requirements req ON req.id = dr.requirement_id
+          JOIN document_versions dv ON dv.org_id=r.org_id AND dv.project_id=r.project_id AND dv.id = r.document_version_id
+          JOIN documents d ON d.org_id=dv.org_id AND d.project_id=dv.project_id AND d.id = dv.document_id
+          LEFT JOIN document_requirements dr ON dr.org_id=d.org_id AND dr.project_id=d.project_id AND dr.document_id = d.id
+            AND (r.requirement_id IS NULL OR dr.requirement_id=r.requirement_id)
+          LEFT JOIN requirements req ON req.org_id=dr.org_id AND req.project_id=dr.project_id AND req.id = dr.requirement_id
          WHERE r.org_id = $1 AND r.project_id = $2
       `;
       const params: any[] = [ctx.orgId, projectId];
@@ -333,30 +339,35 @@ export class ReviewsService {
       const reqRes = await client.query(
         `SELECT r.* FROM requirements r
          JOIN document_requirements dr ON dr.org_id = r.org_id AND dr.project_id = r.project_id AND dr.requirement_id = r.id
-         WHERE dr.org_id = $1 AND dr.document_id = $2 AND dr.project_id = $3 AND r.superseded_at IS NULL
-         LIMIT 1`,
+         WHERE dr.org_id = $1 AND dr.document_id = $2 AND dr.project_id = $3 AND r.superseded_at IS NULL ORDER BY r.requirement_key`,
         [ctx.orgId, v.document_id, projectId],
       );
-      const req = reqRes.rows[0];
+      let req = reqRes.rows[0];
 
+      const visibleRequirements=reqRes.rows.filter((r:any)=>{try{assertMemberResourceScope(ctx,'requirement',{id:r.id,groupKey:r.group_key,createdAt:r.created_at?.toISOString?.()??String(r.created_at)},false);return true;}catch{return false;}});
+      req=visibleRequirements[0];
       // Reading a document must never create or assign a review.
       const revRes = await client.query(
-        `SELECT id, status FROM reviews
+        `SELECT id,status,requirement_id FROM reviews
           WHERE org_id = $1 AND project_id = $2 AND document_version_id = $3
             AND reviewer_subject_type = 'USER' AND reviewer_subject_id = $4
-          ORDER BY created_at DESC LIMIT 1`,
+          ORDER BY CASE WHEN status IN('PENDING','IN_REVIEW') THEN 0 ELSE 1 END,created_at DESC,id DESC LIMIT 1`,
         [ctx.orgId, projectId, versionId, ctx.userId],
       );
-      const reviewId = revRes.rows[0]?.id || null;
+      const assignedReview=revRes.rows[0];
+      if(assignedReview?.requirement_id)req=visibleRequirements.find((r:any)=>r.id===assignedReview.requirement_id);
+      const reviewVisible=!assignedReview?.requirement_id||!!req;
+      const historicalReviewId=reviewVisible?assignedReview?.id??null:null;
+      const reviewId=reviewVisible&&['PENDING','IN_REVIEW'].includes(assignedReview?.status)?historicalReviewId:null;
 
-      const commRes = reviewId ? await client.query(
+      const commRes = historicalReviewId ? await client.query(
         `SELECT rc.id, rc.page_no, rc.body, rc.visibility, rc.created_at,
                 COALESCE(u.name, 'Reviewer') as author_name
          FROM review_comments rc
          LEFT JOIN users u ON u.id = rc.created_by
          WHERE rc.org_id = $1 AND rc.review_id = $2
          ORDER BY rc.created_at ASC`,
-        [ctx.orgId, reviewId],
+        [ctx.orgId, historicalReviewId],
       ) : { rows: [] };
       const comments = commRes.rows.map((c) => ({
         id: c.id,
@@ -367,6 +378,9 @@ export class ReviewsService {
         createdAt: c.created_at,
       }));
 
+      let requiresRequalification=false;
+      if(req?.qualification_required_since){const {rows}=await client.query(`SELECT ${requirementQualificationSql('r','dv')} AS qualified FROM requirements r
+        JOIN document_versions dv ON dv.org_id=r.org_id AND dv.project_id=r.project_id AND dv.id=$3 WHERE r.org_id=$1 AND r.id=$2`,[ctx.orgId,req.id,versionId]);requiresRequalification=rows[0]?.qualified!==true;}
       const docTypeKey = req?.doc_type_key || v.doc_type_key || v.category_key;
       const companionEval = await this.evaluateCompanionEvidence(
         client,
@@ -393,6 +407,7 @@ export class ReviewsService {
         sha256: v.object_sha256 ?? null,
         uploadedByName: v.uploader_name ?? null,
         reviewerRole: req?.reviewer_role ?? null,
+        requiresRequalification,requirementDescription:req?.description??null,validityRule:req?.validity_rule_json??{},dueAt:req?.due_at??null,linkedRequirements:visibleRequirements.map((r:any)=>({id:r.id,title:r.title,key:r.requirement_key})),
         rowVersion: v.row_version,
         reviewId,
         comments,
@@ -567,7 +582,7 @@ export class ReviewsService {
       const { rows: revRows } = await client.query(
         `SELECT id FROM reviews WHERE org_id = $1 AND project_id = $2 AND document_version_id = $3
            AND reviewer_subject_type = 'USER' AND reviewer_subject_id = $4
-           AND status IN ('PENDING', 'IN_REVIEW') LIMIT 1`,
+           AND status IN ('PENDING', 'IN_REVIEW') ORDER BY created_at DESC,id DESC LIMIT 1`,
         [ctx.orgId, projectId, dto.documentVersionId, ctx.userId],
       );
       const reviewId = revRows[0]?.id;
@@ -620,7 +635,7 @@ export class ReviewsService {
         throw new NotFoundException('REVIEW_NOT_FOUND');
       }
       await assertCurrentProjectAuthority(client, {
-        ...ctx, projectId: actualProjectId,
+        ...ctx, projectId: actualProjectId,projectWrite:true,
       });
       // 1. Lock the review after validating current authority.
       const reviewRes = await client.query(
@@ -695,8 +710,8 @@ export class ReviewsService {
            FROM document_requirements dr
            JOIN requirements r ON r.org_id = dr.org_id AND r.project_id = dr.project_id AND r.id = dr.requirement_id
           WHERE dr.org_id = $1 AND dr.project_id = $2 AND dr.document_id = $3
-            AND r.reviewer_role IS NOT NULL AND r.superseded_at IS NULL`,
-        [ctx.orgId, version.project_id, doc.id],
+            AND r.reviewer_role IS NOT NULL AND r.superseded_at IS NULL AND ($4::uuid IS NULL OR r.id=$4)`,
+        [ctx.orgId, version.project_id, doc.id,review.requirement_id??null],
       );
       const authorityRoles = new Set([
         (ctx as any).orgRole as string | undefined,
@@ -763,10 +778,10 @@ export class ReviewsService {
         await client.query(
           `UPDATE reviews
            SET status = 'APPROVED', decision = 'APPROVE', comment = $1,
-               decided_at = now(), reviewer_user_id = $2,
+               decided_at = clock_timestamp(), reviewer_user_id = $2,
                occurred_at = COALESCE($5, now()),
                occurred_at_precision = $6,
-               recorded_at = now(),
+               recorded_at = clock_timestamp(),
                backdating_reason = $7,
                is_override = $8
            WHERE org_id = $3 AND id = $4`,
@@ -786,10 +801,10 @@ export class ReviewsService {
         await client.query(
           `UPDATE requirements
               SET status = 'APPROVED', row_version = row_version + 1, updated_at = now()
-            WHERE org_id = $1 AND id IN (
-              SELECT requirement_id FROM document_requirements WHERE document_id = $2
+            WHERE org_id = $1 AND project_id=$3 AND superseded_at IS NULL AND ($4::uuid IS NULL OR id=$4) AND id IN (
+              SELECT requirement_id FROM document_requirements WHERE org_id=$1 AND project_id=$3 AND document_id=$2
             )`,
-          [ctx.orgId, doc.id],
+          [ctx.orgId, doc.id,version.project_id,review.requirement_id??null],
         );
 
       } else {
@@ -801,10 +816,10 @@ export class ReviewsService {
         await client.query(
           `UPDATE reviews
            SET status = $1, decision = $2, comment = $3,
-               decided_at = now(), reviewer_user_id = $4,
+               decided_at = clock_timestamp(), reviewer_user_id = $4,
                occurred_at = COALESCE($7, now()),
                occurred_at_precision = $8,
-               recorded_at = now(),
+               recorded_at = clock_timestamp(),
                backdating_reason = $9,
                is_override = $10
            WHERE org_id = $5 AND id = $6`,
@@ -851,6 +866,7 @@ export class ReviewsService {
         ],
       );
 
+      if(dto.decision==='APPROVE')await this.recordRequirementQualifications(client,ctx,version.project_id,version.id,review.id);
       await client.query(`INSERT INTO outbox_events(id,org_id,project_id,event_type,payload_json) VALUES($1,$2,$3,'DOCUMENT_REVIEW_DECIDED',$4)`,
         [uuidv7(),ctx.orgId,version.project_id,JSON.stringify({entityType:'DOCUMENT_VERSION',entityId:version.id,documentVersionId:version.id})]);
       return { status: 'OK', decision: dto.decision, versionId: version.id };
@@ -925,6 +941,9 @@ export class ReviewsService {
     }
 
     return this.db.withTenantContext(ctx, async (client: PoolClient) => {
+      const {rows:targets}=await client.query('SELECT project_id FROM document_versions WHERE org_id=$1 AND id=$2',[ctx.orgId,versionId]);
+      if(!targets.length||ctx.projectId&&ctx.projectId!==targets[0].project_id)throw new NotFoundException('VERSION_NOT_FOUND');
+      await assertCurrentProjectAuthority(client,{...ctx,projectId:targets[0].project_id,projectWrite:true});
       // 1. Lock document version FOR UPDATE
       const verRes = await client.query(
         `SELECT * FROM document_versions WHERE org_id = $1 AND id = $2 FOR UPDATE`,
@@ -1076,11 +1095,11 @@ export class ReviewsService {
           status, decision, comment, decided_at, on_behalf_of_user_id, is_override,
           occurred_at, occurred_at_precision, recorded_at, backdating_reason
         ) VALUES (
-          $1, $2, $3, $4, 'EXTERNAL_APPROVAL',
+          $1, $2, $3, $4, 'EXTERNAL_APPROVAL:' || $1::text,
           'PARTY', $5, $5, 'EXTERNAL', $6,
           $7, $8, $9, $10, $17,
           'APPROVED', 'APPROVE', $11, $12, $13, false,
-          $14, $15, now(), $16
+          $14, $15, clock_timestamp(), $16
         )`,
         [
           reviewId,
@@ -1103,6 +1122,12 @@ export class ReviewsService {
         ],
       );
 
+      await this.recordRequirementQualifications(client,ctx,version.project_id,version.id,reviewId,true);
+      await client.query(`UPDATE requirements r SET status='APPROVED',row_version=row_version+1,updated_at=now() WHERE r.org_id=$1 AND r.project_id=$2
+        AND r.superseded_at IS NULL AND EXISTS(SELECT 1 FROM requirement_evidence_qualifications q WHERE q.org_id=r.org_id AND q.project_id=r.project_id
+          AND q.requirement_id=r.id AND q.review_id=$3 AND q.obligation_fingerprint=requirement_obligation_fingerprint(r))`,[ctx.orgId,version.project_id,reviewId]);
+      await client.query(`INSERT INTO outbox_events(id,org_id,project_id,event_type,payload_json) VALUES($1,$2,$3,'EXTERNAL_APPROVAL_RECORDED',$4)`,
+        [uuidv7(),ctx.orgId,version.project_id,JSON.stringify({entityType:'DOCUMENT_VERSION',entityId:version.id,documentVersionId:version.id})]);
       return {
         reviewId,
         versionId,

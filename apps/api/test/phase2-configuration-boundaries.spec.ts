@@ -298,7 +298,7 @@ describe('Phase 2 configuration fail-closed boundaries', () => {
 
   it('preserves individual field/item provenance through partial overrides and removals',()=>{
     const result=resolveConfigV021({
-      PLATFORM:layer('PLATFORM',{'checklist.requirements':[{key:'A',title:'Original',mandatory:true},{key:'B',title:'Retired'}]}),
+      PLATFORM:layer('PLATFORM',{'checklist.requirements':[{key:'A',title:'Original',mandatory:false},{key:'B',title:'Retired'}]}),
       PROJECT:layer('PROJECT',{'checklist.requirements':[{key:'A',title:'Revised'},{key:'B',$remove:true}]}),
     });
     expect(result.conflicts).toHaveLength(0);
@@ -358,7 +358,7 @@ describe('Phase 2 configuration fail-closed boundaries', () => {
 
 describe('PH2-G06-006: immutable active baseline against single-layer reimports', () => {
   const locked = {
-    key: 'SAFETY-001', title: 'Approved safety manual', locked: true, mandatory: true,
+    key: 'SAFETY-001', title: 'Approved safety manual', groupKey:'SAFETY',locked: true, mandatory: true,
     docTypeKey: 'DT-001', scopeType: 'PROJECT', reviewerRole: 'R-QC',
   };
 

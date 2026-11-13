@@ -1,3 +1,4 @@
+import {requirementQualificationSql} from './requirement-qualification';
 /** Correlated SQL for internal consumers. The alias is code-owned, never request input. */
 export function missingCurrentObligationSql(alias='r'):string{
  if(!/^[a-z][a-z0-9_]*$/.test(alias))throw new Error('OBLIGATION_ALIAS_INVALID');const r=alias;
@@ -12,7 +13,7 @@ export function missingCurrentObligationSql(alias='r'):string{
     AND dv.review_status='APPROVED' AND dv.file_status='READY' AND (dv.expiry_date IS NULL OR dv.expiry_date>=CURRENT_DATE)
    JOIN storage_objects so ON so.org_id=dv.org_id AND so.id=dv.object_id AND so.status='READY' AND so.sha256 IS NOT NULL
     AND so.observed_size_bytes=so.size_bytes AND so.provider_version_id IS NOT NULL
-   WHERE dr.org_id=${r}.org_id AND dr.project_id=${r}.project_id AND dr.requirement_id=${r}.id
+   WHERE dr.org_id=${r}.org_id AND dr.project_id=${r}.project_id AND dr.requirement_id=${r}.id AND ${requirementQualificationSql(r,'dv')}
     AND NOT EXISTS(SELECT 1 FROM evidence_revalidations er WHERE er.org_id=dv.org_id AND er.project_id=dv.project_id
       AND er.document_version_id=dv.id AND (${r}.scope_key IS NULL OR ${r}.scope_key NOT LIKE 'asset:%' OR er.asset_id::text=substring(${r}.scope_key from 7))
       AND er.status IN('PENDING','MISMATCH')))`;
@@ -27,5 +28,5 @@ export function overdueCurrentObligationSql(alias='r'):string{
    AND dv.deleted_at IS NULL AND dv.superseded_at IS NULL AND dv.file_status='READY' AND dv.review_status='APPROVED'
   JOIN storage_objects so ON so.org_id=dv.org_id AND so.id=dv.object_id AND so.status='READY' AND so.sha256 IS NOT NULL
    AND so.observed_size_bytes=so.size_bytes AND so.provider_version_id IS NOT NULL
-  WHERE dr.org_id=${r}.org_id AND dr.project_id=${r}.project_id AND dr.requirement_id=${r}.id AND dv.expiry_date<CURRENT_DATE))`;
+  WHERE dr.org_id=${r}.org_id AND dr.project_id=${r}.project_id AND dr.requirement_id=${r}.id AND ${requirementQualificationSql(r,'dv')} AND dv.expiry_date<CURRENT_DATE))`;
 }

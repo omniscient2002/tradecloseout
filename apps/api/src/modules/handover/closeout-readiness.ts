@@ -1,3 +1,4 @@
+import {requirementQualificationSql} from '@tradecloseout/db';
 import { PoolClient } from 'pg';
 
 /**
@@ -52,7 +53,7 @@ export async function evaluateReadinessInTransaction(
               AND so.observed_size_bytes = so.size_bytes
               AND so.provider_version_id IS NOT NULL
              WHERE dr.org_id = r.org_id AND dr.project_id = r.project_id
-               AND dr.requirement_id = r.id
+               AND dr.requirement_id = r.id AND ${requirementQualificationSql('r','dv')}
                AND NOT EXISTS (
                  SELECT 1 FROM evidence_revalidations er
                   WHERE er.org_id = dv.org_id AND er.project_id = dv.project_id

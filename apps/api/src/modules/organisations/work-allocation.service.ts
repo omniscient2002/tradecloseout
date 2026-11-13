@@ -45,12 +45,12 @@ export class WorkAllocationService{
    WHERE m.org_id=$1 AND m.status='ACTIVE' AND m.user_id<>$3 AND (m.role IN('R-OWNER','R-ADMIN') OR pm.id IS NOT NULL) ORDER BY m.user_id`,[org,item.project_id,target]);
   let qualifications:any[]=[];
   if(item.kind==='REVIEW'){
-   const {rows:review}=await client.query('SELECT method,reviewer_subject_type,document_version_id FROM reviews WHERE org_id=$1 AND project_id=$2 AND id=$3',[org,item.project_id,item.id]);
+   const {rows:review}=await client.query('SELECT method,reviewer_subject_type,document_version_id,requirement_id FROM reviews WHERE org_id=$1 AND project_id=$2 AND id=$3',[org,item.project_id,item.id]);
    if(review[0]?.method!=='IN_APP'||review[0]?.reviewer_subject_type!=='USER'){item.blockedReason='EXTERNAL_REVIEW_AUTHORITY_REQUIRES_REVERIFICATION';return [];}
    qualifications=(await client.query(`SELECT dv.uploaded_by,r.reviewer_role FROM document_versions dv
     JOIN document_requirements dr ON dr.org_id=dv.org_id AND dr.project_id=dv.project_id AND dr.document_id=dv.document_id
     JOIN requirements r ON r.org_id=dr.org_id AND r.project_id=dr.project_id AND r.id=dr.requirement_id AND r.superseded_at IS NULL
-    WHERE dv.org_id=$1 AND dv.project_id=$2 AND dv.id=$3`,[org,item.project_id,review[0].document_version_id])).rows;
+    WHERE dv.org_id=$1 AND dv.project_id=$2 AND dv.id=$3 AND ($4::uuid IS NULL OR r.id=$4)`,[org,item.project_id,review[0].document_version_id,review[0].requirement_id??null])).rows;
    if(!qualifications.length){item.blockedReason='REVIEW_QUALIFICATION_MAPPING_REQUIRED';return [];}
   }
   return members.filter(member=>{
@@ -112,7 +112,7 @@ export class WorkAllocationService{
      const {rows:qualification}=await client.query(`SELECT dv.uploaded_by,r.reviewer_role FROM document_versions dv
       JOIN document_requirements dr ON dr.org_id=dv.org_id AND dr.project_id=dv.project_id AND dr.document_id=dv.document_id
       JOIN requirements r ON r.org_id=dr.org_id AND r.project_id=dr.project_id AND r.id=dr.requirement_id AND r.superseded_at IS NULL
-      WHERE dv.org_id=$1 AND dv.project_id=$2 AND dv.id=$3`,[ctx.orgId,work.project_id,work.document_version_id]);
+      WHERE dv.org_id=$1 AND dv.project_id=$2 AND dv.id=$3 AND ($4::uuid IS NULL OR r.id=$4)`,[ctx.orgId,work.project_id,work.document_version_id,work.requirement_id??null]);
      if(!qualification.length||qualification.some(q=>q.uploaded_by===allocation.replacementUserId||![replacement.role,projectRole].includes(q.reviewer_role)))throw new ConflictException('REPLACEMENT_REVIEW_QUALIFICATION_REQUIRED');
     }
     const extra=allocation.kind==='REVIEW'?',reviewer_subject_id=$3':'';

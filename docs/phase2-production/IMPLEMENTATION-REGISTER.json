@@ -36,7 +36,8 @@
       ],
       "requiredOutcome": "Authorize the body project/resource and intended recipient explicitly, and revalidate current membership/scope in the transaction. Filter broadcasts and existing personal notifications after access changes. Define a safe digest DTO and financial visibility capability; do not rely on a global document.read grant for all notification categories.",
       "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering.",
-      "continuationEvidence": "RESUME-IMPLEMENTATION-2026-11-13.md: related code and fixture checks; whole original outcome and independent acceptance remain unverified"
+      "continuationEvidence": "RESUME-IMPLEMENTATION-2026-11-13.md: related code and fixture checks; whole original outcome and independent acceptance remain unverified",
+      "qualificationEvidence": "docs/phase2-production/QUALIFICATION-IMPLEMENTATION-2026-11-13.md"
     },
     {
       "id": "PH2-G20-003",
@@ -187,7 +188,8 @@
       ],
       "requiredOutcome": "Add scoped, paginated inbox/read-state endpoints and the approved accessible web journey with real unread state and links. Provide preferences/unsubscribe settings, honest queued/failed states and reload-safe errors. Avoid forcing notification visibility through document permissions for unrelated categories.",
       "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering.",
-      "continuationEvidence": "RESUME-IMPLEMENTATION-2026-11-13.md: related code and fixture checks; whole original outcome and independent acceptance remain unverified"
+      "continuationEvidence": "RESUME-IMPLEMENTATION-2026-11-13.md: related code and fixture checks; whole original outcome and independent acceptance remain unverified",
+      "qualificationEvidence": "docs/phase2-production/QUALIFICATION-IMPLEMENTATION-2026-11-13.md"
     },
     {
       "id": "PH2-G20-012",
@@ -410,7 +412,8 @@
       ],
       "requiredOutcome": "Use an explicit per-project/per-work allocation plan. Validate and lock current account, org/project membership, resource scope, reviewer stage/qualification and no-self-approval rules for every transferred operational responsibility. Recheck remaining work before removal and preserve immutable authorship.",
       "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering.",
-      "continuationEvidence": "RESUME-IMPLEMENTATION-2026-11-13.md: related code and fixture checks; whole original outcome and independent acceptance remain unverified"
+      "continuationEvidence": "RESUME-IMPLEMENTATION-2026-11-13.md: related code and fixture checks; whole original outcome and independent acceptance remain unverified",
+      "qualificationEvidence": "docs/phase2-production/QUALIFICATION-IMPLEMENTATION-2026-11-13.md"
     },
     {
       "id": "PH2-G03-005",
@@ -427,7 +430,8 @@
       ],
       "requiredOutcome": "Separate immutable created_by/submitted_by/requested_by provenance from explicit operational responsibility. Include submissions, packages, review stage/party authority, requirements and defects in one scoped manifest with eligible allocation options and unresolved reasons. Add independently authorized external delegation; preserve honest blocked states until available.",
       "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering.",
-      "continuationEvidence": "RESUME-IMPLEMENTATION-2026-11-13.md: related code and fixture checks; whole original outcome and independent acceptance remain unverified"
+      "continuationEvidence": "RESUME-IMPLEMENTATION-2026-11-13.md: related code and fixture checks; whole original outcome and independent acceptance remain unverified",
+      "qualificationEvidence": "docs/phase2-production/QUALIFICATION-IMPLEMENTATION-2026-11-13.md"
     },
     {
       "id": "PH2-G03-006",
@@ -673,7 +677,7 @@
       "id": "PH2-G05-010",
       "title": "Make dashboard counts and activity match current qualified work",
       "engineeringStatus": "PARTIAL_CANDIDATE_IMPLEMENTATION",
-      "validationStatus": "FULL_VALIDATION_DEFERRED_BY_USER",
+      "validationStatus": "RELATED_FOCUSED_CHECKS_PASSED_FULL_VALIDATION_DEFERRED",
       "independentAcceptance": "UNCHANGED",
       "files": [
         "apps/api/src/modules/projects/projects.service.ts",
@@ -681,7 +685,8 @@
         "apps/web/src/app/(contractor)/projects/[projectId]/page.tsx"
       ],
       "requiredOutcome": "Use shared current-obligation queries for due/expiry/unassigned/review status, resource-scope-filtered counts and bounded activity. Retain the independent readiness evaluator for closure. Make commercial visibility and unknown values explicit; do not turn all informational retention into earned or blocked payment.",
-      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering."
+      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering.",
+      "qualificationEvidence": "docs/phase2-production/QUALIFICATION-IMPLEMENTATION-2026-11-13.md"
     },
     {
       "id": "PH2-G05-011",
@@ -715,7 +720,7 @@
       "id": "PH2-G06-001",
       "title": "Make locked ownership and keyed-item protection monotonic",
       "engineeringStatus": "PARTIAL_CANDIDATE_IMPLEMENTATION",
-      "validationStatus": "FULL_VALIDATION_DEFERRED_BY_USER",
+      "validationStatus": "RELATED_FOCUSED_CHECKS_PASSED_FULL_VALIDATION_DEFERRED",
       "independentAcceptance": "UNCHANGED",
       "files": [
         "apps/api/src/modules/configuration/configuration.service.ts",
@@ -725,7 +730,8 @@
         "apps/worker/src/queues/package-branding.ts"
       ],
       "requiredOutcome": "Enforce ownerLevel independently of whether a parent supplied a value. Preserve lock/mandatory protection monotonically from the authoritative version; prevent unlock, removal, semantic replacement or approval weakening through child patches. Validate permitted change-request authority separately.",
-      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering."
+      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering.",
+      "qualificationEvidence": "docs/phase2-production/QUALIFICATION-IMPLEMENTATION-2026-11-13.md"
     },
     {
       "id": "PH2-G06-002",
@@ -747,7 +753,7 @@
       "id": "PH2-G06-003",
       "title": "Reject unknown schemas, invalid keys and contradictory layer identity",
       "engineeringStatus": "PARTIAL_CANDIDATE_IMPLEMENTATION",
-      "validationStatus": "FULL_VALIDATION_DEFERRED_BY_USER",
+      "validationStatus": "RELATED_FOCUSED_CHECKS_PASSED_FULL_VALIDATION_DEFERRED",
       "independentAcceptance": "UNCHANGED",
       "files": [
         "apps/api/src/modules/configuration/configuration.service.ts",
@@ -757,7 +763,8 @@
         "apps/worker/src/queues/package-branding.ts"
       ],
       "requiredOutcome": "Fail closed on unsupported schema/field/type/level, require persisted layer identity and valid stable unique keys, and validate bounded arrays/objects/strings before merging. Define explicit migrations and duplicate-layer policy. Canonicalize only validated safe data; do not label arbitrary placement as platform provenance.",
-      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering."
+      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering.",
+      "qualificationEvidence": "docs/phase2-production/QUALIFICATION-IMPLEMENTATION-2026-11-13.md"
     },
     {
       "id": "PH2-G06-004",
@@ -779,7 +786,7 @@
       "id": "PH2-G06-005",
       "title": "Implement persisted configuration versions and installed-pack lineage",
       "engineeringStatus": "PARTIAL_CANDIDATE_IMPLEMENTATION",
-      "validationStatus": "RELATED_BACKEND_MECHANISMS_TARGETED_CHECK_PASSED_OTHER_ASSERTIONS_DEFERRED",
+      "validationStatus": "RELATED_FOCUSED_CHECKS_PASSED_FULL_VALIDATION_DEFERRED",
       "independentAcceptance": "UNCHANGED",
       "files": [
         "apps/api/src/modules/configuration/configuration.service.ts",
@@ -789,13 +796,14 @@
         "apps/worker/src/queues/package-branding.ts"
       ],
       "requiredOutcome": "Implement authorized version authoring/validation/publish/archive and installed-pack copy/upgrade contracts. Resolve exact persisted immutable versions for the project, verify tenant/scope/source/checksum and retain a reproducible source manifest. Keep existing projects pinned when global trade packs change.",
-      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering."
+      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering.",
+      "qualificationEvidence": "docs/phase2-production/QUALIFICATION-IMPLEMENTATION-2026-11-13.md"
     },
     {
       "id": "PH2-G06-006",
       "title": "Require approved impact-controlled changes for active baselines",
       "engineeringStatus": "PARTIAL_CANDIDATE_IMPLEMENTATION",
-      "validationStatus": "RELATED_BACKEND_MECHANISMS_TARGETED_CHECK_PASSED_OTHER_ASSERTIONS_DEFERRED",
+      "validationStatus": "RELATED_FOCUSED_CHECKS_PASSED_FULL_VALIDATION_DEFERRED",
       "independentAcceptance": "UNCHANGED",
       "files": [
         "apps/api/src/modules/configuration/configuration.service.ts",
@@ -805,7 +813,8 @@
         "apps/worker/src/queues/package-branding.ts"
       ],
       "requiredOutcome": "Require an approved, version-bound change request with impact analysis before every active-project baseline mutation. Use one locked applicator to update snapshots, revisions, requirements, exceptions, package acceptance and readiness coherently; preserve material-change invalidation already present. Decision alone must not bypass lifecycle or apply an incomplete delta.",
-      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering."
+      "remainingEngineering": "Reconcile this original outcome against the checkpoint; do not infer closure from group-level code or related fixture success. See CODEPASS-CHECKPOINT.md for known unfinished engineering.",
+      "qualificationEvidence": "docs/phase2-production/QUALIFICATION-IMPLEMENTATION-2026-11-13.md"
     },
     {
       "id": "PH2-G06-007",
@@ -909,5 +918,6 @@
   "allEngineeringComplete": false,
   "canonicalFindingClosures": 0,
   "note": "Candidate implementation checkpoint. Original finding IDs and independent acceptance are unchanged. Backend service fixtures do not certify browser, domain, provider or production acceptance.",
-  "continuationReport": "docs/phase2-production/RESUME-IMPLEMENTATION-2026-11-13.md"
+  "continuationReport": "docs/phase2-production/RESUME-IMPLEMENTATION-2026-11-13.md",
+  "qualificationContinuationReport": "docs/phase2-production/QUALIFICATION-IMPLEMENTATION-2026-11-13.md"
 }

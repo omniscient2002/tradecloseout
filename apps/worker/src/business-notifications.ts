@@ -5,7 +5,7 @@ const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]
 const REQUIREMENT_EVENTS=new Set(['REQUIREMENT_PENDING','REQUIREMENT_IN_REVIEW','REQUIREMENT_APPROVED','REQUIREMENT_REJECTED','REQUIREMENT_WAIVED']);
 const SUBMISSION_EVENTS=new Set(['SUBMISSION_SENT','SUBMISSION_SUBMITTED','SUBMISSION_ACKNOWLEDGED','SUBMISSION_ACCEPTED','SUBMISSION_PARTIALLY_ACCEPTED','SUBMISSION_REJECTED','SUBMISSION_AGGREGATED_ACCEPTED','SUBMISSION_AGGREGATED_PARTIALLY_ACCEPTED','SUBMISSION_AGGREGATED_REJECTED']);
 const PROJECT_EVENTS=new Set(['PROJECT_ACTIVATED','PROJECT_SUSPENDED','PROJECT_RESUMED','PROJECT_CLOSED','PROJECT_REOPENED','PROJECT_HANDOVER_INITIATED','BASELINE_CHANGE_REQUESTED']);
-const REVIEW_EVENTS=new Set(['DOCUMENT_SUBMITTED_FOR_REVIEW','DOCUMENT_REVIEW_DECIDED']);
+const REVIEW_EVENTS=new Set(['DOCUMENT_SUBMITTED_FOR_REVIEW','DOCUMENT_REVIEW_DECIDED','EXTERNAL_APPROVAL_RECORDED']);
 async function recipientIds(client:PoolClient,event:ClaimedOutboxEvent,body:Record<string,unknown>):Promise<string[]>{
  const entity=typeof body.entityId==='string'&&UUID.test(body.entityId)?body.entityId:null;
  if(event.event_type==='OWNERSHIP_TRANSFER_REQUESTED'){
@@ -21,11 +21,12 @@ async function recipientIds(client:PoolClient,event:ClaimedOutboxEvent,body:Reco
  }
  if(REVIEW_EVENTS.has(event.event_type)){
   const version=typeof body.documentVersionId==='string'&&UUID.test(body.documentVersionId)?body.documentVersionId:body.entityType==='DOCUMENT_VERSION'?entity:null;
-  if(event.event_type==='DOCUMENT_REVIEW_DECIDED')return(await client.query('SELECT uploaded_by AS user_id FROM document_versions WHERE org_id=$1 AND project_id=$2 AND id=$3',[event.org_id,event.project_id,version])).rows.map(r=>r.user_id).filter(Boolean);
+  if(['DOCUMENT_REVIEW_DECIDED','EXTERNAL_APPROVAL_RECORDED'].includes(event.event_type))return(await client.query('SELECT uploaded_by AS user_id FROM document_versions WHERE org_id=$1 AND project_id=$2 AND id=$3',[event.org_id,event.project_id,version])).rows.map(r=>r.user_id).filter(Boolean);
   return(await client.query(`SELECT DISTINCT rv.reviewer_user_id AS user_id FROM reviews rv JOIN document_versions dv
    ON dv.org_id=rv.org_id AND dv.project_id=rv.project_id AND dv.id=rv.document_version_id
    WHERE rv.org_id=$1 AND rv.project_id=$2 AND rv.document_version_id=$3 AND rv.status IN('PENDING','IN_REVIEW')
-    AND rv.reviewer_subject_type='USER' AND rv.method='IN_APP' AND rv.reviewer_user_id<>dv.uploaded_by`,[event.org_id,event.project_id,version])).rows.map(r=>r.user_id).filter(Boolean);
+    AND ($4::uuid IS NULL OR rv.id=$4)
+    AND rv.reviewer_subject_type='USER' AND rv.method='IN_APP' AND rv.reviewer_user_id<>dv.uploaded_by`,[event.org_id,event.project_id,version,body.entityType==='REVIEW'?entity:null])).rows.map(r=>r.user_id).filter(Boolean);
  }
  if(PROJECT_EVENTS.has(event.event_type))return(await client.query(`SELECT m.user_id FROM memberships m LEFT JOIN project_members pm ON pm.org_id=m.org_id AND pm.user_id=m.user_id AND pm.project_id=$2 AND pm.status='ACTIVE'
   WHERE m.org_id=$1 AND m.status='ACTIVE' AND (m.role IN('R-OWNER','R-ADMIN') OR pm.role='R-PM')`,[event.org_id,event.project_id])).rows.map(r=>r.user_id);

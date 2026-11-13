@@ -902,6 +902,7 @@ export class OrganisationsService {
         const {rows:incompatible}=await client.query(`SELECT rv.id FROM reviews rv
           JOIN document_versions dv ON dv.org_id=rv.org_id AND dv.project_id=rv.project_id AND dv.id=rv.document_version_id
           LEFT JOIN document_requirements dr ON dr.org_id=dv.org_id AND dr.project_id=dv.project_id AND dr.document_id=dv.document_id
+            AND (rv.requirement_id IS NULL OR dr.requirement_id=rv.requirement_id)
           LEFT JOIN requirements r ON r.org_id=dr.org_id AND r.project_id=dr.project_id AND r.id=dr.requirement_id AND r.superseded_at IS NULL
           LEFT JOIN project_members pm ON pm.org_id=rv.org_id AND pm.project_id=rv.project_id AND pm.user_id=$3 AND pm.status='ACTIVE'
           WHERE rv.org_id=$1 AND rv.reviewer_user_id=$2 AND rv.status IN('PENDING','IN_REVIEW')
@@ -1152,6 +1153,7 @@ export class OrganisationsService {
          JOIN projects p ON p.org_id = rv.org_id AND p.id = rv.project_id
          LEFT JOIN document_versions dv ON dv.org_id = rv.org_id AND dv.project_id = rv.project_id AND dv.id = rv.document_version_id
          LEFT JOIN document_requirements dr ON dr.org_id = rv.org_id AND dr.project_id = rv.project_id AND dr.document_id = dv.document_id
+           AND (rv.requirement_id IS NULL OR dr.requirement_id=rv.requirement_id)
          LEFT JOIN requirements r ON r.org_id = dr.org_id AND r.project_id = dr.project_id AND r.id = dr.requirement_id
         WHERE rv.org_id = $1 AND rv.reviewer_user_id = $2
           AND rv.status IN ('PENDING','IN_REVIEW')

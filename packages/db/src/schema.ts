@@ -547,7 +547,9 @@ export const requirements = pgTable(
     reviewerRole: text('reviewer_role'), // Enforced per requirement by FR-REV-002 / AUD-005
     dueAt: timestamp('due_at', { withTimezone: true }), // NULL => never MISSING (FR-CHK-010)
     status: text('status').notNull().default('NOT_STARTED'),
-    validityRuleJson: jsonb('validity_rule_json').notNull().default({}),
+    qualificationRequiredSince:timestamp('qualification_required_since',{withTimezone:true}),
+  obligationDefinitionJson:jsonb('obligation_definition_json'),
+  validityRuleJson: jsonb('validity_rule_json').notNull().default({}),
     metadataJson: jsonb('metadata_json').notNull().default({}),
     supersededAt: timestamp('superseded_at', { withTimezone: true }),
     rowVersion: integer('row_version').notNull().default(1),
@@ -1084,7 +1086,8 @@ export const reviews = pgTable(
     documentVersionId: uuid('document_version_id')
       .notNull()
       .references(() => documentVersions.id, { onDelete: 'cascade' }),
-    stageKey: text('stage_key').notNull().default('DEFAULT'),
+    requirementId:uuid('requirement_id'),
+  stageKey: text('stage_key').notNull().default('DEFAULT'),
     reviewerSubjectType: text('reviewer_subject_type').notNull(), // USER | PARTY (AUD-A-07)
     reviewerSubjectId: uuid('reviewer_subject_id').notNull(),
     reviewerUserId: uuid('reviewer_user_id').references(() => users.id),
@@ -1188,6 +1191,7 @@ export const handoverPackages = pgTable(
     zipObjectId: uuid('zip_object_id').references(() => storageObjects.id),
     manifestObjectId: uuid('manifest_object_id').references(() => storageObjects.id),
     checksum: text('checksum'),
+    baselineObsoletedAt:timestamp('baseline_obsoleted_at',{withTimezone:true}),
     outputProfileJson:jsonb('output_profile_json'),
     responsibleUserId: uuid('responsible_user_id').references(() => users.id),
     requestedBy: uuid('requested_by')
@@ -1331,7 +1335,8 @@ export const submissions = pgTable(
     decidedAt: timestamp('decided_at', { withTimezone: true }),
     notes: text('notes'),
     rowVersion: integer('row_version').notNull().default(1),
-    responsibleUserId:uuid('responsible_user_id').references(()=>users.id),
+    baselineObsoletedAt:timestamp('baseline_obsoleted_at',{withTimezone:true}),
+  responsibleUserId:uuid('responsible_user_id').references(()=>users.id),
   createdBy: uuid('created_by').notNull().references(() => users.id),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -1917,4 +1922,17 @@ export const notificationDeliveryAttempts=pgTable('notification_delivery_attempt
 });
 export const notificationRateBudgets=pgTable('notification_rate_budgets',{
  orgId:uuid('org_id').notNull(),channel:text('channel').notNull(),windowStart:timestamp('window_start',{withTimezone:true}).notNull(),claimed:integer('claimed').notNull(),
+});
+
+export const projectConfigurationInputs=pgTable('project_configuration_inputs',{
+ id:uuid('id').primaryKey(),orgId:uuid('org_id').notNull(),projectId:uuid('project_id').notNull(),schemaVersion:integer('schema_version').notNull().default(1),
+ sourceKind:text('source_kind').notNull(),payloadJson:jsonb('payload_json').notNull(),checksum:text('checksum').notNull(),createdBy:uuid('created_by').notNull(),
+ reason:text('reason').notNull(),createdAt:timestamp('created_at',{withTimezone:true}).notNull().defaultNow(),
+});
+
+export const requirementEvidenceQualifications=pgTable('requirement_evidence_qualifications',{
+ id:uuid('id').primaryKey(),orgId:uuid('org_id').notNull(),projectId:uuid('project_id').notNull(),requirementId:uuid('requirement_id').notNull(),
+ documentVersionId:uuid('document_version_id').notNull(),reviewId:uuid('review_id').notNull(),snapshotId:uuid('snapshot_id').notNull(),
+ obligationFingerprint:text('obligation_fingerprint').notNull(),reviewerRole:text('reviewer_role').notNull(),createdBy:uuid('created_by').notNull(),
+ createdAt:timestamp('created_at',{withTimezone:true}).notNull().defaultNow(),
 });

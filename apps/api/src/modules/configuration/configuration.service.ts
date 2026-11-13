@@ -1,6 +1,7 @@
 import {ConflictException,ForbiddenException,Injectable,NotFoundException,UnprocessableEntityException} from '@nestjs/common';
 import {Pool,PoolClient} from 'pg';
-import {createHash} from 'crypto';
+import {configPayloadChecksum} from './configuration-identity';
+export {configPayloadChecksum} from './configuration-identity';
 import {uuidv7} from 'uuidv7';
 import {TenantActorContext,withTenantTransaction} from '@tradecloseout/db';
 import {assertValidMemberProjectScope} from '@tradecloseout/db/tenant-tx';
@@ -9,8 +10,6 @@ import {ChecklistsService} from '../checklists/checklists.service';
 import {boundedJsonObject} from '../../common/validation/bounded-json';
 import {projectCommandRecord,requireProjectCommandId} from '../projects/project-command-input';
 import {ConfigLayerInput,resolveConfigurationHierarchy} from './config-resolver';
-function canonical(v:any):any {return Array.isArray(v)?v.map(canonical):v&&typeof v==='object'?Object.fromEntries(Object.keys(v).sort().map(k=>[k,canonical(v[k])])):v;}
-export function configPayloadChecksum(v:unknown):string{return createHash('sha256').update(JSON.stringify(canonical(v))).digest('hex');}
 @Injectable()
 export class ConfigurationService {
  constructor(private readonly pool:Pool,private readonly checklists:ChecklistsService){}

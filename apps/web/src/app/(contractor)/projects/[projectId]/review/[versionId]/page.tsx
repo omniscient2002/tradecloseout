@@ -36,6 +36,11 @@ interface VersionReviewDetailDto {
   reviewerRole: string | null;
   rowVersion: number;
   reviewId: string | null;
+  requiresRequalification?:boolean;
+  requirementDescription?:string|null;
+  validityRule?:Record<string,unknown>;
+  dueAt?:string|null;
+  linkedRequirements?:{id:string;title:string;key:string}[];
   companions?: Array<{
     ruleCode: string;
     ruleName: string;
@@ -68,6 +73,7 @@ export default function DocumentReviewWorkbenchPage() {
   const [error, setError] = useState<string | null>(null);
   const [banner, setBanner] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [requestRequirement,setRequestRequirement]=useState(''),[reviewerOptions,setReviewerOptions]=useState<{userId:string;name:string;role:string}[]>([]),[requestedReviewer,setRequestedReviewer]=useState('');
 
   const [currentUser, setCurrentUser] = useState<{ id: string; name: string; orgRole: string } | null>(null);
 
@@ -157,6 +163,15 @@ export default function DocumentReviewWorkbenchPage() {
     }
   };
 
+  const loadReviewers=async()=>{if(!detail)return;setSubmitting(true);setError(null);try{const requirement=requestRequirement||detail.requirementId;
+    const result=await apiFetch<{items:{userId:string;name:string;role:string}[]}>(`/api/v1/requirements/${requirement}/reviewers?documentVersionId=${detail.versionId}`);
+    setReviewerOptions(result.items);setRequestedReviewer(result.items.length===1?result.items[0].userId:'');if(!result.items.length)setError('No currently qualified reviewer is available. Ask an administrator to review the project team.');
+   }catch(error){setError((error as Error).message);}finally{setSubmitting(false);}};
+  const requestReview=async()=>{if(!detail||!requestedReviewer)return;setSubmitting(true);setError(null);try{
+    await apiFetch(`/api/v1/requirements/${requestRequirement||detail.requirementId}/submit-review`,{method:'POST',body:JSON.stringify({documentVersionId:detail.versionId,reviewerUserId:requestedReviewer})});
+    setReviewerOptions([]);setRequestedReviewer('');await loadVersionDetail();
+   }catch(error){setError((error as Error).message);}finally{setSubmitting(false);}};
+
   const handleInAppDecision = async (
     decision: "APPROVE" | "REQUEST_CHANGES" | "REJECT",
   ) => {
@@ -175,7 +190,7 @@ export default function DocumentReviewWorkbenchPage() {
     setError(null);
     try {
       await apiFetch(
-        `/api/v1/projects/${projectId}/document-versions/${detail.versionId}/decision`,
+        `/api/v1/reviews/${detail.reviewId}/decisions`,
         {
           method: "POST",
           rowVersion: detail.rowVersion,
@@ -532,6 +547,16 @@ export default function DocumentReviewWorkbenchPage() {
               <span>External Approval</span>
             </button>
           </div>
+
+          {detail&&<section className="rounded border bg-white p-3 space-y-2 text-xs"><h3 className="font-semibold">Current requirement</h3><p>{detail.requirementTitle}</p>{detail.requirementDescription&&<p className="whitespace-pre-wrap">{detail.requirementDescription}</p>}<p>Document type: {detail.docTypeKey} · Reviewer role: {detail.reviewerRole??'Unconfigured'}</p><p>Due: {detail.dueAt?new Date(detail.dueAt).toLocaleString():'No deadline recorded'}</p>
+           {Object.entries(detail.validityRule??{}).map(([key,value])=><p key={key}>{key}: {typeof value==='string'?value:JSON.stringify(value)}</p>)}
+           {detail.requiresRequalification&&<p role="status" className="rounded bg-amber-50 p-2 text-amber-950">This obligation requires a current review. Earlier approvals remain historical.</p>}
+          </section>}
+          {detail?.requirementId&&detail.fileStatus==='READY'&&['R-OWNER','R-ADMIN','R-PM','R-QC','R-SITE','R-DOC','R-SAFETY','R-PROC'].includes(currentUser?.orgRole??'')&&<section className="rounded border bg-white p-3 text-xs space-y-2"><h3 className="font-semibold">Request an assigned review</h3>
+           <label className="block">Mapped requirement<select className="block w-full border p-2" value={requestRequirement||detail.requirementId} onChange={event=>{setRequestRequirement(event.target.value);setReviewerOptions([]);setRequestedReviewer('');}}>{(detail.linkedRequirements?.length?detail.linkedRequirements:[{id:detail.requirementId,title:detail.requirementTitle,key:detail.requirementKey??''}]).map(requirement=><option key={requirement.id} value={requirement.id}>{requirement.key} · {requirement.title}</option>)}</select></label>
+           <button disabled={submitting} className="underline" onClick={()=>void loadReviewers()}>Load eligible reviewers</button>
+           {reviewerOptions.length>0&&<><label className="block">Reviewer<select className="block w-full border p-2" value={requestedReviewer} onChange={event=>setRequestedReviewer(event.target.value)}><option value="">Select reviewer</option>{reviewerOptions.map(reviewer=><option key={reviewer.userId} value={reviewer.userId}>{reviewer.name} · {reviewer.role}</option>)}</select></label><button disabled={submitting||!requestedReviewer} className="rounded border p-2" onClick={()=>void requestReview()}>Request review</button></>}
+          </section>}
 
           {currentUser?.orgRole === "R-SITE" ? (
             <div className="rounded-lg border border-amber-300 bg-amber-50 p-3.5 space-y-1.5 text-xs text-amber-900">
